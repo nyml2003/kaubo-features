@@ -76,19 +76,18 @@ using DecodeResult = Result::Result<Utf8Success, Utf8Error>;
 inline auto get_expected_byte_count(uint8_t leading_byte) noexcept
   -> Result::Result<size_t, Utf8Error> {
   if ((leading_byte & Utf8Const::MASK_1BYTE) == 0) {
-    return Result::Ok<size_t, Utf8Error>(1);  // 单字节（0xxxxxxx）
+    return Result::Ok<size_t>(1);  // 单字节（0xxxxxxx）
   }
   if ((leading_byte & Utf8Const::MASK_2BYTE) == Utf8Const::MATCH_2BYTE) {
-    return Result::Ok<size_t, Utf8Error>(2);  // 双字节（110xxxxx）
+    return Result::Ok<size_t>(2);  // 双字节（110xxxxx）
   }
   if ((leading_byte & Utf8Const::MASK_3BYTE) == Utf8Const::MATCH_3BYTE) {
-    return Result::Ok<size_t, Utf8Error>(3);  // 三字节（1110xxxx）
+    return Result::Ok<size_t>(3);  // 三字节（1110xxxx）
   }
   if ((leading_byte & Utf8Const::MASK_4BYTE) == Utf8Const::MATCH_4BYTE) {
-    return Result::Ok<size_t, Utf8Error>(4);  // 四字节（11110xxx）
+    return Result::Ok<size_t>(4);  // 四字节（11110xxx）
   }
-  return Result::Err<size_t, Utf8Error>(Utf8Error::InvalidLeadingByte
-  );  // 无效首字节
+  return Result::Err(Utf8Error::InvalidLeadingByte);  // 无效首字节
 }
 
 // 子函数2：校验后续字节是否均符合"10xxxxxx"格式
@@ -107,10 +106,10 @@ inline auto validate_continuation_bytes(
     const size_t current_pos = start_pos + i;
     const auto cont_byte = static_cast<uint8_t>(input[current_pos]);
     if ((cont_byte & Utf8Const::CONT_MASK) != Utf8Const::CONT_MATCH) {
-      return Result::Err<void, Utf8Error>(Utf8Error::InvalidContinuation);
+      return Result::Err(Utf8Error::InvalidContinuation);
     }
   }
-  return Result::Ok<void, Utf8Error>();  // 所有续字节均有效
+  return Result::Ok();  // 所有续字节均有效
 }
 
 // 子函数3：拼接多字节数据，计算最终Unicode码点
@@ -198,22 +197,20 @@ inline auto get_utf8_codepoint(std::string_view input, size_t pos)
   -> DecodeResult {
   // 步骤1：检查起始位置是否有效
   if (pos >= input.size()) {
-    return Result::Err<Utf8Success, Utf8Error>(Utf8Error::InvalidPosition);
+    return Result::Err(Utf8Error::InvalidPosition);
   }
 
   // 步骤2：分析首字节
   const auto leading_byte = static_cast<uint8_t>(input[pos]);
   auto expected_length_result = get_expected_byte_count(leading_byte);
   if (expected_length_result.is_err()) {
-    return Result::Err<Utf8Success, Utf8Error>(
-      std::move(expected_length_result.unwrap_err())
-    );
+    return Result::Err(std::move(expected_length_result.unwrap_err()));
   }
   const size_t expected_length = expected_length_result.unwrap();
 
   // 步骤3：检查序列完整性
   if (pos + expected_length > input.size()) {
-    return Result::Err<Utf8Success, Utf8Error>(Utf8Error::IncompleteSequence);
+    return Result::Err(Utf8Error::IncompleteSequence);
   }
 
   // 步骤4：校验续字节
@@ -223,9 +220,7 @@ inline auto get_utf8_codepoint(std::string_view input, size_t pos)
     }
   );
   if (validation_result.is_err()) {
-    return Result::Err<Utf8Success, Utf8Error>(
-      std::move(validation_result.unwrap_err())
-    );
+    return Result::Err(std::move(validation_result.unwrap_err()));
   }
 
   // 步骤5：计算码点
@@ -246,16 +241,16 @@ inline auto get_utf8_codepoint(std::string_view input, size_t pos)
     }
   );
   if (overlong_result) {
-    return Result::Err<Utf8Success, Utf8Error>(Utf8Error::OverlongEncoding);
+    return Result::Err(Utf8Error::OverlongEncoding);
   }
 
   // 步骤7：检查码点范围
   if (codepoint > Utf8Const::MAX_UNICODE) {
-    return Result::Err<Utf8Success, Utf8Error>(Utf8Error::InvalidCodePoint);
+    return Result::Err(Utf8Error::InvalidCodePoint);
   }
 
   // 所有校验通过
-  return Result::Ok<Utf8Success, Utf8Error>({codepoint, expected_length});
+  return Result::Ok<Utf8Success>({codepoint, expected_length});
 }
 
 inline auto is_unicode_whitespace(char32_t codepoint) noexcept -> bool {
