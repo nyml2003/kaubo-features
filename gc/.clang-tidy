@@ -1,0 +1,25 @@
+# .clang-tidy 配置文件
+
+Checks:
+- performance-*
+- bugprone-*
+- modernize-*
+- clang-analyzer-*
+- readability-*
+- cert-*
+- cppcoreguidelines-*
+- google-*
+- hicpp-*
+- misc-*
+
+# 显式禁用的检查项
+- -modernize-use-trailing-return-type
+- -cppcoreguidelines-avoid-c-arrays
+- -hicpp-avoid-c-arrays
+- -modernize-avoid-c-arrays
+- -cppcoreguidelines-pro-bounds-pointer-arithmetic
+- -cppcoreguidelines-pro-type-reinterpret-cast
+- -bugprone-easily-swappable-parameters
+- -cppcoreguidelines-avoid-magic-numbers
+- -misc-no-recursion
+WarningsAsErrors: '*' # 将所有警告视为错误（可选）

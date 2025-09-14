@@ -1,0 +1,36 @@
+InlayHints:
+  BlockEnd: true
+  Designators: true
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true
+  TypeNameLimit: 24
+
+
+
+Diagnostics:
+  UnusedIncludes: Strict
+  ClangTidy:
+    Add:
+    [
+      performance-*,
+      bugprone-*,
+      modernize-*,
+      clang-analyzer-*,
+      readability-*,
+      cert-*,
+      cppcoreguidelines-*,
+      google-*,
+      hicpp-*,
+      misc-*
+    ]
+    Remove:
+    [
+      modernize-use-trailing-return-type,
+      cppcoreguidelines-avoid-c-arrays,
+      hicpp-avoid-c-arrays,
+      modernize-avoid-c-arrays,
+      cppcoreguidelines-pro-bounds-pointer-arithmetic,
+      cppcoreguidelines-pro-type-reinterpret-cast,
+      bugprone-easily-swappable-parameters,
+    ]

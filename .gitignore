@@ -1,0 +1,25 @@
+# IDE
+/.idea
+/.vscode
+
+# 可能用到的临时目录
+/temp
+/log
+
+# 构建目录
+build
+
+# 生成的临时文件
+*.pyc
+*.code
+*.out
+
+# clangd
+.cache
+/compile_commands.json
+
+node_modules
+target
+*.dll
+*.lib
+/.VSCodeCounter

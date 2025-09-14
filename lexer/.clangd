@@ -1,0 +1,61 @@
+# 编译器警告配置（保持原有，确保基础警告不遗漏）
+CompileFlags:
+  Add: [ -Wall, -Wextra, -Werror=return-type, -Werror=unused-variable ]
+  Remove: [ -Wno-sign-compare ]
+
+# 诊断配置
+Diagnostics:
+  UnusedIncludes: Strict # 严格检查未使用的头文件，减少编译依赖
+
+  # 扩展后的 Clang Tidy 检查配置
+  ClangTidy:
+    Add:
+    # -------------------------- 原有核心检查组（保留）--------------------------
+    - 'bugprone-*' # 预防常见bug（如空指针、越界访问、逻辑错误）
+    - 'security-*' # 安全相关检查（如缓冲区溢出、未验证输入、不安全函数）
+    - 'cppcoreguidelines-*' # C++核心指南检查（符合现代C++最佳实践）
+    - 'performance-*' # 性能优化检查（如不必要的拷贝、冗余计算、低效循环）
+    - 'modernize-*' # 推动代码现代化（如用nullptr代替NULL、用auto代替冗余类型）
+    - 'google-*' # Google代码风格检查（命名、格式、接口规范）
+
+    # -------------------------- 新增：补充bug预防与类型安全 --------------------------
+    - 'misc-*'
+      # 杂项实用检查（覆盖空指针、未初始化变量、冗余代码等）
+      # 例：misc-use-nullptr（强制用nullptr）、misc-uninitialized（未初始化变量）
+    - 'type-*'
+      # 类型安全检查（避免类型转换错误、无效类型使用）
+      # 例：type-limits（整数溢出风险）、type-safe-union（联合体安全访问）
+    - 'bugprone-use-after-move' # 单独强化：禁止使用“移动后已失效的对象”（高频bug点）
+    - 'bugprone-integer-division' # 单独强化：避免意外的整数除法（如1/2=0而非0.5）
+
+    # -------------------------- 新增：代码可读性与一致性 --------------------------
+    - 'readability-*'
+      # 可读性检查（命名、格式、代码简洁性）
+      # 例：readability-identifier-naming（强制命名规范）、readability-redundant-code（删除冗余代码）
+    - 'readability-braces-around-statements' # 强制语句块加括号（避免if/for漏写括号的bug）
+    - 'readability-simplify-boolean-expr' # 简化布尔表达式（如if(a==true)→if(a)）
+
+    # -------------------------- 新增：跨平台兼容性 --------------------------
+    - 'portability-*'
+      # 跨平台兼容检查（避免依赖平台特定行为）
+      # 例：portability-invalid-widthof（错误使用sizeof/widthof）、portability-simd-intrinsics（跨平台SIMD指令）
+    - 'portability-restrict-system-includes' # 限制危险的系统头文件（如避免直接包含<windows.h>）
+
+    # -------------------------- 新增：资源管理与内存安全 --------------------------
+    - 'cppcoreguidelines-owning-memory' # 强化资源所有权（避免内存泄漏，推荐用智能指针）
+    - 'cppcoreguidelines-noexcept-move-operations' # 强制移动操作加noexcept（确保容器高效使用）
+    - 'performance-unnecessary-copy-initialization' # 单独强化：避免不必要的拷贝初始化（如string s = "a"→string s("a")）
+    - 'performance-avoid-endl' # 单独强化：用'\n'代替endl（避免频繁刷新缓冲区，提升IO性能）
+
+    # -------------------------- 新增：错误处理与接口规范 --------------------------
+    - 'error-handling-*'
+      # 错误处理检查（如避免吞异常、无效的错误码）
+      # 例：error-handling-no-exceptions（若项目禁用异常，强制检查）、error-handling-check-return-value（检查必须处理的返回值）
+    - 'misc-unused-parameters' # 检查未使用的函数参数（清理冗余代码，避免误解）
+    - 'google-explicit-constructor' # 强制单参数构造函数加explicit（避免隐式类型转换导致的意外行为）
+
+    Remove:
+    - cppcoreguidelines-avoid-magic-numbers
+    - readability-magic-numbers
+    - performance-move-const-arg
+    - readability-identifier-length
