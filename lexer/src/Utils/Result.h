@@ -3,7 +3,7 @@
 #include <utility>
 #include <variant>
 
-namespace Result {
+namespace Utils {
 
 template <typename T>
 struct OkIntermediate;
@@ -11,23 +11,18 @@ struct OkIntermediate;
 template <typename E>
 struct ErrIntermediate;
 
-// 概念：检查类型I是否为OkIntermediate<T>
 template <typename I, typename T>
 concept OkIntermediateFor = std::is_same_v<I, OkIntermediate<T>>;
 
-// 概念：检查类型I是否为ErrIntermediate<E>
 template <typename I, typename E>
 concept ErrIntermediateFor = std::is_same_v<I, ErrIntermediate<E>>;
 
-// 概念：检查类型是否为void
 template <typename T>
 concept IsVoid = std::is_void_v<T>;
 
-// 概念：检查类型是否为非void
 template <typename T>
 concept IsNonVoid = !IsVoid<T>;
 
-// 中间态标签类型 - Ok专用
 template <typename T>
 struct OkIntermediate {
   explicit OkIntermediate(T value) : value(std::move(value)) {}
@@ -38,13 +33,11 @@ struct OkIntermediate {
   T value;
 };
 
-// 中间态标签特化 - 处理void类型（无需存储值）
 template <>
 struct OkIntermediate<void> {
-  OkIntermediate() = default;  // 无参数构造（因为void没有值）
+  OkIntermediate() = default;
 };
 
-// 中间态标签类型 - Err专用
 template <typename E>
 struct ErrIntermediate {
   explicit ErrIntermediate(E error) : error(std::move(error)) {}
@@ -55,18 +48,15 @@ struct ErrIntermediate {
   E error;
 };
 
-// 工厂函数 - 返回Ok中间态（非void）
 template <typename T>
 auto Ok(T&& value) {
   return OkIntermediate<std::decay_t<T>>(std::forward<T>(value));
 }
 
-// 工厂函数 - void版本（无值）
 inline auto Ok() {
   return OkIntermediate<void>();
 }
 
-// 工厂函数 - 返回Err中间态
 template <typename E>
 auto Err(E&& error) {
   return ErrIntermediate<std::decay_t<E>>(std::forward<E>(error));
@@ -74,18 +64,17 @@ auto Err(E&& error) {
 
 template <typename U, typename E>
 concept IsNestedResult = requires {
-  // 检查 U 是否是 Result<UInner, E> 的实例（错误类型必须为 E）
-  typename U::ErrorType;  // 需为 Result 新增 ErrorType 别名，暴露错误类型
-  std::is_same_v<typename U::ErrorType, E>;  // 内层错误类型 ≡ 外层错误类型
+  typename U::ErrorType;
+  std::is_same_v<typename U::ErrorType, E>;
 };
 
 template <typename T, typename E>
 class Result {
  private:
-  struct OkVoid {};  // T为void时的Ok状态（空结构体）
+  struct OkVoid {};
   struct OkWithValue {
     T value;
-  };  // T非void时的Ok状态（带值）
+  };
 
   using OkValue = std::conditional_t<IsVoid<T>, OkVoid, OkWithValue>;
   struct ErrValue {
@@ -94,26 +83,22 @@ class Result {
   std::variant<OkValue, ErrValue> m_data;
 
  public:
-  // 从Ok中间态构造（非void T）
   template <OkIntermediateFor<T> OkType>
   // NOLINTNEXTLINE(google-explicit-constructor)
   Result(OkType ok)
     requires IsNonVoid<T>
     : m_data(OkValue{std::move(ok.get())}) {}
 
-  // 从Ok中间态构造（void T）
   template <OkIntermediateFor<T> OkType>
   // NOLINTNEXTLINE(google-explicit-constructor)
   Result(OkType /*unused*/)
     requires IsVoid<T>
     : m_data(OkValue{}) {}
 
-  // 从Err中间态构造
   template <ErrIntermediateFor<E> ErrType>
   // NOLINTNEXTLINE(google-explicit-constructor)
   Result(ErrType err) : m_data(ErrValue{std::move(err.get())}) {}
 
-  // 禁用移动和复制语义
   Result(Result&&) = default;
   auto operator=(Result&&) -> Result& = delete;
   Result(const Result&) = delete;
@@ -139,7 +124,6 @@ class Result {
     throw std::runtime_error("Called unwrap() on Err");
   }
 
-  // T为void时的版本，无返回值
   auto unwrap() const -> void
     requires IsVoid<T>
   {
@@ -208,13 +192,8 @@ class Result {
   }
 
   template <typename F, typename U = std::invoke_result_t<F, T>>
-  [[nodiscard]] auto and_then(F&& f) const -> Result<
-    typename U::OkType,
-    E>
-    requires(
-      IsNestedResult<U, E> &&
-      std::is_invocable_v<F, T> 
-    )
+  [[nodiscard]] auto and_then(F&& f) const -> Result<typename U::OkType, E>
+    requires(IsNestedResult<U, E> && std::is_invocable_v<F, T>)
   {
     if (is_err()) {
       return Err(unwrap_err());
@@ -223,4 +202,4 @@ class Result {
   }
 };
 
-}  // namespace Result
+}  // namespace Utils

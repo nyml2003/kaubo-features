@@ -1,70 +1,40 @@
 #pragma once
 #include <cassert>
 
-#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include "Lexer/StateMachine.h"
+#include "Lexer/StateMachineManager.h"
 #include "Lexer/Token.h"
 #include "Lexer/TokenType.h"
-#include "Result.h"
-#include "Utf8Utils.h"
+#include "Utils/Utf8.h"
 
 namespace Lexer {
 
-// -------------------------- Token匹配器定义
-// --------------------------
-//
-// 匹配器函数：输入缓冲区、当前位置(引用)、行列号(引用)，返回匹配的Token(可选)
-
-using TokenMatcher = std::function<std::optional<
-  Token>(std::string_view input, size_t& pos, size_t& line, size_t& column)>;
-
-// -------------------------- 可扩展Lexer类
-// --------------------------
-class ExtensibleLexer {
+class StreamLexer {
  private:
-  std::string buffer;                  // 输入缓冲区
-  size_t pos = 0;                      // 当前字节位置(0-based)
-  size_t line = 1;                     // 当前行号(1-based)
-  size_t column = 1;                   // 当前列号(1-based)
-  std::vector<TokenMatcher> matchers;  // 匹配器列表(按注册顺序即优先级)
-  std::optional<Utf8Utils::Utf8Error> last_utf8_error;  // 最近UTF-8错误
+  std::string buffer;                                 // 输入缓冲区
+  size_t pos = 0;                                     // 当前字节位置(0-based)
+  size_t line = 1;                                    // 当前行号(1-based)
+  size_t column = 1;                                  // 当前列号(1-based)
+  std::optional<Utils::Utf8::Error> last_utf8_error;  // 最近UTF-8错误
+  StateMachineManager manager;
+  std::vector<char32_t> token_buffer;
 
-  // 解码UTF-8码点（辅助函数）
+  // 解码UTF-8码点
   auto decode_utf8(std::string_view input, size_t decode_pos)
     -> std::optional<std::pair<char32_t, size_t>> {
-    auto result = Utf8Utils::get_utf8_codepoint(input, decode_pos);
+    auto result = Utils::Utf8::get_utf8_codepoint(input, decode_pos);
     if (result.is_err()) {
       last_utf8_error = result.unwrap_err();
       return std::nullopt;
     }
     last_utf8_error = std::nullopt;
     return result.unwrap();
-  }
-
-  // 跳过Unicode空白字符
-  void skip_whitespace() {
-    while (pos < buffer.size()) {
-      auto codepoint_len = decode_utf8(buffer, pos);
-      if (!codepoint_len) {
-        break;  // 解码错误，停止跳过
-      }
-
-      auto [code_point, len] = codepoint_len.value();
-      if (Utf8Utils::is_unicode_whitespace(code_point)) {
-        if (code_point == U'\n') {  // 换行：更新行号，重置列号
-          line++;
-          column = 1;
-        } else {
-          column++;  // 其他空白：列号+1
-        }
-        pos += len;
-      } else {
-        break;  // 非空白，停止跳过
-      }
-    }
   }
 
   // 收缩缓冲区（避免内存膨胀）
@@ -76,32 +46,21 @@ class ExtensibleLexer {
   }
 
  public:
-  ExtensibleLexer() = default;
+  StreamLexer() = default;
 
   // 追加输入数据
   void feed(std::string_view data) { buffer.append(data); }
 
-  // 注册匹配器（按注册顺序决定优先级，早注册=高优先级）
-  void register_matcher(TokenMatcher matcher) {
-    matchers.emplace_back(std::move(matcher));
+  void register_machine(std::unique_ptr<StateMachine> machine) {
+    manager.add_machine(std::move(machine));
   }
 
   // 获取下一个Token（nullopt表示需要更多输入）
   auto next_token() -> std::optional<Token> {
-    skip_whitespace();  // 跳过空白
-    shrink_buffer();    // 收缩缓冲区
+    shrink_buffer();  // 收缩缓冲区
 
     if (pos >= buffer.size()) {
       return std::nullopt;  // 缓冲区空，需要更多输入
-    }
-
-    // 按优先级匹配（早注册的匹配器先执行）
-    for (const auto& matcher : matchers) {
-      size_t original_pos = pos;
-      if (auto token = matcher(buffer, pos, line, column)) {
-        return token;
-      }
-      pos = original_pos;  // 匹配失败，恢复位置
     }
 
     // 未匹配到任何规则：生成InvalidToken
@@ -120,15 +79,39 @@ class ExtensibleLexer {
     }
 
     auto [code_point, len] = codepoint_len.value();
-    Token invalid_token{
-      .type = TokenType::InvalidToken,
-      .value = std::string_view(&buffer[pos], len),
-      .line = line,
-      .column = column
-    };
-    pos += len;
-    column++;
-    return invalid_token;
+
+    bool any_processed = manager.process_event(code_point);
+
+    std::optional<Token> token = std::nullopt;
+    if (any_processed) {
+      pos += len;
+      token_buffer.push_back(code_point);
+    } else {
+      auto [best_machine, match_length] = manager.select_best_match();
+      if (auto machine = best_machine.lock()) {
+        auto token_type = machine->get_token_type();
+        if (token_type != Lexer::TokenType::WhiteSpace) {
+          token = Token{
+            .type = token_type,
+            .value = token_buffer,
+            .line = line,
+            .column = column
+          };
+        }
+        token_buffer.clear();
+      } else {
+        pos += len;
+        token = Token{
+          .type = TokenType::InvalidToken,
+          .value = code_point,
+          .line = line,
+          .column = column
+        };
+      }
+      manager.reset();
+    }
+
+    return token;
   }
 
   // 判断是否处理完所有输入
@@ -144,447 +127,153 @@ class ExtensibleLexer {
 
 // -------------------------- 常用Token匹配器（外部注册用）
 // --------------------------
-namespace Matchers {
-// 1. 布尔值匹配器（true/false）
-inline auto boolean_matcher() -> TokenMatcher {
-  return [](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    const std::vector<std::string_view> bools = {"true", "false"};
-    for (const auto& b : bools) {
-      if (pos + b.size() > input.size()) {
-        continue;
-      }
-      if (input.substr(pos, b.size()) != b) {
-        continue;
-      }
+namespace Machines {
 
-      // 确保后接非标识符字符（避免"truex"误判）
-      if (pos + b.size() < input.size()) {
-        auto next_code_point =
-          Utf8Utils::get_utf8_codepoint(input, pos + b.size());
-        if (next_code_point.is_ok() &&
-            Utf8Utils::is_identifier_part(next_code_point.unwrap().first)) {
-          continue;
-        }
-      }
+// 辅助函数：创建"标识符"状态机
+inline auto create_identifier_machine() -> std::unique_ptr<StateMachine> {
+  auto machine = std::make_unique<StateMachine>(Lexer::TokenType::Identifier);
 
-      // 匹配成功
-      size_t start_col = column;
-      pos += b.size();
-      column += b.size();  // ASCII字符，1字符=1码点
-      return Token{
-        .type = TokenType::Boolean,
-        .value = b,
-        .line = line,
-        .column = start_col
-      };
-    }
-    return std::nullopt;
-  };
+  // 状态定义：S0(初始) → S1(标识符中间状态，接受状态)
+  StateMachine::StateId s0 = machine->get_current_state();  // 初始状态ID
+  StateMachine::StateId s1 = machine->add_state(true);
+
+  // 转移规则：
+  // S0 → S1：输入是字母
+  machine->add_transition(s0, s1, [](char32_t c) {
+    return Utils::Utf8::is_identifier_start(c);
+  });
+
+  // S1 → S1：输入是字母或数字（保持在接受状态）
+  machine->add_transition(s1, s1, [](char32_t c) {
+    return Utils::Utf8::is_identifier_part(c);
+  });
+
+  return machine;
 }
 
-// 2. Null匹配器（null）
-inline auto null_matcher() -> TokenMatcher {
-  return [](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    const std::string_view null_str = "null";
-    if (pos + null_str.size() > input.size())
-      return std::nullopt;
-    if (input.substr(pos, null_str.size()) != null_str)
-      return std::nullopt;
+// 辅助函数：创建"整数"状态机
+inline auto create_integer_machine() -> std::unique_ptr<StateMachine> {
+  auto machine = std::make_unique<StateMachine>(Lexer::TokenType::Integer);
 
-    // 避免"nullptr"误判
-    if (pos + null_str.size() < input.size()) {
-      auto next_code_point =
-        Utf8Utils::get_utf8_codepoint(input, pos + null_str.size());
-      if (next_code_point.is_ok() &&
-          Utf8Utils::is_identifier_part(next_code_point.unwrap().first)) {
-        return std::nullopt;
-      }
-    }
+  // 状态定义：S0(初始) → S1(整数状态，接受状态)
+  StateMachine::StateId s0 = machine->get_current_state();
+  StateMachine::StateId s1 = machine->add_state(true);
 
-    size_t start_col = column;
-    pos += null_str.size();
-    column += null_str.size();
-    return Token{
-      .type = TokenType::Null,
-      .value = null_str,
-      .line = line,
-      .column = start_col
-    };
-  };
+  // 转移规则：
+  // S0 → S1：输入是数字
+  machine->add_transition(s0, s1, [](char32_t c) {
+    return Utils::Utf8::is_digit(c);
+  });
+
+  // S1 → S1：输入是数字（保持接受状态）
+  machine->add_transition(s1, s1, [](char32_t c) {
+    return Utils::Utf8::is_digit(c);
+  });
+
+  return machine;
 }
 
-// 3. 关键字匹配器（通用函数，接收关键字字符串）
-inline auto keyword_matcher(std::string_view keyword) -> TokenMatcher {
-  return [keyword](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    if (pos + keyword.size() > input.size())
-      return std::nullopt;
-    if (input.substr(pos, keyword.size()) != keyword)
-      return std::nullopt;
+inline auto create_single_symbol_machine(char32_t target)
+  -> std::unique_ptr<StateMachine> {
+  auto machine = std::make_unique<StateMachine>(Lexer::TokenType::Operator1);
 
-    // 避免关键字作为标识符前缀（如"ifx"不应匹配"if"）
-    if (pos + keyword.size() < input.size()) {
-      auto next_code_point =
-        Utf8Utils::get_utf8_codepoint(input, pos + keyword.size());
-      if (next_code_point.is_ok() &&
-          Utf8Utils::is_identifier_part(next_code_point.unwrap().first)) {
-        return std::nullopt;
-      }
-    }
+  // 状态定义：S0(初始) → S1(加号状态，接受状态)
+  StateMachine::StateId s0 = machine->get_current_state();
+  StateMachine::StateId s1 = machine->add_state(true);
 
-    size_t start_col = column;
-    pos += keyword.size();
-    column += keyword.size();
-    return Token{
-      .type = TokenType::Keyword,
-      .value = keyword,
-      .line = line,
-      .column = start_col
-    };
-  };
+  // 转移规则：S0 → S1：输入是'+'
+  machine->add_transition(s0, s1, [target](char32_t c) { return c == target; });
+
+  // 加号无后续转移（接受后再输入任何字符都会失败）
+  return machine;
 }
 
-// 4. 字符串匹配器（支持双引号，含转义符）
-inline auto string_matcher() -> TokenMatcher {
-  return [](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    if (pos >= input.size() || input[pos] != '"') {
-      return std::nullopt;
-    }
+inline auto create_whitespace_machine() -> std::unique_ptr<StateMachine> {
+  auto machine = std::make_unique<StateMachine>(Lexer::TokenType::WhiteSpace);
 
-    size_t start_pos = pos;
-    size_t start_col = column;
-    pos++;
-    column++;
-    bool escaped = false;
+  // 状态定义：S0(初始) → S1(空格状态，接受状态)
+  StateMachine::StateId s0 = machine->get_current_state();
+  StateMachine::StateId s1 = machine->add_state(true);
 
-    while (pos < input.size()) {
-      if (escaped) {
-        escaped = false;
-        pos++;
-        column++;
-        continue;
-      }
-      if (input[pos] == '"') {  // 结束引号
-        pos++;
-        column++;
-        return Token{
-          .type = TokenType::String,
-          .value = input.substr(start_pos + 1, pos - start_pos - 2),
-          .line = line,
-          .column = start_col
-        };
-      }
-      if (input[pos] == '\\') {  // 转义符
-        escaped = true;
-      }
-      // 处理换行（字符串内换行需更新行号）
-      if (input[pos] == '\n') {
-        line++;
-        column = 1;
-      } else {
-        column++;
-      }
-      pos++;
-    }
-
-    // 未闭合的字符串（等待更多输入）
-    return std::nullopt;
-  };
+  machine->add_transition(s0, s1, [](char32_t c) {
+    return Utils::Utf8::is_unicode_whitespace(c);
+  });
+  return machine;
 }
 
-// 5. 数字匹配器（严格区分整数和浮点数）
-inline auto number_matcher() -> TokenMatcher {
-  return [](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    size_t start_pos = pos;
-    size_t start_col = column;
-    bool has_dot = false;
-    bool has_digits_before_dot = false;
+inline auto create_string_machine() -> std::unique_ptr<StateMachine> {
+  auto machine = std::make_unique<StateMachine>(Lexer::TokenType::String);
 
-    // 匹配整数部分（前导数字）
-    if (pos < input.size() && isdigit(static_cast<unsigned char>(input[pos]))) {
-      has_digits_before_dot = true;
-      while (pos < input.size() &&
-             isdigit(static_cast<unsigned char>(input[pos]))) {
-        pos++;
-        column++;
-      }
-    }
+  // 状态定义
+  StateMachine::StateId s0 =
+    machine->get_current_state();  // 初始状态：等待起始引号
+  StateMachine::StateId s1 =
+    machine->add_state(false);  // 双引号内容状态（已遇"）
+  StateMachine::StateId s2 =
+    machine->add_state(true);  // 双引号结束状态（接受状态）
+  StateMachine::StateId s3 =
+    machine->add_state(false);  // 单引号内容状态（已遇'）
+  StateMachine::StateId s4 =
+    machine->add_state(true);  // 单引号结束状态（接受状态）
 
-    // 匹配小数点（必须有前或后数字）
-    if (pos < input.size() && input[pos] == '.') {
-      // 检查后接数字（避免单独的"."）
-      if (pos + 1 < input.size() &&
-          isdigit(static_cast<unsigned char>(input[pos + 1]))) {
-        has_dot = true;
-        pos++;
-        column++;
-        // 匹配小数部分
-        while (pos < input.size() &&
-               isdigit(static_cast<unsigned char>(input[pos]))) {
-          pos++;
-          column++;
-        }
-      } else {
-        // 单独的"."不是数字（可能是分隔符）
-        return std::nullopt;
-      }
-    }
+  // 转移规则：严格保证引号匹配
+  // 1. 初始状态 -> 双引号内容状态：遇到双引号"
+  machine->add_transition(s0, s1, [](char32_t c) { return c == U'"'; });
 
-    // 无效情况：无数字或仅小数点
-    if (pos == start_pos ||
-        (has_dot && !has_digits_before_dot && pos == start_pos + 1)) {
-      return std::nullopt;
-    }
+  // 2. 双引号内容状态 -> 双引号结束状态：遇到双引号"（匹配结束）
+  machine->add_transition(s1, s2, [](char32_t c) { return c == U'"'; });
 
-    // 区分整数和浮点数
-    std::string_view num_str = input.substr(start_pos, pos - start_pos);
-    if (has_dot) {
-      return Token{
-        .type = TokenType::Float,
-        .value = std::stod(std::string(num_str)),
-        .line = line,
-        .column = start_col
-      };
-    }
-    return Token{
-      .type = TokenType::Integer,
-      .value = static_cast<int64_t>(std::stoll(std::string(num_str))),
-      .line = line,
-      .column = start_col
-    };
-  };
+  // 3. 双引号内容状态保持：接受除"之外的字符
+  machine->add_transition(s1, s1, [](char32_t c) {
+    return c != U'"';  // 不允许未结束的双引号内出现新的双引号
+  });
+
+  // 4. 初始状态 -> 单引号内容状态：遇到单引号'
+  machine->add_transition(s0, s3, [](char32_t c) { return c == U'\''; });
+
+  // 5. 单引号内容状态 -> 单引号结束状态：遇到单引号'（匹配结束）
+  machine->add_transition(s3, s4, [](char32_t c) { return c == U'\''; });
+
+  // 6. 单引号内容状态保持：接受除'之外的字符
+  machine->add_transition(s3, s3, [](char32_t c) {
+    return c != U'\'';  // 不允许未结束的单引号内出现新的单引号
+  });
+
+  return machine;
 }
 
-// 6. 三字符运算符匹配器（如===、!==）
-inline auto operator3_matcher(std::string_view oprt) -> TokenMatcher {
-  return [oprt](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    if (oprt.size() != 3) {
-      return std::nullopt;  // 确保是三字符
-    }
-    if (pos + 3 > input.size()) {
-      return std::nullopt;
-    }
-    if (input.substr(pos, 3) != oprt) {
-      return std::nullopt;
-    }
+inline auto create_keyword_machine(std::string_view keyword)
+  -> std::unique_ptr<StateMachine> {
+  // 确保关键字不为空
+  assert(!keyword.empty() && "关键字不能为空字符串");
 
-    size_t start_col = column;
-    pos += 3;
-    column += 3;  // ASCII字符，1字符=1码点
-    return Token{
-      .type = TokenType::Operator3,
-      .value = oprt,
-      .line = line,
-      .column = start_col
-    };
-  };
-}
+  // 创建关键字状态机，Token类型为Keyword
+  auto machine = std::make_unique<StateMachine>(Lexer::TokenType::Keyword);
 
-// 7. 二字符运算符匹配器（如>=、<=、==）
-inline auto operator2_matcher(std::string_view oprt) -> TokenMatcher {
-  return [oprt](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    if (oprt.size() != 2) {
-      return std::nullopt;  // 确保是二字符
-    }
-    if (pos + 2 > input.size()) {
-      return std::nullopt;
-    }
-    if (input.substr(pos, 2) != oprt) {
-      return std::nullopt;
-    }
+  // 初始状态
+  StateMachine::StateId current_state = machine->get_current_state();
 
-    size_t start_col = column;
-    pos += 2;
-    column += 2;
-    return Token{
-      .type = TokenType::Operator2,
-      .value = oprt,
-      .line = line,
-      .column = start_col
-    };
-  };
-}
+  // 为关键字的每个字符创建对应的状态和转移规则
+  for (size_t i = 0; i < keyword.size(); ++i) {
+    // 转换为UTF-8字符（假设关键字是ASCII字符）
+    auto current_char = static_cast<char32_t>(keyword[i]);
 
-// 8. 单字符运算符匹配器（如+、-、>、<）
-inline auto operator1_matcher(char oprt) -> TokenMatcher {
-  return [oprt](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    if (pos >= input.size() || input[pos] != oprt) {
-      return std::nullopt;
-    }
+    // 最后一个字符对应的状态设为接受状态
+    bool is_accepting = (i == keyword.size() - 1);
+    StateMachine::StateId next_state = machine->add_state(is_accepting);
 
-    size_t start_col = column;
-    pos++;
-    column++;
-    return Token{
-      .type = TokenType::Operator1,
-      .value = std::string_view(&input[pos - 1], 1),
-      .line = line,
-      .column = start_col
-    };
-  };
-}
+    // 添加状态转移：当前状态遇到指定字符时，转移到下一个状态
+    machine->add_transition(
+      current_state, next_state,
+      [current_char](char32_t input) { return input == current_char; }
+    );
 
-// 9. 标识符匹配器（Unicode规则）
-inline auto identifier_matcher() -> TokenMatcher {
-  return [](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    size_t start_pos = pos;
-    size_t start_col = column;
-
-    // 检查首字符（必须是标识符起始字符）
-    auto first_code_point = Utf8Utils::get_utf8_codepoint(input, pos);
-    if (first_code_point.is_err() ||
-        !Utf8Utils::is_identifier_start(first_code_point.unwrap().first)) {
-      return std::nullopt;
-    }
-    size_t first_len = first_code_point.unwrap().second;
-    pos += first_len;
-    column++;  // 1个码点=1列
-
-    // 匹配后续字符（标识符部分）
-    while (pos < input.size()) {
-      auto next_code_point = Utf8Utils::get_utf8_codepoint(input, pos);
-      if (next_code_point.is_err() ||
-          !Utf8Utils::is_identifier_part(next_code_point.unwrap().first)) {
-        break;
-      }
-      pos += next_code_point.unwrap().second;
-      column++;
-    }
-
-    return Token{
-      .type = TokenType::Identifier,
-      .value = input.substr(start_pos, pos - start_pos),
-      .line = line,
-      .column = start_col
-    };
-  };
-}
-
-// 11. 注释匹配器（单行//和多行/* */）
-inline auto line_comment_matcher() -> TokenMatcher {
-  return [](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    if (pos + 1 >= input.size() || input[pos] != '/' || input[pos + 1] != '/') {
-      return std::nullopt;
-    }
-    // 跳过注释内容（到行尾）
-    pos += 2;
-    column += 2;
-    while (pos < input.size() && input[pos] != '\n') {
-      auto code_point = Utf8Utils::get_utf8_codepoint(input, pos);
-      if (code_point.is_ok()) {
-        pos += code_point.unwrap().second;
-      } else {
-        pos++;
-      }
-      column++;
-    }
-    // 处理换行
-    if (pos < input.size() && input[pos] == '\n') {
-      line++;
-      column = 1;
-      pos++;
-    }
-    return std::nullopt;  // 注释不生成Token
-  };
-}
-
-inline auto block_comment_matcher() -> TokenMatcher {
-  return [](
-           std::string_view input, size_t& pos, size_t& line, size_t& column
-         ) -> std::optional<Token> {
-    if (pos + 1 >= input.size() || input[pos] != '/' || input[pos + 1] != '*') {
-      return std::nullopt;
-    }
-    pos += 2;
-    column += 2;
-
-    // 跳过到*/
-    while (pos + 1 < input.size()) {
-      if (input[pos] == '*' && input[pos + 1] == '/') {
-        pos += 2;
-        column += 2;
-        return std::nullopt;
-      }
-      if (input[pos] == '\n') {
-        line++;
-        column = 1;
-        pos++;
-      } else {
-        auto code_point = Utf8Utils::get_utf8_codepoint(input, pos);
-        if (code_point.is_ok()) {
-          pos += code_point.unwrap().second;
-        } else {
-          pos++;
-        }
-        column++;
-      }
-    }
-    return std::nullopt;  // 未闭合的注释，等待更多输入
-  };
-}
-}  // namespace Matchers
-   //
-void register_default_matchers(Lexer::ExtensibleLexer& lexer) {
-  // 最高优先级：注释
-  lexer.register_matcher(Lexer::Matchers::line_comment_matcher());
-  lexer.register_matcher(Lexer::Matchers::block_comment_matcher());
-
-  // 高优先级：常量和关键字
-  lexer.register_matcher(Lexer::Matchers::boolean_matcher());
-  lexer.register_matcher(Lexer::Matchers::null_matcher());
-
-  // 关键字列表
-  const std::vector<std::string_view> keywords = {
-    "if",       "else",     "for",    "while", "return",
-    "function", "var",      "let",    "const", "fn",
-    "template", "typename", "friend", "auto",  "throw"
-  };
-  for (const auto& keyword : keywords) {
-    lexer.register_matcher(Lexer::Matchers::keyword_matcher(keyword));
+    // 移动到下一个状态
+    current_state = next_state;
   }
 
-  // 中高优先级：字符串和数字
-  lexer.register_matcher(Lexer::Matchers::string_matcher());
-  lexer.register_matcher(Lexer::Matchers::number_matcher());
-
-  // 运算符（按长度优先级）
-  const std::vector<std::string_view> op3_list = {"===", "!=="};
-  for (const auto& oprt : op3_list) {
-    lexer.register_matcher(Lexer::Matchers::operator3_matcher(oprt));
-  }
-  const std::vector<std::string_view> op2_list = {">=", "<=", "==", "!=", "&&",
-                                                  "||", "++", "--", "+=", "-=",
-                                                  "*=", "/=", "->", "::"};
-  for (const auto& oprt : op2_list) {
-    lexer.register_matcher(Lexer::Matchers::operator2_matcher(oprt));
-  }
-  const std::vector<char> op1_list = {'+', '-', '*', '/', '%', '>', '<', '!',
-                                      '&', '|', '^', '~', '?', '.', ',', '(',
-                                      ')', '[', ']', '{', '}', ';', ':', '='};
-  for (char oprt : op1_list) {
-    lexer.register_matcher(Lexer::Matchers::operator1_matcher(oprt));
-  }
-
-  // 较低优先级：标识符
-  lexer.register_matcher(Lexer::Matchers::identifier_matcher());
+  return machine;
 }
+
+}  // namespace Machines
 }  // namespace Lexer

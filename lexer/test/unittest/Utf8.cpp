@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
 #include <string_view>
-#include "Result.h"
-#include "Utf8Utils.h"
+#include "Utils/Result.h"
+#include "Utils/Utf8.h"
 
-using Utf8Utils::get_utf8_codepoint;
-using Utf8Utils::Utf8Error;
+using Utils::Utf8::get_utf8_codepoint;
 
 // 测试单字节ASCII字符（全部为成功场景）
 TEST(UTF8DecoderTest, SingleByteCharacters) {
@@ -33,7 +32,7 @@ TEST(UTF8DecoderTest, NullCharacterScenarios) {
   // 用例2：空字符串（pos=0超出范围，失败）
   auto result2 = get_utf8_codepoint("", 0);
   EXPECT_TRUE(result2.is_err());
-  EXPECT_EQ(result2.unwrap_err(), Utf8Error::InvalidPosition);
+  EXPECT_EQ(result2.unwrap_err(), Utils::Utf8::Error::InvalidPosition);
 
   // 用例3：多个连续空字符（均成功）
   std::string_view double_null("\0\0", 2);
@@ -56,12 +55,12 @@ TEST(UTF8DecoderTest, NullCharacterScenarios) {
   // 用例5：空字符的过度编码（"\xC0\x80"非法，失败）
   auto result5 = get_utf8_codepoint("\xC0\x80", 0);
   EXPECT_TRUE(result5.is_err());
-  EXPECT_EQ(result5.unwrap_err(), Utf8Error::OverlongEncoding);
+  EXPECT_EQ(result5.unwrap_err(), Utils::Utf8::Error::OverlongEncoding);
 
   // 用例6：pos超出空字符范围（失败）
   auto result6 = get_utf8_codepoint(single_null, 1);
   EXPECT_TRUE(result6.is_err());
-  EXPECT_EQ(result6.unwrap_err(), Utf8Error::InvalidPosition);
+  EXPECT_EQ(result6.unwrap_err(), Utils::Utf8::Error::InvalidPosition);
 
   // 用例7：空字符+多字节字符（均成功）
   std::string_view null_plus_you("\0\xE4\xBD\xA0", 4);  // '\0' + "你"
@@ -171,17 +170,17 @@ TEST(UTF8DecoderTest, InvalidPositions) {
   // 用例1：pos超出字符串长度（"test"长度4，pos=10）
   auto res1 = get_utf8_codepoint("test", 10);
   EXPECT_TRUE(res1.is_err());
-  EXPECT_EQ(res1.unwrap_err(), Utf8Error::InvalidPosition);
+  EXPECT_EQ(res1.unwrap_err(), Utils::Utf8::Error::InvalidPosition);
 
   // 用例2：空字符串（pos=0）
   auto res2 = get_utf8_codepoint("", 0);
   EXPECT_TRUE(res2.is_err());
-  EXPECT_EQ(res2.unwrap_err(), Utf8Error::InvalidPosition);
+  EXPECT_EQ(res2.unwrap_err(), Utils::Utf8::Error::InvalidPosition);
 
   // 用例3：pos等于字符串长度（"a"长度1，pos=1）
   auto res3 = get_utf8_codepoint("a", 1);
   EXPECT_TRUE(res3.is_err());
-  EXPECT_EQ(res3.unwrap_err(), Utf8Error::InvalidPosition);
+  EXPECT_EQ(res3.unwrap_err(), Utils::Utf8::Error::InvalidPosition);
 }
 
 // 测试不完整的多字节序列（失败场景）
@@ -189,17 +188,17 @@ TEST(UTF8DecoderTest, IncompleteSequences) {
   // 用例1：双字节序列缺续字节（"\xC3" → 应补1个续字节）
   auto res1 = get_utf8_codepoint("\xC3", 0);
   EXPECT_TRUE(res1.is_err());
-  EXPECT_EQ(res1.unwrap_err(), Utf8Error::IncompleteSequence);
+  EXPECT_EQ(res1.unwrap_err(), Utils::Utf8::Error::IncompleteSequence);
 
   // 用例2：三字节序列缺1个续字节（"\xE4\xBD" → 应补1个续字节）
   auto res2 = get_utf8_codepoint("\xE4\xBD", 0);
   EXPECT_TRUE(res2.is_err());
-  EXPECT_EQ(res2.unwrap_err(), Utf8Error::IncompleteSequence);
+  EXPECT_EQ(res2.unwrap_err(), Utils::Utf8::Error::IncompleteSequence);
 
   // 用例3：四字节序列缺1个续字节（"\xF0\x9F\x98" → 应补1个续字节）
   auto res3 = get_utf8_codepoint("\xF0\x9F\x98", 0);
   EXPECT_TRUE(res3.is_err());
-  EXPECT_EQ(res3.unwrap_err(), Utf8Error::IncompleteSequence);
+  EXPECT_EQ(res3.unwrap_err(), Utils::Utf8::Error::IncompleteSequence);
 }
 
 // 测试无效的UTF-8序列（失败场景）
@@ -208,12 +207,12 @@ TEST(UTF8DecoderTest, InvalidSequences) {
   // 用例1：双字节序列续字节非"10xxxxxx"（"\xC3\xC3" → 第二个字节是首字节格式）
   auto res1 = get_utf8_codepoint("\xC3\xC3", 0);
   EXPECT_TRUE(res1.is_err());
-  EXPECT_EQ(res1.unwrap_err(), Utf8Error::InvalidContinuation);
+  EXPECT_EQ(res1.unwrap_err(), Utils::Utf8::Error::InvalidContinuation);
 
   // 用例2：三字节序列第二个字节无效（"\xE4\xC3\xA1" → 第二个字节是首字节格式）
   auto res2 = get_utf8_codepoint("\xE4\xC3\xA1", 0);
   EXPECT_TRUE(res2.is_err());
-  EXPECT_EQ(res2.unwrap_err(), Utf8Error::InvalidContinuation);
+  EXPECT_EQ(res2.unwrap_err(), Utils::Utf8::Error::InvalidContinuation);
 
   // --------------- 无效首字节 ---------------
   // 用例3：首字节为续字节格式（0x80~0xBF → 不能作为首字节）
@@ -221,8 +220,8 @@ TEST(UTF8DecoderTest, InvalidSequences) {
   auto res4 = get_utf8_codepoint("\xBF", 0);
   EXPECT_TRUE(res3.is_err());
   EXPECT_TRUE(res4.is_err());
-  EXPECT_EQ(res3.unwrap_err(), Utf8Error::InvalidLeadingByte);
-  EXPECT_EQ(res4.unwrap_err(), Utf8Error::InvalidLeadingByte);
+  EXPECT_EQ(res3.unwrap_err(), Utils::Utf8::Error::InvalidLeadingByte);
+  EXPECT_EQ(res4.unwrap_err(), Utils::Utf8::Error::InvalidLeadingByte);
 
   // 用例4：首字节超出UTF-8范围（0xF8~0xFF →
   // 最多4字节，首字节最高位只能是0/110/1110/11110）
@@ -230,8 +229,8 @@ TEST(UTF8DecoderTest, InvalidSequences) {
   auto res6 = get_utf8_codepoint("\xFF", 0);
   EXPECT_TRUE(res5.is_err());
   EXPECT_TRUE(res6.is_err());
-  EXPECT_EQ(res5.unwrap_err(), Utf8Error::InvalidLeadingByte);
-  EXPECT_EQ(res6.unwrap_err(), Utf8Error::InvalidLeadingByte);
+  EXPECT_EQ(res5.unwrap_err(), Utils::Utf8::Error::InvalidLeadingByte);
+  EXPECT_EQ(res6.unwrap_err(), Utils::Utf8::Error::InvalidLeadingByte);
 }
 
 // 测试过度编码（UTF-8明确禁止，失败场景）
@@ -242,51 +241,51 @@ TEST(UTF8DecoderTest, OverlongEncoding) {
   // 用例1：3字节表示1字节码点（0x00 → 合法应为0x00，非法为"\xE0\x80\x80"）
   auto res1 = get_utf8_codepoint("\xE0\x80\x80", 0);
   EXPECT_TRUE(res1.is_err());
-  EXPECT_EQ(res1.unwrap_err(), Utf8Error::OverlongEncoding);
+  EXPECT_EQ(res1.unwrap_err(), Utils::Utf8::Error::OverlongEncoding);
 
   // 用例2：3字节表示1字节最大值（0x7F → 合法应为0x7F，非法为"\xE0\x80\x7F"）
   auto res2 = get_utf8_codepoint("\xE0\x80\x7F", 0);
   EXPECT_TRUE(res2.is_err());
-  EXPECT_EQ(res2.unwrap_err(), Utf8Error::InvalidContinuation);
+  EXPECT_EQ(res2.unwrap_err(), Utils::Utf8::Error::InvalidContinuation);
 
   // 用例3：3字节表示2字节最小值（0x80 →
   // 合法应为"\xC2\x80"，非法为"\xE0\x80\x80"）
   auto res3 = get_utf8_codepoint("\xE0\x80\x80", 0);
   EXPECT_TRUE(res3.is_err());
-  EXPECT_EQ(res3.unwrap_err(), Utf8Error::OverlongEncoding);
+  EXPECT_EQ(res3.unwrap_err(), Utils::Utf8::Error::OverlongEncoding);
 
   // 用例4：3字节表示2字节最大值（0x7FF →
   // 合法应为"\xDF\xBF"，非法为"\xE0\x9F\xBF"）
   auto res4 = get_utf8_codepoint("\xE0\x9F\xBF", 0);
   EXPECT_TRUE(res4.is_err());
-  EXPECT_EQ(res4.unwrap_err(), Utf8Error::OverlongEncoding);
+  EXPECT_EQ(res4.unwrap_err(), Utils::Utf8::Error::OverlongEncoding);
 
   // --------------- 4字节表示1/2/3字节码点 ---------------
   // 用例5：4字节表示1字节码点（0x00 → 非法为"\xF0\x80\x80\x80"）
   auto res5 = get_utf8_codepoint("\xF0\x80\x80\x80", 0);
   EXPECT_TRUE(res5.is_err());
-  EXPECT_EQ(res5.unwrap_err(), Utf8Error::OverlongEncoding);
+  EXPECT_EQ(res5.unwrap_err(), Utils::Utf8::Error::OverlongEncoding);
 
   // 用例6：4字节表示2字节最大值（0x7FF → 非法为"\xF0\x80\x9F\xBF"）
   auto res6 = get_utf8_codepoint("\xF0\x80\x9F\xBF", 0);
   EXPECT_TRUE(res6.is_err());
-  EXPECT_EQ(res6.unwrap_err(), Utf8Error::OverlongEncoding);
+  EXPECT_EQ(res6.unwrap_err(), Utils::Utf8::Error::OverlongEncoding);
 
   // 用例7：4字节表示3字节最小值（0x800 →
   // 合法应为"\xE0\xA0\x80"，非法为"\xF0\x80\xA0\x80"）
   auto res7 = get_utf8_codepoint("\xF0\x80\xA0\x80", 0);
   EXPECT_TRUE(res7.is_err());
-  EXPECT_EQ(res7.unwrap_err(), Utf8Error::OverlongEncoding);
+  EXPECT_EQ(res7.unwrap_err(), Utils::Utf8::Error::OverlongEncoding);
 
   // 用例8：4字节表示3字节最大值（0xFFFF →
   // 合法应为"\xEF\xBF\xBF"，非法为"\xF0\x8F\xBF\xBF"）
   auto res8 = get_utf8_codepoint("\xF0\x8F\xBF\xBF", 0);
   EXPECT_TRUE(res8.is_err());
-  EXPECT_EQ(res8.unwrap_err(), Utf8Error::OverlongEncoding);
+  EXPECT_EQ(res8.unwrap_err(), Utils::Utf8::Error::OverlongEncoding);
 
   // --------------- 码点超出Unicode上限（附加场景） ---------------
   // 用例9：码点0x110000（超出0x10FFFF，非法）
   auto res9 = get_utf8_codepoint(std::string_view("\xF4\x90\x80\x80", 4), 0);
   EXPECT_TRUE(res9.is_err());
-  EXPECT_EQ(res9.unwrap_err(), Utf8Error::InvalidCodePoint);
+  EXPECT_EQ(res9.unwrap_err(), Utils::Utf8::Error::InvalidCodePoint);
 }

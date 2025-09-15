@@ -2,7 +2,7 @@
 #include <iostream>
 #include <string>
 #include "Lexer/Token.h"
-#include "Utf8Utils.h"
+#include "Utils/Utf8.h"
 
 // ANSI颜色代码
 namespace Color {
@@ -111,7 +111,7 @@ class SourceHighlighter {
         } else if constexpr (std::is_same_v<T, int64_t> ||
                              std::is_same_v<T, double>) {
           return std::format("{}", value);
-        } else if constexpr (std::is_same_v<T, Utf8Utils::Utf8Error>) {
+        } else if constexpr (std::is_same_v<T, Utils::Utf8::Error>) {
           return std::format("[UTF8 Error: {}]", std::to_string(value));
         } else {
           return std::format("[Unknown Token Value]");

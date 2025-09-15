@@ -2,7 +2,7 @@ set(test_name "TEST_UTF8_UTILS")
 
 add_executable(
     ${test_name}
-    ${project_dir}/test/unittest/Utf8Utils.cpp
+    ${project_dir}/test/unittest/Utf8.cpp
 )
 set_target_properties(${test_name} PROPERTIES COMPILE_FLAGS ${project_cxx_flags})
 

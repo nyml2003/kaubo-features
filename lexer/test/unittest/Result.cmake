@@ -4,7 +4,6 @@ add_executable(
     ${test_name}
     ${project_dir}/test/unittest/Result.cpp
 )
-set_target_properties(${test_name} PROPERTIES COMPILE_FLAGS ${project_cxx_flags})
 
 # 添加头文件搜索目录（针对当前测试目标）
 target_include_directories(${test_name}

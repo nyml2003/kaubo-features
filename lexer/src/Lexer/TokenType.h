@@ -80,9 +80,16 @@ enum class TokenType : uint8_t {
   /*---最低优先级---*/
   Eof = 40,
 
+  WhiteSpace = 41,  // 空白字符
+
   // 最低优先级：无效Token（最后匹配）
   InvalidToken = 50  // 合法UTF-8但无匹配规则
 };
+
+inline auto ahead_of(TokenType a, TokenType b) -> bool {
+  return static_cast<uint8_t>(a) < static_cast<uint8_t>(b);
+}
+
 }  // namespace Lexer
 
 namespace std {
@@ -112,6 +119,8 @@ inline auto to_string(const Lexer::TokenType& type) -> std::string {
       return "InvalidToken";
     case Lexer::TokenType::Eof:
       return "Eof";
+    case Lexer::TokenType::WhiteSpace:
+      return "WhiteSpace";
     default:
       assert(false && "未处理的TokenType");
   }

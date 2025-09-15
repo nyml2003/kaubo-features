@@ -8,5 +8,7 @@ if a === 3 {
 
 fn main() {
   println("Hello, world!");
-  println("a is {}", a);
+  println('1231{}23', a);
 }
+
+定义 a = 3;
