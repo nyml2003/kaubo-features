@@ -316,6 +316,32 @@ inline auto get_utf8_codepoint(std::string_view input, size_t pos)
   return Ok<CodePoint>({codepoint, expected_length});
 }
 
+/**
+ * @brief
+ * 快速读取UTF-8序列的首字节，返回其预期字节长度（不校验后续字节，不计算码点）
+ *
+ * 特点：仅校验起始位置有效性和首字节格式，不检查序列是否完整、续字节是否合法，速度更快。
+ * 适用场景：需快速获取字节长度，且后续会单独处理序列完整性/续字节的场景。
+ *
+ * @param input 输入UTF-8字符串视图
+ * @param pos 起始读取位置
+ * @return Result<size_t, Error>
+ * 成功返回预期字节长度（1/2/3/4）；失败返回对应错误
+ */
+inline auto quick_get_utf8_byte_length(
+  std::string_view input,
+  size_t pos
+) noexcept -> Result<size_t, Error> {
+  // 1. 校验起始位置是否超出输入范围
+  if (pos >= input.size()) {
+    return Err(Error::InvalidPosition);
+  }
+
+  // 2. 读取首字节并判断预期长度（复用已有首字节解析逻辑，保证一致性）
+  const auto leading_byte = static_cast<uint8_t>(input[pos]);
+  return Internal::get_expected_byte_count(leading_byte);
+}
+
 inline auto to_utf8(char32_t codepoint) noexcept -> std::string {
   std::string result;
 
@@ -371,6 +397,16 @@ inline auto to_utf8(char32_t codepoint) noexcept -> std::string {
     );
   }
 
+  return result;
+}
+
+// 处理u8字面量，一般是char32_t数组，不知道长度，不要给我写size
+inline auto to_utf8(const char32_t* codepoints) noexcept -> std::string {
+  std::string result;
+  while (*codepoints != 0) {
+    result += to_utf8(*codepoints);
+    codepoints++;
+  }
   return result;
 }
 

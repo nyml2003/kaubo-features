@@ -15,7 +15,7 @@ namespace Lexer {
 class StateMachine {
  public:
   using StateId = size_t;  // 状态ID类型
-  using Event = char32_t;  // 事件类型（输入字符）
+  using Event = char;      // 事件类型（输入字符）
   using TransitionCondition = std::function<bool(Event)>;     // 转移条件
   using StateCallback = std::function<void(StateId, Event)>;  // 状态回调
 

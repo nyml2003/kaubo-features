@@ -180,32 +180,24 @@
 #include "tools.h"
 auto main() -> int {
   Lexer::StreamLexer lexer;
-  lexer.register_machine(Lexer::Machines::create_identifier_machine());
   lexer.register_machine(Lexer::Machines::create_integer_machine());
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine('+'));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine('-'));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine('*'));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine('='));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine(':'));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine(';'));
+  lexer.register_machine(Lexer::Machines::create_whitespace_machine());
+  lexer.register_machine(Lexer::Machines::create_single_symbol_machine('['));
+  lexer.register_machine(Lexer::Machines::create_single_symbol_machine(']'));
   lexer.register_machine(Lexer::Machines::create_single_symbol_machine('('));
   lexer.register_machine(Lexer::Machines::create_single_symbol_machine(')'));
   lexer.register_machine(Lexer::Machines::create_single_symbol_machine('{'));
   lexer.register_machine(Lexer::Machines::create_single_symbol_machine('}'));
   lexer.register_machine(Lexer::Machines::create_single_symbol_machine(','));
-  lexer.register_machine(Lexer::Machines::create_whitespace_machine());
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("const"));
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("var"));
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("if"));
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("else"));
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("while"));
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("for"));
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("定义"));
+  lexer.register_machine(Lexer::Machines::create_single_symbol_machine(':'));
+  lexer.register_machine(Lexer::Machines::create_keyword_machine("true"));
+  lexer.register_machine(Lexer::Machines::create_keyword_machine("false"));
+  lexer.register_machine(Lexer::Machines::create_keyword_machine("null"));
   lexer.register_machine(Lexer::Machines::create_string_machine());
 
   std::string input =
-    read_file(R"(C:\Users\nyml\code\kaubo-features\lexer\src\test.txt)");
-  lexer.feed(input);
+    read_file(R"(C:\Users\nyml\code\kaubo-features\lexer\src\t.json)");
+  lexer.feed(input + '\n');
 
   while (!lexer.is_eof()) {
     auto maybe_token = lexer.next_token();
