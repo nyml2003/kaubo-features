@@ -54,8 +54,8 @@ constexpr char32_t MAX_UNICODE = 0x10FFFF;
 // whitespace
 constexpr char32_t SPACE = 0x20;
 constexpr char32_t TAB = 0x09;
-constexpr char32_t LineFeed = 0x0A;
-constexpr char32_t CarriageReturn = 0x0D;
+constexpr char32_t LineFeed = 0x0A;        // '\n'
+constexpr char32_t CarriageReturn = 0x0D;  // '\r'
 
 // 字母
 constexpr char32_t MIN_LOWER_CASE = 0x0061;  // 'a'
@@ -216,8 +216,11 @@ inline auto is_overlong_encoding(IsOverlongEncodingArgs args) noexcept -> bool {
 }  // namespace Internal
 
 inline auto is_unicode_whitespace(char32_t codepoint) noexcept -> bool {
-  return codepoint == Const::SPACE || codepoint == Const::TAB ||
-         codepoint == Const::LineFeed || codepoint == Const::CarriageReturn;
+  return codepoint == Const::SPACE || codepoint == Const::TAB;
+}
+
+inline auto is_unicode_newline(char32_t codepoint) noexcept -> bool {
+  return codepoint == Const::LineFeed || codepoint == Const::CarriageReturn;
 }
 
 inline auto is_identifier_start(char32_t codepoint) noexcept -> bool {

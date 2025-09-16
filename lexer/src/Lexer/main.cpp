@@ -177,23 +177,46 @@
 #include <iostream>
 #include <optional>
 #include "Lexer/Lexer.h"
+#include "Lexer/Token/Type1.h"
 #include "tools.h"
 auto main() -> int {
-  Lexer::StreamLexer lexer;
-  lexer.register_machine(Lexer::Machines::create_integer_machine());
-  lexer.register_machine(Lexer::Machines::create_whitespace_machine());
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine('['));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine(']'));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine('('));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine(')'));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine('{'));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine('}'));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine(','));
-  lexer.register_machine(Lexer::Machines::create_single_symbol_machine(':'));
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("true"));
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("false"));
-  lexer.register_machine(Lexer::Machines::create_keyword_machine("null"));
-  lexer.register_machine(Lexer::Machines::create_string_machine());
+  Lexer::StreamLexer<Lexer::TokenType::Type1::TokenType> lexer;
+  lexer.register_machine(Lexer::TokenType::Type1::create_integer_machine());
+  lexer.register_machine(Lexer::TokenType::Type1::create_whitespace_machine());
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_single_symbol_machine('[')
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_single_symbol_machine(']')
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_single_symbol_machine('(')
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_single_symbol_machine(')')
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_single_symbol_machine('{')
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_single_symbol_machine('}')
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_single_symbol_machine(',')
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_single_symbol_machine(':')
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_keyword_machine("true")
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_keyword_machine("false")
+  );
+  lexer.register_machine(
+    Lexer::TokenType::Type1::create_keyword_machine("null")
+  );
+  lexer.register_machine(Lexer::TokenType::Type1::create_string_machine());
 
   std::string input =
     read_file(R"(C:\Users\nyml\code\kaubo-features\lexer\src\t.json)");

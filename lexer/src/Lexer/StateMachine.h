@@ -12,6 +12,7 @@ namespace Lexer {
  * @brief 通用状态机框架
  * 纯状态机逻辑，与具体任务无关，只负责状态管理和转移
  */
+template <TokenTypeConstraint TokenType>
 class StateMachine {
  public:
   using StateId = size_t;  // 状态ID类型
@@ -22,16 +23,16 @@ class StateMachine {
  private:
   // 状态信息结构
   struct State {
-    StateId id;
-    bool is_accepting;
+    StateId id{};
+    bool is_accepting{};
     StateCallback on_enter;  // 进入状态时调用
     StateCallback on_exit;   // 退出状态时调用
   };
 
   // 转移规则结构
   struct Transition {
-    StateId from;
-    StateId to;
+    StateId from{};
+    StateId to{};
     TransitionCondition condition;
   };
 
@@ -41,15 +42,15 @@ class StateMachine {
   TransitionMap transitions;
   StateId current_state;
   StateId initial_state;
-  Lexer::TokenType token_type;
+  TokenType token_type;
 
  public:
   /**
    * @brief 构造函数
    * @param initial_state_name 初始状态名称
    */
-  explicit StateMachine(Lexer::TokenType token_type) : token_type(token_type) {
-    initial_state = add_state(false);
+  explicit StateMachine(TokenType token_type)
+    : initial_state(add_state(false)), token_type(token_type) {
     current_state = initial_state;
   }
 
@@ -62,8 +63,8 @@ class StateMachine {
    */
   auto add_state(
     bool is_accepting,
-    StateCallback on_enter = nullptr,
-    StateCallback on_exit = nullptr
+    const StateCallback& on_enter = nullptr,
+    const StateCallback& on_exit = nullptr
   ) -> StateId {
     StateId id = next_state_id++;
     states[id] = {
@@ -81,7 +82,11 @@ class StateMachine {
    * @param to 目标状态ID
    * @param condition 转移条件
    */
-  void add_transition(StateId from, StateId to, TransitionCondition condition) {
+  void add_transition(
+    StateId from,
+    StateId to,
+    const TransitionCondition& condition
+  ) {
     assert(states.contains(from) && "源状态不存在");
     assert(states.contains(to) && "目标状态不存在");
     // 向当前源状态的转移列表中添加规则
@@ -143,8 +148,6 @@ class StateMachine {
     return (it != states.end()) ? it->second.is_accepting : false;
   }
 
-  [[nodiscard]] auto get_token_type() const -> Lexer::TokenType {
-    return token_type;
-  }
+  [[nodiscard]] auto get_token_type() const -> TokenType { return token_type; }
 };
 }  // namespace Lexer

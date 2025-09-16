@@ -7,25 +7,27 @@
 #include "Lexer/TokenType.h"
 
 namespace Lexer {
+
 /**
  * @brief 多状态机管理器
  * 管理多个并行运行的状态机，支持按“最长匹配+优先级”规则选择最佳匹配结果
  */
+template <TokenTypeConstraint TokenType>
 class StateMachineManager {
  public:
-  using MachineId = size_t;           // 状态机ID类型
-  using Event = StateMachine::Event;  // 事件类型（与状态机一致）
+  using MachineId = size_t;                      // 状态机ID类型
+  using Event = StateMachine<TokenType>::Event;  // 事件类型（与状态机一致）
   using MatchResult = std::pair<
-    std::weak_ptr<StateMachine>,
+    std::weak_ptr<StateMachine<TokenType>>,
     size_t>;  // 匹配结果（状态机ID+匹配长度）
 
  private:
   // 状态机信息结构（包装状态机及运行时信息）
   struct MachineInfo {
-    std::shared_ptr<StateMachine> machine;  // 状态机实例
-    size_t match_length;                    // 当前匹配长度
-    bool is_active;                         // 是否仍能继续处理事件
-    bool has_accepted;                      // 是否曾进入接受状态
+    std::shared_ptr<StateMachine<TokenType>> machine;  // 状态机实例
+    size_t match_length;                               // 当前匹配长度
+    bool is_active;                                    // 是否仍能继续处理事件
+    bool has_accepted;                                 // 是否曾进入接受状态
   };
 
   MachineId next_machine_id = 0;
@@ -41,7 +43,8 @@ class StateMachineManager {
    * @param priority 优先级（值越高，相同匹配长度时优先被选择）
    * @return 状态机ID
    */
-  auto add_machine(std::unique_ptr<StateMachine> machine) -> MachineId {
+  auto add_machine(std::unique_ptr<StateMachine<TokenType>> machine)
+    -> MachineId {
     assert(machine != nullptr && "状态机实例不能为空");
     MachineId id = next_machine_id++;
     machines[id] = {
@@ -97,7 +100,9 @@ class StateMachineManager {
   [[nodiscard]] auto select_best_match() const -> MatchResult {
     auto best_id = static_cast<MachineId>(-1);
     size_t max_length = 0;
-    Lexer::TokenType max_priority = Lexer::TokenType::InvalidToken;
+    auto max_priority =
+      static_cast<TokenType>(std::numeric_limits<uint8_t>::max());
+    ;
 
     for (const auto& [id, info] : machines) {
       // 只考虑曾进入接受状态的状态机
@@ -113,14 +118,14 @@ class StateMachineManager {
       }
       // 长度相同则选择优先级更高的
       else if (info.match_length == max_length &&
-               Lexer::ahead_of(info.machine->get_token_type(), max_priority)) {
+               info.machine->get_token_type() < max_priority) {
         best_id = id;
         max_priority = info.machine->get_token_type();
       }
     }
 
     if (best_id == static_cast<MachineId>(-1)) {
-      return {std::weak_ptr<StateMachine>(), max_length};
+      return {std::weak_ptr<StateMachine<TokenType>>(), max_length};
     }
     return {machines.at(best_id).machine, max_length};
   }

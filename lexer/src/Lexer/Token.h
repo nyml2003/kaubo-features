@@ -5,8 +5,9 @@
 #include "Utils/Utf8.h"
 namespace Lexer {
 // Token结构体：包含类型、值、行列号
+template <TokenTypeConstraint TokenType>
 struct Token {
-  TokenType type = TokenType::Utf8Error;  // 带显式优先级的类型
+  TokenType type;  // 带显式优先级的类型
   // 存储不同类型的值
   std::variant<
     std::string,         // 标识符、关键字、运算符内容、字符串内容、无效Token
@@ -22,7 +23,8 @@ struct Token {
 }  // namespace Lexer
 
 namespace std {
-inline auto to_string(const Lexer::Token& token) -> std::string {
+template <Lexer::TokenTypeConstraint TokenType>
+inline auto to_string(const Lexer::Token<TokenType>& token) -> std::string {
   auto value_str = std::visit(
     [](auto&& arg) -> std::string {
       using T = std::decay_t<decltype(arg)>;
@@ -43,7 +45,7 @@ inline auto to_string(const Lexer::Token& token) -> std::string {
   );
   // 格式化输出：值(15字符) 类型(12字符) 行 列
   return std::format(
-    "{:15} {:12} {:3} {:3}", value_str, std::to_string(token.type), token.line,
+    "{:15} {:12} {:3} {:3}", value_str, to_string(token.type), token.line,
     token.column
   );
 }
