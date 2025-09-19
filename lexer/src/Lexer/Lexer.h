@@ -1,5 +1,6 @@
 #pragma once
-#include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -30,17 +31,55 @@ class StreamLexer {
   size_t current_token_length = 0;
   StateMachineManager<TokenType> manager;
   bool eof = false;  // 标志不会再读取输入
+  std::string token_buffer;
+
+  enum class BuildTokenBufferError : uint8_t {
+    InsufficientBytes,  // 缓冲区中字节数不足
+  };
+
+  void read_token_buffer(size_t length) {
+    if (!ring_buffer->is_size_at_least(length)) {
+      throw std::runtime_error("Insufficient bytes in buffer to read token");
+    }
+    reset_token_buffer();
+    token_buffer.resize(length);
+    for (size_t i = 0; i < length; ++i) {
+      token_buffer[i] = ring_buffer->try_pop().value();
+    }
+  }
+
+  auto watch_token_buffer(size_t length, size_t offset)
+    -> Result<void, BuildTokenBufferError> {
+    if (!ring_buffer->is_size_at_least(length + offset)) {
+      return Err(BuildTokenBufferError::InsufficientBytes);
+    }
+    reset_token_buffer();
+    token_buffer.resize(length);
+    for (size_t i = 0; i < length; ++i) {
+      token_buffer[i] = ring_buffer->try_peek(i + offset).value();
+    }
+    return Ok();
+  }
+
+  void reset_token_buffer() { token_buffer.clear(); }
+
+  // 重置当前 Token 的状态（长度、状态机、起始坐标）
+  void reset_token_state() {
+    current_token_length = 0;
+    manager.reset();
+    current_token_start = cursor_coordinate;
+  }
 
   void update_cursor_after_token() {
     cursor_coordinate.column += current_token_length;
-    current_token_start = cursor_coordinate;
-    current_token_length = 0;
-    manager.reset();
+    reset_token_state();
   }
 
   auto handle_utf8_error() -> Token<TokenType> {
     auto maybe_byte = ring_buffer->try_pop();
-    assert(maybe_byte && "utf8 error but no byte to pop");
+    if (!maybe_byte) {
+      throw std::runtime_error("Lexer::handle_utf8_error ring_buffer is empty");
+    }
     auto byte = maybe_byte.value();
     auto err_token = Token<TokenType>{
       .type = TokenType::Utf8Error,
@@ -49,9 +88,7 @@ class StreamLexer {
     };
 
     cursor_coordinate.column++;
-    current_token_start = cursor_coordinate;
-    current_token_length = 0;
-    manager.reset();
+    reset_token_state();
 
     return err_token;
   }
@@ -64,16 +101,7 @@ class StreamLexer {
 
     auto [best_machine, _] = manager.select_best_match();
 
-    auto has_enough_bytes = ring_buffer->is_size_at_least(current_token_length);
-    if (!has_enough_bytes) {
-      throw std::runtime_error("EOF but still have bytes to consume");
-    }
-
-    std::string token_buffer;
-    token_buffer.resize(current_token_length);
-    for (size_t i = 0; i < current_token_length; i++) {
-      token_buffer[i] = ring_buffer->pop();
-    }
+    read_token_buffer(current_token_length);
     Token<TokenType> token;
 
     if (auto machine = best_machine.lock()) {
@@ -91,9 +119,7 @@ class StreamLexer {
     }
 
     update_cursor_after_token();
-    current_token_length = 0;
-    current_token_start = cursor_coordinate;
-    manager.reset();
+    reset_token_state();
 
     return token;
   }
@@ -101,25 +127,19 @@ class StreamLexer {
   void handle_newline() {
     cursor_coordinate.line++;
     cursor_coordinate.column = 1;
-    current_token_start = cursor_coordinate;
-    current_token_length = 0;
-    manager.reset();
+    reset_token_state();
     ring_buffer->pop();
   }
 
   void handle_whitespace() {
     cursor_coordinate.column++;
-    current_token_start = cursor_coordinate;
-    current_token_length = 0;
-    manager.reset();
+    reset_token_state();
     ring_buffer->pop();
   }
 
   void handle_tab() {
     cursor_coordinate.column += 4;
-    current_token_start = cursor_coordinate;
-    current_token_length = 0;
-    manager.reset();
+    reset_token_state();
     ring_buffer->pop();
   }
 
@@ -137,25 +157,19 @@ class StreamLexer {
       return Err(std::move(maybe_code_point_len.unwrap_err()));
     }
     auto code_point_len = maybe_code_point_len.unwrap();
-    auto has_enough_bytes = ring_buffer->is_size_at_least(code_point_len);
-    if (!has_enough_bytes) {
-      return Ok(EatStatus::Wait);
+    auto watch_token_buffer_result =
+      watch_token_buffer(code_point_len, current_token_length);
+    if (watch_token_buffer_result.is_err()) {
+      return Ok(EatStatus::Eof);
     }
-    std::string code_point_buffer;
-    code_point_buffer.resize(code_point_len);
-    for (size_t i = 0; i < code_point_len; i++) {
-      code_point_buffer[i] =
-        ring_buffer->try_peek(i + current_token_length).value();
-    }
-    auto code_point_wrapper =
-      Utils::Utf8::get_utf8_codepoint(code_point_buffer, 0);
+    auto code_point_wrapper = Utils::Utf8::get_utf8_codepoint(token_buffer, 0);
     if (code_point_wrapper.is_err()) {
       return Err(std::move(code_point_wrapper.unwrap_err()));
     }
 
     auto [code_point, len] = code_point_wrapper.unwrap();
     for (size_t i = 0; i < len; i++) {
-      char byte = code_point_buffer[i];
+      char byte = token_buffer[i];
       if (manager.process_event(byte)) {
         current_token_length++;
       } else {
@@ -178,9 +192,7 @@ class StreamLexer {
     };
 
     cursor_coordinate.column++;
-    current_token_start = cursor_coordinate;
-    current_token_length = 0;
-    manager.reset();
+    reset_token_state();
     return token;
   }
 
@@ -200,16 +212,7 @@ class StreamLexer {
         handle_tab();
         return next_token();
       }
-      auto has_enough_bytes =
-        ring_buffer->is_size_at_least(current_token_length);
-      if (!has_enough_bytes) {
-        throw std::runtime_error("Cannot build token");
-      }
-      std::string token_buffer;
-      token_buffer.resize(current_token_length);
-      for (size_t i = 0; i < current_token_length; i++) {
-        token_buffer[i] = ring_buffer->try_pop().value();
-      }
+      read_token_buffer(current_token_length);
       auto token = Token<TokenType>{
         .type = token_type,
         .value = token_buffer,
@@ -218,7 +221,7 @@ class StreamLexer {
       update_cursor_after_token();
       return token;
     }
-    assert(false && "No machine to build token");
+    throw std::runtime_error("Cannot build token");
     return std::nullopt;
   }
 
@@ -265,6 +268,9 @@ class StreamLexer {
       }
       if (eat_status == EatStatus::Continue) {
         continue;
+      }
+      if (eat_status == EatStatus::Eof) {
+        return finalize_last_token();
       }
     }
     return finalize_last_token();
