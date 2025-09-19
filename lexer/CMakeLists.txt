@@ -7,5 +7,5 @@ include(cmake/Settings.cmake)
 # add_executable(Demo ${project_files})
 add_executable(
     statemachine
-    src/Lexer/main.cpp
+    src/main.cpp
 )

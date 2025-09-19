@@ -269,4 +269,4 @@ inline auto create_keyword_machine(std::string_view keyword)
   return machine;
 }
 
-}  // namespace Lexer::Token::Type1
+}  // namespace Lexer::TokenType::Type1
