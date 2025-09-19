@@ -1,5 +1,4 @@
 #pragma once
-#include <cassert>
 #include <functional>
 #include <unordered_map>
 #include <utility>

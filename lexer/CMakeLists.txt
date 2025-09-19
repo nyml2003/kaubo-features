@@ -6,6 +6,7 @@ include(cmake/Settings.cmake)
 # file(GLOB_RECURSE project_files ${project_src_dir}/*.cpp)
 # add_executable(Demo ${project_files})
 add_executable(
-    statemachine
+    demo
     src/main.cpp
+    src/Parser/JSONParser.cpp
 )

@@ -124,6 +124,16 @@ class Result {
     throw std::runtime_error("Called unwrap() on Err");
   }
 
+  template <typename U = T>
+  [[nodiscard]] auto unwrap() && -> U&&  // 注意这里的 &&：仅能在右值对象上调用
+    requires IsNonVoid<U>
+  {
+    if (auto* ok_val = std::get_if<OkValue>(&m_data)) {
+      return std::move(ok_val->value);  // 移动内部值的所有权
+    }
+    throw std::runtime_error("Called unwrap() on Err");
+  }
+
   auto unwrap() const -> void
     requires IsVoid<T>
   {
