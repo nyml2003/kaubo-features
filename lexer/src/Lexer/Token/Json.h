@@ -73,6 +73,8 @@ inline auto to_string(TokenType type) -> std::string {
       return "Whitespace";
     case NewLine:
       return "Newline";
+    case Tab:
+      return "Tab";
     default:
       assert(false);
   }

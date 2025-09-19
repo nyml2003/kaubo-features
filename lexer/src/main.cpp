@@ -181,7 +181,7 @@
 #include "tools.h"
 using Lexer::TokenType::Json::TokenType;
 auto main() -> int {
-  Lexer::StreamLexer<TokenType> lexer;
+  Lexer::StreamLexer<TokenType> lexer(1024);
   lexer.register_machine(Lexer::TokenType::Json::create_integer_machine());
   lexer.register_machine(
     Lexer::TokenType::Json::create_symbol_machine(TokenType::LeftBracket, '[')
@@ -224,12 +224,6 @@ auto main() -> int {
     if (maybe_token == std::nullopt) {
       continue;
     }
-    const auto& token = maybe_token.value();
-    std::cout << std::to_string(token) << "\n";
-  }
-
-  auto maybe_token = lexer.next_token();
-  if (maybe_token != std::nullopt) {
     const auto& token = maybe_token.value();
     std::cout << std::to_string(token) << "\n";
   }
