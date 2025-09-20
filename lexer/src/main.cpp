@@ -33,7 +33,7 @@ void run_test() {
     // 测试多条语句
     std::cout << "\n=== Testing Multiple Statements ===\n";
     auto lexer2 = Lexer::Kaubo::Builder::get_instance();
-    lexer2->feed("var a : int = 123; var b : int = 456; a + b;");
+    lexer2->feed("var a = 123; var b = 456; a + b;");
     lexer2->terminate();
     Parser::Kaubo::Parser parser2(lexer2);
     auto parseResult2 = parser2.parse();

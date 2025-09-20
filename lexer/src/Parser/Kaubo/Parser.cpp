@@ -243,18 +243,6 @@ auto Parser::parse_var_declaration() -> Result<Expr, ParseError> {
   std::string var_name = current_token->value;
   consume();
 
-  // 期望冒号
-  auto colon_result = expect(TokenType::Colon);
-  if (colon_result.is_err()) {
-    return Err(ParseError::UnexpectedToken);
-  }
-
-  // 期望类型关键字 'int'
-  if (!check(TokenType::IntType)) {
-    return Err(ParseError::UnexpectedToken);
-  }
-  consume();
-
   // 期望等号
   auto equals_result = expect(TokenType::Equals);
   if (equals_result.is_err()) {
