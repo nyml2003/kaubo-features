@@ -1,7 +1,7 @@
 #include "Builder.h"
 #include "Machines.h"
 
-namespace Lexer::Math {
+namespace Lexer::Kaubo {
 auto Builder::build() -> std::shared_ptr<Lexer::Proto<TokenType>> {
   auto lexer = std::make_shared<Lexer::Proto<TokenType>>(1024);
 
@@ -38,4 +38,4 @@ auto Builder::build() -> std::shared_ptr<Lexer::Proto<TokenType>> {
   return lexer;
 }
 
-}  // namespace Lexer::Math
+}  // namespace Lexer::Kaubo

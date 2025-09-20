@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <string>
-namespace Lexer::Math {
+namespace Lexer::Kaubo {
 
 enum TokenType : uint8_t {
   // 最高优先级：错误类型
@@ -81,4 +81,4 @@ inline auto to_string(TokenType type) -> std::string {
   }
 }
 
-}  // namespace Lexer::Math
+}  // namespace Lexer::Kaubo

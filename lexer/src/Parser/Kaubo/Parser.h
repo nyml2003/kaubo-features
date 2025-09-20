@@ -1,17 +1,18 @@
 #pragma once
 
+#include "Lexer/Kaubo/TokenType.h"
 #include "Lexer/Lexer.h"
-#include "Lexer/Math/TokenType.h"
 #include "Utils/Result.h"
+
 
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <variant>
 
-namespace Parser::Math {
+namespace Parser::Kaubo {
 
-using Lexer::Math::TokenType;
+using Lexer::Kaubo::TokenType;
 using Utils::Result;
 
 // 表达式AST节点类型
@@ -131,10 +132,10 @@ class Parser {
     -> bool;  // true for left, false for right
 };
 
-}  // namespace Parser::Math
+}  // namespace Parser::Kaubo
 
 namespace std {
-using Parser::Math::ParseError;
+using Parser::Kaubo::ParseError;
 inline auto to_string(ParseError error) -> const char* {
   switch (error) {
     case ParseError::UnexpectedToken:

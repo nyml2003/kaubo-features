@@ -1,10 +1,9 @@
 #include "Parser.h"
+#include <iostream>
 #include <string>
 #include "Utils/Overloaded.h"
-#include <iostream>
 
-
-namespace Parser::Math {
+namespace Parser::Kaubo {
 
 using Utils::Err;
 using Utils::Ok;
@@ -272,4 +271,4 @@ auto Parser::print_ast(const Expr& expr, int indent) -> void {
   );
 }
 
-}  // namespace Parser::Math
+}  // namespace Parser::Kaubo

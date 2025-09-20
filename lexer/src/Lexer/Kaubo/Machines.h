@@ -6,7 +6,7 @@
 
 #include <memory>
 
-namespace Lexer::Math::Machines {
+namespace Lexer::Kaubo::Machines {
 
 inline auto create_plus_machine() -> std::unique_ptr<StateMachine<TokenType>> {
   auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::Plus);
@@ -243,4 +243,4 @@ inline auto create_equals_machine()
   return machine;
 }
 
-}  // namespace Lexer::Math::Machines
+}  // namespace Lexer::Kaubo::Machines
