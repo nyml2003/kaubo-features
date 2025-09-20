@@ -1,28 +1,43 @@
-
+#include <cassert>
 #include <iostream>
-#include "Lexer/Json/Builder.h"
-#include "Parser/JsonParser.h"
-#include "tools.h"
+#include <string>
+#include "Lexer/Math/Builder.h"
+#include "Parser/Math/Parser.h"
 
-using Parser::JsonParser;
-auto main(int argc, char* argv[]) -> int {
-  // 检查是否提供了文件名参数
-  if (argc < 2) {
-    std::cerr << "请提供要读取的文件名作为参数！" << '\n';
-    std::cerr << "用法: " << argv[0] << " <文件名>" << '\n';
-    return 1;  // 返回非零值表示出错
+// 测试用例结构：表达式字符串 + 预期C++计算结果
+struct TestCase {
+  std::string expression;
+  int64_t expected_result;  // 假设运算结果为64位整数
+};
+
+// 执行单个测试用例并验证结果
+void run_test() {
+  try {
+    auto lexer = Lexer::Math::Builder::get_instance();
+
+    // 解析器计算
+    lexer->feed("var a : int = 123 + 345 * 789;");
+    lexer->terminate();
+    Parser::Math::Parser parser(lexer);
+    auto parseResult = parser.parse();
+
+    if (parseResult.is_ok()) {
+      auto result = std::move(parseResult).unwrap();
+      Parser::Math::Parser::print_ast(result);
+
+    } else {
+      std::cout << "  ❌ Parse failed! Error: "
+                << std::to_string(parseResult.unwrap_err()) << "\n\n";
+    }
+  } catch (const std::exception& e) {
+    std::cout << "  ❌ Exception: " << e.what() << "\n\n";
   }
-  // 使用命令行参数作为文件名
-  std::string file = read_file(argv[1]);
-  auto lexer = Lexer::Json::Builder::get_instance();
-  lexer->feed(file);
-  lexer->terminate();
-  JsonParser parser(lexer);
-  auto parseResult = parser.parse();
-  if (parseResult.is_err()) {
-    std::cout << Parser::to_string(parseResult.unwrap_err()) << "\n";
-  } else {
-    std::cout << parseResult.unwrap().to_string() << "\n";
-  }
+}
+
+int main() {
+  // 执行所有测试
+  std::cout << "=== Starting Parser vs C++ Literal Validation ===\n\n";
+  run_test();
+
   return 0;
 }

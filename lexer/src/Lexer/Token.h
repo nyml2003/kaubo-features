@@ -1,6 +1,8 @@
 #pragma once
-#include <format>
+
 #include "Lexer/TokenType.h"
+
+#include <format>
 namespace Lexer {
 struct Coordinate {
   size_t line;

@@ -1,9 +1,10 @@
 #pragma once
+#include "Lexer/TokenType.h"
+
 #include <functional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include "Lexer/TokenType.h"
 
 namespace Lexer {
 

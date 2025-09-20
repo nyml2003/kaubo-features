@@ -9,7 +9,7 @@ class IBuilder {
   virtual auto build() -> Instance<TokenType> = 0;
   virtual ~IBuilder() = default;
   explicit IBuilder() = default;
-  IBuilder(const IBuilder&) = default;
+  IBuilder(const IBuilder&) = delete;
   IBuilder(IBuilder&&) = delete;
   auto operator=(const IBuilder&) -> IBuilder& = delete;
   auto operator=(IBuilder&&) -> IBuilder& = delete;

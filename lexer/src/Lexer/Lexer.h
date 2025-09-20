@@ -1,11 +1,4 @@
 #pragma once
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <optional>
-#include <stdexcept>
-#include <string>
-#include <string_view>
 
 #include "Lexer/StateMachine.h"
 #include "Lexer/StateMachineManager.h"
@@ -14,6 +7,13 @@
 #include "Utils/Result.h"
 #include "Utils/RingBuffer.h"
 #include "Utils/Utf8.h"
+
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 
 namespace Lexer {
 using Utils::Err;

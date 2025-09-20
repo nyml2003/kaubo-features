@@ -1,12 +1,12 @@
-#include "Parser/JsonParser.h"
-#include <sstream>
-#include <string>
+#include "Parser/Json/Parser.h"
 #include "Utils/Overloaded.h"
+#include "Utils/StringBuilder.h"
 
 namespace Parser {
 
 using Utils::Err;
 using Utils::Ok;
+using Utils::StringBuilder;
 
 auto JsonValue::to_string() const -> std::string {
   return std::visit(
@@ -26,36 +26,37 @@ auto JsonValue::to_string() const -> std::string {
         if (!arr) {
           return "[]";  // 空指针安全处理
         }
-        std::stringstream ss;
-        ss << "[";
+        StringBuilder sb;
+        sb << "[";
         // 遍历数组元素，拼接每个元素的字符串
         for (size_t i = 0; i < arr->size(); ++i) {
-          ss << arr->at(i).to_string();  // 递归调用元素的 to_string
+          sb << arr->at(i).to_string();  // 递归调用元素的 to_string
           if (i != arr->size() - 1) {
-            ss << ", ";
+            sb << ", ";
           }
         }
-        ss << "]";
-        return ss.str();
+        sb << "]";
+        return sb.toString();
       },
       // 处理对象类型（递归调用 to_string）
       [](const std::unique_ptr<JsonObject>& obj) -> std::string {
-        if (!obj)
+        if (!obj) {
           return "{}";  // 空指针安全处理
-        std::stringstream ss;
-        ss << "{";
+        }
+        StringBuilder sb;
+        sb << "{";
         // 遍历键值对，拼接每个键值对的字符串
         size_t count = 0;
         for (const auto& [key, value] : *obj) {
-          ss << "\"" << key
+          sb << "\"" << key
              << "\": " << value.to_string();  // 键加双引号，值递归转换
           if (count != obj->size() - 1) {
-            ss << ", ";
+            sb << ", ";
           }
           ++count;
         }
-        ss << "}";
-        return ss.str();
+        sb << "}";
+        return sb.toString();
       }
     },
     m_value
@@ -89,8 +90,8 @@ auto JsonParser::expect(TokenType type) -> Result<void, ParseError> {
   }
   return Err(ParseError::UnexpectedToken);
 }
-
-auto JsonParser::parse_value() -> Result<JsonValue, ParseError> {
+auto JsonParser::parse_value()  // NOLINT(misc-no-recursion)
+  -> Result<JsonValue, ParseError> {
   if (!current_token.has_value()) {
     return Err(ParseError::UnexpectedEndOfInput);
   }
@@ -144,7 +145,7 @@ auto JsonParser::parse_value() -> Result<JsonValue, ParseError> {
   }
 }
 
-auto JsonParser::parse_object()
+auto JsonParser::parse_object()  // NOLINT(misc-no-recursion)
   -> Result<std::unique_ptr<JsonObject>, ParseError> {
   auto object = std::make_unique<JsonObject>();
 
@@ -198,7 +199,7 @@ auto JsonParser::parse_object()
   return Ok(std::move(object));
 }
 
-auto JsonParser::parse_array()
+auto JsonParser::parse_array()  // NOLINT(misc-no-recursion)
   -> Result<std::unique_ptr<JsonArray>, ParseError> {
   auto array = std::make_unique<JsonArray>();
 

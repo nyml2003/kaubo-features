@@ -1,9 +1,9 @@
 #pragma once
-#include <memory>
-#include <unordered_map>
-#include <vector>
+
 #include "Lexer/StateMachine.h"
 #include "Lexer/TokenType.h"
+
+#include <memory>
 
 namespace Lexer {
 
