@@ -9,6 +9,19 @@ using Utils::Err;
 using Utils::Ok;
 
 auto Parser::parse() -> Result<Expr, ParseError> {
+  // 解析第一个语句
+  auto first_stmt = parse_statement();
+  if (first_stmt.is_err()) {
+    return Err(first_stmt.unwrap_err());
+  }
+  
+  // 如果有分号，继续解析后续语句
+  // 注意：这里暂时只返回第一个语句，后续需要修改为支持多个语句
+  // TODO: 修改为支持多个语句的AST结构
+  return Ok(std::move(first_stmt).unwrap());
+}
+
+auto Parser::parse_statement() -> Result<Expr, ParseError> {
   // 检查是否是变量声明
   if (check(TokenType::Var)) {
     return parse_var_declaration();
@@ -162,17 +175,61 @@ auto Parser::parse_primary() -> Result<Expr, ParseError> {
     }
 
     case TokenType::Identifier: {
-      std::string var_name = current_token->value;
+      std::string identifier_name = current_token->value;
       consume();
 
+      // 检查是否是函数调用
+      if (check(TokenType::LeftParen)) {
+        return parse_function_call(identifier_name);
+      }
+
+      // 否则是变量引用
       auto var_ref = std::make_unique<VarRefExpr>();
-      var_ref->name = std::move(var_name);
+      var_ref->name = std::move(identifier_name);
       return Ok(Expr(std::move(var_ref)));
     }
 
     default:
       return Err(ParseError::UnexpectedToken);
   }
+}
+
+auto Parser::parse_function_call(const std::string& function_name) -> Result<Expr, ParseError> {
+  // 消费左括号
+  consume();
+
+  std::vector<std::unique_ptr<Expr>> arguments;
+
+  // 解析参数列表（如果有）
+  if (!check(TokenType::RightParen)) {
+    while (true) {
+      // 解析参数表达式
+      auto arg_result = parse_expression();
+      if (arg_result.is_err()) {
+        return Err(arg_result.unwrap_err());
+      }
+      arguments.push_back(std::make_unique<Expr>(std::move(arg_result).unwrap()));
+
+      // 检查是否有逗号继续解析更多参数
+      if (match(TokenType::Comma)) {
+        continue;
+      }
+      break;
+    }
+  }
+
+  // 期望右括号
+  auto err = expect(TokenType::RightParen);
+  if (err.is_err()) {
+    return Err(ParseError::MissingRightParen);
+  }
+
+  // 创建函数调用表达式
+  auto func_call = std::make_unique<FunctionCallExpr>();
+  func_call->function_name = function_name;
+  func_call->arguments = std::move(arguments);
+
+  return Ok(Expr(std::move(func_call)));
 }
 
 auto Parser::parse_var_declaration() -> Result<Expr, ParseError> {
@@ -265,6 +322,14 @@ auto Parser::print_ast(const Expr& expr, int indent) -> void {
       [&](const std::unique_ptr<VarRefExpr>& var_ref_expr) {
         std::cout << indent_str << "VarRefExpr: " << var_ref_expr->name
                   << std::endl;
+      },
+      [&](const std::unique_ptr<FunctionCallExpr>& func_call_expr) {
+        std::cout << indent_str << "FunctionCallExpr: " << func_call_expr->function_name
+                  << std::endl;
+        std::cout << indent_str << "  arguments:" << std::endl;
+        for (const auto& arg : func_call_expr->arguments) {
+          print_ast(*arg, indent + 2);
+        }
       }
     },
     expr.get()

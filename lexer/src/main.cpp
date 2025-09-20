@@ -15,20 +15,37 @@ void run_test() {
   try {
     auto lexer = Lexer::Kaubo::Builder::get_instance();
 
-    // 解析器计算
-    lexer->feed("var a : int = 123 + 345 * 789;");
+    // 测试函数调用
+    std::cout << "=== Testing Function Call ===\n";
+    lexer->feed("func(1, 2 + 3, 4 * 5);");
     lexer->terminate();
-    Parser::Kaubo::Parser parser(lexer);
-    auto parseResult = parser.parse();
+    Parser::Kaubo::Parser parser1(lexer);
+    auto parseResult1 = parser1.parse();
 
-    if (parseResult.is_ok()) {
-      auto result = std::move(parseResult).unwrap();
+    if (parseResult1.is_ok()) {
+      auto result = std::move(parseResult1).unwrap();
       Parser::Kaubo::Parser::print_ast(result);
-
     } else {
-      std::cout << "  ❌ Parse failed! Error: "
-                << std::to_string(parseResult.unwrap_err()) << "\n\n";
+      std::cout << "  ❌ Function call parse failed! Error: "
+                << std::to_string(parseResult1.unwrap_err()) << "\n\n";
     }
+
+    // 测试多条语句
+    std::cout << "\n=== Testing Multiple Statements ===\n";
+    auto lexer2 = Lexer::Kaubo::Builder::get_instance();
+    lexer2->feed("var a : int = 123; var b : int = 456; a + b;");
+    lexer2->terminate();
+    Parser::Kaubo::Parser parser2(lexer2);
+    auto parseResult2 = parser2.parse();
+
+    if (parseResult2.is_ok()) {
+      auto result = std::move(parseResult2).unwrap();
+      Parser::Kaubo::Parser::print_ast(result);
+    } else {
+      std::cout << "  ❌ Multiple statements parse failed! Error: "
+                << std::to_string(parseResult2.unwrap_err()) << "\n\n";
+    }
+
   } catch (const std::exception& e) {
     std::cout << "  ❌ Exception: " << e.what() << "\n\n";
   }

@@ -231,6 +231,18 @@ inline auto create_semicolon_machine()
   return machine;
 }
 
+inline auto create_comma_machine()
+  -> std::unique_ptr<StateMachine<TokenType>> {
+  auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::Comma);
+
+  StateMachine<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine<TokenType>::StateId s1 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == ','; });
+
+  return machine;
+}
+
 inline auto create_equals_machine()
   -> std::unique_ptr<StateMachine<TokenType>> {
   auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::Equals);

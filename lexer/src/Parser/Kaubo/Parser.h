@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <variant>
+#include <vector>
 
 namespace Parser::Kaubo {
 
@@ -48,6 +49,12 @@ struct VarRefExpr {
   std::string name;
 };
 
+// 函数调用表达式
+struct FunctionCallExpr {
+  std::string function_name;
+  std::vector<std::unique_ptr<Expr>> arguments;
+};
+
 // 表达式变体类型
 class Expr {
  public:
@@ -57,7 +64,8 @@ class Expr {
     std::unique_ptr<UnaryExpr>,
     std::unique_ptr<GroupingExpr>,
     std::unique_ptr<VarDeclExpr>,
-    std::unique_ptr<VarRefExpr>>;
+    std::unique_ptr<VarRefExpr>,
+    std::unique_ptr<FunctionCallExpr>>;
 
   Expr() = default;
 
@@ -74,6 +82,8 @@ class Expr {
   Expr(std::unique_ptr<VarDeclExpr> expr) : m_value(std::move(expr)) {}
   // NOLINTNEXTLINE(google-explicit-constructor)
   Expr(std::unique_ptr<VarRefExpr> expr) : m_value(std::move(expr)) {}
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  Expr(std::unique_ptr<FunctionCallExpr> expr) : m_value(std::move(expr)) {}
 
   // 获取值类型的访问方法
   [[nodiscard]] auto get() const -> const ValueType& { return m_value; }
@@ -124,6 +134,8 @@ class Parser {
   auto parse_expression(int precedence = 0) -> Result<Expr, ParseError>;
   auto parse_primary() -> Result<Expr, ParseError>;
   auto parse_unary() -> Result<Expr, ParseError>;
+  auto parse_statement() -> Result<Expr, ParseError>;
+  auto parse_function_call(const std::string& function_name) -> Result<Expr, ParseError>;
   auto parse_var_declaration() -> Result<Expr, ParseError>;
 
   // 获取运算符的优先级和结合性

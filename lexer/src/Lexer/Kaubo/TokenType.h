@@ -26,16 +26,17 @@ enum TokenType : uint8_t {
   /*--- 标点符号 ---*/
   Colon = 25,      // 冒号 :
   Equals = 26,     // 等号 =
-  Semicolon = 27,  // 分号 ;
+  Comma = 27,      // 逗号 ,
+  Semicolon = 28,  // 分号 ;
 
   /*--- 较低优先级：括号 ---*/
-  LeftParen = 30,   // 左括号 (
-  RightParen = 31,  // 右括号 )
+  LeftParen = 32,   // 左括号 (
+  RightParen = 33,  // 右括号 )
 
   // 空格和换行符
-  WhiteSpace = 40,
-  Tab = 41,  // 制表符
-  NewLine = 42,
+  WhiteSpace = 44,
+  Tab = 45,  // 制表符
+  NewLine = 46,
 
   InvalidToken = 255,
 };
@@ -76,6 +77,8 @@ inline auto to_string(TokenType type) -> std::string {
       return "Tab";
     case NewLine:
       return "Newline";
+    case Comma:
+      return "Comma";
     case Semicolon:
       return "Semicolon";
   }

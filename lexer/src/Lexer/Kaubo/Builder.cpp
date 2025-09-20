@@ -20,6 +20,7 @@ auto Builder::build() -> std::shared_ptr<Lexer::Proto<TokenType>> {
 
   // 注册标点符号状态机
   lexer->register_machine(Machines::create_colon_machine());
+  lexer->register_machine(Machines::create_comma_machine());
   lexer->register_machine(Machines::create_equals_machine());
   lexer->register_machine(Machines::create_semicolon_machine());
 
