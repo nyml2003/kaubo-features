@@ -32,6 +32,8 @@ enum TokenType : uint8_t {
   /*--- 较低优先级：括号 ---*/
   LeftParen = 32,   // 左括号 (
   RightParen = 33,  // 右括号 )
+  LeftBrace = 34,   // 左大括号 {
+  RightBrace = 35,  // 右大括号 }
 
   // 空格和换行符
   WhiteSpace = 44,
@@ -69,6 +71,10 @@ inline auto to_string(TokenType type) -> std::string {
       return "(";
     case RightParen:
       return ")";
+    case LeftBrace:
+      return "{";
+    case RightBrace:
+      return "}";
     case InvalidToken:
       return "InvalidToken";
     case WhiteSpace:

@@ -8,25 +8,109 @@ namespace Parser::Kaubo {
 using Utils::Err;
 using Utils::Ok;
 
-auto Parser::parse() -> Result<Expr, ParseError> {
-  // 解析第一个语句
-  auto first_stmt = parse_statement();
-  if (first_stmt.is_err()) {
-    return Err(first_stmt.unwrap_err());
-  }
-  
-  // 如果有分号，继续解析后续语句
-  // 注意：这里暂时只返回第一个语句，后续需要修改为支持多个语句
-  // TODO: 修改为支持多个语句的AST结构
-  return Ok(std::move(first_stmt).unwrap());
+auto Parser::parse() -> Result<Module, ParseError> {
+  return parse_module();
 }
 
-auto Parser::parse_statement() -> Result<Expr, ParseError> {
+auto Parser::parse_module() -> Result<Module, ParseError> {
+  Module module;
+
+  // 解析所有语句直到文件结束
+  while (current_token.has_value()) {
+    // 跳过分号（空语句）
+    if (match(TokenType::Semicolon)) {
+      continue;
+    }
+
+    auto stmt_result = parse_statement();
+    if (stmt_result.is_err()) {
+      return Err(stmt_result.unwrap_err());
+    }
+
+    module.statements.push_back(std::move(stmt_result).unwrap());
+
+    // 消费分号（如果存在）
+    match(TokenType::Semicolon);
+  }
+
+  return Ok(std::move(module));
+}
+
+auto Parser::parse_statement() -> Result<std::unique_ptr<Stmt>, ParseError> {
+  // 检查是否是block
+  if (check(TokenType::LeftBrace)) {
+    auto block_result = parse_block();
+    if (block_result.is_err()) {
+      return Err(block_result.unwrap_err());
+    }
+    return Ok(std::make_unique<Stmt>(std::move(block_result).unwrap()));
+  }
+
   // 检查是否是变量声明
   if (check(TokenType::Var)) {
-    return parse_var_declaration();
+    auto expr_result = parse_var_declaration();
+    if (expr_result.is_err()) {
+      return Err(expr_result.unwrap_err());
+    }
+    return Ok(
+      std::make_unique<Stmt>(
+        std::make_unique<Expr>(std::move(expr_result).unwrap())
+      )
+    );
   }
-  return parse_expression();
+
+  // 检查是否是空语句（只有分号）
+  if (check(TokenType::Semicolon)) {
+    consume();  // 消费分号
+    return Ok(std::make_unique<Stmt>(std::make_unique<EmptyStmt>()));
+  }
+
+  // 否则是表达式语句
+  auto expr_result = parse_expression();
+  if (expr_result.is_err()) {
+    return Err(expr_result.unwrap_err());
+  }
+
+  auto expr_stmt = std::make_unique<ExprStmt>();
+  expr_stmt->expression =
+    std::make_unique<Expr>(std::move(expr_result).unwrap());
+  return Ok(std::make_unique<Stmt>(std::move(expr_stmt)));
+}
+
+auto Parser::parse_block() -> Result<std::unique_ptr<BlockStmt>, ParseError> {
+  // 期望左大括号
+  auto err = expect(TokenType::LeftBrace);
+  if (err.is_err()) {
+    return Err(ParseError::UnexpectedToken);
+  }
+
+  auto block = std::make_unique<BlockStmt>();
+
+  // 解析block内的所有语句直到遇到右大括号
+  while (current_token.has_value() && !check(TokenType::RightBrace)) {
+    // 跳过分号（空语句）
+    if (match(TokenType::Semicolon)) {
+      continue;
+    }
+
+    auto stmt_result = parse_statement();
+    if (stmt_result.is_err()) {
+      return Err(stmt_result.unwrap_err());
+    }
+
+    block->statements.push_back(std::move(stmt_result).unwrap());
+
+    // 消费分号（如果存在）
+    match(TokenType::Semicolon);
+  }
+
+  // 期望右大括号
+  auto right_brace_result = expect(TokenType::RightBrace);
+  if (right_brace_result.is_err()) {
+    return Err(ParseError::UnexpectedToken);
+  }
+
+  return Ok(std::move(block));
 }
 
 void Parser::consume() {
@@ -194,7 +278,8 @@ auto Parser::parse_primary() -> Result<Expr, ParseError> {
   }
 }
 
-auto Parser::parse_function_call(const std::string& function_name) -> Result<Expr, ParseError> {
+auto Parser::parse_function_call(const std::string& function_name)
+  -> Result<Expr, ParseError> {
   // 消费左括号
   consume();
 
@@ -208,7 +293,9 @@ auto Parser::parse_function_call(const std::string& function_name) -> Result<Exp
       if (arg_result.is_err()) {
         return Err(arg_result.unwrap_err());
       }
-      arguments.push_back(std::make_unique<Expr>(std::move(arg_result).unwrap()));
+      arguments.push_back(
+        std::make_unique<Expr>(std::move(arg_result).unwrap())
+      );
 
       // 检查是否有逗号继续解析更多参数
       if (match(TokenType::Comma)) {
@@ -312,7 +399,8 @@ auto Parser::print_ast(const Expr& expr, int indent) -> void {
                   << std::endl;
       },
       [&](const std::unique_ptr<FunctionCallExpr>& func_call_expr) {
-        std::cout << indent_str << "FunctionCallExpr: " << func_call_expr->function_name
+        std::cout << indent_str
+                  << "FunctionCallExpr: " << func_call_expr->function_name
                   << std::endl;
         std::cout << indent_str << "  arguments:" << std::endl;
         for (const auto& arg : func_call_expr->arguments) {
@@ -322,6 +410,48 @@ auto Parser::print_ast(const Expr& expr, int indent) -> void {
     },
     expr.get()
   );
+}
+
+auto print_ast(const Stmt& stmt, int indent) -> void {
+  // 缩进字符串
+  std::string indent_str(indent * 2, ' ');
+
+  // 使用访问者模式处理不同类型的语句
+  std::visit(
+    overloaded{
+      [&](const std::unique_ptr<ExprStmt>& expr_stmt) {
+        std::cout << indent_str << "ExprStmt:" << std::endl;
+        if (expr_stmt->expression) {
+          Parser::print_ast(*expr_stmt->expression, indent + 1);
+        }
+      },
+      [&](const std::unique_ptr<EmptyStmt>&) {
+        std::cout << indent_str << "EmptyStmt: ;" << std::endl;
+      },
+      [&](const std::unique_ptr<BlockStmt>& block_stmt) {
+        std::cout << indent_str << "BlockStmt: {" << std::endl;
+        for (const auto& stmt : block_stmt->statements) {
+          print_ast(*stmt, indent + 1);
+        }
+        std::cout << indent_str << "}" << std::endl;
+      },
+      [&](const std::unique_ptr<Expr>& expr) {
+        // 兼容现有的表达式
+        Parser::print_ast(*expr, indent);
+      }
+    },
+    stmt.get()
+  );
+}
+
+auto print_ast(const Module& module, int indent) -> void {
+  // 缩进字符串
+  std::string indent_str(indent * 2, ' ');
+
+  std::cout << indent_str << "Module:" << std::endl;
+  for (const auto& stmt : module.statements) {
+    print_ast(*stmt, indent + 1);
+  }
 }
 
 }  // namespace Parser::Kaubo

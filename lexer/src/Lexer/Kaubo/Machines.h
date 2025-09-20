@@ -80,6 +80,32 @@ inline auto create_right_paren_machine()
   return machine;
 }
 
+inline auto create_left_brace_machine()
+  -> std::unique_ptr<StateMachine<TokenType>> {
+  auto machine =
+    std::make_unique<StateMachine<TokenType>>(TokenType::LeftBrace);
+
+  StateMachine<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine<TokenType>::StateId s1 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '{'; });
+
+  return machine;
+}
+
+inline auto create_right_brace_machine()
+  -> std::unique_ptr<StateMachine<TokenType>> {
+  auto machine =
+    std::make_unique<StateMachine<TokenType>>(TokenType::RightBrace);
+
+  StateMachine<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine<TokenType>::StateId s1 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '}'; });
+
+  return machine;
+}
+
 inline auto create_integer_machine()
   -> std::unique_ptr<StateMachine<TokenType>> {
   auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::Integer);
@@ -231,8 +257,7 @@ inline auto create_semicolon_machine()
   return machine;
 }
 
-inline auto create_comma_machine()
-  -> std::unique_ptr<StateMachine<TokenType>> {
+inline auto create_comma_machine() -> std::unique_ptr<StateMachine<TokenType>> {
   auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::Comma);
 
   StateMachine<TokenType>::StateId s0 = machine->get_current_state();

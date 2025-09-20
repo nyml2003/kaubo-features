@@ -102,14 +102,18 @@ class Proto {
     auto [best_machine, _] = manager.select_best_match();
 
     read_token_buffer(current_token_length);
-    Token<TokenType> token;
+    std::optional<Token<TokenType>> token = std::nullopt;
 
     if (auto machine = best_machine.lock()) {
-      token = Token<TokenType>{
-        .type = machine->get_token_type(),
-        .value = token_buffer,
-        .coordinate = current_token_start,
-      };
+      auto token_type = machine->get_token_type();
+      if (token_type != TokenType::NewLine &&
+          token_type != TokenType::WhiteSpace && token_type != TokenType::Tab) {
+        token = Token<TokenType>{
+          .type = machine->get_token_type(),
+          .value = token_buffer,
+          .coordinate = current_token_start,
+        };
+      }
     } else {
       token = Token<TokenType>{
         .type = TokenType::InvalidToken,
@@ -221,7 +225,6 @@ class Proto {
       update_cursor_after_token();
       return token;
     }
-    throw std::runtime_error("Cannot build token");
     return std::nullopt;
   }
 

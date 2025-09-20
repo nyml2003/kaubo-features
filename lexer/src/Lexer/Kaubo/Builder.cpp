@@ -27,6 +27,8 @@ auto Builder::build() -> std::shared_ptr<Lexer::Proto<TokenType>> {
   // 注册括号状态机
   lexer->register_machine(Machines::create_left_paren_machine());
   lexer->register_machine(Machines::create_right_paren_machine());
+  lexer->register_machine(Machines::create_left_brace_machine());
+  lexer->register_machine(Machines::create_right_brace_machine());
 
   // 注册整数状态机
   lexer->register_machine(Machines::create_integer_machine());
