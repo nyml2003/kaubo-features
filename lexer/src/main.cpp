@@ -1,52 +1,11 @@
 
 #include <iostream>
-#include <memory>
-#include "Lexer/Lexer.h"
-#include "Lexer/Token/Json.h"
+#include "Lexer/Json/Builder.h"
 #include "Parser/JsonParser.h"
 #include "tools.h"
 
-using Lexer::TokenType::Json::TokenType;
-namespace {
-void init(const std::shared_ptr<Lexer::StreamLexer<TokenType>>& lexer) {
-  lexer->register_machine(Lexer::TokenType::Json::create_integer_machine());
-  lexer->register_machine(
-    Lexer::TokenType::Json::create_symbol_machine(TokenType::LeftBracket, '[')
-  );
-  lexer->register_machine(
-    Lexer::TokenType::Json::create_symbol_machine(TokenType::RightBracket, ']')
-  );
-  lexer->register_machine(
-    Lexer::TokenType::Json::create_symbol_machine(TokenType::LeftCurly, '{')
-  );
-  lexer->register_machine(
-    Lexer::TokenType::Json::create_symbol_machine(TokenType::RightCurly, '}')
-  );
-  lexer->register_machine(
-    Lexer::TokenType::Json::create_symbol_machine(TokenType::Comma, ',')
-  );
-  lexer->register_machine(
-    Lexer::TokenType::Json::create_symbol_machine(TokenType::Colon, ':')
-  );
-  lexer->register_machine(
-    Lexer::TokenType::Json::create_keyword_machine(TokenType::Bool, "true")
-  );
-  lexer->register_machine(
-    Lexer::TokenType::Json::create_keyword_machine(TokenType::Bool, "false")
-  );
-  lexer->register_machine(
-    Lexer::TokenType::Json::create_keyword_machine(TokenType::Null, "null")
-  );
-  lexer->register_machine(Lexer::TokenType::Json::create_string_machine());
-  lexer->register_machine(Lexer::TokenType::Json::create_whitespace_machine());
-  lexer->register_machine(Lexer::TokenType::Json::create_tab_machine());
-  lexer->register_machine(Lexer::TokenType::Json::create_newline_machine());
-}
-
-}  // namespace
-
 using Parser::JsonParser;
-int main(int argc, char* argv[]) {
+auto main(int argc, char* argv[]) -> int {
   // 检查是否提供了文件名参数
   if (argc < 2) {
     std::cerr << "请提供要读取的文件名作为参数！" << '\n';
@@ -55,8 +14,7 @@ int main(int argc, char* argv[]) {
   }
   // 使用命令行参数作为文件名
   std::string file = read_file(argv[1]);
-  auto lexer = std::make_shared<Lexer::StreamLexer<TokenType>>(1024);
-  init(lexer);
+  auto lexer = Lexer::Json::Builder::get_instance();
   lexer->feed(file);
   lexer->terminate();
   JsonParser parser(lexer);

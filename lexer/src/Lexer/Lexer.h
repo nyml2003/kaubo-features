@@ -21,7 +21,7 @@ using Utils::Ok;
 using Utils::Result;
 using Utils::RingBuffer;
 template <TokenTypeConstraint TokenType>
-class StreamLexer {
+class Proto {
  private:
   // 坐标系统
   Coordinate current_token_start = {.line = 1, .column = 1};
@@ -226,7 +226,7 @@ class StreamLexer {
   }
 
  public:
-  explicit StreamLexer(size_t buffer_size)
+  explicit Proto(size_t buffer_size)
     : ring_buffer(std::make_unique<Utils::RingBuffer>(buffer_size)) {}
 
   void feed(std::string_view data) {
@@ -280,5 +280,8 @@ class StreamLexer {
     return ring_buffer->is_empty();
   }
 };
+
+template <TokenTypeConstraint TokenType>
+using Instance = std::shared_ptr<Lexer::Proto<TokenType>>;
 
 }  // namespace Lexer

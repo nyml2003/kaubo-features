@@ -8,12 +8,12 @@
 #include <variant>
 #include <vector>
 
+#include "Lexer/Json/TokenType.h"
 #include "Lexer/Lexer.h"
-#include "Lexer/Token/Json.h"
 #include "Utils/Result.h"
 
 namespace Parser {
-using Lexer::TokenType::Json::TokenType;
+using Lexer::Json::TokenType;
 using JsonNull = std::monostate;
 using JsonBoolean = bool;
 using JsonNumber = int64_t;  // 简化实现，仅支持整数
@@ -91,9 +91,7 @@ inline auto to_string(ParseError error) -> const char* {
 
 class JsonParser {
  public:
-  explicit JsonParser(
-    const std::shared_ptr<Lexer::StreamLexer<TokenType>>& lexer
-  )
+  explicit JsonParser(const std::shared_ptr<Lexer::Proto<TokenType>>& lexer)
     : m_lexer(lexer) {
     consume();  // 预读第一个token
   }
@@ -101,7 +99,7 @@ class JsonParser {
   auto parse() -> Result<JsonValue, ParseError>;
 
  private:
-  std::shared_ptr<Lexer::StreamLexer<TokenType>> m_lexer;
+  std::shared_ptr<Lexer::Proto<TokenType>> m_lexer;
   std::optional<Lexer::Token<TokenType>> current_token;
 
   // 消费当前token并读取下一个
