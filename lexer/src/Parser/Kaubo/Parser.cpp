@@ -1,77 +1,20 @@
 #include "Parser.h"
-#include <cstddef>
-#include <cstdint>
-#include <iostream>
-#include <string>
+#include "Expr.h"
+#include "Stmt.h"
+#include "Utils.h"
 #include "Utils/Overloaded.h"
+
+#include <iostream>
+#include <vector>
 
 namespace Parser::Kaubo {
 
-using Utils::Err;
-using Utils::Ok;
-
-void Parser::consume() {
-  current_token = m_lexer->next_token();
-}
-
-auto Parser::check(TokenType type) const -> bool {
-  return current_token.has_value() && current_token->type == type;
-}
-
-auto Parser::match(TokenType type) -> bool {
-  if (check(type)) {
-    consume();
-    return true;
-  }
-  return false;
-}
-
-auto Parser::expect(TokenType type) -> Result<void, ParseError> {
-  if (check(type)) {
-    consume();
-    return Ok();
-  }
-  return Err(ParseError::UnexpectedToken);
-}
-
-auto Parser::get_precedence(TokenType op) -> int32_t {
-  switch (op) {
-    // 赋值运算符（最低优先级）
-    case TokenType::Equals:
-      return 5;
-
-    // 比较运算符（二字符，优先级较高）
-    case TokenType::EqualEqual:
-    case TokenType::NotEqual:
-    case TokenType::Greater:
-    case TokenType::Less:
-    case TokenType::GreaterEqual:
-    case TokenType::LessEqual:
-      return 15;
-
-    // 算术运算符
-    case TokenType::Plus:
-    case TokenType::Minus:
-      return 10;
-    case TokenType::Multiply:
-    case TokenType::Divide:
-      return 20;
-    default:
-      return 0;
-  }
-}
-
-auto Parser::get_associativity(TokenType /*op*/) -> bool {
-  // 所有运算符都是左结合的
-  return true;
-}
-
-auto Parser::parse() -> Result<Module, ParseError> {
+auto Parser::parse() -> Result<ModulePtr, Error> {
   return parse_module();
 }
 
-auto Parser::parse_module() -> Result<Module, ParseError> {
-  Module module;
+auto Parser::parse_module() -> Result<ModulePtr, Error> {
+  auto module = Utils::create<Module>();
 
   // 解析所有语句直到文件结束
   while (current_token.has_value()) {
@@ -85,24 +28,24 @@ auto Parser::parse_module() -> Result<Module, ParseError> {
       return Err(stmt_result.unwrap_err());
     }
 
-    module.statements.push_back(std::move(stmt_result).unwrap());
+    module->statements.push_back(stmt_result.unwrap());
 
     // 消费分号（如果存在）
     match(TokenType::Semicolon);
   }
 
-  return Ok(std::move(module));
+  return Ok(module);
 }
 
 auto Parser::parse_statement()  // NOLINT(misc-no-recursion)
-  -> Result<std::unique_ptr<Stmt>, ParseError> {
+  -> Result<StmtPtr, Error> {
   // 检查是否是block
   if (check(TokenType::LeftBrace)) {
     auto block_result = parse_block();
     if (block_result.is_err()) {
       return Err(block_result.unwrap_err());
     }
-    return Ok(std::make_unique<Stmt>(std::move(block_result).unwrap()));
+    return Ok(block_result.unwrap());
   }
 
   // 检查是否是变量声明
@@ -111,17 +54,14 @@ auto Parser::parse_statement()  // NOLINT(misc-no-recursion)
     if (expr_result.is_err()) {
       return Err(expr_result.unwrap_err());
     }
-    return Ok(
-      std::make_unique<Stmt>(
-        std::make_unique<Expr>(std::move(expr_result).unwrap())
-      )
-    );
+    auto expr = expr_result.unwrap();
+    return Ok(Utils::create<Stmt::Stmt>(Utils::create<Stmt::Expr>(expr)));
   }
 
   // 检查是否是空语句（只有分号）
   if (check(TokenType::Semicolon)) {
     consume();  // 消费分号
-    return Ok(std::make_unique<Stmt>(std::make_unique<EmptyStmt>()));
+    return Ok(Utils::create<Stmt::Stmt>(Utils::create<Stmt::Empty>()));
   }
 
   // 否则是表达式语句
@@ -129,22 +69,20 @@ auto Parser::parse_statement()  // NOLINT(misc-no-recursion)
   if (expr_result.is_err()) {
     return Err(expr_result.unwrap_err());
   }
-
-  auto expr_stmt = std::make_unique<ExprStmt>();
-  expr_stmt->expression =
-    std::make_unique<Expr>(std::move(expr_result).unwrap());
-  return Ok(std::make_unique<Stmt>(std::move(expr_stmt)));
+  return Ok(
+    Utils::create<Stmt::Stmt>(Utils::create<Stmt::Expr>(expr_result.unwrap()))
+  );
 }
 
 auto Parser::parse_block()  // NOLINT(misc-no-recursion)
-  -> Result<std::unique_ptr<BlockStmt>, ParseError> {
+  -> Result<StmtPtr, Error> {
   // 期望左大括号
   auto err = expect(TokenType::LeftBrace);
   if (err.is_err()) {
-    return Err(ParseError::UnexpectedToken);
+    return Err(Error::UnexpectedToken);
   }
 
-  auto block = std::make_unique<BlockStmt>();
+  std::vector<StmtPtr> statements;
 
   // 解析block内的所有语句直到遇到右大括号
   while (current_token.has_value() && !check(TokenType::RightBrace)) {
@@ -158,7 +96,7 @@ auto Parser::parse_block()  // NOLINT(misc-no-recursion)
       return Err(stmt_result.unwrap_err());
     }
 
-    block->statements.push_back(std::move(stmt_result).unwrap());
+    statements.push_back(stmt_result.unwrap());
 
     // 消费分号（如果存在）
     match(TokenType::Semicolon);
@@ -167,20 +105,24 @@ auto Parser::parse_block()  // NOLINT(misc-no-recursion)
   // 期望右大括号
   auto right_brace_result = expect(TokenType::RightBrace);
   if (right_brace_result.is_err()) {
-    return Err(ParseError::UnexpectedToken);
+    return Err(Error::UnexpectedToken);
   }
 
-  return Ok(std::move(block));
+  return Ok(
+    Utils::create<Stmt::Stmt>(
+      Utils::create(Stmt::Block{.statements = statements})
+    )
+  );
 }
 
 auto Parser::parse_expression(int32_t precedence)  // NOLINT(misc-no-recursion)
-  -> Result<Expr, ParseError> {
+  -> Result<ExprPtr, Error> {
   // 解析左操作数（一元表达式或基本表达式）
   auto left_result = parse_unary();
   if (left_result.is_err()) {
     return Err(left_result.unwrap_err());
   }
-  auto left = std::move(left_result).unwrap();
+  auto left = left_result.unwrap();
 
   // 解析二元运算符和右操作数
   while (true) {
@@ -189,7 +131,7 @@ auto Parser::parse_expression(int32_t precedence)  // NOLINT(misc-no-recursion)
     }
 
     TokenType op = current_token->type;
-    auto op_precedence = Parser::get_precedence(op);
+    auto op_precedence = Utils::get_precedence(op);
 
     // 如果当前运算符优先级低于要求的最小优先级，停止解析
     if (op_precedence <= precedence) {
@@ -201,27 +143,27 @@ auto Parser::parse_expression(int32_t precedence)  // NOLINT(misc-no-recursion)
 
     // 解析右操作数，考虑结合性
     auto next_precedence =
-      get_associativity(op) ? op_precedence : op_precedence - 1;
+      Utils::get_associativity(op) ? op_precedence : op_precedence - 1;
     auto right_result = parse_expression(next_precedence);
     if (right_result.is_err()) {
       return Err(right_result.unwrap_err());
     }
-    auto right = std::move(right_result).unwrap();
+    const auto& right = right_result.unwrap();
 
-    // 创建二元表达式
-    auto binary_expr = std::make_unique<BinaryExpr>();
-    binary_expr->left = std::make_unique<Expr>(std::move(left));
-    binary_expr->op = op;
-    binary_expr->right = std::make_unique<Expr>(std::move(right));
-
-    left = Expr(std::move(binary_expr));
+    left = Utils::create<Expr::Expr>(Utils::create(
+      Expr::Binary{
+        .left = left,
+        .op = op,
+        .right = right,
+      }
+    ));
   }
 
-  return Ok(std::move(left));
+  return Ok(left);
 }
 
-auto Parser::parse_unary()       // NOLINT(misc-no-recursion)
-  -> Result<Expr, ParseError> {  // 检查一元运算符
+auto Parser::parse_unary()     // NOLINT(misc-no-recursion)
+  -> Result<ExprPtr, Error> {  // 检查一元运算符
   if (check(TokenType::Plus) || check(TokenType::Minus)) {
     TokenType op = current_token->type;
     consume();
@@ -230,22 +172,25 @@ auto Parser::parse_unary()       // NOLINT(misc-no-recursion)
     if (operand_result.is_err()) {
       return Err(operand_result.unwrap_err());
     }
-    auto operand = std::move(operand_result).unwrap();
+    const auto& operand = operand_result.unwrap();
 
-    auto unary_expr = std::make_unique<UnaryExpr>();
-    unary_expr->op = op;
-    unary_expr->operand = std::make_unique<Expr>(std::move(operand));
-
-    return Ok(Expr(std::move(unary_expr)));
+    return Ok(
+      Utils::create<Expr::Expr>(Utils::create(
+        Expr::Unary{
+          .op = op,
+          .operand = operand,
+        }
+      ))
+    );
   }
 
   return parse_primary();
 }
 
 auto Parser::parse_primary()  // NOLINT(misc-no-recursion)
-  -> Result<Expr, ParseError> {
+  -> Result<ExprPtr, Error> {
   if (!current_token.has_value()) {
-    return Err(ParseError::UnexpectedEndOfInput);
+    return Err(Error::UnexpectedEndOfInput);
   }
 
   switch (current_token->type) {
@@ -253,9 +198,9 @@ auto Parser::parse_primary()  // NOLINT(misc-no-recursion)
       try {
         int64_t value = std::stoll(current_token->value);
         consume();
-        return Ok(Expr(value));
+        return Ok(Utils::create<Expr::Expr>(value));
       } catch (const std::exception&) {
-        return Err(ParseError::InvalidNumberFormat);
+        return Err(Error::InvalidNumberFormat);
       }
     }
 
@@ -269,13 +214,15 @@ auto Parser::parse_primary()  // NOLINT(misc-no-recursion)
 
       auto err = expect(TokenType::RightParen);
       if (err.is_err()) {
-        return Err(ParseError::MissingRightParen);
+        return Err(Error::MissingRightParen);
       }
-
-      auto grouping_expr = std::make_unique<GroupingExpr>();
-      grouping_expr->expression =
-        std::make_unique<Expr>(std::move(expr_result).unwrap());
-      return Ok(Expr(std::move(grouping_expr)));
+      return Ok(
+        Utils::create<Expr::Expr>(Utils::create(
+          Expr::Grouping{
+            .expression = expr_result.unwrap(),
+          }
+        ))
+      );
     }
 
     case TokenType::Identifier: {
@@ -286,24 +233,24 @@ auto Parser::parse_primary()  // NOLINT(misc-no-recursion)
       if (check(TokenType::LeftParen)) {
         return parse_function_call(identifier_name);
       }
-
-      // 否则是变量引用
-      auto var_ref = std::make_unique<VarRefExpr>();
-      var_ref->name = std::move(identifier_name);
-      return Ok(Expr(std::move(var_ref)));
+      return Ok(
+        Utils::create<Expr::Expr>(
+          Utils::create(Expr::VarRef{.name = identifier_name})
+        )
+      );
     }
 
     default:
-      return Err(ParseError::UnexpectedToken);
+      return Err(Error::UnexpectedToken);
   }
 }
 
 auto Parser::parse_function_call  // NOLINT(misc-no-recursion)
-  (const std::string& function_name) -> Result<Expr, ParseError> {
+  (const std::string& function_name) -> Result<ExprPtr, Error> {
   // 消费左括号
   consume();
 
-  std::vector<std::unique_ptr<Expr>> arguments;
+  std::vector<ExprPtr> arguments;
 
   // 解析参数列表（如果有）
   if (!check(TokenType::RightParen)) {
@@ -313,9 +260,7 @@ auto Parser::parse_function_call  // NOLINT(misc-no-recursion)
       if (arg_result.is_err()) {
         return Err(arg_result.unwrap_err());
       }
-      arguments.push_back(
-        std::make_unique<Expr>(std::move(arg_result).unwrap())
-      );
+      arguments.push_back(arg_result.unwrap());
 
       // 检查是否有逗号继续解析更多参数
       if (match(TokenType::Comma)) {
@@ -328,24 +273,26 @@ auto Parser::parse_function_call  // NOLINT(misc-no-recursion)
   // 期望右括号
   auto err = expect(TokenType::RightParen);
   if (err.is_err()) {
-    return Err(ParseError::MissingRightParen);
+    return Err(Error::MissingRightParen);
   }
 
-  // 创建函数调用表达式
-  auto func_call = std::make_unique<FunctionCallExpr>();
-  func_call->function_name = function_name;
-  func_call->arguments = std::move(arguments);
-
-  return Ok(Expr(std::move(func_call)));
+  return Ok(
+    Utils::create<Expr::Expr>(Utils::create(
+      Expr::FunctionCall{
+        .function_name = function_name,
+        .arguments = arguments,
+      }
+    ))
+  );
 }
 
-auto Parser::parse_var_declaration() -> Result<Expr, ParseError> {
+auto Parser::parse_var_declaration() -> Result<ExprPtr, Error> {
   // 消费 'var' 关键字
   consume();
 
   // 期望标识符
   if (!check(TokenType::Identifier)) {
-    return Err(ParseError::UnexpectedToken);
+    return Err(Error::UnexpectedToken);
   }
   std::string var_name = current_token->value;
   consume();
@@ -353,7 +300,7 @@ auto Parser::parse_var_declaration() -> Result<Expr, ParseError> {
   // 期望等号
   auto equals_result = expect(TokenType::Equals);
   if (equals_result.is_err()) {
-    return Err(ParseError::UnexpectedToken);
+    return Err(Error::UnexpectedToken);
   }
 
   // 解析表达式
@@ -368,110 +315,106 @@ auto Parser::parse_var_declaration() -> Result<Expr, ParseError> {
     return Err(semicolon_result.unwrap_err());
   }
 
-  // 创建变量声明表达式
-  auto var_decl = std::make_unique<VarDeclExpr>();
-  var_decl->name = std::move(var_name);
-  var_decl->initializer =
-    std::make_unique<Expr>(std::move(expr_result).unwrap());
-
-  return Ok(Expr(std::move(var_decl)));
+  return Ok(
+    Utils::create<Expr::Expr>(Utils::create(
+      Expr::VarDecl{.name = var_name, .initializer = expr_result.unwrap()}
+    ))
+  );
 }
 
-auto Parser::print_ast(const Expr& expr, size_t indent) -> void {
+auto Parser::print_ast(const ExprPtr& expr, size_t indent) -> void {
   // 缩进字符串
   std::string indent_str(indent * 2, ' ');
 
   // 使用访问者模式处理不同类型的表达式
   std::visit(
     overloaded{
-      [&](IntValue n) { std::cout << indent_str << "IntValue: " << n << '\n'; },
-      [&](const std::unique_ptr<BinaryExpr>& binary_expr) {
+      [&](Expr::IntValue n) {
+        std::cout << indent_str << "IntValue: " << n << '\n';
+      },
+      [&](const std::shared_ptr<Expr::Binary>& binary_expr) {
         std::cout << indent_str << "BinaryExpr: " << to_string(binary_expr->op)
                   << '\n';
         std::cout << indent_str << "  left:" << '\n';
-        print_ast(*binary_expr->left, indent + 2);
+        print_ast(binary_expr->left, indent + 2);
         std::cout << indent_str << "  right:" << '\n';
-        print_ast(*binary_expr->right, indent + 2);
+        print_ast(binary_expr->right, indent + 2);
       },
-      [&](const std::unique_ptr<UnaryExpr>& unary_expr) {
+      [&](const std::shared_ptr<Expr::Unary>& unary_expr) {
         std::cout << indent_str << "UnaryExpr: " << to_string(unary_expr->op)
                   << '\n';
         std::cout << indent_str << "  operand:" << '\n';
-        print_ast(*unary_expr->operand, indent + 2);
+        print_ast(unary_expr->operand, indent + 2);
       },
-      [&](const std::unique_ptr<GroupingExpr>& grouping_expr) {
+      [&](const std::shared_ptr<Expr::Grouping>& grouping_expr) {
         std::cout << indent_str << "GroupingExpr: ()" << '\n';
         std::cout << indent_str << "  expression:" << '\n';
-        print_ast(*grouping_expr->expression, indent + 2);
+        print_ast(grouping_expr->expression, indent + 2);
       },
-      [&](const std::unique_ptr<VarDeclExpr>& var_decl_expr) {
+      [&](const std::shared_ptr<Expr::VarDecl>& var_decl_expr) {
         std::cout << indent_str << "VarDeclExpr: " << var_decl_expr->name
                   << '\n';
         if (var_decl_expr->initializer) {
           std::cout << indent_str << "  initializer:" << '\n';
-          print_ast(*var_decl_expr->initializer, indent + 2);
+          print_ast(var_decl_expr->initializer, indent + 2);
         }
       },
-      [&](const std::unique_ptr<VarRefExpr>& var_ref_expr) {
+      [&](const std::shared_ptr<Expr::VarRef>& var_ref_expr) {
         std::cout << indent_str << "VarRefExpr: " << var_ref_expr->name << '\n';
       },
-      [&](const std::unique_ptr<FunctionCallExpr>& func_call_expr) {
+      [&](const std::shared_ptr<Expr::FunctionCall>& func_call_expr) {
         std::cout << indent_str
                   << "FunctionCallExpr: " << func_call_expr->function_name
                   << '\n';
         std::cout << indent_str << "  arguments:" << '\n';
         for (const auto& arg : func_call_expr->arguments) {
-          print_ast(*arg, indent + 2);
+          print_ast(arg, indent + 2);
         }
       },
-      [&](const std::unique_ptr<AssignExpr>& assign_expr) {
+      [&](const std::shared_ptr<Expr::Assign>& assign_expr) {
         std::cout << indent_str << "AssignExpr: " << assign_expr->name << '\n';
       }
-      
+
     },
-    expr.get()
+    expr->get_value()
   );
 }
 
-auto print_ast(const Stmt& stmt, size_t indent) -> void {
+auto print_ast(const StmtPtr& stmt, size_t indent) -> void {
   // 缩进字符串
   std::string indent_str(indent * 2, ' ');
 
   // 使用访问者模式处理不同类型的语句
   std::visit(
     overloaded{
-      [&](const std::unique_ptr<ExprStmt>& expr_stmt) {
+      [&](const std::shared_ptr<Stmt::Expr>& expr_stmt) {
         std::cout << indent_str << "ExprStmt:" << '\n';
         if (expr_stmt->expression) {
-          Parser::print_ast(*expr_stmt->expression, indent + 1);
+          Parser::print_ast(expr_stmt->expression, indent + 1);
         }
       },
-      [&](const std::unique_ptr<EmptyStmt>&) {
+      [&](const std::shared_ptr<Stmt::Empty>& /*empty_stmt*/) {
         std::cout << indent_str << "EmptyStmt: ;" << '\n';
       },
-      [&](const std::unique_ptr<BlockStmt>& block_stmt) {
+      [&](const std::shared_ptr<Stmt::Block>& block_stmt) {
         std::cout << indent_str << "BlockStmt: {" << '\n';
         for (const auto& stmt : block_stmt->statements) {
-          print_ast(*stmt, indent + 1);
+          print_ast(stmt, indent + 1);
         }
         std::cout << indent_str << "}" << '\n';
       },
-      [&](const std::unique_ptr<Expr>& expr) {
-        // 兼容现有的表达式
-        Parser::print_ast(*expr, indent);
-      }
     },
-    stmt.get()
+    stmt->get_value()
   );
 }
 
-auto print_ast(const Module& module, size_t indent) -> void {
+auto print_ast(const ModulePtr& module, size_t indent) -> void {
   // 缩进字符串
   std::string indent_str(indent * 2, ' ');
 
   std::cout << indent_str << "Module:" << '\n';
-  for (const auto& stmt : module.statements) {
-    print_ast(*stmt, indent + 1);
+  for (const auto& stmt : module->statements) {
+    print_ast(stmt, indent + 1);
   }
 }
 
