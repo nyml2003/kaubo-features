@@ -18,6 +18,14 @@ enum TokenType : uint8_t {
   Multiply = 7,  // 乘法 *
   Divide = 8,    // 除法 /
 
+  /*--- 比较运算符 ---*/
+  EqualEqual = 9,  // 等于 ==
+  NotEqual = 10,   // 不等于 !=
+  GreaterEqual = 11, // 大于等于 >=
+  LessEqual = 12,  // 小于等于 <=
+  Greater = 13,    // 大于 >
+  Less = 14,       // 小于 <
+
   /*--- 中优先级：字面量和标识符 ---*/
   // 整数字面量（支持64位有符号整数）
   Integer = 20,
@@ -59,6 +67,18 @@ inline auto to_string(TokenType type) -> std::string {
       return "Multiply";
     case Divide:
       return "Divide";
+    case EqualEqual:
+      return "EqualEqual";
+    case NotEqual:
+      return "NotEqual";
+    case Greater:
+      return "Greater";
+    case Less:
+      return "Less";
+    case GreaterEqual:
+      return "GreaterEqual";
+    case LessEqual:
+      return "LessEqual";
     case Integer:
       return "Integer";
     case Identifier:
@@ -88,6 +108,7 @@ inline auto to_string(TokenType type) -> std::string {
     case Semicolon:
       return "Semicolon";
   }
+  return "UnknownToken";
 }
 
 }  // namespace Lexer::Kaubo

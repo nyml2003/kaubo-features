@@ -285,6 +285,6 @@ class Proto {
 };
 
 template <TokenTypeConstraint TokenType>
-using Instance = std::shared_ptr<Lexer::Proto<TokenType>>;
+using Instance = std::unique_ptr<Lexer::Proto<TokenType>>;
 
 }  // namespace Lexer

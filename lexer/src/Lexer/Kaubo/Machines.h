@@ -280,4 +280,84 @@ inline auto create_equals_machine()
   return machine;
 }
 
+inline auto create_equal_equal_machine()
+  -> std::unique_ptr<StateMachine<TokenType>> {
+  auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::EqualEqual);
+
+  StateMachine<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine<TokenType>::StateId s1 = machine->add_state(false);
+  StateMachine<TokenType>::StateId s2 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '='; });
+  machine->add_transition(s1, s2, [](char c) { return c == '='; });
+
+  return machine;
+}
+
+inline auto create_not_equal_machine()
+  -> std::unique_ptr<StateMachine<TokenType>> {
+  auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::NotEqual);
+
+  StateMachine<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine<TokenType>::StateId s1 = machine->add_state(false);
+  StateMachine<TokenType>::StateId s2 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '!'; });
+  machine->add_transition(s1, s2, [](char c) { return c == '='; });
+
+  return machine;
+}
+
+inline auto create_greater_machine()
+  -> std::unique_ptr<StateMachine<TokenType>> {
+  auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::Greater);
+
+  StateMachine<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine<TokenType>::StateId s1 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '>'; });
+
+  return machine;
+}
+
+inline auto create_less_machine()
+  -> std::unique_ptr<StateMachine<TokenType>> {
+  auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::Less);
+
+  StateMachine<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine<TokenType>::StateId s1 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '<'; });
+
+  return machine;
+}
+
+inline auto create_greater_equal_machine()
+  -> std::unique_ptr<StateMachine<TokenType>> {
+  auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::GreaterEqual);
+
+  StateMachine<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine<TokenType>::StateId s1 = machine->add_state(false);
+  StateMachine<TokenType>::StateId s2 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '>'; });
+  machine->add_transition(s1, s2, [](char c) { return c == '='; });
+
+  return machine;
+}
+
+inline auto create_less_equal_machine()
+  -> std::unique_ptr<StateMachine<TokenType>> {
+  auto machine = std::make_unique<StateMachine<TokenType>>(TokenType::LessEqual);
+
+  StateMachine<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine<TokenType>::StateId s1 = machine->add_state(false);
+  StateMachine<TokenType>::StateId s2 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '<'; });
+  machine->add_transition(s1, s2, [](char c) { return c == '='; });
+
+  return machine;
+}
+
 }  // namespace Lexer::Kaubo::Machines

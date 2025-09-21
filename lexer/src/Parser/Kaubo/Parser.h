@@ -139,6 +139,8 @@ class Expr {
   Expr(std::unique_ptr<VarRefExpr> expr) : m_value(std::move(expr)) {}
   // NOLINTNEXTLINE(google-explicit-constructor)
   Expr(std::unique_ptr<FunctionCallExpr> expr) : m_value(std::move(expr)) {}
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  Expr(std::unique_ptr<AssignExpr> expr) : m_value(std::move(expr)) {}
 
   // 获取值类型的访问方法
   [[nodiscard]] auto get() const -> const ValueType& { return m_value; }
@@ -159,18 +161,18 @@ enum class ParseError : uint8_t {
 // Pratt parser实现
 class Parser {
  public:
-  explicit Parser(const std::shared_ptr<Lexer::Proto<TokenType>>& lexer)
-    : m_lexer(lexer) {
+  explicit Parser(Lexer::Instance<TokenType> lexer)
+    : m_lexer(std::move(lexer)) {
     consume();  // 预读第一个token
   }
 
   auto parse() -> Result<Module, ParseError>;
 
   // AST打印函数
-  static auto print_ast(const Expr& expr, int indent = 0) -> void;
+  static auto print_ast(const Expr& expr, size_t indent = 0) -> void;
 
  private:
-  std::shared_ptr<Lexer::Proto<TokenType>> m_lexer;
+  Lexer::Instance<TokenType> m_lexer;
   std::optional<Lexer::Token<TokenType>> current_token;
 
   // 消费当前token并读取下一个
@@ -186,7 +188,7 @@ class Parser {
   auto expect(TokenType type) -> Result<void, ParseError>;
 
   // Pratt解析方法
-  auto parse_expression(int precedence = 0) -> Result<Expr, ParseError>;
+  auto parse_expression(int32_t precedence = 0) -> Result<Expr, ParseError>;
   auto parse_primary() -> Result<Expr, ParseError>;
   auto parse_unary() -> Result<Expr, ParseError>;
   auto parse_statement() -> Result<std::unique_ptr<Stmt>, ParseError>;
@@ -197,14 +199,14 @@ class Parser {
   auto parse_var_declaration() -> Result<Expr, ParseError>;
 
   // 获取运算符的优先级和结合性
-  [[nodiscard]] auto get_precedence(TokenType op) const -> int;
-  [[nodiscard]] auto get_associativity(TokenType op) const
+  [[nodiscard]] static auto get_precedence(TokenType op) -> int32_t;
+  [[nodiscard]] static auto get_associativity(TokenType op)
     -> bool;  // true for left, false for right
 };
 
 // AST打印函数
-auto print_ast(const Stmt& stmt, int indent = 0) -> void;
-auto print_ast(const Module& module, int indent = 0) -> void;
+auto print_ast(const Stmt& stmt, size_t indent = 0) -> void;
+auto print_ast(const Module& module, size_t indent = 0) -> void;
 
 }  // namespace Parser::Kaubo
 

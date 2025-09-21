@@ -2,8 +2,8 @@
 #include "Machines.h"
 
 namespace Lexer::Kaubo {
-auto Builder::build() -> std::shared_ptr<Lexer::Proto<TokenType>> {
-  auto lexer = std::make_shared<Lexer::Proto<TokenType>>(1024);
+auto Builder::build() -> Instance<TokenType> {
+  auto lexer = std::make_unique<Lexer::Proto<TokenType>>(1024);
 
   // 注册关键字状态机
   lexer->register_machine(Machines::create_var_machine());
@@ -14,6 +14,14 @@ auto Builder::build() -> std::shared_ptr<Lexer::Proto<TokenType>> {
   lexer->register_machine(Machines::create_minus_machine());
   lexer->register_machine(Machines::create_multiply_machine());
   lexer->register_machine(Machines::create_divide_machine());
+  
+  // 注册比较运算符状态机
+  lexer->register_machine(Machines::create_equal_equal_machine());
+  lexer->register_machine(Machines::create_not_equal_machine());
+  lexer->register_machine(Machines::create_greater_machine());
+  lexer->register_machine(Machines::create_less_machine());
+  lexer->register_machine(Machines::create_greater_equal_machine());
+  lexer->register_machine(Machines::create_less_equal_machine());
 
   // 注册标识符状态机
   lexer->register_machine(Machines::create_identifier_machine());

@@ -1,9 +1,10 @@
 #include "Builder.h"
+#include <memory>
 #include "Machines.h"
 
 namespace Lexer::Json {
-auto Builder::build() -> std::shared_ptr<Lexer::Proto<TokenType>> {
-  auto lexer = std::make_shared<Lexer::Proto<TokenType>>(1024);
+auto Builder::build() -> Instance<TokenType> {
+  auto lexer = std::make_unique<Lexer::Proto<TokenType>>(1024);
   lexer->register_machine(Machines::create_integer_machine());
   lexer->register_machine(
     Machines::create_symbol_machine(TokenType::LeftBracket, '[')
@@ -36,7 +37,7 @@ auto Builder::build() -> std::shared_ptr<Lexer::Proto<TokenType>> {
   lexer->register_machine(Machines::create_whitespace_machine());
   lexer->register_machine(Machines::create_tab_machine());
   lexer->register_machine(Machines::create_newline_machine());
-  return lexer;
+  return std::move(lexer);
 }
 
 }  // namespace Lexer::Json

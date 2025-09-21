@@ -1,4 +1,6 @@
 #include "Parser.h"
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include "Utils/Overloaded.h"
@@ -7,6 +9,62 @@ namespace Parser::Kaubo {
 
 using Utils::Err;
 using Utils::Ok;
+
+void Parser::consume() {
+  current_token = m_lexer->next_token();
+}
+
+auto Parser::check(TokenType type) const -> bool {
+  return current_token.has_value() && current_token->type == type;
+}
+
+auto Parser::match(TokenType type) -> bool {
+  if (check(type)) {
+    consume();
+    return true;
+  }
+  return false;
+}
+
+auto Parser::expect(TokenType type) -> Result<void, ParseError> {
+  if (check(type)) {
+    consume();
+    return Ok();
+  }
+  return Err(ParseError::UnexpectedToken);
+}
+
+auto Parser::get_precedence(TokenType op) -> int32_t {
+  switch (op) {
+    // 赋值运算符（最低优先级）
+    case TokenType::Equals:
+      return 5;
+
+    // 比较运算符（二字符，优先级较高）
+    case TokenType::EqualEqual:
+    case TokenType::NotEqual:
+    case TokenType::Greater:
+    case TokenType::Less:
+    case TokenType::GreaterEqual:
+    case TokenType::LessEqual:
+      return 15;
+
+    // 算术运算符
+    case TokenType::Plus:
+    case TokenType::Minus:
+      return 10;
+    case TokenType::Multiply:
+    case TokenType::Divide:
+      return 20;
+    default:
+      return 0;
+  }
+}
+
+auto Parser::get_associativity(TokenType /*op*/) -> bool {
+  // 所有运算符都是左结合的
+  return true;
+}
 
 auto Parser::parse() -> Result<Module, ParseError> {
   return parse_module();
@@ -36,7 +94,8 @@ auto Parser::parse_module() -> Result<Module, ParseError> {
   return Ok(std::move(module));
 }
 
-auto Parser::parse_statement() -> Result<std::unique_ptr<Stmt>, ParseError> {
+auto Parser::parse_statement()  // NOLINT(misc-no-recursion)
+  -> Result<std::unique_ptr<Stmt>, ParseError> {
   // 检查是否是block
   if (check(TokenType::LeftBrace)) {
     auto block_result = parse_block();
@@ -77,7 +136,8 @@ auto Parser::parse_statement() -> Result<std::unique_ptr<Stmt>, ParseError> {
   return Ok(std::make_unique<Stmt>(std::move(expr_stmt)));
 }
 
-auto Parser::parse_block() -> Result<std::unique_ptr<BlockStmt>, ParseError> {
+auto Parser::parse_block()  // NOLINT(misc-no-recursion)
+  -> Result<std::unique_ptr<BlockStmt>, ParseError> {
   // 期望左大括号
   auto err = expect(TokenType::LeftBrace);
   if (err.is_err()) {
@@ -113,49 +173,8 @@ auto Parser::parse_block() -> Result<std::unique_ptr<BlockStmt>, ParseError> {
   return Ok(std::move(block));
 }
 
-void Parser::consume() {
-  current_token = m_lexer->next_token();
-}
-
-auto Parser::check(TokenType type) const -> bool {
-  return current_token.has_value() && current_token->type == type;
-}
-
-auto Parser::match(TokenType type) -> bool {
-  if (check(type)) {
-    consume();
-    return true;
-  }
-  return false;
-}
-
-auto Parser::expect(TokenType type) -> Result<void, ParseError> {
-  if (check(type)) {
-    consume();
-    return Ok();
-  }
-  return Err(ParseError::UnexpectedToken);
-}
-
-auto Parser::get_precedence(TokenType op) const -> int {
-  switch (op) {
-    case TokenType::Plus:
-    case TokenType::Minus:
-      return 10;
-    case TokenType::Multiply:
-    case TokenType::Divide:
-      return 20;
-    default:
-      return 0;
-  }
-}
-
-auto Parser::get_associativity(TokenType op) const -> bool {
-  // 所有运算符都是左结合的
-  return true;
-}
-
-auto Parser::parse_expression(int precedence) -> Result<Expr, ParseError> {
+auto Parser::parse_expression(int32_t precedence)  // NOLINT(misc-no-recursion)
+  -> Result<Expr, ParseError> {
   // 解析左操作数（一元表达式或基本表达式）
   auto left_result = parse_unary();
   if (left_result.is_err()) {
@@ -170,7 +189,7 @@ auto Parser::parse_expression(int precedence) -> Result<Expr, ParseError> {
     }
 
     TokenType op = current_token->type;
-    int op_precedence = get_precedence(op);
+    auto op_precedence = Parser::get_precedence(op);
 
     // 如果当前运算符优先级低于要求的最小优先级，停止解析
     if (op_precedence <= precedence) {
@@ -181,7 +200,7 @@ auto Parser::parse_expression(int precedence) -> Result<Expr, ParseError> {
     consume();
 
     // 解析右操作数，考虑结合性
-    int next_precedence =
+    auto next_precedence =
       get_associativity(op) ? op_precedence : op_precedence - 1;
     auto right_result = parse_expression(next_precedence);
     if (right_result.is_err()) {
@@ -201,8 +220,8 @@ auto Parser::parse_expression(int precedence) -> Result<Expr, ParseError> {
   return Ok(std::move(left));
 }
 
-auto Parser::parse_unary() -> Result<Expr, ParseError> {
-  // 检查一元运算符
+auto Parser::parse_unary()       // NOLINT(misc-no-recursion)
+  -> Result<Expr, ParseError> {  // 检查一元运算符
   if (check(TokenType::Plus) || check(TokenType::Minus)) {
     TokenType op = current_token->type;
     consume();
@@ -223,7 +242,8 @@ auto Parser::parse_unary() -> Result<Expr, ParseError> {
   return parse_primary();
 }
 
-auto Parser::parse_primary() -> Result<Expr, ParseError> {
+auto Parser::parse_primary()  // NOLINT(misc-no-recursion)
+  -> Result<Expr, ParseError> {
   if (!current_token.has_value()) {
     return Err(ParseError::UnexpectedEndOfInput);
   }
@@ -278,8 +298,8 @@ auto Parser::parse_primary() -> Result<Expr, ParseError> {
   }
 }
 
-auto Parser::parse_function_call(const std::string& function_name)
-  -> Result<Expr, ParseError> {
+auto Parser::parse_function_call  // NOLINT(misc-no-recursion)
+  (const std::string& function_name) -> Result<Expr, ParseError> {
   // 消费左括号
   consume();
 
@@ -357,62 +377,63 @@ auto Parser::parse_var_declaration() -> Result<Expr, ParseError> {
   return Ok(Expr(std::move(var_decl)));
 }
 
-auto Parser::print_ast(const Expr& expr, int indent) -> void {
+auto Parser::print_ast(const Expr& expr, size_t indent) -> void {
   // 缩进字符串
   std::string indent_str(indent * 2, ' ');
 
   // 使用访问者模式处理不同类型的表达式
   std::visit(
     overloaded{
-      [&](IntValue n) {
-        std::cout << indent_str << "IntValue: " << n << std::endl;
-      },
+      [&](IntValue n) { std::cout << indent_str << "IntValue: " << n << '\n'; },
       [&](const std::unique_ptr<BinaryExpr>& binary_expr) {
         std::cout << indent_str << "BinaryExpr: " << to_string(binary_expr->op)
-                  << std::endl;
-        std::cout << indent_str << "  left:" << std::endl;
+                  << '\n';
+        std::cout << indent_str << "  left:" << '\n';
         print_ast(*binary_expr->left, indent + 2);
-        std::cout << indent_str << "  right:" << std::endl;
+        std::cout << indent_str << "  right:" << '\n';
         print_ast(*binary_expr->right, indent + 2);
       },
       [&](const std::unique_ptr<UnaryExpr>& unary_expr) {
         std::cout << indent_str << "UnaryExpr: " << to_string(unary_expr->op)
-                  << std::endl;
-        std::cout << indent_str << "  operand:" << std::endl;
+                  << '\n';
+        std::cout << indent_str << "  operand:" << '\n';
         print_ast(*unary_expr->operand, indent + 2);
       },
       [&](const std::unique_ptr<GroupingExpr>& grouping_expr) {
-        std::cout << indent_str << "GroupingExpr: ()" << std::endl;
-        std::cout << indent_str << "  expression:" << std::endl;
+        std::cout << indent_str << "GroupingExpr: ()" << '\n';
+        std::cout << indent_str << "  expression:" << '\n';
         print_ast(*grouping_expr->expression, indent + 2);
       },
       [&](const std::unique_ptr<VarDeclExpr>& var_decl_expr) {
         std::cout << indent_str << "VarDeclExpr: " << var_decl_expr->name
-                  << std::endl;
+                  << '\n';
         if (var_decl_expr->initializer) {
-          std::cout << indent_str << "  initializer:" << std::endl;
+          std::cout << indent_str << "  initializer:" << '\n';
           print_ast(*var_decl_expr->initializer, indent + 2);
         }
       },
       [&](const std::unique_ptr<VarRefExpr>& var_ref_expr) {
-        std::cout << indent_str << "VarRefExpr: " << var_ref_expr->name
-                  << std::endl;
+        std::cout << indent_str << "VarRefExpr: " << var_ref_expr->name << '\n';
       },
       [&](const std::unique_ptr<FunctionCallExpr>& func_call_expr) {
         std::cout << indent_str
                   << "FunctionCallExpr: " << func_call_expr->function_name
-                  << std::endl;
-        std::cout << indent_str << "  arguments:" << std::endl;
+                  << '\n';
+        std::cout << indent_str << "  arguments:" << '\n';
         for (const auto& arg : func_call_expr->arguments) {
           print_ast(*arg, indent + 2);
         }
+      },
+      [&](const std::unique_ptr<AssignExpr>& assign_expr) {
+        std::cout << indent_str << "AssignExpr: " << assign_expr->name << '\n';
       }
+      
     },
     expr.get()
   );
 }
 
-auto print_ast(const Stmt& stmt, int indent) -> void {
+auto print_ast(const Stmt& stmt, size_t indent) -> void {
   // 缩进字符串
   std::string indent_str(indent * 2, ' ');
 
@@ -420,20 +441,20 @@ auto print_ast(const Stmt& stmt, int indent) -> void {
   std::visit(
     overloaded{
       [&](const std::unique_ptr<ExprStmt>& expr_stmt) {
-        std::cout << indent_str << "ExprStmt:" << std::endl;
+        std::cout << indent_str << "ExprStmt:" << '\n';
         if (expr_stmt->expression) {
           Parser::print_ast(*expr_stmt->expression, indent + 1);
         }
       },
       [&](const std::unique_ptr<EmptyStmt>&) {
-        std::cout << indent_str << "EmptyStmt: ;" << std::endl;
+        std::cout << indent_str << "EmptyStmt: ;" << '\n';
       },
       [&](const std::unique_ptr<BlockStmt>& block_stmt) {
-        std::cout << indent_str << "BlockStmt: {" << std::endl;
+        std::cout << indent_str << "BlockStmt: {" << '\n';
         for (const auto& stmt : block_stmt->statements) {
           print_ast(*stmt, indent + 1);
         }
-        std::cout << indent_str << "}" << std::endl;
+        std::cout << indent_str << "}" << '\n';
       },
       [&](const std::unique_ptr<Expr>& expr) {
         // 兼容现有的表达式
@@ -444,11 +465,11 @@ auto print_ast(const Stmt& stmt, int indent) -> void {
   );
 }
 
-auto print_ast(const Module& module, int indent) -> void {
+auto print_ast(const Module& module, size_t indent) -> void {
   // 缩进字符串
   std::string indent_str(indent * 2, ' ');
 
-  std::cout << indent_str << "Module:" << std::endl;
+  std::cout << indent_str << "Module:" << '\n';
   for (const auto& stmt : module.statements) {
     print_ast(*stmt, indent + 1);
   }

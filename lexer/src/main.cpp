@@ -2,7 +2,6 @@
 #include <iostream>
 #include <string>
 #include "Lexer/Kaubo/Builder.h"
-#include "Lexer/Utils.h"
 #include "Parser/Kaubo/Parser.h"
 #include "Utils/System.h"
 
@@ -12,7 +11,7 @@ struct TestCase {
   int64_t expected_result;  // 假设运算结果为64位整数
 };
 
-// 执行单个测试用例并验证结果
+namespace {
 void run_test() {
   try {
     auto lexer = Lexer::Kaubo::Builder::get_instance();
@@ -21,8 +20,8 @@ void run_test() {
     );
     lexer->feed(source);
     lexer->terminate();
-    Parser::Kaubo::Parser parser1(lexer);
-    auto parseResult1 = parser1.parse();
+    Parser::Kaubo::Parser parser(std::move(lexer));
+    auto parseResult1 = parser.parse();
 
     if (parseResult1.is_ok()) {
       auto result = std::move(parseResult1).unwrap();
@@ -30,11 +29,12 @@ void run_test() {
     } else {
       std::cout << std::to_string(parseResult1.unwrap_err()) << "\n\n";
     }
-    // Lexer::Utils::print_all_tokens(lexer);
   } catch (const std::exception& e) {
     std::cout << "  ❌ Exception: " << e.what() << "\n\n";
   }
 }
+}  // namespace
+// 执行单个测试用例并验证结果
 
 auto main() -> int {
   run_test();
