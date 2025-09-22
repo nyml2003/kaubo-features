@@ -1,32 +1,32 @@
 #pragma once
 
-#include "Lexer/StateMachine.h"
-#include "Lexer/TokenType.h"
+#include "Lexer/StateMachine/Proto.h"
+#include "Lexer/Token/Type.h"
 
 #include <memory>
 
-namespace Lexer {
+namespace Lexer::StateMachine {
 
 /**
  * @brief 多状态机管理器
  * 管理多个并行运行的状态机，支持按“最长匹配+优先级”规则选择最佳匹配结果
  */
-template <TokenTypeConstraint TokenType>
-class StateMachineManager {
+template <Token::Constraint TokenType>
+class Manager {
  public:
-  using MachineId = size_t;                      // 状态机ID类型
-  using Event = StateMachine<TokenType>::Event;  // 事件类型（与状态机一致）
+  using MachineId = size_t;               // 状态机ID类型
+  using Event = Proto<TokenType>::Event;  // 事件类型（与状态机一致）
   using MatchResult = std::pair<
-    std::weak_ptr<StateMachine<TokenType>>,
+    std::weak_ptr<Proto<TokenType>>,
     size_t>;  // 匹配结果（状态机ID+匹配长度）
 
  private:
   // 状态机信息结构（包装状态机及运行时信息）
   struct MachineInfo {
-    std::shared_ptr<StateMachine<TokenType>> machine;  // 状态机实例
-    size_t match_length;                               // 当前匹配长度
-    bool is_active;                                    // 是否仍能继续处理事件
-    bool has_accepted;                                 // 是否曾进入接受状态
+    std::shared_ptr<Proto<TokenType>> machine;  // 状态机实例
+    size_t match_length;                        // 当前匹配长度
+    bool is_active;                             // 是否仍能继续处理事件
+    bool has_accepted;                          // 是否曾进入接受状态
   };
 
   MachineId next_machine_id = 0;
@@ -34,7 +34,7 @@ class StateMachineManager {
   std::vector<MachineId> active_machines;               // 活跃状态机ID缓存
 
  public:
-  StateMachineManager() = default;
+  Manager() = default;
 
   /**
    * @brief 添加状态机
@@ -42,8 +42,7 @@ class StateMachineManager {
    * @param priority 优先级（值越高，相同匹配长度时优先被选择）
    * @return 状态机ID
    */
-  auto add_machine(std::unique_ptr<StateMachine<TokenType>> machine)
-    -> MachineId {
+  auto add_machine(std::unique_ptr<Proto<TokenType>> machine) -> MachineId {
     assert(machine != nullptr && "状态机实例不能为空");
     MachineId id = next_machine_id++;
     machines[id] = {
@@ -124,7 +123,7 @@ class StateMachineManager {
     }
 
     if (best_id == static_cast<MachineId>(-1)) {
-      return {std::weak_ptr<StateMachine<TokenType>>(), max_length};
+      return {std::weak_ptr<Proto<TokenType>>(), max_length};
     }
     return {machines.at(best_id).machine, max_length};
   }
@@ -150,4 +149,4 @@ class StateMachineManager {
     return !active_machines.empty();
   }
 };
-}  // namespace Lexer
+}  // namespace Lexer::StateMachine

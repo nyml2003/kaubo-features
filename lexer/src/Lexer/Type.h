@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <string>
-namespace Lexer::Kaubo {
+namespace Lexer {
 
 enum TokenType : uint8_t {
   // 最高优先级：错误类型
@@ -19,12 +19,12 @@ enum TokenType : uint8_t {
   Divide = 8,    // 除法 /
 
   /*--- 比较运算符 ---*/
-  EqualEqual = 9,  // 等于 ==
-  NotEqual = 10,   // 不等于 !=
-  GreaterEqual = 11, // 大于等于 >=
-  LessEqual = 12,  // 小于等于 <=
-  Greater = 13,    // 大于 >
-  Less = 14,       // 小于 <
+  EqualEqual = 9,     // 等于 ==
+  NotEqual = 10,      // 不等于 !=
+  GreaterEqual = 11,  // 大于等于 >=
+  LessEqual = 12,     // 小于等于 <=
+  Greater = 13,       // 大于 >
+  Less = 14,          // 小于 <
 
   /*--- 中优先级：字面量和标识符 ---*/
   // 整数字面量（支持64位有符号整数）
@@ -111,4 +111,4 @@ inline auto to_string(TokenType type) -> std::string {
   return "UnknownToken";
 }
 
-}  // namespace Lexer::Kaubo
+}  // namespace Lexer

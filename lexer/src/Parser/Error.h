@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-namespace Parser::Kaubo {
+namespace Parser {
 // 解析错误类型
 enum class Error : uint8_t {
   UnexpectedToken,
@@ -13,7 +13,7 @@ enum class Error : uint8_t {
 }  // namespace Parser::Kaubo
 
 namespace std {
-using Parser::Kaubo::Error;
+using Parser::Error;
 inline auto to_string(Error error) -> const char* {
   switch (error) {
     case Error::UnexpectedToken:

@@ -1,22 +1,13 @@
 #pragma once
 
-#include "Lexer/Lexer.h"
-namespace Lexer::Builder {
+#include "Lexer/Core/Builder.h"
+#include "Lexer/Core/Proto.h"
+#include "Lexer/Type.h"
 
-template <TokenTypeConstraint TokenType, typename Derived>
-class IBuilder {
+namespace Lexer {
+class Builder : public IBuilder<Lexer::TokenType, Builder> {
  public:
-  virtual auto build() -> Instance<TokenType> = 0;
-  virtual ~IBuilder() = default;
-  explicit IBuilder() = default;
-  IBuilder(const IBuilder&) = delete;
-  IBuilder(IBuilder&&) = delete;
-  auto operator=(const IBuilder&) -> IBuilder& = delete;
-  auto operator=(IBuilder&&) -> IBuilder& = delete;
-  static auto get_instance() -> Instance<TokenType> {
-    static Derived instance;
-    return instance.build();
-  }
+  auto build() -> Instance<TokenType> override;
 };
 
-}  // namespace Lexer::Builder
+}  // namespace Lexer

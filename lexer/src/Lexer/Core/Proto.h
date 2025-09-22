@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Lexer/StateMachine.h"
-#include "Lexer/StateMachineManager.h"
-#include "Lexer/Token.h"
-#include "Lexer/TokenType.h"
+#include "Lexer/StateMachine/Manager.h"
+#include "Lexer/StateMachine/Proto.h"
+#include "Lexer/Token/Constraint.h"
+#include "Lexer/Token/Type.h"
 #include "Utils/Result.h"
 #include "Utils/RingBuffer.h"
 #include "Utils/Utf8.h"
@@ -13,14 +13,13 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 
 namespace Lexer {
 using Utils::Err;
 using Utils::Ok;
 using Utils::Result;
 using Utils::RingBuffer;
-template <TokenTypeConstraint TokenType>
+template <Token::Constraint TokenType>
 class Proto {
  private:
   // 坐标系统
@@ -29,7 +28,7 @@ class Proto {
 
   std::unique_ptr<RingBuffer> ring_buffer;
   size_t current_token_length = 0;
-  StateMachineManager<TokenType> manager;
+  StateMachine::Manager<TokenType> manager;
   bool eof = false;  // 标志不会再读取输入
   std::string token_buffer;
 
@@ -75,13 +74,13 @@ class Proto {
     reset_token_state();
   }
 
-  auto handle_utf8_error() -> Token<TokenType> {
+  auto handle_utf8_error() -> Token::Proto<TokenType> {
     auto maybe_byte = ring_buffer->try_pop();
     if (!maybe_byte) {
       throw std::runtime_error("Lexer::handle_utf8_error ring_buffer is empty");
     }
     auto byte = maybe_byte.value();
-    auto err_token = Token<TokenType>{
+    auto err_token = Token::Proto<TokenType>{
       .type = TokenType::Utf8Error,
       .value = std::string(1, byte),
       .coordinate = current_token_start
@@ -94,7 +93,7 @@ class Proto {
   }
 
   // EOF 时强制结算最后一个 token（即使有活跃状态机）
-  auto finalize_last_token() -> std::optional<Token<TokenType>> {
+  auto finalize_last_token() -> std::optional<Token::Proto<TokenType>> {
     if (current_token_length == 0) {
       return std::nullopt;
     }
@@ -102,20 +101,20 @@ class Proto {
     auto [best_machine, _] = manager.select_best_match();
 
     read_token_buffer(current_token_length);
-    std::optional<Token<TokenType>> token = std::nullopt;
+    std::optional<Token::Proto<TokenType>> token = std::nullopt;
 
     if (auto machine = best_machine.lock()) {
       auto token_type = machine->get_token_type();
       if (token_type != TokenType::NewLine &&
           token_type != TokenType::WhiteSpace && token_type != TokenType::Tab) {
-        token = Token<TokenType>{
+        token = Token::Proto<TokenType>{
           .type = machine->get_token_type(),
           .value = token_buffer,
           .coordinate = current_token_start,
         };
       }
     } else {
-      token = Token<TokenType>{
+      token = Token::Proto<TokenType>{
         .type = TokenType::InvalidToken,
         .value = token_buffer,
         .coordinate = current_token_start,
@@ -183,13 +182,13 @@ class Proto {
     return Ok(EatStatus::Continue);
   }
 
-  auto build_utf8_error_token() -> Token<TokenType> {
+  auto build_utf8_error_token() -> Token::Proto<TokenType> {
     auto maybe_leading_byte = ring_buffer->try_pop();
     if (!maybe_leading_byte) {
       throw std::runtime_error("Cannot build UTF-8 error token");
     }
     auto leading_byte = maybe_leading_byte.value();
-    auto token = Token<TokenType>{
+    auto token = Token::Proto<TokenType>{
       .type = TokenType::Utf8Error,
       .value = std::string(1, leading_byte),
       .coordinate = current_token_start,
@@ -200,7 +199,7 @@ class Proto {
     return token;
   }
 
-  auto build_token() -> std::optional<Token<TokenType>> {
+  auto build_token() -> std::optional<Token::Proto<TokenType>> {
     auto [best_machine, _] = manager.select_best_match();
     if (auto machine = best_machine.lock()) {
       auto token_type = machine->get_token_type();
@@ -217,7 +216,7 @@ class Proto {
         return next_token();
       }
       read_token_buffer(current_token_length);
-      auto token = Token<TokenType>{
+      auto token = Token::Proto<TokenType>{
         .type = token_type,
         .value = token_buffer,
         .coordinate = current_token_start,
@@ -246,11 +245,13 @@ class Proto {
 
   void terminate() { eof = true; }
 
-  void register_machine(std::unique_ptr<StateMachine<TokenType>> machine) {
+  void register_machine(
+    std::unique_ptr<StateMachine::Proto<TokenType>> machine
+  ) {
     manager.add_machine(std::move(machine));
   }
 
-  auto next_token() -> std::optional<Token<TokenType>> {
+  auto next_token() -> std::optional<Token::Proto<TokenType>> {
     bool at_end = end_of_input();
     if (at_end) {
       if (eof) {
@@ -284,7 +285,7 @@ class Proto {
   }
 };
 
-template <TokenTypeConstraint TokenType>
+template <Token::Constraint TokenType>
 using Instance = std::unique_ptr<Lexer::Proto<TokenType>>;
 
 }  // namespace Lexer

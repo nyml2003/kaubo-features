@@ -2,15 +2,15 @@
 
 #include "Expr.h"
 
-namespace Parser::Kaubo::Stmt {
+namespace Parser::Stmt {
 class Stmt;
 }  // namespace Parser::Kaubo::Stmt
 
-namespace Parser::Kaubo {
+namespace Parser {
 using StmtPtr = std::shared_ptr<Stmt::Stmt>;
 }
 
-namespace Parser::Kaubo::Stmt {
+namespace Parser::Stmt {
 
 // 表达式语句
 struct Expr {
@@ -25,12 +25,18 @@ struct Block {
   std::vector<StmtPtr> statements;
 };
 
+struct VarDecl {
+  std::string name;
+  ExprPtr initializer;
+};
+
 class Stmt {
  public:
   using ValueType = std::variant<
     std::shared_ptr<Expr>,
     std::shared_ptr<Empty>,
-    std::shared_ptr<Block>>;  // 兼容现有的表达式
+    std::shared_ptr<Block>,
+    std::shared_ptr<VarDecl>>;
 
   explicit Stmt() = delete;
 

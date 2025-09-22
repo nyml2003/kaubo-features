@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Parser/Kaubo/Parser.h"
-namespace Parser::Kaubo::Utils {
+#include "Parser/Parser.h"
+namespace Parser::Utils {
 inline auto get_precedence(TokenType op) -> int32_t {
   switch (op) {
     // 赋值运算符（最低优先级）
@@ -44,4 +44,4 @@ inline auto create(Args&&... args) -> std::shared_ptr<T> {
   return std::make_shared<T>(std::forward<Args>(args)...);
 }
 
-}  // namespace Parser::Kaubo::Utils
+}  // namespace Parser::Utils

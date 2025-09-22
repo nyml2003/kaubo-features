@@ -1,19 +1,19 @@
 #pragma once
-#include "Lexer/TokenType.h"
+#include "Lexer/Token/Type.h"
 
 #include <functional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-namespace Lexer {
+namespace Lexer::StateMachine {
 
 /**
  * @brief 通用状态机框架
  * 纯状态机逻辑，与具体任务无关，只负责状态管理和转移
  */
-template <TokenTypeConstraint TokenType>
-class StateMachine {
+template <Token::Constraint TokenType>
+class Proto {
  public:
   using StateId = size_t;  // 状态ID类型
   using Event = char;      // 事件类型（输入字符）
@@ -49,7 +49,7 @@ class StateMachine {
    * @brief 构造函数
    * @param initial_state_name 初始状态名称
    */
-  explicit StateMachine(TokenType token_type)
+  explicit Proto(TokenType token_type)
     : initial_state(add_state(false)), token_type(token_type) {
     current_state = initial_state;
   }
@@ -150,4 +150,4 @@ class StateMachine {
 
   [[nodiscard]] auto get_token_type() const -> TokenType { return token_type; }
 };
-}  // namespace Lexer
+}  // namespace Lexer::StateMachine

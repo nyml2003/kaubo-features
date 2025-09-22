@@ -1,8 +1,8 @@
 #include <cassert>
 #include <iostream>
 #include <string>
-#include "Lexer/Kaubo/Builder.h"
-#include "Parser/Kaubo/Parser.h"
+#include "Lexer/Builder.h"
+#include "Parser/Parser.h"
 #include "Utils/System.h"
 
 // 测试用例结构：表达式字符串 + 预期C++计算结果
@@ -14,21 +14,18 @@ struct TestCase {
 namespace {
 void run_test() {
   try {
-    auto lexer = Lexer::Kaubo::Builder::get_instance();
+    auto lexer = Lexer::Builder::get_instance();
     auto source = Utils::System::read_file(
       R"(C:\Users\nyml\code\kaubo-features\lexer\test\programs\a.kaubo)"
     );
     lexer->feed(source);
     lexer->terminate();
-    Parser::Kaubo::Parser parser(std::move(lexer));
+    Parser::Parser parser(std::move(lexer));
     auto parseResult1 = parser.parse();
-
     if (parseResult1.is_ok()) {
-      auto result = std::move(parseResult1).unwrap();
-      Parser::Kaubo::print_ast(result);
-    } else {
-      std::cout << std::to_string(parseResult1.unwrap_err()) << "\n\n";
+      Parser::print_ast(parseResult1.unwrap(), 0);
     }
+
   } catch (const std::exception& e) {
     std::cout << "  ❌ Exception: " << e.what() << "\n\n";
   }

@@ -1,7 +1,7 @@
 #include "Builder.h"
 #include "Machines.h"
 
-namespace Lexer::Kaubo {
+namespace Lexer {
 auto Builder::build() -> Instance<TokenType> {
   auto lexer = std::make_unique<Lexer::Proto<TokenType>>(1024);
 
@@ -14,7 +14,7 @@ auto Builder::build() -> Instance<TokenType> {
   lexer->register_machine(Machines::create_minus_machine());
   lexer->register_machine(Machines::create_multiply_machine());
   lexer->register_machine(Machines::create_divide_machine());
-  
+
   // 注册比较运算符状态机
   lexer->register_machine(Machines::create_equal_equal_machine());
   lexer->register_machine(Machines::create_not_equal_machine());
@@ -49,4 +49,4 @@ auto Builder::build() -> Instance<TokenType> {
   return lexer;
 }
 
-}  // namespace Lexer::Kaubo
+}  // namespace Lexer
