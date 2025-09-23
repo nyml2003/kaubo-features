@@ -42,6 +42,7 @@ auto Builder::build() -> Instance<TokenType> {
 
   // 注册整数状态机
   lexer->register_machine(Machines::create_integer_machine());
+  lexer->register_machine(Machines::create_string_machine());
 
   // 注册空白字符状态机
   lexer->register_machine(Machines::create_whitespace_machine());

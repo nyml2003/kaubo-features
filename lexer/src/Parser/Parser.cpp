@@ -222,6 +222,16 @@ auto Parser::parse_identifier_expression  // NOLINT(misc-no-recursion)
   return Ok(expr);
 }
 
+auto Parser::parse_string() -> Result<ExprPtr, Error> {
+  enter_expr();
+  auto expr = Utils::create<Expr::Expr>(
+    Utils::create(Expr::LiteralString{.value = current_token->value})
+  );
+  consume();
+  exit_expr(expr);
+  return Ok(expr);
+}
+
 auto Parser::parse_primary()  // NOLINT(misc-no-recursion)
   -> Result<ExprPtr, Error> {
   if (!current_token.has_value()) {
@@ -231,6 +241,10 @@ auto Parser::parse_primary()  // NOLINT(misc-no-recursion)
   switch (current_token->type) {
     case TokenType::Integer: {
       return parse_int();
+    }
+
+    case TokenType::String: {
+      return parse_string();
     }
 
     case TokenType::LeftParen: {

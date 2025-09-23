@@ -66,6 +66,7 @@ class Parser {
   auto parse_expression(int32_t precedence = 0) -> Result<ExprPtr, Error>;
   auto parse_primary() -> Result<ExprPtr, Error>;
   auto parse_int() -> Result<ExprPtr, Error>;
+  auto parse_string() -> Result<ExprPtr, Error>;
   auto parse_identifier_expression() -> Result<ExprPtr, Error>;
   auto parse_unary() -> Result<ExprPtr, Error>;
   auto parse_parenthesized() -> Result<ExprPtr, Error>;
@@ -122,6 +123,9 @@ inline auto print_ast(const ExprPtr& expr, size_t indent) -> void {
     overloaded{
       [&](const std::shared_ptr<Expr::LiteralInt>& int_value_expr) -> void {
         std::cout << indent_str << int_value_expr->value << '\n';
+      },
+      [&](const std::shared_ptr<Expr::LiteralString>& str_value_expr) -> void {
+        std::cout << indent_str << str_value_expr->value << '\n';
       },
       [&](const std::shared_ptr<Expr::Binary>& binary_expr) {
         std::cout << indent_str << "BinaryExpr" << '\n';

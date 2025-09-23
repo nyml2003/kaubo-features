@@ -13,6 +13,10 @@ struct LiteralInt {
   int64_t value;
 };
 
+struct LiteralString {
+  std::string value;
+};
+
 // 二元运算符表达式
 struct Binary {
   ExprPtr left;
@@ -56,6 +60,7 @@ class Expr {
  public:
   using ValueType = std::variant<
     std::shared_ptr<LiteralInt>,
+    std::shared_ptr<LiteralString>,
     std::shared_ptr<Binary>,
     std::shared_ptr<Unary>,
     std::shared_ptr<Grouping>,

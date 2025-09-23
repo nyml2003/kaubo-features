@@ -12,43 +12,40 @@ enum TokenType : uint8_t {
   Var = 1,      // var 关键字
   IntType = 2,  // int 类型关键字
 
-  /*--- 高优先级：运算符 ---*/
-  Plus = 5,      // 加法 + (一元或二元)
-  Minus = 6,     // 减法 - (一元或二元)
-  Multiply = 7,  // 乘法 *
-  Divide = 8,    // 除法 /
+  /*--- 字面量 ---*/
+  Integer = 100,  // 64位有符号整数
+  String = 101,   // 字符串字面量
 
-  /*--- 比较运算符 ---*/
-  RightArrow = 9,  // 箭头 ->
+  /*--- 标识符 ---*/
+  Identifier = 120,
 
-  NotEqual = 10,      // 不等于 !=
-  GreaterEqual = 11,  // 大于等于 >=
-  LessEqual = 12,     // 小于等于 <=
-  EqualEqual = 13,    // 等于 ==
-  Greater = 17,       // 大于 >
-  Less = 18,          // 小于 <
+  /*--- 二字符运算符 ---*/
+  EqualEqual = 130,    // 等于 ==
+  NotEqual = 131,      // 不等于 !=
+  GreaterEqual = 132,  // 大于等于 >=
+  LessEqual = 133,     // 小于等于 <=
+  RightArrow = 134,    // 右箭头 ->
 
-  /*--- 中优先级：字面量和标识符 ---*/
-  // 整数字面量（支持64位有符号整数）
-  Integer = 20,
-  Identifier = 21,  // 标识符
-
-  /*--- 标点符号 ---*/
-  Colon = 25,      // 冒号 :
-  Equals = 26,     // 等号 =
-  Comma = 27,      // 逗号 ,
-  Semicolon = 28,  // 分号 ;
-
-  /*--- 较低优先级：括号 ---*/
-  LeftParen = 32,   // 左括号 (
-  RightParen = 33,  // 右括号 )
-  LeftBrace = 34,   // 左大括号 {
-  RightBrace = 35,  // 右大括号 }
+  /*--- 一字符运算符 ---*/
+  Greater = 150,     // 大于 >
+  Less = 151,        // 小于 <
+  Plus = 152,        // 加法 + (一元或二元)
+  Minus = 153,       // 减法 - (一元或二元)
+  Multiply = 154,    // 乘法 *
+  Divide = 155,      // 除法 /
+  Colon = 156,       // 冒号 :
+  Equals = 157,      // 等号 =
+  Comma = 158,       // 逗号 ,
+  Semicolon = 159,   // 分号 ;
+  LeftParen = 160,   // 左括号 (
+  RightParen = 161,  // 右括号 )
+  LeftBrace = 162,   // 左大括号 {
+  RightBrace = 163,  // 右大括号 }
 
   // 空格和换行符
-  WhiteSpace = 44,
-  Tab = 45,  // 制表符
-  NewLine = 46,
+  WhiteSpace = 240,
+  Tab = 241,  // 制表符
+  NewLine = 242,
 
   InvalidToken = 255,
 };
@@ -73,18 +70,20 @@ inline auto to_string(TokenType type) -> std::string {
       return "==";
     case NotEqual:
       return "!=";
+    case RightArrow:
+      return "->";
     case Greater:
-      return ">";
+      return "Greater";
     case Less:
-      return "<";
+      return "Less";
     case GreaterEqual:
       return ">=";
     case LessEqual:
       return "<=";
-    case RightArrow:
-      return "->";
     case Integer:
       return "Integer";
+    case String:
+      return "String";
     case Identifier:
       return "Identifier";
     case Colon:

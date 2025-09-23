@@ -2,3 +2,5 @@
 var b = (a,b,v) -> {
     print(a+b+v);
 };
+
+print("123");
