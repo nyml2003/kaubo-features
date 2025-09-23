@@ -41,6 +41,8 @@ enum TokenType : uint8_t {
   RightParen = 161,  // 右括号 )
   LeftBrace = 162,   // 左大括号 {
   RightBrace = 163,  // 右大括号 }
+  Dot = 164,         // 点号 .
+  Pipe = 165,        // 位或 |
 
   // 空格和换行符
   WhiteSpace = 240,
@@ -110,6 +112,10 @@ inline auto to_string(TokenType type) -> std::string {
       return "Comma";
     case Semicolon:
       return "Semicolon";
+    case Dot:
+      return ".";
+    case Pipe:
+      return "|";
   }
   return "UnknownToken";
 }

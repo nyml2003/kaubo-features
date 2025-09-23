@@ -65,13 +65,15 @@ class Parser {
 
   auto parse_expression(int32_t precedence = 0) -> Result<ExprPtr, Error>;
   auto parse_primary() -> Result<ExprPtr, Error>;
+  auto parse_primary_base() -> Result<ExprPtr, Error>;
   auto parse_int() -> Result<ExprPtr, Error>;
   auto parse_string() -> Result<ExprPtr, Error>;
   auto parse_identifier_expression() -> Result<ExprPtr, Error>;
   auto parse_unary() -> Result<ExprPtr, Error>;
   auto parse_parenthesized() -> Result<ExprPtr, Error>;
-  auto parse_function_call(const std::string& function_name)
-    -> Result<ExprPtr, Error>;
+  auto parse_lambda() -> Result<ExprPtr, Error>;
+  auto parse_function_call(ExprPtr) -> Result<ExprPtr, Error>;
+  auto parse_postfix(ExprPtr expr) -> Result<ExprPtr, Error>;
   auto parse_statement() -> Result<StmtPtr, Error>;
   auto parse_block() -> Result<StmtPtr, Error>;
   auto parse_module() -> Result<ModulePtr, Error>;
@@ -150,13 +152,25 @@ inline auto print_ast(const ExprPtr& expr, size_t indent) -> void {
         }
         print_ast(lambda_expr->body, indent + 1);
       },
-      [&](const std::shared_ptr<Expr::FunctionCall>& function_call_expr)
-        -> void {
-        std::cout << indent_str << "FunctionCall" << '\n';
-        std::cout << indent_str << "  " << function_call_expr->function_name
-                  << '\n';
-        for (const auto& arg : function_call_expr->arguments) {
-          print_ast(arg, indent + 1);
+      [&](const std::shared_ptr<Expr::MemberAccess>& member_expr) -> void {
+        std::cout << indent_str << "MemberAccessExpr" << '\n';
+        // 打印成员所属对象（如 a）
+        std::cout << indent_str << "  Object:" << '\n';
+        print_ast(member_expr->object, indent + 2);
+        // 打印成员名（如 b）
+        std::cout << indent_str << "  Member: " << member_expr->member << '\n';
+      },
+
+      // 修改：打印 FunctionCall 节点（支持 a.b()）
+      [&](const std::shared_ptr<Expr::FunctionCall>& call_expr) -> void {
+        std::cout << indent_str << "FunctionCallExpr" << '\n';
+        // 打印函数表达式（如 a.b 或 f）
+        std::cout << indent_str << "  Function:" << '\n';
+        print_ast(call_expr->function_expr, indent + 2);
+        // 打印参数列表
+        std::cout << indent_str << "  Arguments:" << '\n';
+        for (const auto& arg : call_expr->arguments) {
+          print_ast(arg, indent + 2);
         }
       },
       [&](const std::shared_ptr<Expr::Grouping>& grouping_expr) -> void {

@@ -1,6 +1,5 @@
-
-var b = (a,b,v) -> {
-    print(a+b+v);
+var func = |a|{
+    print(a.b.c);
 };
 
-print("123");
+func(a);

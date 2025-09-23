@@ -356,6 +356,32 @@ inline auto create_greater_machine()
   return machine;
 }
 
+inline auto create_dot_machine()
+  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
+  auto machine =
+    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Dot);
+
+  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '.'; });
+
+  return machine;
+}
+
+inline auto create_pipe_machine()
+  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
+  auto machine =
+    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Pipe);
+
+  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '|'; });
+
+  return machine;
+}
+
 inline auto create_less_machine()
   -> std::unique_ptr<StateMachine::Proto<TokenType>> {
   auto machine =

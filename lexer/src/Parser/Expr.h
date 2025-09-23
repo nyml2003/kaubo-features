@@ -41,7 +41,7 @@ struct VarRef {
 
 // 函数调用表达式
 struct FunctionCall {
-  std::string function_name;
+  ExprPtr function_expr;
   std::vector<ExprPtr> arguments;
 };
 
@@ -51,9 +51,16 @@ struct Assign {
   ExprPtr value;
 };
 
+// 匿名函数表达式
 struct Lambda {
   std::vector<std::string> params;
   Parser::StmtPtr body;
+};
+
+// 成员访问表达式
+struct MemberAccess {
+  ExprPtr object;      // 成员所属的对象（如 a，类型为 ExprPtr）
+  std::string member;  // 成员名（如 b，字符串）
 };
 
 class Expr {
@@ -67,7 +74,8 @@ class Expr {
     std::shared_ptr<VarRef>,
     std::shared_ptr<FunctionCall>,
     std::shared_ptr<Assign>,
-    std::shared_ptr<Lambda>>;
+    std::shared_ptr<Lambda>,
+    std::shared_ptr<MemberAccess>>;
 
   explicit Expr() = delete;
 

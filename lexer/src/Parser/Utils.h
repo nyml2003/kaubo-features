@@ -8,29 +8,40 @@ inline auto get_precedence(TokenType op) -> int32_t {
     case TokenType::Equals:
       return 5;
 
-    // 比较运算符（二字符，优先级较高）
+    // 比较运算符（优先级低于算术运算符）
     case TokenType::EqualEqual:
     case TokenType::NotEqual:
     case TokenType::Greater:
     case TokenType::Less:
     case TokenType::GreaterEqual:
     case TokenType::LessEqual:
-      return 15;
+      return 10;  // 降低比较运算符优先级
 
-    // 算术运算符
+    // 加法/减法（优先级高于比较，低于乘除）
     case TokenType::Plus:
     case TokenType::Minus:
-      return 10;
+      return 20;
+
+    // 乘法/除法（最高优先级）
     case TokenType::Multiply:
     case TokenType::Divide:
-      return 20;
+      return 30;
+
+    // 成员访问运算符（如果之前添加了Dot，优先级应最高）
+    case TokenType::Dot:
+      return 40;
+
     default:
       return 0;
   }
 }
 
-inline auto get_associativity(TokenType /*op*/) -> bool {
-  // 所有运算符都是左结合的
+inline auto get_associativity(TokenType op) -> bool {
+  // 赋值运算符是右结合（a = b = c 等价于 a = (b = c)）
+  if (op == TokenType::Equals) {
+    return false;
+  }
+  // 其他运算符左结合
   return true;
 }
 

@@ -1,5 +1,7 @@
-#include "Parser/Parser.h"
+#include <utility>
+
 #include "Parser/Expr.h"
+#include "Parser/Parser.h"
 #include "Parser/Stmt.h"
 #include "Parser/Utils.h"
 
@@ -118,7 +120,6 @@ auto Parser::parse_block()  // NOLINT(misc-no-recursion)
 auto Parser::parse_expression(int32_t precedence)  // NOLINT(misc-no-recursion)
   -> Result<ExprPtr, Error> {
   // 解析左操作数（一元表达式或基本表达式）
-
   auto left_result = parse_unary();
   if (left_result.is_err()) {
     return Err(left_result.unwrap_err());
@@ -207,13 +208,6 @@ auto Parser::parse_identifier_expression  // NOLINT(misc-no-recursion)
   () -> Result<ExprPtr, Error> {
   std::string identifier_name = current_token->value;
   consume();
-
-  // 检查是否是函数调用
-  if (check(TokenType::LeftParen)) {
-    return parse_function_call(identifier_name);
-  }
-
-  // 普通变量引用
   enter_expr();
   auto expr = Utils::create<Expr::Expr>(
     Utils::create(Expr::VarRef{.name = identifier_name})
@@ -224,57 +218,31 @@ auto Parser::parse_identifier_expression  // NOLINT(misc-no-recursion)
 
 auto Parser::parse_string() -> Result<ExprPtr, Error> {
   enter_expr();
-  auto expr = Utils::create<Expr::Expr>(
-    Utils::create(Expr::LiteralString{.value = current_token->value})
-  );
+  auto expr = Utils::create<Expr::Expr>(Utils::create(
+    Expr::LiteralString{
+      .value = current_token->value.substr(1, current_token->value.size() - 2)
+    }
+  ));
   consume();
   exit_expr(expr);
   return Ok(expr);
 }
 
-auto Parser::parse_primary()  // NOLINT(misc-no-recursion)
+// 新增：解析匿名函数 |参数列表|{函数体}
+auto Parser::parse_lambda()  // NOLINT(misc-no-recursion)
   -> Result<ExprPtr, Error> {
-  if (!current_token.has_value()) {
-    return Err(Error::UnexpectedEndOfInput);
+  // 消费左竖线 |
+  if (!match(TokenType::Pipe)) {
+    return Err(Error::ExpectedPipe);
   }
 
-  switch (current_token->type) {
-    case TokenType::Integer: {
-      return parse_int();
-    }
-
-    case TokenType::String: {
-      return parse_string();
-    }
-
-    case TokenType::LeftParen: {
-      return parse_parenthesized();
-    }
-
-    case TokenType::Identifier: {
-      return parse_identifier_expression();
-    }
-
-    default:
-      return Err(Error::UnexpectedToken);
-  }
-}
-
-auto Parser::parse_parenthesized  // NOLINT(misc-no-recursion)
-  () -> Result<ExprPtr, Error> {
-  consume();  // 消费 '('
-
-  // 先尝试解析参数列表（可能是函数定义的参数）
   std::vector<std::string> parameters;
-  bool is_function_def = false;
 
-  // 检查是否是函数定义的参数列表
-  if (!check(TokenType::RightParen)) {
-    // 解析参数列表
+  // 解析参数列表（|a, b| 形式）
+  if (!check(TokenType::Pipe)) {  // 如果不是空参数列表
     while (true) {
       if (!check(TokenType::Identifier)) {
-        // 不是标识符，说明不是函数参数，退出参数解析
-        break;
+        return Err(Error::ExpectedIdentifierInLambdaParams);
       }
 
       // 收集参数名
@@ -282,54 +250,86 @@ auto Parser::parse_parenthesized  // NOLINT(misc-no-recursion)
       consume();
 
       if (match(TokenType::Comma)) {
-        continue;
+        continue;  // 处理多个参数
       }
-      if (check(TokenType::RightParen)) {
-        break;
+      if (check(TokenType::Pipe)) {
+        break;  // 参数列表结束
       }
-      return Err(Error::ExpectedCommaOrRightParen);
+      return Err(Error::ExpectedCommaOrPipeInLambda);
     }
   }
 
-  // 消费参数列表的 ')'
-  if (!match(TokenType::RightParen)) {
-    return Err(Error::MissingRightParen);
+  // 消费右竖线 |
+  if (!match(TokenType::Pipe)) {
+    return Err(Error::ExpectedPipe);
   }
 
-  // 检查是否有 '->'，确定是函数定义
-  if (match(TokenType::RightArrow)) {
-    is_function_def = true;
+  // 解析函数体（必须是代码块）
+  if (!check(TokenType::LeftBrace)) {
+    return Err(Error::ExpectedLeftBraceInLambdaBody);
+  }
+  auto body_result = parse_block();
+  if (body_result.is_err()) {
+    return Err(body_result.unwrap_err());
   }
 
-  if (is_function_def) {
-    // 解析函数体
-    if (!check(TokenType::LeftBrace)) {
-      return Err(Error::ExpectedLeftBraceAfterArrow);
+  // 创建lambda表达式节点
+  enter_expr();
+  auto lambda_expr = Utils::create<Expr::Expr>(Utils::create(
+    Expr::Lambda{
+      .params = parameters,
+      .body = body_result.unwrap(),
     }
+  ));
+  exit_expr(lambda_expr);
+  return Ok(lambda_expr);
+}
 
-    auto body_result = parse_block();
-    if (body_result.is_err()) {
-      return Err(body_result.unwrap_err());
-    }
-
-    // 创建函数定义节点
-    enter_expr();
-    auto func_expr = Utils::create<Expr::Expr>(Utils::create(
-      Expr::Lambda{
-        .params = parameters,
-        .body = body_result.unwrap(),
-      }
-    ));
-    exit_expr(func_expr);
-    return Ok(func_expr);
+auto Parser::parse_primary_base  // NOLINT(misc-no-recursion)
+  () -> Result<ExprPtr, Error> {
+  if (!current_token.has_value()) {
+    return Err(Error::UnexpectedEndOfInput);
   }
 
-  // 普通分组表达式
+  switch (current_token->type) {
+    case TokenType::Integer:
+      return parse_int();
+    case TokenType::String:
+      return parse_string();
+    case TokenType::LeftParen:
+      return parse_parenthesized();
+    case TokenType::Identifier:
+      return parse_identifier_expression();
+    case TokenType::Pipe:  // 新增：遇到|时解析匿名函数
+      return parse_lambda();
+    default:
+      return Err(Error::UnexpectedToken);
+  }
+}
+
+auto Parser::parse_primary  // NOLINT(misc-no-recursion)
+  () -> Result<ExprPtr, Error> {
+  // 先解析基础表达式
+  auto base_expr = parse_primary_base();
+  if (base_expr.is_err()) {
+    return Err(base_expr.unwrap_err());
+  }
+
+  // 再处理后缀运算符（. 成员访问、() 函数调用等）
+  return parse_postfix(base_expr.unwrap());
+}
+
+auto Parser::parse_parenthesized  // NOLINT(misc-no-recursion)
+  () -> Result<ExprPtr, Error> {
+  consume();  // 消费 '('
+
+  // 解析括号内的表达式（仅作为分组，不再处理函数定义）
   auto expr_result = parse_expression();
   if (expr_result.is_err()) {
     return Err(expr_result.unwrap_err());
   }
 
+  // 期望右括号
   if (!match(TokenType::RightParen)) {
     return Err(Error::MissingRightParen);
   }
@@ -343,7 +343,7 @@ auto Parser::parse_parenthesized  // NOLINT(misc-no-recursion)
 }
 
 auto Parser::parse_function_call  // NOLINT(misc-no-recursion)
-  (const std::string& function_name) -> Result<ExprPtr, Error> {
+  (ExprPtr function_expr) -> Result<ExprPtr, Error> {
   // 消费左括号
   consume();
 
@@ -375,11 +375,43 @@ auto Parser::parse_function_call  // NOLINT(misc-no-recursion)
   enter_expr();
   auto expr = Utils::create<Expr::Expr>(Utils::create(
     Expr::FunctionCall{
-      .function_name = function_name,
+      .function_expr = std::move(function_expr),
       .arguments = arguments,
     }
   ));
   exit_expr(expr);
+  return Ok(expr);
+}
+
+auto Parser::parse_postfix(ExprPtr expr)  // NOLINT(misc-no-recursion)
+  -> Result<ExprPtr, Error> {
+  while (true) {
+    if (check(Lexer::TokenType::Dot)) {
+      // 处理成员访问（a.b）
+      consume();  // 消费 '.'
+
+      if (!check(Lexer::TokenType::Identifier)) {
+        return Err(Error::ExpectedIdentifierAfterDot);
+      }
+
+      std::string member_name = current_token->value;
+      consume();  // 消费标识符
+
+      enter_expr();
+      expr = Utils::create<Expr::Expr>(
+        Utils::create(Expr::MemberAccess{.object = expr, .member = member_name})
+      );
+      exit_expr(expr);
+
+    } else if (check(Lexer::TokenType::LeftParen)) {
+      // 处理函数调用（a.b() 或 f()）
+      expr = parse_function_call(expr).unwrap();
+
+    } else {
+      // 无后缀运算符，退出循环
+      break;
+    }
+  }
   return Ok(expr);
 }
 
@@ -401,7 +433,7 @@ auto Parser::parse_var_declaration()  // NOLINT(misc-no-recursion)
     return Err(Error::UnexpectedToken);
   }
 
-  // 解析表达式
+  // 解析表达式（支持新的lambda语法）
   auto expr_result = parse_expression();
   if (expr_result.is_err()) {
     return Err(expr_result.unwrap_err());
