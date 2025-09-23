@@ -313,6 +313,21 @@ inline auto create_equal_equal_machine()
   return machine;
 }
 
+inline auto create_right_arrow_machine()
+  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
+  auto machine =
+    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::RightArrow);
+
+  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
+  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(false);
+  StateMachine::Proto<TokenType>::StateId s2 = machine->add_state(true);
+
+  machine->add_transition(s0, s1, [](char c) { return c == '-'; });
+  machine->add_transition(s1, s2, [](char c) { return c == '>'; });
+
+  return machine;
+}
+
 inline auto create_not_equal_machine()
   -> std::unique_ptr<StateMachine::Proto<TokenType>> {
   auto machine =

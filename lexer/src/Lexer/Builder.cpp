@@ -23,6 +23,8 @@ auto Builder::build() -> Instance<TokenType> {
   lexer->register_machine(Machines::create_greater_equal_machine());
   lexer->register_machine(Machines::create_less_equal_machine());
 
+  lexer->register_machine(Machines::create_right_arrow_machine());
+
   // 注册标识符状态机
   lexer->register_machine(Machines::create_identifier_machine());
 

@@ -32,4 +32,17 @@ inline auto print_all_tokens(std::shared_ptr<Proto<TokenType>> lexer) {
   }
 }
 
+template <Token::Constraint TokenType>
+inline auto print_all_tokens(std::unique_ptr<Proto<TokenType>> lexer) {
+  while (!lexer->end_of_input()) {
+    auto maybe_token = lexer->next_token();
+    if (maybe_token) {
+      const auto& token = maybe_token.value();
+      std::cout << std::to_string(token) << "\n";
+    } else {
+      break;
+    }
+  }
+}
+
 }  // namespace Lexer::Utils

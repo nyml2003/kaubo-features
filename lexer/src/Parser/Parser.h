@@ -65,12 +65,16 @@ class Parser {
 
   auto parse_expression(int32_t precedence = 0) -> Result<ExprPtr, Error>;
   auto parse_primary() -> Result<ExprPtr, Error>;
+  auto parse_int() -> Result<ExprPtr, Error>;
+  auto parse_identifier_expression() -> Result<ExprPtr, Error>;
   auto parse_unary() -> Result<ExprPtr, Error>;
+  auto parse_parenthesized() -> Result<ExprPtr, Error>;
+  auto parse_function_call(const std::string& function_name)
+    -> Result<ExprPtr, Error>;
   auto parse_statement() -> Result<StmtPtr, Error>;
   auto parse_block() -> Result<StmtPtr, Error>;
   auto parse_module() -> Result<ModulePtr, Error>;
-  auto parse_function_call(const std::string& function_name)
-    -> Result<ExprPtr, Error>;
+
   auto parse_var_declaration() -> Result<StmtPtr, Error>;
 
   std::vector<ListenerPtr> listeners;
@@ -107,6 +111,8 @@ class Parser {
   }
 };
 
+inline auto print_ast(const StmtPtr& stmt, size_t indent) -> void;
+
 inline auto print_ast(const ExprPtr& expr, size_t indent) -> void {
   // 缩进字符串
   std::string indent_str(indent * 2, ' ');
@@ -114,8 +120,8 @@ inline auto print_ast(const ExprPtr& expr, size_t indent) -> void {
   // 使用访问者模式处理不同类型的表达式
   std::visit(
     overloaded{
-      [&](Expr::IntValue int_value_expr) {
-        std::cout << indent_str << int_value_expr << '\n';
+      [&](const std::shared_ptr<Expr::LiteralInt>& int_value_expr) -> void {
+        std::cout << indent_str << int_value_expr->value << '\n';
       },
       [&](const std::shared_ptr<Expr::Binary>& binary_expr) {
         std::cout << indent_str << "BinaryExpr" << '\n';
@@ -132,6 +138,13 @@ inline auto print_ast(const ExprPtr& expr, size_t indent) -> void {
       },
       [&](const std::shared_ptr<Expr::VarRef>& var_ref_expr) {
         std::cout << indent_str << var_ref_expr->name << '\n';
+      },
+      [&](const std::shared_ptr<Expr::Lambda>& lambda_expr) -> void {
+        std::cout << indent_str << "LambdaExpr" << '\n';
+        for (const auto& param : lambda_expr->params) {
+          std::cout << indent_str << "  " << param << '\n';
+        }
+        print_ast(lambda_expr->body, indent + 1);
       },
       [&](const std::shared_ptr<Expr::FunctionCall>& function_call_expr)
         -> void {

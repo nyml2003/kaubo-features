@@ -19,12 +19,14 @@ enum TokenType : uint8_t {
   Divide = 8,    // 除法 /
 
   /*--- 比较运算符 ---*/
-  EqualEqual = 9,     // 等于 ==
+  RightArrow = 9,  // 箭头 ->
+
   NotEqual = 10,      // 不等于 !=
   GreaterEqual = 11,  // 大于等于 >=
   LessEqual = 12,     // 小于等于 <=
-  Greater = 13,       // 大于 >
-  Less = 14,          // 小于 <
+  EqualEqual = 13,    // 等于 ==
+  Greater = 17,       // 大于 >
+  Less = 18,          // 小于 <
 
   /*--- 中优先级：字面量和标识符 ---*/
   // 整数字面量（支持64位有符号整数）
@@ -68,17 +70,19 @@ inline auto to_string(TokenType type) -> std::string {
     case Divide:
       return "Divide";
     case EqualEqual:
-      return "EqualEqual";
+      return "==";
     case NotEqual:
-      return "NotEqual";
+      return "!=";
     case Greater:
-      return "Greater";
+      return ">";
     case Less:
-      return "Less";
+      return "<";
     case GreaterEqual:
-      return "GreaterEqual";
+      return ">=";
     case LessEqual:
-      return "LessEqual";
+      return "<=";
+    case RightArrow:
+      return "->";
     case Integer:
       return "Integer";
     case Identifier:

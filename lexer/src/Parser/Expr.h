@@ -1,23 +1,17 @@
 #pragma once
+#include "Common.h"
 #include "Lexer/Type.h"
 
-#include <memory>
 #include <variant>
 #include <vector>
-
-namespace Parser::Expr {
-class Expr;
-}  // namespace Parser::Expr
-
-namespace Parser {
-using ExprPtr = std::shared_ptr<Expr::Expr>;
-}
 
 namespace Parser::Expr {
 using Lexer::TokenType;
 
 // 整数字面量表达式
-using IntValue = int64_t;
+struct LiteralInt {
+  int64_t value;
+};
 
 // 二元运算符表达式
 struct Binary {
@@ -53,20 +47,25 @@ struct Assign {
   ExprPtr value;
 };
 
+struct Lambda {
+  std::vector<std::string> params;
+  Parser::StmtPtr body;
+};
+
 class Expr {
  public:
   using ValueType = std::variant<
-    IntValue,
+    std::shared_ptr<LiteralInt>,
     std::shared_ptr<Binary>,
     std::shared_ptr<Unary>,
     std::shared_ptr<Grouping>,
     std::shared_ptr<VarRef>,
     std::shared_ptr<FunctionCall>,
-    std::shared_ptr<Assign>>;
+    std::shared_ptr<Assign>,
+    std::shared_ptr<Lambda>>;
 
   explicit Expr() = delete;
 
-  explicit Expr(IntValue n) : m_value(n) {}
   template <typename T>
   explicit Expr(std::shared_ptr<T> expr) : m_value(std::move(expr)) {}
 

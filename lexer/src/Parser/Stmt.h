@@ -1,14 +1,10 @@
 #pragma once
 
-#include "Expr.h"
+#include "Common.h"
 
-namespace Parser::Stmt {
-class Stmt;
-}  // namespace Parser::Kaubo::Stmt
-
-namespace Parser {
-using StmtPtr = std::shared_ptr<Stmt::Stmt>;
-}
+#include <string>
+#include <variant>
+#include <vector>
 
 namespace Parser::Stmt {
 
@@ -49,4 +45,4 @@ class Stmt {
   ValueType m_value;
 };
 
-}  // namespace Parser::Kaubo::Stmt
+}  // namespace Parser::Stmt
