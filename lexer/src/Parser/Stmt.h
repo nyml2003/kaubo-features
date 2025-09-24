@@ -21,9 +21,36 @@ struct Block {
   std::vector<StmtPtr> statements;
 };
 
+// 变量声明语句
 struct VarDecl {
   std::string name;
   ExprPtr initializer;
+};
+
+// If 语句
+struct If {
+  ExprPtr if_condition;
+  std::vector<ExprPtr> elif_conditions;
+  std::vector<StmtPtr> elif_bodies;
+  StmtPtr else_body;
+  StmtPtr then_body;
+};
+
+// While 语句
+struct While {
+  ExprPtr condition;
+  StmtPtr body;
+};
+
+// For 语句
+struct For {
+  ExprPtr iterator;
+  ExprPtr iterable;
+  StmtPtr body;
+};
+
+struct Return {
+  ExprPtr value;
 };
 
 class Stmt {
@@ -32,7 +59,11 @@ class Stmt {
     std::shared_ptr<Expr>,
     std::shared_ptr<Empty>,
     std::shared_ptr<Block>,
-    std::shared_ptr<VarDecl>>;
+    std::shared_ptr<VarDecl>,
+    std::shared_ptr<If>,
+    std::shared_ptr<While>,
+    std::shared_ptr<For>,
+    std::shared_ptr<Return>>;
 
   explicit Stmt() = delete;
 

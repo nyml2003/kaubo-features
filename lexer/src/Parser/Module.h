@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Stmt.h"
+#include <vector>
+#include "Common.h"
 namespace Parser {
 struct Module {
   std::vector<StmtPtr> statements;

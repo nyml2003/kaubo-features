@@ -1,5 +1,6 @@
 #include <utility>
 
+#include "Lexer/Type.h"
 #include "Parser/Expr.h"
 #include "Parser/Parser.h"
 #include "Parser/Stmt.h"
@@ -17,7 +18,8 @@ auto Parser::parse_module() -> Result<ModulePtr, Error> {
   // 解析所有语句直到文件结束
   while (current_token.has_value()) {
     // 跳过分号（空语句）
-    if (match(TokenType::Semicolon)) {
+    if (check(TokenType::Semicolon)) {
+      consume();
       continue;
     }
 
@@ -27,9 +29,6 @@ auto Parser::parse_module() -> Result<ModulePtr, Error> {
     }
 
     module->statements.push_back(stmt_result.unwrap());
-
-    // 消费分号（如果存在）
-    match(TokenType::Semicolon);
   }
 
   return Ok(module);
@@ -64,6 +63,22 @@ auto Parser::parse_statement()  // NOLINT(misc-no-recursion)
   if (check(TokenType::Semicolon)) {
     consume();  // 消费分号
     return Ok(Utils::create<Stmt::Stmt>(Utils::create<Stmt::Empty>()));
+  }
+
+  if (check(TokenType::Return)) {
+    return parse_return_statement();
+  }
+
+  if (check(TokenType::If)) {
+    return parse_if_statement();
+  }
+
+  if (check(TokenType::While)) {
+    return parse_while_loop();
+  }
+
+  if (check(TokenType::For)) {
+    return parse_for_loop();
   }
 
   // 否则是表达式语句
@@ -285,6 +300,33 @@ auto Parser::parse_lambda()  // NOLINT(misc-no-recursion)
   return Ok(lambda_expr);
 }
 
+auto Parser::parse_list()  // NOLINT(misc-no-recursion)
+  -> Result<ExprPtr, Error> {
+  if (!match(TokenType::LeftSquareBracket)) {
+    return Err(Error::UnexpectedToken);
+  }
+  std::vector<ExprPtr> elements;
+  while (!check(TokenType::RightSquareBracket)) {
+    auto element_result = parse_expression();
+    if (element_result.is_err()) {
+      return Err(element_result.unwrap_err());
+    }
+    elements.push_back(element_result.unwrap());
+    if (!match(TokenType::Comma)) {
+      break;
+    }
+  }
+  if (!match(TokenType::RightSquareBracket)) {
+    return Err(Error::UnexpectedToken);
+  }
+  enter_expr();
+  auto list_expr = Utils::create<Expr::Expr>(
+    Utils::create(Expr::LiteralList{.elements = elements})
+  );
+  exit_expr(list_expr);
+  return Ok(list_expr);
+}
+
 auto Parser::parse_primary_base  // NOLINT(misc-no-recursion)
   () -> Result<ExprPtr, Error> {
   if (!current_token.has_value()) {
@@ -296,6 +338,26 @@ auto Parser::parse_primary_base  // NOLINT(misc-no-recursion)
       return parse_int();
     case TokenType::Literal_String:
       return parse_string();
+    case TokenType::True: {
+      consume();
+      auto result =
+        Ok(Utils::create<Expr::Expr>(Utils::create(Expr::LiteralTrue{})));
+      return result;
+    }
+    case TokenType::False: {
+      consume();
+      auto result =
+        Ok(Utils::create<Expr::Expr>(Utils::create(Expr::LiteralFalse{})));
+      return result;
+    }
+    case TokenType::Null: {
+      consume();
+      auto result =
+        Ok(Utils::create<Expr::Expr>(Utils::create(Expr::LiteralNull{})));
+      return result;
+    }
+    case TokenType::LeftSquareBracket:
+      return parse_list();
     case TokenType::LeftParenthesis:
       return parse_parenthesized();
     case TokenType::Identifier:
@@ -448,6 +510,129 @@ auto Parser::parse_var_declaration()  // NOLINT(misc-no-recursion)
   return Ok(
     Utils::create<Stmt::Stmt>(Utils::create(
       Stmt::VarDecl{.name = var_name, .initializer = expr_result.unwrap()}
+    ))
+  );
+}
+
+auto Parser::parse_return_statement()  // NOLINT(misc-no-recursion)
+  -> Result<StmtPtr, Error> {
+  if (!match(TokenType::Return)) {
+    return Err(Error::UnexpectedToken);
+  }
+
+  auto expr_result = parse_expression();
+  if (expr_result.is_err()) {
+    return Err(expr_result.unwrap_err());
+  }
+
+  auto semicolon_result = expect(TokenType::Semicolon);
+  if (semicolon_result.is_err()) {
+    return Err(semicolon_result.unwrap_err());
+  }
+
+  return Ok(
+    Utils::create<Stmt::Stmt>(
+      Utils::create(Stmt::Return{.value = expr_result.unwrap()})
+    )
+  );
+}
+
+auto Parser::parse_for_loop() -> Result<StmtPtr, Error> {
+  if (!match(TokenType::For)) {
+    return Err(Error::UnexpectedToken);
+  }
+  auto iterator = parse_expression();
+  if (iterator.is_err()) {
+    return Err(iterator.unwrap_err());
+  }
+  auto in_result = expect(TokenType::In);
+  if (in_result.is_err()) {
+    return Err(in_result.unwrap_err());
+  }
+  auto iterable = parse_expression();
+  if (iterable.is_err()) {
+    return Err(iterable.unwrap_err());
+  }
+  auto body = parse_block();
+  if (body.is_err()) {
+    return Err(body.unwrap_err());
+  }
+  return Ok(
+    Utils::create<Stmt::Stmt>(Utils::create(
+      Stmt::For{
+        .iterator = iterator.unwrap(),
+        .iterable = iterable.unwrap(),
+        .body = body.unwrap()
+      }
+    ))
+  );
+}
+
+auto Parser::parse_while_loop() -> Result<StmtPtr, Error> {
+  if (!match(TokenType::While)) {
+    return Err(Error::UnexpectedToken);
+  }
+  auto condition = parse_expression();
+  if (condition.is_err()) {
+    return Err(condition.unwrap_err());
+  }
+  auto body = parse_block();
+  if (body.is_err()) {
+    return Err(body.unwrap_err());
+  }
+  return Ok(
+    Utils::create<Stmt::Stmt>(Utils::create(
+      Stmt::While{.condition = condition.unwrap(), .body = body.unwrap()}
+    ))
+  );
+}
+
+
+auto Parser::parse_if_statement() -> Result<StmtPtr, Error> {
+  if (!match(TokenType::If)) {
+    return Err(Error::UnexpectedToken);
+  }
+  auto condition = parse_expression();
+  if (condition.is_err()) {
+    return Err(condition.unwrap_err());
+  }
+  auto then_body = parse_block();
+  if (then_body.is_err()) {
+    return Err(then_body.unwrap_err());
+  }
+  std::vector<ExprPtr> elif_conditions;
+  std::vector<StmtPtr> elif_bodies;
+  while (check(TokenType::Elif)) {
+    consume();
+    auto elif_condition = parse_expression();
+    if (elif_condition.is_err()) {
+      return Err(elif_condition.unwrap_err());
+    }
+    auto elif_body = parse_block();
+    if (elif_body.is_err()) {
+      return Err(elif_body.unwrap_err());
+    }
+    elif_conditions.push_back(elif_condition.unwrap());
+    elif_bodies.push_back(elif_body.unwrap());
+  }
+  StmtPtr else_body = nullptr;
+  if (check(TokenType::Else)) {
+    consume();
+    auto else_body_result = parse_block();
+    if (else_body_result.is_err()) {
+      return Err(else_body_result.unwrap_err());
+    }
+    else_body = else_body_result.unwrap();
+  }
+  return Ok(
+    Utils::create<Stmt::Stmt>(Utils::create(
+      Stmt::If{
+        .if_condition = condition.unwrap(),
+        .elif_conditions = elif_conditions,
+        .elif_bodies = elif_bodies,
+        .else_body = else_body,
+        .then_body = then_body.unwrap()
+      }
     ))
   );
 }

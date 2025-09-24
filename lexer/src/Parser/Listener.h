@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include "Parser/Module.h"
 
 namespace Parser {
@@ -29,4 +30,4 @@ class Listener {
 };
 
 using ListenerPtr = std::shared_ptr<Listener>;
-}  // namespace Parser::Kaubo
+}  // namespace Parser

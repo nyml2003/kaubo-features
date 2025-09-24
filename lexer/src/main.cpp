@@ -21,12 +21,15 @@ void run_test() {
     );
     lexer->feed(source);
     lexer->terminate();
-    Lexer::Utils::print_all_tokens(std::move(lexer));
-    // Parser::Parser parser(std::move(lexer));
-    // auto parseResult1 = parser.parse();
-    // if (parseResult1.is_ok()) {
-    //   Parser::print_ast(parseResult1.unwrap(), 0);
-    // }
+    // Lexer::Utils::print_all_tokens(std::move(lexer));
+    Parser::Parser parser(std::move(lexer));
+    auto parseResult1 = parser.parse();
+    if (parseResult1.is_ok()) {
+      Parser::print_ast(parseResult1.unwrap(), 0);
+    } else {
+      std::cout << "  ❌ Parse error: "
+                << std::to_string(parseResult1.unwrap_err()) << "\n\n";
+    }
 
   } catch (const std::exception& e) {
     std::cout << "  ❌ Exception: " << e.what() << "\n\n";

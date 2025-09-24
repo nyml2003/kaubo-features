@@ -17,6 +17,16 @@ struct LiteralString {
   std::string value;
 };
 
+struct LiteralTrue {};
+
+struct LiteralFalse {};
+
+struct LiteralNull {};
+
+struct LiteralList {
+  std::vector<ExprPtr> elements;
+};
+
 // 二元运算符表达式
 struct Binary {
   ExprPtr left;
@@ -75,7 +85,11 @@ class Expr {
     std::shared_ptr<FunctionCall>,
     std::shared_ptr<Assign>,
     std::shared_ptr<Lambda>,
-    std::shared_ptr<MemberAccess>>;
+    std::shared_ptr<MemberAccess>,
+    std::shared_ptr<LiteralTrue>,
+    std::shared_ptr<LiteralFalse>,
+    std::shared_ptr<LiteralNull>,
+    std::shared_ptr<LiteralList>>;
 
   explicit Expr() = delete;
 

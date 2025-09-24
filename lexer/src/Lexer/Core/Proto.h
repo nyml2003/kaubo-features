@@ -270,7 +270,10 @@ class Proto {
     }
   }
 
-  void terminate() { eof = true; }
+  void terminate() {
+    feed("\n");
+    eof = true;
+  }
 
   void register_machine(
     std::unique_ptr<StateMachine::Proto<TokenType>> machine

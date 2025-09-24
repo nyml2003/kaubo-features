@@ -11,6 +11,7 @@
 #include "Utils/Overloaded.h"
 #include "Utils/Result.h"
 
+#include <cstddef>
 #include <iostream>
 
 namespace Parser {
@@ -68,17 +69,22 @@ class Parser {
   auto parse_primary_base() -> Result<ExprPtr, Error>;
   auto parse_int() -> Result<ExprPtr, Error>;
   auto parse_string() -> Result<ExprPtr, Error>;
+  auto parse_list() -> Result<ExprPtr, Error>;
   auto parse_identifier_expression() -> Result<ExprPtr, Error>;
   auto parse_unary() -> Result<ExprPtr, Error>;
   auto parse_parenthesized() -> Result<ExprPtr, Error>;
   auto parse_lambda() -> Result<ExprPtr, Error>;
   auto parse_function_call(ExprPtr) -> Result<ExprPtr, Error>;
   auto parse_postfix(ExprPtr expr) -> Result<ExprPtr, Error>;
+
   auto parse_statement() -> Result<StmtPtr, Error>;
   auto parse_block() -> Result<StmtPtr, Error>;
-  auto parse_module() -> Result<ModulePtr, Error>;
-
   auto parse_var_declaration() -> Result<StmtPtr, Error>;
+  auto parse_return_statement() -> Result<StmtPtr, Error>;
+  auto parse_for_loop() -> Result<StmtPtr, Error>;
+  auto parse_while_loop() -> Result<StmtPtr, Error>;
+  auto parse_if_statement() -> Result<StmtPtr, Error>;
+  auto parse_module() -> Result<ModulePtr, Error>;
 
   std::vector<ListenerPtr> listeners;
 
@@ -123,6 +129,21 @@ inline auto print_ast(const ExprPtr& expr, size_t indent) -> void {
   // 使用访问者模式处理不同类型的表达式
   std::visit(
     overloaded{
+      [&](const std::shared_ptr<Expr::LiteralTrue>&) -> void {
+        std::cout << indent_str << "true" << '\n';
+      },
+      [&](const std::shared_ptr<Expr::LiteralFalse>&) -> void {
+        std::cout << indent_str << "false" << '\n';
+      },
+      [&](const std::shared_ptr<Expr::LiteralNull>&) -> void {
+        std::cout << indent_str << "null" << '\n';
+      },
+      [&](const std::shared_ptr<Expr::LiteralList>& list) -> void {
+        std::cout << indent_str << "ListExpr" << '\n';
+        for (const auto& element : list->elements) {
+          print_ast(element, indent + 1);
+        }
+      },
       [&](const std::shared_ptr<Expr::LiteralInt>& int_value_expr) -> void {
         std::cout << indent_str << int_value_expr->value << '\n';
       },
@@ -182,7 +203,8 @@ inline auto print_ast(const ExprPtr& expr, size_t indent) -> void {
         std::cout << indent_str << "  " << var_assign_expr->name << '\n';
         print_ast(var_assign_expr->value, indent + 1);
       }
-    },
+    }  // namespace Parser
+    ,
     expr->get_value()
   );
 }
@@ -215,6 +237,45 @@ inline auto print_ast(const StmtPtr& stmt, size_t indent) -> void {
         if (var_decl_stmt->initializer) {
           print_ast(var_decl_stmt->initializer, indent + 1);
         }
+      },
+      [&](const std::shared_ptr<Stmt::Return>& return_stmt) -> void {
+        std::cout << indent_str << "ReturnStmt" << '\n';
+        if (return_stmt->value) {
+          print_ast(return_stmt->value, indent + 1);
+        }
+      },
+      [&](const std::shared_ptr<Stmt::If>& if_stmt) -> void {
+        std::cout << indent_str << "IfStmt" << '\n';
+        std::cout << indent_str << "  Condition:" << '\n';
+        print_ast(if_stmt->if_condition, indent + 1);
+        std::cout << indent_str << "  IfBody:" << '\n';
+        print_ast(if_stmt->then_body, indent + 1);
+        if (if_stmt->elif_conditions.size() > 0) {
+          std::cout << indent_str << "  ElifConditions:" << '\n';
+          for (size_t i = 0; i < if_stmt->elif_conditions.size(); ++i) {
+            std::cout << indent_str << "    ElifCondition " << i << '\n';
+            std::cout << indent_str << "      Condition:" << '\n';
+            print_ast(if_stmt->elif_conditions[i], indent + 2);
+            std::cout << indent_str << "      Body:" << '\n';
+            print_ast(if_stmt->elif_bodies[i], indent + 2);
+          }
+        }
+        if (if_stmt->else_body) {
+          std::cout << indent_str << "  ElseBody:" << '\n';
+          print_ast(if_stmt->else_body, indent + 1);
+        }
+      },
+      [&](const std::shared_ptr<Stmt::While>& while_stmt) -> void {
+        std::cout << indent_str << "WhileStmt" << '\n';
+        std::cout << indent_str << "  Condition:" << '\n';
+        print_ast(while_stmt->condition, indent + 1);
+      },
+      [&](const std::shared_ptr<Stmt::For>& for_stmt) -> void {
+        std::cout << indent_str << "ForStmt" << '\n';
+        std::cout << indent_str << "  Iterator:" << '\n';
+        print_ast(for_stmt->iterator, indent + 1);
+        std::cout << indent_str << "  Iterable:" << '\n';
+        print_ast(for_stmt->iterable, indent + 1);
       }
     },
     stmt->get_value()

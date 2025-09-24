@@ -4,44 +4,52 @@
 namespace Parser::Utils {
 inline auto get_precedence(TokenType op) -> int32_t {
   switch (op) {
-    // 赋值运算符（最低优先级）
-    case TokenType::Equal:
-      return 5;
+    // 逻辑或（低于And，高于赋值）
+    case TokenType::Or:
+      return 60;
 
-    // 比较运算符（优先级低于算术运算符）
+    // 管道运算符
+    case TokenType::Pipe:
+      return 70;
+
+    // 逻辑与（高于Or，低于比较运算符）
+    case TokenType::And:
+      return 80;
+
+    // 比较运算符
     case TokenType::DoubleEqual:
     case TokenType::ExclamationEqual:
     case TokenType::GreaterThan:
     case TokenType::LessThan:
     case TokenType::GreaterThanEqual:
     case TokenType::LessThanEqual:
-      return 10;  // 降低比较运算符优先级
+      return 100;
 
-    // 加法/减法（优先级高于比较，低于乘除）
+    // 加法/减法
     case TokenType::Plus:
     case TokenType::Minus:
-      return 20;
+      return 200;
 
-    // 乘法/除法（最高优先级）
+    // 乘法/除法
     case TokenType::Asterisk:
     case TokenType::Slash:
-      return 30;
+      return 300;
 
-    // 成员访问运算符（如果之前添加了Dot，优先级应最高）
+    // 成员访问运算符
     case TokenType::Dot:
-      return 40;
+      return 400;
 
+    // 逻辑非（一元运算符，优先级最高）
+    case TokenType::Not:
+      return 450;
+
+    // 其他类型默认优先级为0（非运算符）
     default:
       return 0;
   }
 }
 
-inline auto get_associativity(TokenType op) -> bool {
-  // 赋值运算符是右结合（a = b = c 等价于 a = (b = c)）
-  if (op == TokenType::Equal) {
-    return false;
-  }
-  // 其他运算符左结合
+inline auto get_associativity(TokenType /*unused*/) -> bool {
   return true;
 }
 
