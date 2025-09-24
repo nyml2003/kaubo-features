@@ -1,5 +1,11 @@
-var func = |a|{
-    print(a.b.c);
-};
+(|str| {
+     print(str);/*    这是注释
 
-func(a);
+
+
+})("Hello World!");    
+
+
+
+ */ 123 //  22131  3213123(8213123 print(12321;))
+   456

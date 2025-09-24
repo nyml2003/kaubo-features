@@ -6,7 +6,6 @@
 #include "Parser/Parser.h"
 #include "Utils/System.h"
 
-
 // 测试用例结构：表达式字符串 + 预期C++计算结果
 struct TestCase {
   std::string expression;
@@ -22,12 +21,12 @@ void run_test() {
     );
     lexer->feed(source);
     lexer->terminate();
-    //Lexer::Utils::print_all_tokens(std::move(lexer));
-    Parser::Parser parser(std::move(lexer));
-    auto parseResult1 = parser.parse();
-    if (parseResult1.is_ok()) {
-      Parser::print_ast(parseResult1.unwrap(), 0);
-    }
+    Lexer::Utils::print_all_tokens(std::move(lexer));
+    // Parser::Parser parser(std::move(lexer));
+    // auto parseResult1 = parser.parse();
+    // if (parseResult1.is_ok()) {
+    //   Parser::print_ast(parseResult1.unwrap(), 0);
+    // }
 
   } catch (const std::exception& e) {
     std::cout << "  ❌ Exception: " << e.what() << "\n\n";

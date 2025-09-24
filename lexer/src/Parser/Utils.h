@@ -5,16 +5,16 @@ namespace Parser::Utils {
 inline auto get_precedence(TokenType op) -> int32_t {
   switch (op) {
     // 赋值运算符（最低优先级）
-    case TokenType::Equals:
+    case TokenType::Equal:
       return 5;
 
     // 比较运算符（优先级低于算术运算符）
-    case TokenType::EqualEqual:
-    case TokenType::NotEqual:
-    case TokenType::Greater:
-    case TokenType::Less:
-    case TokenType::GreaterEqual:
-    case TokenType::LessEqual:
+    case TokenType::DoubleEqual:
+    case TokenType::ExclamationEqual:
+    case TokenType::GreaterThan:
+    case TokenType::LessThan:
+    case TokenType::GreaterThanEqual:
+    case TokenType::LessThanEqual:
       return 10;  // 降低比较运算符优先级
 
     // 加法/减法（优先级高于比较，低于乘除）
@@ -23,8 +23,8 @@ inline auto get_precedence(TokenType op) -> int32_t {
       return 20;
 
     // 乘法/除法（最高优先级）
-    case TokenType::Multiply:
-    case TokenType::Divide:
+    case TokenType::Asterisk:
+    case TokenType::Slash:
       return 30;
 
     // 成员访问运算符（如果之前添加了Dot，优先级应最高）
@@ -38,7 +38,7 @@ inline auto get_precedence(TokenType op) -> int32_t {
 
 inline auto get_associativity(TokenType op) -> bool {
   // 赋值运算符是右结合（a = b = c 等价于 a = (b = c)）
-  if (op == TokenType::Equals) {
+  if (op == TokenType::Equal) {
     return false;
   }
   // 其他运算符左结合

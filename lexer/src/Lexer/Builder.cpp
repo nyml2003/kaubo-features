@@ -6,50 +6,76 @@ auto Builder::build() -> Instance<TokenType> {
   auto lexer = std::make_unique<Lexer::Proto<TokenType>>(1024);
 
   // 注册关键字状态机
-  lexer->register_machine(Machines::create_var_machine());
-  lexer->register_machine(Machines::create_int_type_machine());
+  for (auto [keyword, type] :
+       std::initializer_list<std::pair<std::string_view, TokenType>>{
+         {"var", TokenType::Var},       {"if", TokenType::If},
+         {"else", TokenType::Else},     {"elif", TokenType::Elif},
+         {"while", TokenType::While},   {"for", TokenType::For},
+         {"return", TokenType::Return}, {"in", TokenType::In},
+         {"yield", TokenType::Yield},   {"true", TokenType::True},
+         {"false", TokenType::False},   {"null", TokenType::Null},
+         {"break", TokenType::Break},   {"continue", TokenType::Continue},
+         {"struct", TokenType::Struct}, {"interface", TokenType::Interface},
+         {"import", TokenType::Import}, {"as", TokenType::As},
+         {"from", TokenType::From},     {"pass", TokenType::Pass},
+         {"and", TokenType::And},       {"or", TokenType::Or},
+         {"not", TokenType::Not},       {"async", TokenType::Async},
+         {"await", TokenType::Await},
+       }) {
+    lexer->register_machine(Machines::create_keyword_machine(keyword, type));
+  }
 
-  // 注册运算符状态机
-  lexer->register_machine(Machines::create_plus_machine());
-  lexer->register_machine(Machines::create_minus_machine());
-  lexer->register_machine(Machines::create_multiply_machine());
-  lexer->register_machine(Machines::create_divide_machine());
+  // 注册字面量状态机
+  lexer->register_machine(Machines::create_string_machine());
+  lexer->register_machine(Machines::create_integer_machine());
 
-  // 注册比较运算符状态机
-  lexer->register_machine(Machines::create_equal_equal_machine());
-  lexer->register_machine(Machines::create_not_equal_machine());
-  lexer->register_machine(Machines::create_greater_machine());
-  lexer->register_machine(Machines::create_less_machine());
-  lexer->register_machine(Machines::create_greater_equal_machine());
-  lexer->register_machine(Machines::create_less_equal_machine());
+  /*--- 双字符符号---*/
+  for (auto [symbol, type] :
+       std::initializer_list<std::pair<std::string_view, TokenType>>{
+         {"==", TokenType::DoubleEqual},
+         {"!=", TokenType::ExclamationEqual},
+         {">=", TokenType::GreaterThanEqual},
+         {"<=", TokenType::LessThanEqual},
+       }) {
+    lexer->register_machine(
+      Machines::create_double_symbol_machine(symbol, type)
+    );
+  }
 
-  lexer->register_machine(Machines::create_right_arrow_machine());
+  /*--- 单字符符号（突出“单个字符”）---*/
+  for (auto [symbol, type] : std::initializer_list<std::pair<char, TokenType>>{
+         {'>', TokenType::GreaterThan},
+         {'<', TokenType::LessThan},
+         {'+', TokenType::Plus},
+         {'-', TokenType::Minus},
+         {'*', TokenType::Asterisk},
+         {'/', TokenType::Slash},
+         {':', TokenType::Colon},
+         {'=', TokenType::Equal},
+         {',', TokenType::Comma},
+         {';', TokenType::Semicolon},
+         {'(', TokenType::LeftParenthesis},
+         {')', TokenType::RightParenthesis},
+         {'{', TokenType::LeftCurlyBrace},
+         {'}', TokenType::RightCurlyBrace},
+         {'[', TokenType::LeftSquareBracket},
+         {']', TokenType::RightSquareBracket},
+         {'.', TokenType::Dot},
+         {'|', TokenType::Pipe},
+       }) {
+    lexer->register_machine(
+      Machines::create_single_symbol_machine(symbol, type)
+    );
+  }
 
-  // 注册标识符状态机
+  /*--- 标识符---*/
   lexer->register_machine(Machines::create_identifier_machine());
 
-  // 注册标点符号状态机
-  lexer->register_machine(Machines::create_colon_machine());
-  lexer->register_machine(Machines::create_comma_machine());
-  lexer->register_machine(Machines::create_equals_machine());
-  lexer->register_machine(Machines::create_semicolon_machine());
-  lexer->register_machine(Machines::create_dot_machine());
-  lexer->register_machine(Machines::create_pipe_machine());
-
-  // 注册括号状态机
-  lexer->register_machine(Machines::create_left_paren_machine());
-  lexer->register_machine(Machines::create_right_paren_machine());
-  lexer->register_machine(Machines::create_left_brace_machine());
-  lexer->register_machine(Machines::create_right_brace_machine());
-
-  // 注册整数状态机
-  lexer->register_machine(Machines::create_integer_machine());
-  lexer->register_machine(Machines::create_string_machine());
-
-  // 注册空白字符状态机
+  /*--- 空白字符---*/
   lexer->register_machine(Machines::create_whitespace_machine());
-  lexer->register_machine(Machines::create_tab_machine());
+  lexer->register_machine(Machines::create_comment_machine());
   lexer->register_machine(Machines::create_newline_machine());
+  lexer->register_machine(Machines::create_tab_machine());
 
   return lexer;
 }

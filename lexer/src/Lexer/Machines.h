@@ -7,107 +7,14 @@
 #include <memory>
 
 namespace Lexer::Machines {
-
-inline auto create_plus_machine()
+inline auto create_single_symbol_machine(char symbol, TokenType token_type)
   -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Plus);
+  auto machine = std::make_unique<StateMachine::Proto<TokenType>>(token_type);
 
   StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
   StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
 
-  machine->add_transition(s0, s1, [](char c) { return c == '+'; });
-
-  return machine;
-}
-
-inline auto create_minus_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Minus);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '-'; });
-
-  return machine;
-}
-
-inline auto create_multiply_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Multiply);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '*'; });
-
-  return machine;
-}
-
-inline auto create_divide_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Divide);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '/'; });
-
-  return machine;
-}
-
-inline auto create_left_paren_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::LeftParen);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '('; });
-
-  return machine;
-}
-
-inline auto create_right_paren_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::RightParen);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == ')'; });
-
-  return machine;
-}
-
-inline auto create_left_brace_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::LeftBrace);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '{'; });
-
-  return machine;
-}
-
-inline auto create_right_brace_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::RightBrace);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '}'; });
+  machine->add_transition(s0, s1, [symbol](char c) { return c == symbol; });
 
   return machine;
 }
@@ -115,7 +22,8 @@ inline auto create_right_brace_machine()
 inline auto create_integer_machine()
   -> std::unique_ptr<StateMachine::Proto<TokenType>> {
   auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Integer);
+    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Literal_Integer
+    );
 
   // 状态定义：S0(初始) → S1(整数状态，接受状态)
   StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
@@ -138,7 +46,7 @@ inline auto create_integer_machine()
 inline auto create_whitespace_machine()
   -> std::unique_ptr<StateMachine::Proto<TokenType>> {
   auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::WhiteSpace);
+    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Whitespace);
 
   StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
   StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
@@ -185,43 +93,21 @@ inline auto create_newline_machine()
   return machine;
 }
 
-inline auto create_var_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Var);
-
+inline auto create_keyword_machine(
+  const std::string_view& keyword,
+  TokenType token_type
+) -> std::unique_ptr<StateMachine::Proto<TokenType>> {
+  auto machine = std::make_unique<StateMachine::Proto<TokenType>>(token_type);
   StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(false);
-  StateMachine::Proto<TokenType>::StateId s2 = machine->add_state(false);
-  StateMachine::Proto<TokenType>::StateId s3 = machine->add_state(true);
-
-  // v -> s1
-  machine->add_transition(s0, s1, [](char c) { return c == 'v'; });
-  // a -> s2
-  machine->add_transition(s1, s2, [](char c) { return c == 'a'; });
-  // r -> s3
-  machine->add_transition(s2, s3, [](char c) { return c == 'r'; });
-
-  return machine;
-}
-
-inline auto create_int_type_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::IntType);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(false);
-  StateMachine::Proto<TokenType>::StateId s2 = machine->add_state(false);
-  StateMachine::Proto<TokenType>::StateId s3 = machine->add_state(true);
-
-  // i -> s1
-  machine->add_transition(s0, s1, [](char c) { return c == 'i'; });
-  // n -> s2
-  machine->add_transition(s1, s2, [](char c) { return c == 'n'; });
-  // t -> s3
-  machine->add_transition(s2, s3, [](char c) { return c == 't'; });
-
+  for (size_t i = 0; i < keyword.size(); ++i) {
+    bool is_accepting = i == keyword.size() - 1;
+    StateMachine::Proto<TokenType>::StateId s =
+      machine->add_state(is_accepting);
+    machine->add_transition(s0, s, [keyword, i](char c) {
+      return c == keyword[i];
+    });
+    s0 = s;
+  }
   return machine;
 }
 
@@ -246,188 +132,30 @@ inline auto create_identifier_machine()
   return machine;
 }
 
-inline auto create_colon_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Colon);
+inline auto create_double_symbol_machine(
+  const std::string_view& symbols,
+  TokenType token_type
 
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == ':'; });
-
-  return machine;
-}
-
-inline auto create_semicolon_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Semicolon);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == ';'; });
-
-  return machine;
-}
-
-inline auto create_comma_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Comma);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == ','; });
-
-  return machine;
-}
-
-inline auto create_equals_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Equals);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '='; });
-
-  return machine;
-}
-
-inline auto create_equal_equal_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::EqualEqual);
+) -> std::unique_ptr<StateMachine::Proto<TokenType>> {
+  auto machine = std::make_unique<StateMachine::Proto<TokenType>>(token_type);
 
   StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
   StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(false);
   StateMachine::Proto<TokenType>::StateId s2 = machine->add_state(true);
 
-  machine->add_transition(s0, s1, [](char c) { return c == '='; });
-  machine->add_transition(s1, s2, [](char c) { return c == '='; });
-
-  return machine;
-}
-
-inline auto create_right_arrow_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::RightArrow);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(false);
-  StateMachine::Proto<TokenType>::StateId s2 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '-'; });
-  machine->add_transition(s1, s2, [](char c) { return c == '>'; });
-
-  return machine;
-}
-
-inline auto create_not_equal_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::NotEqual);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(false);
-  StateMachine::Proto<TokenType>::StateId s2 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '!'; });
-  machine->add_transition(s1, s2, [](char c) { return c == '='; });
-
-  return machine;
-}
-
-inline auto create_greater_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Greater);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '>'; });
-
-  return machine;
-}
-
-inline auto create_dot_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Dot);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '.'; });
-
-  return machine;
-}
-
-inline auto create_pipe_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Pipe);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '|'; });
-
-  return machine;
-}
-
-inline auto create_less_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Less);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '<'; });
-
-  return machine;
-}
-
-inline auto create_greater_equal_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::GreaterEqual);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(false);
-  StateMachine::Proto<TokenType>::StateId s2 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '>'; });
-  machine->add_transition(s1, s2, [](char c) { return c == '='; });
-
-  return machine;
-}
-
-inline auto create_less_equal_machine()
-  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
-  auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::LessEqual);
-
-  StateMachine::Proto<TokenType>::StateId s0 = machine->get_current_state();
-  StateMachine::Proto<TokenType>::StateId s1 = machine->add_state(false);
-  StateMachine::Proto<TokenType>::StateId s2 = machine->add_state(true);
-
-  machine->add_transition(s0, s1, [](char c) { return c == '<'; });
-  machine->add_transition(s1, s2, [](char c) { return c == '='; });
+  machine->add_transition(s0, s1, [symbols](char c) {
+    return c == symbols[0];
+  });
+  machine->add_transition(s1, s2, [symbols](char c) {
+    return c == symbols[1];
+  });
 
   return machine;
 }
 inline auto create_string_machine()
   -> std::unique_ptr<StateMachine::Proto<TokenType>> {
   auto machine =
-    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::String);
+    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Literal_String);
 
   // 状态定义
   StateMachine::Proto<TokenType>::StateId s0 =
@@ -462,6 +190,60 @@ inline auto create_string_machine()
   // 6. 单引号内容状态保持：接受除'之外的字符
   machine->add_transition(s3, s3, [](char c) {
     return c != '\'';  // 不允许未结束的单引号内出现新的单引号
+  });
+
+  return machine;
+}
+
+inline auto create_comment_machine()
+  -> std::unique_ptr<StateMachine::Proto<TokenType>> {
+  // 创建一个复合状态机，用于处理两种注释类型
+  auto machine =
+    std::make_unique<StateMachine::Proto<TokenType>>(TokenType::Comment);
+  auto s0 = machine->get_current_state();  // 初始状态
+
+  // 处理单行注释: // ...
+  auto s1 = machine->add_state(false);  // 识别到第一个 '/'
+  auto s2 = machine->add_state(true);   // 识别到第二个 '/'，进入单行注释状态
+
+  // 处理多行注释: /* ... */
+  auto s3 = machine->add_state(false);  // 识别到 '/' 后的 '*'
+  auto s4 = machine->add_state(false);  // 多行注释内容状态
+  auto s5 = machine->add_state(false);  // 多行注释中遇到 '*'
+  auto s6 = machine->add_state(true);   // 多行注释结束 (识别到 '*/')
+
+  // 初始状态转换: 遇到 '/' 进入 s1
+  machine->add_transition(s0, s1, [](char c) { return c == '/'; });
+
+  // 单行注释路径: s1 -> s2 (第二个 '/')
+  machine->add_transition(s1, s2, [](char c) { return c == '/'; });
+
+  // 单行注释中: 接受所有字符直到换行
+  machine->add_transition(s2, s2, [](char c) {
+    return c != '\n' && c != '\r';  // 不包含换行符
+  });
+
+  // 多行注释路径: s1 -> s3 (遇到 '*' 而不是第二个 '/')
+  machine->add_transition(s1, s3, [](char c) { return c == '*'; });
+
+  // 多行注释内容处理: s3 -> s4 (任意字符)
+  machine->add_transition(s3, s4, [](char) { return true; });
+
+  // 多行注释内容中: 大多数字符保持在s4，遇到 '*' 进入s5
+  machine->add_transition(s4, s4, [](char c) { return c != '*'; });
+  machine->add_transition(s4, s5, [](char c) { return c == '*'; });
+
+  // 在s5状态(已遇到 '*'):
+  // 遇到 '/' 则结束多行注释，进入接受状态s6
+  machine->add_transition(s5, s6, [](char c) { return c == '/'; });
+  // 遇到其他 '*' 保持在s5
+  machine->add_transition(s5, s5, [](char c) { return c == '*'; });
+  // 遇到其他字符回到s4继续寻找 '*'
+  machine->add_transition(s5, s4, [](char c) { return c != '*' && c != '/'; });
+
+  // 注释结束状态保持
+  machine->add_transition(s6, s6, [](char) {
+    return false;  // 一旦结束就不再接受字符
   });
 
   return machine;

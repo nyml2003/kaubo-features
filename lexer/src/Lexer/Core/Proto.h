@@ -106,7 +106,7 @@ class Proto {
     if (auto machine = best_machine.lock()) {
       auto token_type = machine->get_token_type();
       if (token_type != TokenType::NewLine &&
-          token_type != TokenType::WhiteSpace && token_type != TokenType::Tab) {
+          token_type != TokenType::Whitespace && token_type != TokenType::Tab) {
         token = Token::Proto<TokenType>{
           .type = machine->get_token_type(),
           .value = token_buffer,
@@ -142,6 +142,28 @@ class Proto {
 
   void handle_tab() {
     cursor_coordinate.column += 4;
+    reset_token_state();
+    ring_buffer->pop();
+  }
+
+  void handle_comment() {
+    bool is_multiline_comment =
+      token_buffer[0] == '/' && token_buffer[1] == '*';
+    if (is_multiline_comment) {
+      for (auto c : token_buffer) {
+        if (c == '\n') {
+          cursor_coordinate.line++;
+          cursor_coordinate.column = 1;
+        } else {
+          cursor_coordinate.column++;
+        }
+      }
+      cursor_coordinate.column++;
+    } else {
+      cursor_coordinate.column = 1;
+      cursor_coordinate.line++;
+    }
+
     reset_token_state();
     ring_buffer->pop();
   }
@@ -203,7 +225,7 @@ class Proto {
     auto [best_machine, _] = manager.select_best_match();
     if (auto machine = best_machine.lock()) {
       auto token_type = machine->get_token_type();
-      if (token_type == TokenType::WhiteSpace) {
+      if (token_type == TokenType::Whitespace) {
         handle_whitespace();
         return next_token();
       }
@@ -215,12 +237,17 @@ class Proto {
         handle_tab();
         return next_token();
       }
+
       read_token_buffer(current_token_length);
       auto token = Token::Proto<TokenType>{
         .type = token_type,
         .value = token_buffer,
         .coordinate = current_token_start,
       };
+      if (token_type == TokenType::Comment) {
+        handle_comment();
+        return next_token();
+      }
       update_cursor_after_token();
       return token;
     }

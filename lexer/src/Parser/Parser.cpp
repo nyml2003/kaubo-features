@@ -39,7 +39,7 @@ auto Parser::parse_statement()  // NOLINT(misc-no-recursion)
   -> Result<StmtPtr, Error> {
   enter_statement();
   // 检查是否是block
-  if (check(TokenType::LeftBrace)) {
+  if (check(TokenType::LeftCurlyBrace)) {
     auto block_result = parse_block();
     if (block_result.is_err()) {
       return Err(block_result.unwrap_err());
@@ -79,7 +79,7 @@ auto Parser::parse_statement()  // NOLINT(misc-no-recursion)
 auto Parser::parse_block()  // NOLINT(misc-no-recursion)
   -> Result<StmtPtr, Error> {
   // 期望左大括号
-  auto err = expect(TokenType::LeftBrace);
+  auto err = expect(TokenType::LeftCurlyBrace);
   if (err.is_err()) {
     return Err(Error::UnexpectedToken);
   }
@@ -87,7 +87,7 @@ auto Parser::parse_block()  // NOLINT(misc-no-recursion)
   std::vector<StmtPtr> statements;
 
   // 解析block内的所有语句直到遇到右大括号
-  while (current_token.has_value() && !check(TokenType::RightBrace)) {
+  while (current_token.has_value() && !check(TokenType::RightCurlyBrace)) {
     // 跳过分号（空语句）
     if (match(TokenType::Semicolon)) {
       continue;
@@ -105,7 +105,7 @@ auto Parser::parse_block()  // NOLINT(misc-no-recursion)
   }
 
   // 期望右大括号
-  auto right_brace_result = expect(TokenType::RightBrace);
+  auto right_brace_result = expect(TokenType::RightCurlyBrace);
   if (right_brace_result.is_err()) {
     return Err(Error::UnexpectedToken);
   }
@@ -265,7 +265,7 @@ auto Parser::parse_lambda()  // NOLINT(misc-no-recursion)
   }
 
   // 解析函数体（必须是代码块）
-  if (!check(TokenType::LeftBrace)) {
+  if (!check(TokenType::LeftCurlyBrace)) {
     return Err(Error::ExpectedLeftBraceInLambdaBody);
   }
   auto body_result = parse_block();
@@ -292,11 +292,11 @@ auto Parser::parse_primary_base  // NOLINT(misc-no-recursion)
   }
 
   switch (current_token->type) {
-    case TokenType::Integer:
+    case TokenType::Literal_Integer:
       return parse_int();
-    case TokenType::String:
+    case TokenType::Literal_String:
       return parse_string();
-    case TokenType::LeftParen:
+    case TokenType::LeftParenthesis:
       return parse_parenthesized();
     case TokenType::Identifier:
       return parse_identifier_expression();
@@ -330,7 +330,7 @@ auto Parser::parse_parenthesized  // NOLINT(misc-no-recursion)
   }
 
   // 期望右括号
-  if (!match(TokenType::RightParen)) {
+  if (!match(TokenType::RightParenthesis)) {
     return Err(Error::MissingRightParen);
   }
 
@@ -350,7 +350,7 @@ auto Parser::parse_function_call  // NOLINT(misc-no-recursion)
   std::vector<ExprPtr> arguments;
 
   // 解析参数列表（如果有）
-  if (!check(TokenType::RightParen)) {
+  if (!check(TokenType::RightParenthesis)) {
     while (true) {
       // 解析参数表达式
       auto arg_result = parse_expression();
@@ -368,7 +368,7 @@ auto Parser::parse_function_call  // NOLINT(misc-no-recursion)
   }
 
   // 期望右括号
-  auto err = expect(TokenType::RightParen);
+  auto err = expect(TokenType::RightParenthesis);
   if (err.is_err()) {
     return Err(Error::MissingRightParen);
   }
@@ -403,7 +403,7 @@ auto Parser::parse_postfix(ExprPtr expr)  // NOLINT(misc-no-recursion)
       );
       exit_expr(expr);
 
-    } else if (check(Lexer::TokenType::LeftParen)) {
+    } else if (check(Lexer::TokenType::LeftParenthesis)) {
       // 处理函数调用（a.b() 或 f()）
       expr = parse_function_call(expr).unwrap();
 
@@ -428,7 +428,7 @@ auto Parser::parse_var_declaration()  // NOLINT(misc-no-recursion)
   consume();
 
   // 期望等号
-  auto equals_result = expect(TokenType::Equals);
+  auto equals_result = expect(TokenType::Equal);
   if (equals_result.is_err()) {
     return Err(Error::UnexpectedToken);
   }
