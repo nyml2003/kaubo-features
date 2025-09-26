@@ -1,2 +1,10 @@
-var a = [1,2,3,4];
-print(a);
+var n = 20;
+var f = |x|{
+    if x < 2 { return 1;}
+    else {
+        return f(1);
+    }
+};
+print(f(2));
+
+n = n + 20;

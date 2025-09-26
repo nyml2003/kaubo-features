@@ -4,6 +4,8 @@
 namespace Parser::Utils {
 inline auto get_precedence(TokenType op) -> int32_t {
   switch (op) {
+    case TokenType::Equal:  // 假设这是赋值的Token类型
+      return 50;
     // 逻辑或（低于And，高于赋值）
     case TokenType::Or:
       return 60;

@@ -1,5 +1,4 @@
 #pragma once
-#include <cassert>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -171,7 +170,6 @@ inline auto compute_codepoint(ComputeCodePointArgs args) noexcept -> char32_t {
       break;
     }
     default:
-      assert(false && "不可能执行到的分支");
       break;
   }
 
@@ -207,7 +205,6 @@ inline auto is_overlong_encoding(IsOverlongEncodingArgs args) noexcept -> bool {
       result = codepoint < Const::MIN_4BYTE;
       break;
     default:
-      assert(false && "不可能执行到的分支");
       result = true;
   }
   return result;
@@ -430,8 +427,6 @@ inline auto to_string(Utils::Utf8::Error error) noexcept -> std::string {
       return "Invalid continuation";
     case Utils::Utf8::Error::InvalidLeadingByte:
       return "Invalid leading byte";
-    default:
-      assert(false && "不可能执行到的分支");
   }
 }
 inline auto to_string(const std::vector<char32_t>& codepoints) noexcept

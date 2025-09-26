@@ -197,9 +197,7 @@ class Result {
   template <typename U = T>
   [[nodiscard]] auto flatten() const -> Result<void, E>
     requires IsVoid<U> && IsNestedResult<U, E>
-  {
-    static_assert(false, "Result<void, E> 无需 flatten（无嵌套 Ok 值）");
-  }
+  {}
 
   template <typename F, typename U = std::invoke_result_t<F, T>>
   [[nodiscard]] auto and_then(F&& f) const -> Result<typename U::OkType, E>

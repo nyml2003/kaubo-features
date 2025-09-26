@@ -43,7 +43,6 @@ class Manager {
    * @return 状态机ID
    */
   auto add_machine(std::unique_ptr<Proto<TokenType>> machine) -> MachineId {
-    assert(machine != nullptr && "状态机实例不能为空");
     MachineId id = next_machine_id++;
     machines[id] = {
       .machine = std::move(machine),

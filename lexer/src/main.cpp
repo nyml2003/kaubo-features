@@ -1,8 +1,7 @@
-#include <cassert>
+
 #include <iostream>
 #include <string>
 #include "Lexer/Builder.h"
-#include "Lexer/Core/Utils.h"
 #include "Parser/Parser.h"
 #include "Utils/System.h"
 

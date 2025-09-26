@@ -87,8 +87,6 @@ class Proto {
     StateId to,
     const TransitionCondition& condition
   ) {
-    assert(states.contains(from) && "源状态不存在");
-    assert(states.contains(to) && "目标状态不存在");
     // 向当前源状态的转移列表中添加规则
     transitions[from].emplace_back(
       Transition{.from = from, .to = to, .condition = std::move(condition)}

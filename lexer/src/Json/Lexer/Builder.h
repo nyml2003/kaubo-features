@@ -1,14 +1,13 @@
-// #pragma once
+#pragma once
 
-// #include "Lexer/Builder.h"
-// #include "Lexer/Json/TokenType.h"
-// #include "Lexer/Lexer.h"
+#include "Json/Lexer/TokenType.h"
+#include "Lexer/Core/Builder.h"
+#include "Lexer/Core/Proto.h"
 
-// namespace Lexer::Json {
-// class Builder
-//   : public Lexer::Builder::IBuilder<Lexer::Json::TokenType, Builder> {
-//  public:
-//   auto build() -> Instance<TokenType> override;
-// };
+namespace Json {
+class Builder : public Lexer::IBuilder<Json::TokenType, Builder> {
+ public:
+  auto build() -> Lexer::Instance<TokenType> override;
+};
 
-// }  // namespace Lexer::Json
+}  // namespace Json
