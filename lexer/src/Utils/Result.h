@@ -1,9 +1,18 @@
 #pragma once
-#include <stdexcept>
+
+#include <cassert>
+#include <type_traits>
 #include <utility>
 #include <variant>
+#include "ResultHelper.h"
 
-namespace Utils {
+namespace utils {
+
+template <typename T>
+concept is_pod_like = std::is_trivial_v<T> && std::is_standard_layout_v<T>;
+
+template <typename T>
+concept is_cheap_to_copy = is_pod_like<T>;
 
 template <typename T>
 struct OkIntermediate;
@@ -18,86 +27,113 @@ template <typename I, typename E>
 concept ErrIntermediateFor = std::is_same_v<I, ErrIntermediate<E>>;
 
 template <typename T>
-concept IsVoid = std::is_void_v<T>;
-
-template <typename T>
-concept IsNonVoid = !IsVoid<T>;
-
-template <typename T>
-struct OkIntermediate {
-  explicit OkIntermediate(T value) : value(std::move(value)) {}
-  auto get() const -> const T& { return value; }
-  auto get() -> T& { return value; }
-
- private:
+struct OkIntermediate final {
   T value;
 };
 
 template <>
-struct OkIntermediate<void> {
+struct OkIntermediate<void> final {
   OkIntermediate() = default;
 };
 
 template <typename E>
-struct ErrIntermediate {
-  explicit ErrIntermediate(E error) : error(std::move(error)) {}
-  auto get() const -> const E& { return error; }
-  auto get() -> E& { return error; }
-
- private:
+struct ErrIntermediate final {
   E error;
 };
 
+template <>
+struct ErrIntermediate<void> final {
+  ErrIntermediate() = default;
+};
+
 template <typename T>
-auto Ok(T&& value) {
+auto ok(T&& value) {
   return OkIntermediate<std::decay_t<T>>(std::forward<T>(value));
 }
 
-inline auto Ok() {
+inline auto ok() {
   return OkIntermediate<void>();
 }
 
 template <typename E>
-auto Err(E&& error) {
+auto err(E&& error) {
   return ErrIntermediate<std::decay_t<E>>(std::forward<E>(error));
 }
 
-template <typename U, typename E>
-concept IsNestedResult = requires {
-  typename U::ErrorType;
-  std::is_same_v<typename U::ErrorType, E>;
-};
+inline auto err() {
+  return ErrIntermediate<void>();
+}
 
 template <typename T, typename E>
-class Result {
+class Result final {
  private:
   struct OkVoid {};
   struct OkWithValue {
     T value;
   };
 
-  using OkValue = std::conditional_t<IsVoid<T>, OkVoid, OkWithValue>;
-  struct ErrValue {
+  using OkValue = std::conditional_t<std::is_void_v<T>, OkVoid, OkWithValue>;
+  struct ErrVoid {};
+  struct ErrWithValue {
     E error;
   };
+  using ErrValue = std::conditional_t<std::is_void_v<E>, ErrVoid, ErrWithValue>;
   std::variant<OkValue, ErrValue> m_data;
+
+  template <typename U, typename P = T>
+  auto forward() const noexcept -> Result<P, U>
+    requires(!std::is_void_v<P>)
+  {
+    return ok(unwrap());
+  }
+
+  // 针对void的E类型
+  template <typename U, typename P = T>
+  auto forward() const noexcept -> Result<P, U>
+    requires(std::is_void_v<P>)
+  {
+    return ok();
+  }
+
+  template <typename U, typename Q = E>
+  auto forward_err() const noexcept -> Result<U, Q>
+    requires(!std::is_void_v<Q>)
+  {
+    return err(unwrap_err());
+  }
+
+  // 针对void的E类型
+  template <typename U, typename Q = E>
+  auto forward_err() const noexcept -> Result<U, Q>
+    requires(std::is_void_v<Q>)
+  {
+    return err();
+  }
 
  public:
   template <OkIntermediateFor<T> OkType>
   // NOLINTNEXTLINE(google-explicit-constructor)
   Result(OkType ok)
-    requires IsNonVoid<T>
-    : m_data(OkValue{std::move(ok.get())}) {}
+    requires(!std::is_void_v<T>)
+    : m_data(OkValue{.value = std::move(ok.value)}) {}
 
   template <OkIntermediateFor<T> OkType>
   // NOLINTNEXTLINE(google-explicit-constructor)
   Result(OkType /*unused*/)
-    requires IsVoid<T>
+    requires std::is_void_v<T>
     : m_data(OkValue{}) {}
 
   template <ErrIntermediateFor<E> ErrType>
   // NOLINTNEXTLINE(google-explicit-constructor)
-  Result(ErrType err) : m_data(ErrValue{std::move(err.get())}) {}
+  Result(ErrType err)
+    requires(!std::is_void_v<E>)
+    : m_data(ErrValue{.error = std::move(err.error)}) {}
+
+  template <ErrIntermediateFor<E> ErrType>
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  Result(ErrType /*unused*/)
+    requires std::is_void_v<E>
+    : m_data(ErrValue{}) {}
 
   Result(Result&&) = default;
   auto operator=(Result&&) -> Result& = delete;
@@ -114,100 +150,220 @@ class Result {
     return std::holds_alternative<ErrValue>(m_data);
   }
 
-  template <typename U = T>
-  [[nodiscard]] auto unwrap() const -> const U&
-    requires IsNonVoid<U>
-  {
-    if (const auto* ok_val = std::get_if<OkValue>(&m_data)) {
-      return ok_val->value;
-    }
-    throw std::runtime_error("Called unwrap() on Err");
-  }
+  explicit operator bool() const noexcept { return is_ok(); }
 
-  template <typename U = T>
-  [[nodiscard]] auto unwrap() && -> U&&  // 注意这里的 &&：仅能在右值对象上调用
-    requires IsNonVoid<U>
+  /**
+   * @brief 返回Ok值，如果是Err则崩溃
+   * @details 使用前请确保is_ok()为true
+   */
+  auto unwrap() const noexcept -> void
+    requires std::is_void_v<T>
   {
-    if (auto* ok_val = std::get_if<OkValue>(&m_data)) {
-      return std::move(ok_val->value);  // 移动内部值的所有权
-    }
-    throw std::runtime_error("Called unwrap() on Err");
-  }
-
-  auto unwrap() const -> void
-    requires IsVoid<T>
-  {
-    if (!is_ok()) {
-      throw std::runtime_error("Called unwrap() on Err");
-    }
-  }
-
-  [[nodiscard]] auto unwrap_err() const -> const E& {
-    if (const auto* err_val = std::get_if<ErrValue>(&m_data)) {
-      return err_val->error;
-    }
-    throw std::runtime_error("Called unwrap_err() on Ok");
+    assert(is_ok() && "unwrap() called on Err");
   }
 
   template <typename U = T>
-  [[nodiscard]] auto expect(const std::string& msg) const -> const U&
-    requires IsNonVoid<U>
+  [[nodiscard]] auto unwrap() const noexcept
+    -> std::conditional_t<is_cheap_to_copy<U>, U, const U&>
+    requires(!std::is_void_v<T>)
+  {
+    assert(is_ok() && "unwrap() called on Err");
+    return std::get_if<OkValue>(&m_data)->value;
+  }
+
+  /**
+   * @brief 返回Err值，如果是Ok则崩溃
+   * @details 使用前请确保is_err()为true
+   */
+  auto unwrap_err() const noexcept -> void
+    requires std::is_void_v<E>
+  {
+    assert(is_err() && "unwrap_err() called on Ok");
+  }
+
+  template <typename U = E>
+  [[nodiscard]] auto unwrap_err() const noexcept -> const U&
+    requires(!std::is_void_v<U>)
+  {
+    assert(is_err() && "unwrap_err() called on Ok");
+    return std::get_if<ErrValue>(&m_data)->error;
+  }
+
+  /**
+   * @brief 如果is_ok()为true则调用f拿到T, 和原来的E一起返回一个新的Result
+   * @tparam Function: (P | const P&) -> ReturnType
+   * 应该是一个简单的函数, 在处理后重新包装成 Result<ReturnType, E>
+   * @tparam P T的别名，不知道为什么要加这个别名
+   * @tparam ReturnType Function的返回类型
+   * @tparam std::conditional_t<is_cheap_to_copy<P>, P, const P&>>
+   */
+  template <
+    typename Function,
+    typename P = T,
+    typename Arg = std::conditional_t<is_cheap_to_copy<P>, P, const P&>,
+    typename ReturnType = std::invoke_result_t<Function, Arg>>
+  [[nodiscard]] auto map(const Function& f) const noexcept
+    -> Result<ReturnType, E>
+    requires(!std::is_void_v<P> && std::is_nothrow_invocable_v<Function, Arg>)
   {
     if (is_ok()) {
-      return unwrap();
+      return ok(f(unwrap()));  // 包装一个ok，类型是ReturnType
     }
-    throw std::runtime_error(msg);
+    return forward_err<ReturnType>();
   }
 
-  // T为void时的版本，无返回值
-  auto expect(const std::string& msg) const -> void
-    requires IsVoid<T>
-  {
-    if (!is_ok()) {
-      throw std::runtime_error(msg);
-    }
-  }
-
-  template <typename F, typename U = std::invoke_result_t<F, T>>
-  auto map(F&& f) const -> Result<U, E>
-    requires IsNonVoid<U>
+  /**
+   * @brief 如果is_ok()为true则调用f拿到T, 和原来的E一起返回一个新的Result
+   * @tparam Function: () -> ReturnType, Function
+   * 应该是一个简单的函数, 在处理后重新包装成 Result<ReturnType, E>
+   * @tparam P T的别名，不知道为什么要加这个别名
+   * @tparam ReturnType Function的返回类型
+   */
+  template <
+    typename Function,
+    typename P = T,
+    typename ReturnType = std::invoke_result_t<Function>>
+  [[nodiscard]] auto map(const Function& f) const noexcept
+    -> Result<ReturnType, E>
+    requires(std::is_void_v<P> && std::is_nothrow_invocable_v<Function>)
   {
     if (is_ok()) {
-      return Ok(std::invoke(std::forward<F>(f), unwrap()));
+      return ok(f());  // 包装一个ok，类型是ReturnType
     }
-    return Err(unwrap_err());
+    return forward_err<ReturnType>();
   }
 
-  using OkType = std::conditional_t<IsVoid<T>, void, T>;
-  using ErrorType = E;
-  template <typename U = T>
-  [[nodiscard]] auto flatten() const -> Result<typename U::OkType, E>
-    requires IsNestedResult<U, E>
+  template <
+    typename Function,
+    typename P = T,
+    typename Arg = std::conditional_t<is_cheap_to_copy<P>, P, const P&>,
+    typename ReturnType = std::invoke_result_t<Function, Arg>>
+  [[nodiscard]] auto and_then(const Function& f) const noexcept -> ReturnType
+    requires(
+      !std::is_void_v<P> && std::is_nothrow_invocable_v<Function, Arg> &&
+      std::is_same_v<ReturnType, Result<result_value_t<ReturnType>, E>>
+    )
   {
-    if (is_err()) {
-      return Err(unwrap_err());
+    if (is_ok()) {
+      return f(unwrap());
     }
-    const auto& inner_result = unwrap();
-    if (inner_result.is_ok()) {
-      return Ok(inner_result.unwrap());
-    }
-    return Err(inner_result.unwrap_err());
+    return forward_err<result_value_t<ReturnType>>();
   }
 
-  template <typename U = T>
-  [[nodiscard]] auto flatten() const -> Result<void, E>
-    requires IsVoid<U> && IsNestedResult<U, E>
-  {}
+  template <
+    typename Function,
+    typename P = T,
+    typename ReturnType = std::invoke_result_t<Function>>
+  [[nodiscard]] auto and_then(const Function& f) const noexcept -> ReturnType
+    requires(
+      std::is_void_v<P> && std::is_nothrow_invocable_v<Function> &&
+      std::is_same_v<ReturnType, Result<result_value_t<ReturnType>, E>>
+    )
+  {
+    if (is_ok()) {
+      return f();
+    }
+    return forward_err<result_value_t<ReturnType>>();
+  }
 
-  template <typename F, typename U = std::invoke_result_t<F, T>>
-  [[nodiscard]] auto and_then(F&& f) const -> Result<typename U::OkType, E>
-    requires(IsNestedResult<U, E> && std::is_invocable_v<F, T>)
+  /**
+   * @brief
+   * 如果is_err()为true则调用f处理错误值E，返回包含原T和新错误类型的Result
+   * @tparam Function: (E | const E&) -> NewE，用于处理错误的函数
+   * @tparam Q E的别名，用于模板参数推导
+   * @tparam NewE Function的返回类型，即新的错误类型
+   */
+  template <
+    typename Function,
+    typename Q = E,
+    typename Arg = std::conditional_t<is_cheap_to_copy<Q>, Q, const Q&>,
+    typename NewE = std::invoke_result_t<Function, Arg>>
+  [[nodiscard]] auto map_err(const Function& f) const noexcept
+    -> Result<T, NewE>
+    requires(!std::is_void_v<Q> && std::is_nothrow_invocable_v<Function, Arg>)
   {
     if (is_err()) {
-      return Err(unwrap_err());
+      return err(f(unwrap_err()));  // 处理错误值并包装为新的错误类型
     }
-    return std::invoke(std::forward<F>(f), unwrap());
+    return forward<NewE>();  // 转发正确值，错误类型变为NewE
+  }
+
+  /**
+   * @brief
+   * 如果is_err()为true则调用f处理无值错误，返回包含原T和新错误类型的Result
+   * @tparam Function: () -> NewE，无参数的错误处理函数
+   * @tparam Q E的别名，用于模板参数推导
+   * @tparam NewE Function的返回类型，即新的错误类型
+   */
+  template <
+    typename Function,
+    typename Q = E,
+    typename NewE = std::invoke_result_t<Function>>
+  [[nodiscard]] auto map_err(const Function& f) const noexcept
+    -> Result<T, NewE>
+    requires(std::is_void_v<Q> && std::is_nothrow_invocable_v<Function>)
+  {
+    if (is_err()) {
+      return err(f());  // 处理无值错误并包装为新的错误类型
+    }
+    return forward<NewE>();  // 转发正确值，错误类型变为NewE
+  }
+
+  /**
+   * @brief
+   * 如果is_err()为true则调用f处理错误值E，返回新的Result；如果is_ok()则直接返回原Ok值
+   * @tparam Function: (E | const E&) -> Result<T, F>
+   *         函数接收错误类型E，返回新的Result（成功类型保持T，错误类型可变为F）
+   * @tparam P E的别名，用于处理参数传递方式（值或引用）
+   * @tparam Arg 实际传递给函数的参数类型（根据是否易拷贝决定值传递或引用）
+   * @tparam ReturnType 函数返回的Result类型（Result<T, F>）
+   */
+  template <
+    typename Function,
+    typename P = E,
+    typename Arg = std::conditional_t<is_cheap_to_copy<P>, P, const P&>,
+    typename ReturnType = std::invoke_result_t<Function, Arg>>
+  [[nodiscard]] auto or_else(const Function& f) const noexcept -> ReturnType
+    requires(
+      !std::is_void_v<P> && std::is_nothrow_invocable_v<Function, Arg> &&
+      std::is_same_v<
+        ReturnType,
+        Result<
+          T,
+          result_error_t<ReturnType>>>  // 确保返回Result<T, F>
+    )
+  {
+    if (is_err()) {
+      return f(unwrap_err());  // 调用函数处理错误值，返回新的Result
+    }
+    return forward<result_error_t<ReturnType>>();  // 转发原Ok值
+  }
+
+  /**
+   * @brief 针对E为void的重载：is_err()为true时调用无参函数f，返回新的Result
+   * @tparam Function: () -> Result<T, F>
+   *         无参函数，返回新的Result（成功类型保持T，错误类型可变为F）
+   */
+  template <
+    typename Function,
+    typename P = E,
+    typename ReturnType = std::invoke_result_t<Function>>
+  [[nodiscard]] auto or_else(const Function& f) const noexcept -> ReturnType
+    requires(
+      std::is_void_v<P> && std::is_nothrow_invocable_v<Function> &&
+      std::is_same_v<
+        ReturnType,
+        Result<
+          T,
+          result_error_t<ReturnType>>>  // 确保返回Result<T,
+                                        // F>
+    )
+  {
+    if (is_err()) {
+      return f();  // 调用无参函数处理错误，返回新的Result
+    }
+    return forward<result_error_t<ReturnType>>();
   }
 };
 
-}  // namespace Utils
+}  // namespace utils

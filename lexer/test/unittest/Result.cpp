@@ -1,180 +1,230 @@
-#include "Utils/Result.h"  // 假设你的Result类定义在这个头文件中
+
+#include "Utils/Result.h"
 #include <gtest/gtest.h>
 #include <string>
 
-using Utils::Err;
-using Utils::Ok;
-using Utils::Result;
+using namespace utils;  // NOLINT
 
-// 测试基本的Ok和Err创建及状态检查
-TEST(ResultTest, BasicCreationAndStateCheck) {
-  // 测试非void类型的Ok
-  Result<int, std::string> ok_result = Ok<int>(42);
-  EXPECT_TRUE(ok_result.is_ok());
-  EXPECT_FALSE(ok_result.is_err());
-
-  // 测试非void类型的Err
-  Result<int, std::string> err_result = Err(std::string("error message"));
-  EXPECT_FALSE(err_result.is_ok());
-  EXPECT_TRUE(err_result.is_err());
-
-  // 测试void类型的Ok
-  Result<void, int> void_ok = Ok();
-  EXPECT_TRUE(void_ok.is_ok());
-  EXPECT_FALSE(void_ok.is_err());
-
-  // 测试void类型的Err
-  Result<void, int> void_err = Err(123);
-  EXPECT_FALSE(void_err.is_ok());
-  EXPECT_TRUE(void_err.is_err());
-}
-
-// 测试unwrap方法
-TEST(ResultTest, UnwrapMethod) {
-  // 测试正常unwrap Ok值
-  Result<int, std::string> ok_result = Ok(42);
-  EXPECT_EQ(ok_result.unwrap(), 42);
-
-  // 测试unwrap Err时抛出异常
-  Result<int, std::string> err_result = Err(std::string("error"));
-  EXPECT_THROW(err_result.unwrap(), std::runtime_error);
-
-  // 测试void类型的unwrap
-  Result<void, int> void_ok = Ok();
-  EXPECT_NO_THROW(void_ok.unwrap());
-
-  Result<void, int> void_err = Err(123);
-  EXPECT_THROW(void_err.unwrap(), std::runtime_error);
-}
-
-// 测试unwrap_err方法
-TEST(ResultTest, UnwrapErrMethod) {
-  // 测试unwrap_err获取错误值
-  Result<int, std::string> err_result = Err(std::string("test error"));
-  EXPECT_EQ(err_result.unwrap_err(), "test error");
-
-  // 测试在Ok上调用unwrap_err抛出异常
-  Result<int, std::string> ok_result = Ok(42);
-  EXPECT_THROW(ok_result.unwrap_err(), std::runtime_error);
-
-  // 测试void类型的unwrap_err
-  Result<void, std::string> void_err = Err(std::string("void error"));
-  EXPECT_EQ(void_err.unwrap_err(), "void error");
-}
-
-// 测试expect方法
-TEST(ResultTest, ExpectMethod) {
-  // 测试正常expect Ok值
-  Result<int, std::string> ok_result = Ok(42);
-  EXPECT_EQ(ok_result.expect("should not fail"), 42);
-
-  // 测试expect Err时抛出指定消息
-  Result<int, std::string> err_result = Err(std::string("error"));
-  try {
-    err_result.expect("expected failure");
-    FAIL() << "Expected std::runtime_error";
-  } catch (const std::runtime_error& e) {
-    EXPECT_STREQ(e.what(), "expected failure");
+class ResultTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // 在每个测试用例之前执行的操作
   }
 
-  // 测试void类型的expect
-  Result<void, int> void_ok = Ok();
-  EXPECT_NO_THROW(void_ok.expect("void ok should not fail"));
-
-  Result<void, int> void_err = Err(123);
-  try {
-    void_err.expect("void error expected");
-    FAIL() << "Expected std::runtime_error";
-  } catch (const std::runtime_error& e) {
-    EXPECT_STREQ(e.what(), "void error expected");
+  void TearDown() override {
+    // 在每个测试用例之后执行的操作
   }
-}
 
-// 测试map方法
-TEST(ResultTest, MapMethod) {
-  // 测试Ok值的map转换
-  Result<int, std::string> ok_result = Ok(42);
-  auto mapped = ok_result.map([](int x) { return x * 2; });
-  EXPECT_TRUE(mapped.is_ok());
-  EXPECT_EQ(mapped.unwrap(), 84);
-
-  // 测试Err值的map不转换
-  Result<int, std::string> err_result = Err(std::string("error"));
-  auto err_mapped = err_result.map([](int x) { return x * 2; });
-  EXPECT_TRUE(err_mapped.is_err());
-  EXPECT_EQ(err_mapped.unwrap_err(), "error");
-}
-
-// 测试flatten方法
-TEST(ResultTest, FlattenMethod) {
-  // 测试嵌套Ok的flatten
-  Result<int, std::string> inner_ok = Ok(42);
-  Result<Result<int, std::string>, std::string> nested_ok =
-    Ok(std::move(inner_ok));
-  auto flattened = nested_ok.flatten();
-  EXPECT_TRUE(flattened.is_ok());
-  EXPECT_EQ(flattened.unwrap(), 42);
-
-  // 测试外层Err的flatten
-  Result<Result<int, std::string>, std::string> outer_err =
-    Err(std::string("outer error"));
-  auto outer_err_flattened = outer_err.flatten();
-  EXPECT_TRUE(outer_err_flattened.is_err());
-  EXPECT_EQ(outer_err_flattened.unwrap_err(), "outer error");
-
-  // 测试内层Err的flatten
-  Result<int, std::string> inner = Err(std::string("inner error"));
-  Result<Result<int, std::string>, std::string> err = Ok(std::move(inner));
-  auto inner_err_flattened = err.flatten();
-  EXPECT_TRUE(inner_err_flattened.is_err());
-  EXPECT_EQ(inner_err_flattened.unwrap_err(), "inner error");
-}
-
-// 测试and_then方法
-TEST(ResultTest, AndThenMethod) {
-  // 测试正常的and_then链
-  Result<int, std::string> ok_result = Ok(42);
-  auto and_then_result =
-    ok_result.and_then([](int x) -> Result<int, std::string> {
-      return Ok(x * 2);
-    });
-  EXPECT_TRUE(and_then_result.is_ok());
-  EXPECT_EQ(and_then_result.unwrap(), 84);
-
-  // 测试Err的and_then不执行
-  Result<int, std::string> err_result = Err(std::string("error"));
-  auto err_and_then =
-    err_result.and_then([](int x) -> Result<int, std::string> {
-      return Ok(x * 2);
-    });
-  EXPECT_TRUE(err_and_then.is_err());
-  EXPECT_EQ(err_and_then.unwrap_err(), "error");
-
-  // 测试and_then返回Err
-  Result<int, std::string> ok_to_err = Ok(42);
-  auto and_then_to_err =
-    ok_to_err.and_then([](int) -> Result<int, std::string> {
-      return Err(std::string("converted to error"));
-    });
-  EXPECT_TRUE(and_then_to_err.is_err());
-  EXPECT_EQ(and_then_to_err.unwrap_err(), "converted to error");
-}
-
-// 测试不同错误类型
-TEST(ResultTest, DifferentErrorTypes) {
-  Result<int, int> int_err = Err(42);
-  EXPECT_EQ(int_err.unwrap_err(), 42);
-
-  Result<std::string, float> float_err = Err(3.14F);
-  EXPECT_EQ(float_err.unwrap_err(), 3.14F);
-
-  struct CustomError {
-    std::string msg;
-    int code;
+  // 通用的转换函数，支持多种类型
+  static auto thenFunc(int x) noexcept { return x * 2; };
+  static auto thenFuncForString(const std::string& x) noexcept {
+    return x + "2";
   };
 
-  Result<bool, CustomError> custom_err =
-    Err(CustomError{.msg = "custom", .code = 500});
-  EXPECT_EQ(custom_err.unwrap_err().msg, "custom");
-  EXPECT_EQ(custom_err.unwrap_err().code, 500);
+  // 通用的Result返回函数，支持多种类型组合
+  template <typename T, typename E>
+  static auto thenResultFunc(T x) noexcept -> Result<T, E> {
+    if constexpr (std::is_same_v<T, int>) {
+      return ok(x * 2);
+    } else if constexpr (std::is_same_v<T, std::string>) {
+      return ok(x + "2");
+    }
+  }
+
+  template <typename T, typename E>
+  static auto catchResultFunc(const E& x) noexcept -> Result<T, E> {
+    if constexpr (std::is_same_v<E, int>) {
+      return err(x * 2);
+    } else if constexpr (std::is_same_v<E, std::string>) {
+      return err(x + "2");
+    }
+  }
+
+  // void类型支持
+  static auto voidThenFunc() noexcept { return 42; }
+  template <typename T, typename E>
+  static auto voidThenResultFunc() noexcept -> Result<T, E> {
+    if constexpr (std::is_same_v<T, int>) {
+      return ok(42);
+    } else if constexpr (std::is_same_v<T, std::string>) {
+      return ok(std::string("42"));
+    }
+  }
+  template <typename T, typename E>
+  static auto voidCatchResultFunc() noexcept -> Result<T, E> {
+    if constexpr (std::is_same_v<E, int>) {
+      return err(42);
+    } else if constexpr (std::is_same_v<E, std::string>) {
+      return err(std::string("42"));
+    }
+  }
+};
+
+// 测试场景：T和E均为非void类型且类型不同，验证ok值的正确性
+TEST_F(ResultTest, NonVoidTNonVoidEDifferentTypeOkValueCorrect) {
+  Result<int, std::string> result = ok(42);
+  EXPECT_TRUE(result.is_ok());
+  EXPECT_FALSE(result.is_err());
+  EXPECT_EQ(result.unwrap(), 42);
+
+  EXPECT_EQ(result.map(thenFunc).unwrap(), 84);
+  EXPECT_EQ(result.map_err(thenFuncForString).unwrap(), 42);
+  EXPECT_EQ(result.and_then(thenResultFunc<int, std::string>).unwrap(), 84);
+  EXPECT_EQ(result.or_else(catchResultFunc<int, std::string>).unwrap(), 42);
+}
+
+// 测试场景：T和E均为非void类型且类型不同，验证err值的正确性
+TEST_F(ResultTest, NonVoidTNonVoidEDifferentTypeErrValueCorrect) {
+  Result<int, std::string> result = err(std::string("error"));
+  EXPECT_FALSE(result.is_ok());
+  EXPECT_TRUE(result.is_err());
+  EXPECT_EQ(result.unwrap_err(), std::string("error"));
+  EXPECT_EQ(result.map(thenFunc).unwrap_err(), std::string("error"));
+  EXPECT_EQ(
+    result.map_err(thenFuncForString).unwrap_err(), std::string("error2")
+  );
+  EXPECT_EQ(
+    result.and_then(thenResultFunc<int, std::string>).unwrap_err(),
+    std::string("error")
+  );
+  EXPECT_EQ(
+    result.or_else(catchResultFunc<int, std::string>).unwrap_err(),
+    std::string("error2")
+  );
+}
+
+// 测试场景：T和E均为非void类型且类型相同，验证ok值的正确性
+TEST_F(ResultTest, NonVoidTNonVoidESameTypeOkValueCorrect) {
+  Result<int, int> result = ok(42);  // T和E均为int（相同类型）
+  EXPECT_TRUE(result.is_ok());
+  EXPECT_FALSE(result.is_err());
+  EXPECT_EQ(result.unwrap(), 42);
+  EXPECT_EQ(result.map(thenFunc).unwrap(), 84);
+  EXPECT_EQ(result.map_err(thenFunc).unwrap(), 42);
+  EXPECT_EQ(result.and_then(thenResultFunc<int, int>).unwrap(), 84);
+  EXPECT_EQ(result.or_else(catchResultFunc<int, int>).unwrap(), 42);
+}
+
+// 测试场景：T为非void、E为非void类型且类型相同，验证err值的正确性
+TEST_F(ResultTest, NonVoidTNonVoidESameTypeErrValueCorrect) {
+  Result<int, int> result = err(42);  // T和E均为int（相同类型）
+  EXPECT_FALSE(result.is_ok());
+  EXPECT_TRUE(result.is_err());
+  EXPECT_EQ(result.unwrap_err(), 42);
+  EXPECT_EQ(result.map(thenFunc).unwrap_err(), 42);
+  EXPECT_EQ(result.map_err(thenFunc).unwrap_err(), 84);
+  EXPECT_EQ(result.and_then(thenResultFunc<int, int>).unwrap_err(), 42);
+  EXPECT_EQ(result.or_else(catchResultFunc<int, int>).unwrap_err(), 84);
+}
+
+// 测试场景：T为void、E为非void类型，验证ok状态的正确性
+TEST_F(ResultTest, VoidTNonVoidEOkStateCorrect) {
+  Result<void, std::string> result = ok();  // T为void时ok无参数
+  EXPECT_TRUE(result.is_ok());
+  EXPECT_FALSE(result.is_err());
+  EXPECT_NO_THROW(result.unwrap());  // 验证void类型的unwrap不报错
+  EXPECT_EQ(result.map(voidThenFunc).unwrap(), 42);
+  EXPECT_NO_THROW(result.map_err(thenFuncForString).unwrap());
+  EXPECT_EQ(result.and_then(voidThenResultFunc<int, std::string>).unwrap(), 42);
+  EXPECT_NO_THROW(result.or_else(catchResultFunc<void, std::string>).unwrap());
+}
+
+// 测试场景：T为void、E为非void类型，验证err值的正确性
+TEST_F(ResultTest, VoidTNonVoidEErrValueCorrect) {
+  Result<void, std::string> result = err(std::string("error"));
+  EXPECT_FALSE(result.is_ok());
+  EXPECT_TRUE(result.is_err());
+  EXPECT_EQ(result.unwrap_err(), std::string("error"));
+  EXPECT_EQ(result.map(voidThenFunc).unwrap_err(), std::string("error"));
+  EXPECT_EQ(
+    result.map_err(thenFuncForString).unwrap_err(), std::string("error2")
+  );
+  EXPECT_EQ(
+    result.and_then(voidThenResultFunc<void, std::string>).unwrap_err(),
+    std::string("error")
+  );
+  EXPECT_EQ(
+    result.or_else(catchResultFunc<void, std::string>).unwrap_err(),
+    std::string("error2")
+  );
+}
+
+// 测试场景：T为非void、E为void类型，验证ok值的正确性
+TEST_F(ResultTest, NonVoidTVoidEOkValueCorrect) {
+  Result<int, void> result = ok(42);  // E为void类型
+  EXPECT_TRUE(result.is_ok());
+  EXPECT_FALSE(result.is_err());
+  EXPECT_EQ(result.unwrap(), 42);
+  EXPECT_EQ(result.map(thenFunc).unwrap(), 84);
+  EXPECT_EQ(result.map_err(voidThenFunc).unwrap(), 42);
+  EXPECT_EQ(result.and_then(thenResultFunc<int, void>).unwrap(), 84);
+  EXPECT_EQ(result.or_else(voidCatchResultFunc<int, std::string>).unwrap(), 42);
+}
+
+// 测试场景：T为非void、E为void类型，验证err状态的正确性
+TEST_F(ResultTest, NonVoidTVoidEErrStateCorrect) {
+  Result<int, void> result = err();  // E为void类型
+  EXPECT_FALSE(result.is_ok());
+  EXPECT_TRUE(result.is_err());
+  EXPECT_NO_THROW(result.unwrap_err());  // 验证void类型的unwrap_err不报错
+  EXPECT_NO_THROW(result.map(thenFunc).unwrap_err());
+  EXPECT_EQ(result.map_err(voidThenFunc).unwrap_err(), 42);
+  EXPECT_NO_THROW(result.and_then(thenResultFunc<int, void>).unwrap_err());
+  EXPECT_EQ(
+    result.or_else(voidCatchResultFunc<int, std::string>).unwrap_err(),
+    std::string("42")
+  );
+}
+
+// 测试场景：T和E均为void类型，验证ok状态的正确性
+TEST_F(ResultTest, VoidTVoidEOkStateCorrect) {
+  Result<void, void> result = ok();  // T和E均为void类型
+  EXPECT_TRUE(result.is_ok());
+  EXPECT_FALSE(result.is_err());
+  EXPECT_NO_THROW(result.unwrap());  // 验证void类型的unwrap不报错
+  EXPECT_EQ(result.map(voidThenFunc).unwrap(), 42);
+  EXPECT_NO_THROW(result.map_err(voidThenFunc).unwrap());
+  EXPECT_EQ(result.and_then(voidThenResultFunc<int, void>).unwrap(), 42);
+  EXPECT_NO_THROW(result.or_else(voidCatchResultFunc<void, std::string>).unwrap());
+}
+
+// 测试场景：T和E均为void类型，验证err状态的正确性
+TEST_F(ResultTest, VoidTVoidEErrStateCorrect) {
+  Result<void, void> result = err();  // T和E均为void类型
+  EXPECT_FALSE(result.is_ok());
+  EXPECT_TRUE(result.is_err());
+  EXPECT_NO_THROW(result.unwrap_err());  // 验证void类型的unwrap_err不报错
+  EXPECT_NO_THROW(result.map(voidThenFunc).unwrap_err());
+  EXPECT_EQ(result.map_err(voidThenFunc).unwrap_err(), 42);
+  EXPECT_NO_THROW(result.and_then(voidThenResultFunc<void, void>).unwrap_err());
+  EXPECT_EQ(
+    result.or_else(voidCatchResultFunc<void, std::string>).unwrap_err(),
+    std::string("42")
+  );
+}
+
+TEST_F(ResultTest, NestedMap) {
+  auto test = [](int x) noexcept -> Result<double, std::string> {
+    if (x == 0) {
+      return ok(3.14);
+    }
+    return err(std::string("not even"));
+  };
+
+  auto result = Result<int, std::string>(ok(0)).map(test);
+  EXPECT_TRUE(result.is_ok());
+  EXPECT_EQ(result.unwrap().unwrap(), 3.14);
+}
+
+TEST_F(ResultTest, NestedAndThen) {
+  auto test = [](int x) noexcept -> Result<double, std::string> {
+    if (x == 0) {
+      return ok(3.14);
+    }
+    return err(std::string("not even"));
+  };
+
+  auto result = Result<int, std::string>(ok(0)).and_then(test);
+  EXPECT_TRUE(result.is_ok());
+  EXPECT_EQ(result.unwrap(), 3.14);
 }
