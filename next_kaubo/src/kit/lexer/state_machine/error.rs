@@ -1,10 +1,8 @@
 use thiserror::Error;
 
-use super::common::StateId;
-
 #[derive(Debug, PartialEq)]
 pub struct InvalidStateIdError {
-    pub state_id: StateId,
+    pub state_id: usize,
 }
 
 #[derive(Debug, PartialEq)]
@@ -25,4 +23,6 @@ pub enum AddTransitionError {
 pub enum BuildMachineError {
     #[error("Add transition error: {0}")]
     MachineMethodError(#[from] AddTransitionError),
+    #[error("Empty character sequence")]
+    EmptyCharSequence,
 }

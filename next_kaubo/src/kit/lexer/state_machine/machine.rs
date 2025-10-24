@@ -1,16 +1,37 @@
-use super::common::{Event, Machine, State, StateId, Transition, TransitionCondition};
 use super::error::{AddTransitionError, InvalidStateIdError, ProcessEventError};
+use super::types::{Event, TokenKindTrait};
+
 use std::fmt;
-impl<T> Machine<T>
+pub type StateId = usize;
+
+pub type TransitionCondition = Box<dyn Fn(Event) -> bool + 'static>;
+
+pub struct State {
+    pub is_accepting: bool,
+}
+
+/// 转移规则
+pub struct Transition {
+    pub to: StateId,
+    pub condition: TransitionCondition,
+}
+
+/// 状态机
+pub struct Machine<TokenKind> {
+    pub states: Vec<State>,
+    pub transitions: Vec<Vec<Transition>>,
+    pub current_state: StateId,
+    pub token: TokenKind,
+}
+
+impl<TokenKind> Machine<TokenKind>
 where
-    T: fmt::Debug + Clone, // 约束：令牌类型需要实现Debug和Clone
+    TokenKind: TokenKindTrait,
 {
-    /// 创建新的状态机
-    pub fn new(token: T) -> Self {
+    pub fn new(token: TokenKind) -> Self {
         let mut states = Vec::new();
         let mut transitions = Vec::new();
 
-        // 添加初始状态
         states.push(State {
             is_accepting: false,
         });
@@ -24,8 +45,6 @@ where
         }
     }
 
-    /// 添加新状态
-    /// 返回新状态ID
     pub fn add_state(&mut self, is_accepting: bool) -> StateId {
         let id = self.states.len();
         self.states.push(State { is_accepting });
@@ -33,7 +52,6 @@ where
         id
     }
 
-    /// 添加状态转移规则
     pub fn add_transition(
         &mut self,
         from: StateId,
@@ -54,7 +72,6 @@ where
         Ok(())
     }
 
-    /// 处理事件，进行状态转移
     pub fn process_event(&mut self, event: Event) -> Option<ProcessEventError> {
         if self.current_state >= self.transitions.len() {
             return Some(ProcessEventError::InvalidStateId);
@@ -70,28 +87,23 @@ where
         Some(ProcessEventError::NoMatchingTransition)
     }
 
-    /// 重置状态机到初始状态
     pub fn reset(&mut self) {
         self.current_state = 0;
     }
 
-    /// 获取当前状态ID
     pub fn get_current_state(&self) -> StateId {
         self.current_state
     }
-
-    /// 检查当前状态是否为接受状态
     pub fn is_in_accepting_state(&self) -> bool {
         self.current_state < self.states.len() && self.states[self.current_state].is_accepting
     }
 
-    /// 获取令牌类型
-    pub fn get_token_type(&self) -> T {
-        self.token.clone() // 利用Clone约束复制令牌
+    pub fn get_token_kind(&self) -> TokenKind {
+        self.token.clone()
     }
 }
 
-impl<T: fmt::Debug> fmt::Debug for Machine<T> {
+impl<TokenKind: fmt::Debug> fmt::Debug for Machine<TokenKind> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Machine")
             .field("current_state", &self.current_state)
