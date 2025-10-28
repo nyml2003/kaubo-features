@@ -1,4 +1,4 @@
-use super::super::token_kind::KauboTokenKind;
+use super::super::lexer::token_kind::KauboTokenKind;
 use super::stmt::Stmt;
 use std::fmt;
 

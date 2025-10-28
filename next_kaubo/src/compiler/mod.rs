@@ -1,3 +1,2 @@
-pub mod builder;
-pub mod token_kind;
+pub mod lexer;
 pub mod parser;

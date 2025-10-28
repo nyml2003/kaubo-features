@@ -7,11 +7,6 @@ pub trait CLexerTokenKindTrait: TokenKindTrait {
     fn newline() -> Self;
     fn comment() -> Self;
 
-    // 检查当前实例是否为特定成员
-    fn is_invalid(&self) -> bool {
-        self == &Self::invalid_token()
-    }
-
     fn is_whitespace(&self) -> bool {
         self == &Self::whitespace()
     }

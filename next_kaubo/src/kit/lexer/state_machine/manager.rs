@@ -189,7 +189,7 @@ mod tests {
             manager.add_machine(build_single_char_machine(kind, operator).unwrap());
         }
 
-        let input = "== = > >= <= > < ".chars().collect::<Vec<char>>();
+        // let input = "== = > >= <= > < ".chars().collect::<Vec<char>>();
         // for c in input.iter() {
         //     let any_completed = manager.process_event(*c);
         //     for (id, info) in manager.machines.iter().enumerate() {

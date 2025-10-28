@@ -11,10 +11,6 @@ pub enum LexerError {
     #[error("Cannot feed data after EOF")]
     EofAfterFeed,
 
-    /// 内部逻辑错误
-    #[error("Internal logic error: {0}")]
-    InternalError(&'static str),
-
     /// UTF-8编码错误
     #[error("UTF-8 decoding error")]
     Utf8Error,

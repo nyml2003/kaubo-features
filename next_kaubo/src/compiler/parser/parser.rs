@@ -1,3 +1,4 @@
+use super::super::lexer::token_kind::KauboTokenKind;
 use super::error::{ParseResult, ParserError};
 use super::expr::{
     Assign, Binary, Expr, ExprKind, FunctionCall, Grouping, Lambda, LiteralFalse, LiteralInt,
@@ -9,7 +10,6 @@ use super::stmt::{
     WhileStmt,
 };
 use super::utils::{get_associativity, get_precedence};
-use crate::compiler::token_kind::KauboTokenKind;
 use crate::kit::lexer::c_lexer::Lexer;
 use crate::kit::lexer::types::Token;
 use std::cell::RefCell;

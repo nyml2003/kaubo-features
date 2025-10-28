@@ -1,4 +1,4 @@
-use crate::compiler::token_kind::KauboTokenKind;
+use super::super::lexer::token_kind::KauboTokenKind;
 
 pub fn get_precedence(op: KauboTokenKind) -> i32 {
     match op {

@@ -4,10 +4,7 @@ pub enum ParserError {
     InvalidNumberFormat,
     MissingRightParen,
     UnexpectedEndOfInput,
-    ExpectedPipe,
-    ExpectedIdentifierInLambdaParams,
     ExpectedCommaOrPipeInLambda,
-    ExpectedLeftBraceInLambdaBody,
     ExpectedIdentifierAfterDot,
 }
 
@@ -18,14 +15,9 @@ impl std::fmt::Display for ParserError {
             ParserError::InvalidNumberFormat => write!(f, "Invalid number format"),
             ParserError::MissingRightParen => write!(f, "Missing right parenthesis"),
             ParserError::UnexpectedEndOfInput => write!(f, "Unexpected end of input"),
-            ParserError::ExpectedPipe => write!(f, "Expected '|' in lambda"),
-            ParserError::ExpectedIdentifierInLambdaParams => {
-                write!(f, "Expected identifier in lambda parameters")
-            }
             ParserError::ExpectedCommaOrPipeInLambda => {
                 write!(f, "Expected ',' or '|' in lambda parameters")
             }
-            ParserError::ExpectedLeftBraceInLambdaBody => write!(f, "Expected {{ for lambda body"),
             ParserError::ExpectedIdentifierAfterDot => write!(f, "Expected identifier after '.'"),
         }
     }
