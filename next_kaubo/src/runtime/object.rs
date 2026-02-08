@@ -19,3 +19,17 @@ impl ObjFunction {
         Self { chunk, arity, name }
     }
 }
+
+/// 字符串对象
+#[derive(Debug)]
+pub struct ObjString {
+    /// 字符串内容
+    pub chars: String,
+}
+
+impl ObjString {
+    /// 创建新的字符串对象
+    pub fn new(chars: String) -> Self {
+        Self { chars }
+    }
+}

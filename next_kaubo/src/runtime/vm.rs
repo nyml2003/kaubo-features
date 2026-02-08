@@ -202,6 +202,16 @@ impl VM {
                     }
                 }
 
+                LessEqual => {
+                    let (a, b) = self.pop_two();
+                    let result = self.compare_values(a, b);
+                    match result {
+                        Ok(Ordering::Less) | Ok(Ordering::Equal) => self.push(Value::TRUE),
+                        Ok(_) => self.push(Value::FALSE),
+                        Err(e) => return InterpretResult::RuntimeError(e),
+                    }
+                }
+
                 // ===== 局部变量 =====
                 LoadLocal0 => {
                     let value = self.stack[self.slot_base()];
@@ -717,7 +727,7 @@ mod tests {
         chunk.write_op_u8(LoadConst, c1, 1);
         chunk.write_op_u8(LoadConst, c2, 1);
         chunk.write_op(Add, 1);
-        chunk.write_op(Return, 1);
+        chunk.write_op(ReturnValue, 1);
 
         let result = vm.interpret(&chunk);
         assert_eq!(result, InterpretResult::Ok);
@@ -739,7 +749,7 @@ mod tests {
         chunk.write_op_u8(LoadConst, c1, 1);
         chunk.write_op_u8(LoadConst, c2, 1);
         chunk.write_op(Add, 1);
-        chunk.write_op(Return, 1);
+        chunk.write_op(ReturnValue, 1);
 
         let result = vm.interpret(&chunk);
         assert_eq!(result, InterpretResult::Ok);
@@ -761,7 +771,7 @@ mod tests {
         chunk.write_op_u8(LoadConst, c2, 1);
         chunk.write_op_u8(LoadConst, c1, 1);
         chunk.write_op(Greater, 1);
-        chunk.write_op(Return, 1);
+        chunk.write_op(ReturnValue, 1);
 
         let result = vm.interpret(&chunk);
         assert_eq!(result, InterpretResult::Ok);
@@ -780,7 +790,7 @@ mod tests {
         chunk.write_op_u8(LoadConst, c5, 1);
         chunk.write_op_u8(LoadConst, c2, 1);
         chunk.write_op(Div, 1);
-        chunk.write_op(Return, 1);
+        chunk.write_op(ReturnValue, 1);
 
         let result = vm.interpret(&chunk);
         assert_eq!(result, InterpretResult::Ok);
@@ -821,7 +831,7 @@ mod tests {
         chunk.patch_jump(jump_offset);
 
         chunk.write_op(LoadTrue, 1); // 应该执行到这里
-        chunk.write_op(Return, 1);
+        chunk.write_op(ReturnValue, 1);
 
         let result = vm.interpret(&chunk);
         assert_eq!(result, InterpretResult::Ok);
@@ -850,7 +860,7 @@ mod tests {
 
         // return y
         chunk.write_op(LoadLocal1, 1);
-        chunk.write_op(Return, 1);
+        chunk.write_op(ReturnValue, 1);
 
         let result = vm.interpret_with_locals(&chunk, 2);
         assert_eq!(result, InterpretResult::Ok);
@@ -870,7 +880,7 @@ mod tests {
 
         // return slot 8
         chunk.write_op_u8(LoadLocal, 8, 1);
-        chunk.write_op(Return, 1);
+        chunk.write_op(ReturnValue, 1);
 
         let result = vm.interpret_with_locals(&chunk, 10);
         assert_eq!(result, InterpretResult::Ok);

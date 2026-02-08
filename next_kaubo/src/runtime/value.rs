@@ -3,6 +3,7 @@
 //! 使用 IEEE 754 double 的 NaN 空间存储非浮点值
 
 use super::object::ObjFunction;
+use super::object::ObjString;
 
 /// NaN-boxed 值 (64-bit)
 #[repr(transparent)]
@@ -11,7 +12,7 @@ pub struct Value(u64);
 
 // 常量定义
 const QNAN: u64 = 0x7FF8_0000_0000_0000; // Quiet NaN 基础值
-const QNAN_MASK: u64 = 0x7FFC_0000_0000_0000; // 用于判断的掩码 (bits 62-50)
+const QNAN_MASK: u64 = 0x7FF8_0000_0000_0000; // 用于判断的掩码 (bit 51)
 
 // 类型标签 (bits 50-48)
 const TAG_MASK: u64 = 0x7 << 48;
@@ -19,6 +20,7 @@ const TAG_SMI: u64 = 0 << 48;     // 000 - 小整数
 const TAG_HEAP: u64 = 1 << 48;    // 001 - 堆对象指针
 const TAG_SPECIAL: u64 = 2 << 48; // 010 - 特殊值
 const TAG_FUNCTION: u64 = 3 << 48; // 011 - 函数对象
+const TAG_STRING: u64 = 4 << 48;  // 100 - 字符串对象
 
 const PAYLOAD_MASK: u64 = 0x0000_FFFF_FFFF_FFFF; // bits 47-0
 
@@ -71,6 +73,18 @@ impl Value {
         Self(QNAN | TAG_FUNCTION | compressed)
     }
 
+    /// 创建字符串对象
+    #[inline]
+    pub fn string(ptr: *mut ObjString) -> Self {
+        let addr = ptr as u64;
+        debug_assert!(
+            addr & 0x7 == 0,
+            "String pointer must be 8-byte aligned"
+        );
+        let compressed = (addr >> 3) & PAYLOAD_MASK;
+        Self(QNAN | TAG_STRING | compressed)
+    }
+
     // ==================== 类型判断 ====================
 
     /// 是否为我们的 boxing 值 (非普通浮点数)
@@ -108,6 +122,12 @@ impl Value {
     #[inline]
     pub fn is_function(&self) -> bool {
         self.is_boxed() && (self.0 & TAG_MASK) == TAG_FUNCTION
+    }
+
+    /// 是否为字符串对象
+    #[inline]
+    pub fn is_string(&self) -> bool {
+        self.is_boxed() && (self.0 & TAG_MASK) == TAG_STRING
     }
 
     /// 是否为 null
@@ -182,6 +202,17 @@ impl Value {
         }
     }
 
+    /// 解包为字符串对象指针
+    #[inline]
+    pub fn as_string(&self) -> Option<*mut ObjString> {
+        if self.is_string() {
+            let compressed = self.0 & PAYLOAD_MASK;
+            Some(((compressed << 3) as usize) as *mut ObjString)
+        } else {
+            None
+        }
+    }
+
     // ==================== 常量 ====================
 
     pub const NULL: Value = Value(QNAN | TAG_SPECIAL | VAL_NULL);
@@ -205,6 +236,8 @@ impl std::fmt::Debug for Value {
             write!(f, "False")
         } else if self.is_function() {
             write!(f, "Function({:p})", self.as_function().unwrap())
+        } else if self.is_string() {
+            write!(f, "String({:p})", self.as_string().unwrap())
         } else if self.is_heap() {
             write!(f, "Object({:p})", self.as_object::<()>().unwrap())
         } else {
@@ -227,6 +260,14 @@ impl std::fmt::Display for Value {
             write!(f, "false")
         } else if self.is_function() {
             write!(f, "<function>")
+        } else if self.is_string() {
+            if let Some(ptr) = self.as_string() {
+                unsafe {
+                    write!(f, "{}", (*ptr).chars)
+                }
+            } else {
+                write!(f, "<string>")
+            }
         } else if self.is_heap() {
             write!(f, "<object>")
         } else {

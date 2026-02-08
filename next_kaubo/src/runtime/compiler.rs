@@ -6,7 +6,7 @@ use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind};
 use crate::runtime::{
     Value,
     bytecode::{OpCode, chunk::Chunk},
-    object::ObjFunction,
+    object::{ObjFunction, ObjString},
 };
 
 /// 编译错误
@@ -145,8 +145,13 @@ impl Compiler {
                 self.emit_constant(idx);
             }
 
-            ExprKind::LiteralString(_) => {
-                return Err(CompileError::Unimplemented("String literal".to_string()));
+            ExprKind::LiteralString(lit) => {
+                // 创建字符串对象
+                let string_obj = Box::new(ObjString::new(lit.value.clone()));
+                let string_ptr = Box::into_raw(string_obj) as *mut ObjString;
+                let value = Value::string(string_ptr);
+                let idx = self.chunk.add_constant(value);
+                self.emit_constant(idx);
             }
 
             ExprKind::LiteralTrue(_) => {

@@ -196,13 +196,16 @@ AST → 类型检查 → 字节码编译 → 字节码块(Chunk) → VM 执行
 | 词法分析器 | ✅ | 状态机驱动，完整 Token 支持 |
 | 语法分析器 | ✅ | Pratt 解析器，表达式 + 语句 |
 | 字节码 VM | ✅ | 栈式执行，基础指令集 |
-| 值表示 | ✅ | NaN Boxing（SMI/Float/Special）|
+| 值表示 | ✅ | NaN Boxing（SMI/Float/Special/Function）|
 | 局部变量 | ✅ | LoadLocal/StoreLocal 指令 |
 | 变量编译 | ✅ | var 声明、读写、赋值 |
+| 控制流 | ✅ | if/elif/else、while、break/continue |
+| Lambda 函数 | ✅ | 函数定义、调用、递归（阶段一，无闭包）|
 
 ### 4.2 进行中
 
-**Phase 2.2 W3**: 控制流编译（if/while/for/break/continue）
+**Phase 2.2 W4**: for-in 循环（列表迭代）
+**Phase 2.3**: 闭包支持（Upvalue 机制）
 
 ### 4.3 测试状态
 
@@ -239,7 +242,14 @@ Phase 4: 性能优化（JIT等）⏳
 | W1 | 局部变量表设计 | ✅ | 栈帧结构、LoadLocal/StoreLocal 指令 |
 | W2 | 变量编译 | ✅ | var 声明、变量读写、赋值 |
 | W3 | 控制流编译 | ✅ | if/elif/else、while 循环、break/continue |
-| W4 | for-in 基础 | ⏳ | 列表迭代、范围迭代 |
+| W4 | for-in 基础 | 🚧 | 列表迭代、范围迭代 |
+
+### Phase 2.2.5: Lambda 函数支持 (2周)
+
+| 阶段 | 任务 | 状态 | 说明 |
+|------|------|------|------|
+| 阶段一 | 基础 Lambda | ✅ | 函数定义、调用、递归（无闭包）|
+| 阶段二 | 闭包支持 | ⏳ | Upvalue、变量捕获（Phase 2.3）|
 
 ### Phase 2.2.5: Lambda 函数支持 (2周)
 
@@ -570,7 +580,8 @@ cargo make cov
 
 | 优先级 | 问题 | 工作量 | 所属 Phase |
 |--------|------|--------|-----------|
-| 🔴 高 | 控制流 (if/while/for) | 1周 | 2.2 W3 |
+| 🔴 高 | 闭包 Upvalue | 2周 | 2.3 |
+| 🟡 中 | for-in 循环 | 1周 | 2.2 W4 |
 | 🔴 高 | 闭包 Upvalue | 2周 | 2.3 |
 | 🔴 高 | 协程实现 | 3周 | 2.4 |
 | 🟡 中 | Result 类型 | 2周 | 2.5 |
@@ -603,6 +614,6 @@ cargo make cov
 
 ---
 
-*文档版本: 1.1*  
-*最后更新: 2026-02-08*  
-*项目状态: Phase 2.2 W3 进行中（控制流编译）*
+*文档版本: 1.2*  
+*最后更新: 2026-02-09*  
+*项目状态: Phase 2.2.5 阶段一完成（Lambda 函数支持，无闭包）*
