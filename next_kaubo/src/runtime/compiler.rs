@@ -552,8 +552,8 @@ impl Compiler {
 
     /// 编译函数调用
     fn compile_function_call(&mut self, call: &FunctionCall) -> Result<(), CompileError> {
-        // 先编译参数（从右到左压栈）
-        for arg in call.arguments.iter().rev() {
+        // 先编译参数（参数从左到右压栈）
+        for arg in call.arguments.iter() {
             self.compile_expr(arg)?;
         }
 

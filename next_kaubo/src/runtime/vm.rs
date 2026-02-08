@@ -81,7 +81,7 @@ impl VM {
             let instruction = unsafe { *self.current_ip() };
             self.advance_ip(1);
             let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
-
+            // eprintln!("next instruction: {:?}, with stack: {:?}", op, self.stack);
             match op {
                 // ===== 常量加载 =====
                 LoadConst0 => self.push_const(0),
@@ -310,9 +310,9 @@ impl VM {
                 // ===== 函数 =====
                 Call => {
                     let arg_count = self.read_byte();
+
                     // 函数对象在栈顶（参数之后）
-                    let callee = self.peek(arg_count as usize);
-                    
+                    let callee = self.peek(0);
                     if let Some(func_ptr) = callee.as_function() {
                         let func = unsafe { &*func_ptr };
                         if func.arity != arg_count {
@@ -321,7 +321,7 @@ impl VM {
                                 func.arity, arg_count
                             ));
                         }
-                        
+
                         // 创建新的调用帧
                         let slot_base = self.stack.len() - arg_count as usize - 1;
                         let new_frame = CallFrame {
@@ -332,7 +332,7 @@ impl VM {
                         self.frames.push(new_frame);
                     } else {
                         return InterpretResult::RuntimeError(
-                            "Can only call functions".to_string()
+                            "Can only call functions".to_string(),
                         );
                     }
                 }
@@ -341,23 +341,59 @@ impl VM {
                     // 从常量池加载函数对象
                     let const_idx = self.read_byte();
                     let constant = self.current_chunk().constants[const_idx as usize];
-                    
+
                     if constant.is_function() {
                         self.push(constant);
                     } else {
                         return InterpretResult::RuntimeError(
-                            "Closure constant must be a function".to_string()
+                            "Closure constant must be a function".to_string(),
                         );
                     }
                 }
 
                 Return => {
-                    return InterpretResult::Ok;
+                    // 1. 弹出当前函数的调用帧（必须操作，否则上层帧无法执行）
+                    let current_frame = self
+                        .frames
+                        .pop()
+                        .expect("Runtime error: No call frame to pop");
+
+                    // 2. 清理栈中当前函数的参数+函数对象（仅保留调用前的栈状态）
+                    // slot_base 是当前函数局部变量的起始位置，截断到该位置即可清理参数
+                    self.stack.truncate(current_frame.slot_base);
+
+                    // 3. 压入 NULL 作为无返回值函数的返回值
+                    self.push(Value::NULL);
+
+                    // 4. 只有当调用帧为空（主函数返回）时，才终止VM执行；否则继续执行上层帧
+                    if self.frames.is_empty() {
+                        return InterpretResult::Ok;
+                    }
+                    // 非空则继续循环，执行上层帧的下一条指令
                 }
 
+                // ===== 修复后的 RETURN_VALUE 指令 =====
                 ReturnValue => {
-                    // 返回值已经在栈顶
-                    return InterpretResult::Ok;
+                    // 1. 弹出当前函数的调用帧
+                    let current_frame = self
+                        .frames
+                        .pop()
+                        .expect("Runtime error: No call frame to pop");
+
+                    // 2. 保存栈顶的返回值（函数执行结果）
+                    let return_value = self.pop();
+
+                    // 3. 清理栈中当前函数的参数+函数对象
+                    self.stack.truncate(current_frame.slot_base);
+
+                    // 4. 将返回值压回栈顶，供上层帧使用（比如主函数的PRINT指令）
+                    self.push(return_value);
+
+                    // 5. 仅主函数返回时终止，否则继续执行上层帧
+                    if self.frames.is_empty() {
+                        return InterpretResult::Ok;
+                    }
+                    // 非空则继续循环
                 }
 
                 // ===== 调试 =====
@@ -807,9 +843,9 @@ mod tests {
         chunk.write_op(StoreLocal0, 1);
 
         // y = x + 3
-        chunk.write_op(LoadLocal0, 1);  // 加载 x
-        chunk.write_op_u8(LoadConst, c3, 1);  // 加载 3
-        chunk.write_op(Add, 1);         // x + 3
+        chunk.write_op(LoadLocal0, 1); // 加载 x
+        chunk.write_op_u8(LoadConst, c3, 1); // 加载 3
+        chunk.write_op(Add, 1); // x + 3
         chunk.write_op(StoreLocal1, 1); // y = result
 
         // return y
