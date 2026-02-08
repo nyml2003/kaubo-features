@@ -264,7 +264,7 @@ tests/
 
 **Phase 2 启动条件**: ✅ 已满足 (覆盖率达标 + 测试全绿)
 
-### Phase 2: 字节码后端 🚧 (进行中)
+### Phase 2: 字节码后端 🚧 (进行中 - Phase 2.1 已完成)
 
 **方向**: 基于栈的字节码虚拟机（Stack-based VM），而非 Tree-walking Interpreter。
 
@@ -280,31 +280,33 @@ src/
 └── runtime/
     ├── bytecode/
     │   ├── mod.rs        # Opcode 定义
-    │   ├── encoder.rs    # AST → Bytecode
-    │   └── decoder.rs    # Bytecode 解码执行
+    │   └── chunk.rs      # 字节码块
     ├── vm.rs             # 虚拟机 (栈 + 指令循环)
-    ├── value.rs          # 运行时值表示
-    ├── frame.rs          # 栈帧管理
-    └── heap.rs           # 内存管理/GC 预留
+    ├── value.rs          # 运行时值表示 (NaN Boxing)
+    └── compiler.rs       # AST → Bytecode 编译器
 ```
 
-**关键设计决策** (待对齐):
+**关键设计决策** (已确定):
 
-| 决策项 | 候选方案 | 倾向 | 理由 |
-|--------|---------|------|------|
-| **值表示** | NaN boxing / Tagged pointer | 待讨论 | 性能 vs 复杂度权衡 |
-| **整数类型** | i64 only / 区分 i32/i64 | 待讨论 | 内存占用 vs 性能 |
-| **指令格式** | 变长 / 定长 | 待讨论 | 代码密度 vs 解码速度 |
-| **字符串** | UTF-8 / UTF-16 / Latin-1 | 待讨论 | 内存 vs API 复杂度 |
+| 决策项 | 方案 | 状态 |
+|--------|------|------|
+| **值表示** | NaN Boxing + SMI 优化 | ✅ 已实现 |
+| **整数类型** | SMI (i30) + Float64 | ✅ 已实现 |
+| **指令格式** | 定长指令 (1-3 bytes) | ✅ 已实现 |
+| **字符串** | UTF-8 | ✅ 设计确定 |
 
-**设计文档**: [BYTECODE.md](BYTECODE.md) (待创建)
+**设计文档**: [BYTECODE.md](BYTECODE.md)
 
 **Phase 2 里程碑**:
-- [ ] 字节码方案设计评审 (当前)
-- [ ] Opcode 定义实现
-- [ ] AST → Bytecode 编译器
-- [ ] 基础 VM 执行引擎
-- [ ] 简单程序跑通 (fib, hello world)
+- [x] 字节码方案设计评审 ✅
+- [x] Opcode 定义实现 ✅
+- [x] AST → Bytecode 编译器 (基础表达式) ✅
+- [x] 基础 VM 执行引擎 ✅
+- [x] 简单程序跑通 (`return 1 + 2 * 3;`) ✅
+- [ ] 变量支持 (局部/全局)
+- [ ] 控制流 (if/while/for)
+- [ ] 函数调用
+- [ ] 列表和字符串
 
 ### Phase 3: 功能迭代
 
@@ -416,4 +418,4 @@ Phase 5: 可选 - WASM/LLVM 后端
 ---
 
 *文档版本: 1.0*  
-*最后更新: 2026-02-07*
+*最后更新: 2026-02-08*

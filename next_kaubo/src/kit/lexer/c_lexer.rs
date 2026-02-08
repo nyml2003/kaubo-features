@@ -78,9 +78,13 @@ where
 
     /// 获取下一个Token
     pub fn next_token(&mut self) -> Option<Token<TokenKind>> {
-        eprintln!("[next_token] 开始, eof={}, char_count={}, buf_empty={}", 
-            self.eof, self.current_token_char_count, self.ring_buffer.is_empty().unwrap());
-        
+        eprintln!(
+            "[next_token] 开始, eof={}, char_count={}, buf_empty={}",
+            self.eof,
+            self.current_token_char_count,
+            self.ring_buffer.is_empty().unwrap()
+        );
+
         // 检查缓冲区状态：空且已关闭 → 结算最后一个Token
         if self.ring_buffer.is_empty().unwrap() && self.eof {
             eprintln!("[next_token] 缓冲区空且EOF");
@@ -104,7 +108,10 @@ where
                     return self.build_token();
                 }
                 EatStatus::Eof => {
-                    eprintln!("[next_token] eat Eof, char_count={}", self.current_token_char_count);
+                    eprintln!(
+                        "[next_token] eat Eof, char_count={}",
+                        self.current_token_char_count
+                    );
                     // EOF时如果没有正在处理的token，返回None
                     if self.current_token_char_count == 0 {
                         return None;
@@ -138,9 +145,11 @@ where
     }
     /// 读取一个char并驱动状态机
     fn eat(&mut self) -> Result<EatStatus, LexerError> {
-        eprintln!("[eat] 开始, char_count={}, byte_count={}", 
-            self.current_token_char_count, self.current_token_byte_count);
-        
+        eprintln!(
+            "[eat] 开始, char_count={}, byte_count={}",
+            self.current_token_char_count, self.current_token_byte_count
+        );
+
         // 尝试获取当前位置的引导字节
         let leading_byte = match self.ring_buffer.try_peek_k(self.current_token_byte_count) {
             Some(Ok(byte)) => {
@@ -170,8 +179,11 @@ where
         // 检查缓冲区是否有足够的字节
         let required_length = self.current_token_byte_count + code_point_len;
         let buffer_size = self.ring_buffer.get_size()?;
-        eprintln!("[eat] 需要{}字节, 缓冲区有{}字节", required_length, buffer_size);
-        
+        eprintln!(
+            "[eat] 需要{}字节, 缓冲区有{}字节",
+            required_length, buffer_size
+        );
+
         if required_length > buffer_size {
             eprintln!("[eat] 缓冲区不足, eof={}", self.eof);
             // 缓冲区不足，检查是否已到EOF
@@ -302,9 +314,11 @@ where
 
     /// 正常构建Token
     fn build_token(&mut self) -> Option<Token<TokenKind>> {
-        eprintln!("[build_token] 开始, char_count={}, byte_count={}", 
-            self.current_token_char_count, self.current_token_byte_count);
-        
+        eprintln!(
+            "[build_token] 开始, char_count={}, byte_count={}",
+            self.current_token_char_count, self.current_token_byte_count
+        );
+
         // 弹出当前Token的字节数据
         let token_bytes = match self.pop_token_bytes(self.current_token_byte_count) {
             Ok(bytes) => bytes,
@@ -316,12 +330,16 @@ where
 
         // 转换为字符串
         let token_str = String::from_utf8_lossy(&token_bytes).to_string();
-        eprintln!("[build_token] token_str='{}', len={}", token_str, token_str.len());
+        eprintln!(
+            "[build_token] token_str='{}', len={}",
+            token_str,
+            token_str.len()
+        );
 
         // 获取最佳匹配状态机
         let (best_machine_id, _) = self.manager.select_best_match();
         eprintln!("[build_token] best_machine_id={:?}", best_machine_id);
-        
+
         let token_kind =
             match best_machine_id.and_then(|id| self.manager.get_machine_token_kind_by_index(id)) {
                 Some(token_kind) => token_kind,
@@ -395,7 +413,7 @@ where
 mod tests {
     use super::*;
     use crate::kit::lexer::state_machine::builder::{
-        build_integer_machine, build_multi_char_machine, build_newline_machine,
+        build_integer_machine, build_multi_char_machine, build_newline_machines,
         build_single_char_machine, build_whitespace_machine,
     };
     use crate::kit::lexer::state_machine::types::TokenKindTrait;
@@ -486,7 +504,9 @@ mod tests {
         lexer.register_machine(build_integer_machine(TestToken::Integer).unwrap());
         lexer.register_machine(equal_machine);
         lexer.register_machine(double_equal_machine);
-        lexer.register_machine(build_newline_machine(TestToken::NewLine).unwrap());
+        for newline in build_newline_machines(TestToken::NewLine) {
+            lexer.register_machine(newline);
+        }
         lexer.register_machine(build_whitespace_machine(TestToken::Whitespace).unwrap());
 
         // 输入数据并终止
@@ -516,7 +536,7 @@ mod tests {
         } else {
             panic!("Expected token3 to be Some");
         }
-        
+
         let token4 = lexer.next_token();
         assert!(token4.is_none());
 

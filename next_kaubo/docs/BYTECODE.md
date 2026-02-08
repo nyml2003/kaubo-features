@@ -667,27 +667,35 @@ pub enum ObjType {
 
 **原则**: 先跑通整体，再逐步完善。
 
-### Phase 2.1: 核心 Value + 算术 (MVP)
+### Phase 2.1: 核心 Value + 算术 (MVP) ✅ 已完成
 **目标**: 能执行 `1 + 2 * 3`
 
 ```rust
 // 实现范围
-- Value: SMI + Float64 + Special (null/true/false)
-- 指令: LoadConst, LoadNull/True/False, Add/Sub/Mul/Div, Pop, Return
-- VM: 栈操作 + 主循环
-- 编译器: 字面量 + 二元运算
+- Value: SMI + Float64 + Special (null/true/false) ✅
+- 指令: LoadConst, LoadNull/True/False, Add/Sub/Mul/Div, Pop, Return ✅
+- VM: 栈操作 + 主循环 ✅
+- 编译器: 字面量 + 二元运算 ✅
 ```
 
-### Phase 2.2: 变量与控制流
+**已实现功能**:
+- NaN Boxing Value 表示 (SMI + Float + Special)
+- 基础算术指令 (Add/Sub/Mul/Div/Neg)
+- 比较指令 (Equal/Greater/Less)
+- 跳转指令 (Jump/JumpIfFalse/JumpBack)
+- AST → Bytecode 编译器 (字面量、二元运算、一元运算)
+- End-to-End 测试通过: `return 1 + 2 * 3;` → `7`
+
+### Phase 2.2: 变量与控制流 🚧 进行中
 **目标**: 能执行 `var x = 5; if (x > 0) { return x; }`
 
 ```rust
 // 新增实现
 - 局部变量: LoadLocal/StoreLocal (前 16 个)
 - 全局变量: 简单 HashMap 支持
-- 比较: Equal/Greater/Less
-- 跳转: Jump/JumpIfFalse
-- 控制流: if/else, while 循环
+- 比较: Equal/Greater/Less (已有)
+- 跳转: Jump/JumpIfFalse (已有)
+- 控制流: if/else, while 循环 (编译器待实现)
 ```
 
 ### Phase 2.3: 函数与列表
@@ -717,33 +725,71 @@ pub enum ObjType {
 // 可选优化
 - 指令缓存/内联缓存
 - GC 实现
-- Float 字面量支持
+- Float 字面量支持 (前端)
 - 类/对象系统
 ```
 
 ---
 
-## 7. 下一步任务 (从 Phase 2.1 开始)
+## 7. 当前状态 (Phase 2.1 已完成)
 
-### 本周任务: Value + 核心指令
+### 已实现的文件
 
-| 文件 | 内容 | 测试目标 |
+| 文件 | 功能 | 测试状态 |
 |------|------|---------|
-| `runtime/value.rs` | NaN boxing, SMI, Float, Special | `Value::smi(42).as_smi() == Some(42)` |
-| `runtime/bytecode/opcode.rs` | OpCode 枚举定义 | 反汇编工具可打印 |
-| `runtime/bytecode/chunk.rs` | Chunk 结构, 写入方法 | 可手写字节码执行 |
-| `runtime/vm.rs` | 栈 + 主循环 (10 个指令) | `1 + 2` 返回 3 |
-| `runtime/compiler.rs` | 字面量 + 二元运算编译 | 简单表达式编译通过 |
+| `runtime/value.rs` | NaN boxing, SMI, Float, Special | ✅ 9 个测试通过 |
+| `runtime/bytecode/mod.rs` | OpCode 枚举定义 | ✅ 3 个测试通过 |
+| `runtime/bytecode/chunk.rs` | Chunk 结构, 写入方法, 反汇编 | ✅ 4 个测试通过 |
+| `runtime/vm.rs` | 栈 + 主循环 + 核心指令 | ✅ 8 个测试通过 |
+| `runtime/compiler.rs` | 字面量 + 二元运算 + return | ✅ 10 个测试通过 |
 
-### 验收标准
+### 已实现的 OpCode (共 25 个)
+
+| 类别 | 已实现 |
+|------|--------|
+| 常量加载 | LoadConst0-15, LoadConst, LoadNull, LoadTrue, LoadFalse, LoadZero, LoadOne |
+| 栈操作 | Pop, Dup, Swap |
+| 算术运算 | Add, Sub, Mul, Div, Neg |
+| 比较运算 | Equal, Greater, Less |
+| 控制流 | Jump, JumpIfFalse, JumpBack |
+| 函数 | Return, ReturnValue |
+| 调试 | Print |
+
+### End-to-End 测试示例
 
 ```rust
-// 能运行这段代码的编译 + 执行
-fn main() {
-    var result = 1 + 2 * 3;  // 7
-    return result;
+// tests/runtime/compiler.rs
+#[test]
+fn test_run_complex() {
+    // 1 + 2 * 3 = 7
+    let result = run_code("return 1 + 2 * 3;").unwrap();
+    assert_eq!(result.as_smi(), Some(7));
+}
+
+#[test]
+fn test_run_division() {
+    // 5 / 2 = 2.5
+    let result = run_code("return 5 / 2;").unwrap();
+    assert!(result.is_float());
+    assert_eq!(result.as_float(), 2.5);
+}
+
+#[test]
+fn test_run_comparison() {
+    let result = run_code("return 2 > 1;").unwrap();
+    assert!(result.is_true());
 }
 ```
+
+### 下一步任务 (Phase 2.2)
+
+| 优先级 | 任务 | 说明 |
+|--------|------|------|
+| 🔴 高 | 局部变量 | LoadLocal/StoreLocal 指令实现 |
+| 🔴 高 | 变量编译 | 编译器支持 VarRef/VarDecl |
+| 🟡 中 | 全局变量 | HashMap 存储全局变量 |
+| 🟡 中 | 控制流编译 | if/while/for 语句编译 |
+| 🟢 低 | 逻辑运算 | And/Or 短路求值 |
 
 ---
 
