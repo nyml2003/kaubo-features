@@ -333,7 +333,6 @@ impl Parser {
         }
 
         self.expect(KauboTokenKind::Pipe)?; // 消费 '|'
-        self.check(KauboTokenKind::LeftCurlyBrace);
 
         let body = self.parse_block()?;
         Ok(Box::new(ExprKind::Lambda(Lambda { params, body })))
@@ -452,5 +451,291 @@ impl Parser {
             iterable,
             body,
         })))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::lexer::builder::build_lexer;
+
+    fn parse_code(code: &str) -> ParseResult<Module> {
+        let mut lexer = build_lexer();
+        let _ = lexer.feed(&code.as_bytes().to_vec());
+        let _ = lexer.terminate();
+        let mut parser = Parser::new(lexer);
+        parser.parse()
+    }
+
+    #[test]
+    fn test_parse_literal_int() {
+        let code = "42;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_literal_string() {
+        // 调试 lexer 输出
+        let mut lexer = build_lexer();
+        let _ = lexer.feed(&r#""hello";"#.as_bytes().to_vec());
+        let _ = lexer.terminate();
+        
+        println!("Tokens from lexer:");
+        for i in 0..10 {  // 最多打印 10 个 token，防止死循环
+            match lexer.next_token() {
+                Some(token) => println!("  [{}] {:?} = {:?}", i, token.kind, token.value),
+                None => {
+                    println!("  [{}] None (EOF)", i);
+                    break;
+                }
+            }
+        }
+        
+        let code = r#""hello";"#;
+        let result = parse_code(code);
+        if let Err(ref e) = result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(result.is_ok(), "Failed to parse string literal: {:?}", result);
+    }
+
+    #[test]
+    fn test_parse_literal_bool() {
+        let code = "true;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+
+        let code = "false;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_literal_null() {
+        let code = "null;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_binary_expression() {
+        let code = "1 + 2;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+
+        let code = "a * b + c;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_unary_expression() {
+        let code = "-5;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+
+        let code = "not true;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_var_declaration() {
+        let code = "var x = 5;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_if_statement() {
+        let code = r#"
+        if (a > b) {
+            return a;
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_if_else_statement() {
+        let code = r#"
+        if (a > b) {
+            return a;
+        } else {
+            return b;
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_while_loop() {
+        let code = r#"
+        while (i < 10) {
+            i = i + 1;
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_for_loop() {
+        let code = r#"
+        for (item) in (list) {
+            print(item);
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_return_statement() {
+        let code = "return 5;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+
+        let code = "return;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_lambda() {
+        let code = "var f = |x| { return x; };";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_function_call() {
+        let code = "foo(a, b, c);";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_list() {
+        let code = "[1, 2, 3];";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_empty_statement() {
+        let code = ";";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_block() {
+        let code = r#"
+        {
+            var x = 1;
+            var y = 2;
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_operator_precedence() {
+        // 测试优先级：* 高于 +
+        let code = "a + b * c;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+
+        // 测试括号改变优先级
+        let code = "(a + b) * c;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_comparison_operators() {
+        let cases = vec![
+            ("a == b;", "DoubleEqual"),
+            ("a != b;", "ExclamationEqual"),
+            ("a > b;", "GreaterThan"),
+            ("a <= b;", "LessThanEqual"),
+        ];
+        
+        for (code, expected_op) in cases {
+            let result = parse_code(code);
+            if let Err(ref e) = result {
+                println!("Failed to parse '{}': {:?}", code, e);
+            }
+            assert!(result.is_ok(), "Failed to parse {} comparison", expected_op);
+        }
+    }
+
+    #[test]
+    fn test_parse_logical_operators() {
+        let code = "a and b;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+
+        let code = "a or b;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+
+        let code = "not a;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_member_access() {
+        let code = "obj.field;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+
+        let code = "obj.method();";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+
+        let code = "obj.nested.field;";
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_complex_program() {
+        let code = r#"
+        var add = |x, y| {
+            return x + y;
+        };
+        
+        var result = add(1, 2);
+        
+        if (result > 0) {
+            print(result);
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_error_unexpected_token() {
+        // 测试错误处理
+        let code = "var ;";
+        let result = parse_code(code);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_error_missing_semicolon() {
+        let code = "var x = 5";  // 缺少分号
+        let result = parse_code(code);
+        // 当前实现可能允许最后一个语句无分号
+        // 这个测试用于确认当前行为
+        println!("Result: {:?}", result);
     }
 }

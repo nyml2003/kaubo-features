@@ -103,12 +103,30 @@ where
     }
 }
 
+impl fmt::Debug for Transition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Transition")
+            .field("to", &self.to)
+            .field("condition", &"<closure>")
+            .finish()
+    }
+}
+
 impl<TokenKind: fmt::Debug> fmt::Debug for Machine<TokenKind> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Machine")
             .field("current_state", &self.current_state)
             .field("token", &self.token)
-            .field("state_count", &self.states.len())
+            .field("states", &self.states)
+            .field("transitions", &self.transitions)
+            .finish()
+    }
+}
+
+impl fmt::Debug for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("State")
+            .field("is_accepting", &self.is_accepting)
             .finish()
     }
 }

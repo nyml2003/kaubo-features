@@ -20,6 +20,14 @@ pub fn get_precedence(op: KauboTokenKind) -> i32 {
     }
 }
 
-pub fn get_associativity(_op: KauboTokenKind) -> bool {
-    true
+/// 获取运算符结合性
+/// 
+/// Returns: `true` 表示左结合，`false` 表示右结合
+pub fn get_associativity(op: KauboTokenKind) -> bool {
+    match op {
+        // 右结合：赋值运算符
+        KauboTokenKind::Equal => false,
+        // 其他都是左结合
+        _ => true,
+    }
 }

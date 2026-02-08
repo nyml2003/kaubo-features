@@ -55,6 +55,7 @@ where
 
     pub fn process_event(&mut self, event: Event) -> bool {
         let mut any_completed = false;
+        let mut any_active = false;
         for machine_info in &mut self.machines {
             if machine_info.status == MachineStatus::Inactive {
                 continue;
@@ -71,9 +72,11 @@ where
             if machine_info.machine.is_in_accepting_state() {
                 any_completed = true;
                 machine_info.status = MachineStatus::Completed;
+            } else {
+                any_active = true;
             }
         }
-        any_completed
+        any_completed || any_active
     }
 
     pub fn select_best_match(&self) -> (Option<MachineId>, usize) {
@@ -261,6 +264,22 @@ mod tests {
         assert_eq!(
             best_machine.unwrap().machine.get_token_kind(),
             TokenKind::GreaterThanEqual
+        );
+        assert_eq!(best_match_length, 2);
+        manager.reset();
+
+        // 测试 != 匹配（第一个字符 ! 没有单字符状态机）
+        any_completed = manager.process_event('!');
+        assert!(any_completed); // 关键：!= 状态机处理 ! 后仍然是活跃的，应该返回 true
+        any_completed = manager.process_event('=');
+        assert!(any_completed);
+        any_completed = manager.process_event(' ');
+        assert!(!any_completed);
+        (best_machine_id, best_match_length) = manager.select_best_match();
+        best_machine = manager.machines.get(best_machine_id.unwrap());
+        assert_eq!(
+            best_machine.unwrap().machine.get_token_kind(),
+            TokenKind::NotEqual
         );
         assert_eq!(best_match_length, 2);
         manager.reset();

@@ -12,10 +12,10 @@ pub fn build_lexer() -> Lexer<KauboTokenKind> {
     let mut lexer: Lexer<KauboTokenKind> = Lexer::new(1024);
 
     for (kind, operator) in vec![
+        (KauboTokenKind::ExclamationEqual, "!="),
         (KauboTokenKind::DoubleEqual, "=="),
         (KauboTokenKind::LessThanEqual, "<="),
         (KauboTokenKind::GreaterThanEqual, ">="),
-        (KauboTokenKind::ExclamationEqual, "!="),
     ] {
         lexer.register_machine(build_multi_char_machine(kind, operator.chars().collect()).unwrap());
     }
