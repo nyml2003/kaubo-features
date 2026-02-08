@@ -390,16 +390,108 @@ while (true) {
 
 **方案**: Lua 风格 Upvalue 简化版
 
-- 按引用捕获（闭包内修改影响外部变量）
-- 立即堆分配
-- `Cell<Value>` 实现内部可变性
+#### 核心设计
 
-**验收代码**:
+**1. Upvalue 对象 (`ObjUpvalue`)**
+```rust
+/// Upvalue 对象 - 表示对外部变量的引用
+pub struct ObjUpvalue {
+    /// 指向外部变量的指针（栈上或已关闭）
+    location: *mut Value,
+    /// 如果变量离开栈，转储到这里
+    closed: Option<Value>,
+}
+```
+
+**2. 闭包对象 (`ObjClosure`)**
+```rust
+/// 闭包对象 - 包含函数和捕获的 upvalues
+pub struct ObjClosure {
+    /// 原始函数
+    function: *mut ObjFunction,
+    /// 捕获的 upvalues
+    upvalues: Vec<*mut ObjUpvalue>,
+}
+```
+
+**3. 捕获策略**
+- **按引用捕获**（Lua 风格）：闭包内外共享同一变量
+- **立即堆分配**：创建 upvalue 时即分配堆内存
+- **写时关闭**：当外部函数返回时，将栈上的值复制到 upvalue 的 `closed` 字段
+
+#### 实现步骤
+
+**步骤 1: 数据结构** (第 1 周)
+- 添加 `ObjUpvalue` 结构体
+- 完善 `ObjClosure`（替换直接使用 `ObjFunction`）
+- 更新 `Value` 类型标签：闭包 vs 普通函数
+
+**步骤 2: 字节码指令** (第 1-2 周)
+- `GetUpvalue(u8)` - 读取 upvalue 值
+- `SetUpvalue(u8)` - 设置 upvalue 值
+- `CloseUpvalues(u8)` - 关闭指定槽位以上的所有 upvalue（函数返回时）
+
+**步骤 3: 编译器分析** (第 2 周)
+- **变量解析**：区分局部变量、 upvalue、全局变量
+- **捕获分析**：遍历函数体，标记需要捕获的外部变量
+- **Upvalue 表**：每个函数维护一个 upvalue 描述表（索引、名称、是否来自父作用域）
+
+**步骤 4: VM 支持** (第 3 周)
+- 创建闭包时分配 upvalues
+- 函数返回时关闭 upvalues
+- 垃圾回收处理（循环引用暂不处理，留到 GC 阶段）
+
+#### 内存布局示例
+
+```
+外部函数栈帧:
+┌─────────────┐
+│ local x: 5  │ ← slot 0
+└─────────────┘
+      ↑
+      │ 引用
+┌─────────────┐     ┌─────────────┐
+│ Upvalue     │────→│ location    │────→ slot 0 (栈上)
+│ { location, │     │ closed: None│
+│   closed }  │     └─────────────┘
+└─────────────┘
+      ↑
+      │ 包含
+┌─────────────┐
+│ Closure     │
+│ { function, │
+│   upvalues: │
+│   [upvalue] }│
+└─────────────┘
+```
+
+#### 验收代码
 ```kaubo
+// 基础捕获
 var x = 5;
-var f = || { x = x + 1; return x; };
-assert(f() == 6);
-assert(x == 6);  // 外部变量被修改
+var f = || { return x; };
+assert(f() == 5);
+
+// 修改外部变量
+var y = 10;
+var g = || { y = y + 1; return y; };
+assert(g() == 11);
+assert(y == 11);  // 外部变量被修改
+
+// 多变量捕获
+var a = 1;
+var b = 2;
+var h = || { return a + b; };
+assert(h() == 3);
+
+// 嵌套闭包
+var outer = 100;
+var f1 = || {
+    var inner = 10;
+    var f2 = || { return outer + inner; };
+    return f2();
+};
+assert(f1() == 110);
 ```
 
 ### Phase 2.4: 协程与迭代器 (4周)
