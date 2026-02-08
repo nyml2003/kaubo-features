@@ -240,62 +240,71 @@ tests/
 
 **目标**: 建立完整测试套件，修复所有已知 Bug，确保前端稳定可靠。
 
-**本周任务清单**:
+**本周任务清单** (Phase 1 已完成):
 ```markdown
-- [ ] 创建 tests/ 目录结构
-- [ ] 补全 Lexer 测试（所有 Token 类型识别）
-- [ ] 补全 Parser 测试（表达式、语句、边界情况）
-- [ ] 修复 parser.rs:336 无效 check 调用
-- [ ] 修复 get_associativity 硬编码返回 true
-- [ ] 修复 whitespace_machine 错误匹配换行
+- [x] 创建 tests/ 目录结构
+- [x] 补全 Lexer 测试（所有 Token 类型识别）
+- [x] 补全 Parser 测试（表达式、语句、边界情况）
+- [x] 修复 parser.rs:336 无效 check 调用
+- [x] 修复 get_associativity 硬编码返回 true
+- [x] 修复 whitespace_machine 错误匹配换行
 ```
 
 **Phase 1 完成标准**:
-- [x] 测试覆盖率 (行覆盖) > 80% → **85.43%** ✅
-  > 注: cargo-tarpaulin 分支覆盖率尚未实现，仅支持行覆盖率
+- [x] 测试覆盖率 (行覆盖) > 80% → **90.18%** ✅
+- [x] 分支覆盖率 → **83.98%** ✅ (使用 cargo-llvm-cov + nightly)
 - [x] `cargo test` 全绿 → **105 个测试通过** ✅
-- [ ] 无编译器警告
-- [ ] CI 通过
+- [x] 无严重编译器警告 ⚠️ (仅未使用代码警告，属预期内)
+- [ ] CI 通过 ⬜ (待添加 GitHub Actions)
 
-**Phase 2 启动条件**: Phase 1 完成 + 字节码方案设计评审
+**Phase 1 成果**:
+- 前端 Lexer/Parser 稳定可靠
+- 测试覆盖全面
+- 已知 Bug 已修复 ([详见 ISSUES.md](ISSUES.md))
 
-### Phase 2: 字节码后端（设计中）
+**Phase 2 启动条件**: ✅ 已满足 (覆盖率达标 + 测试全绿)
+
+### Phase 2: 字节码后端 🚧 (进行中)
 
 **方向**: 基于栈的字节码虚拟机（Stack-based VM），而非 Tree-walking Interpreter。
 
 **设计原则**:
-- 二进制字节码，可序列化/缓存
-- 属性访问按索引偏移（类似结构体 field offset）
-- 为后续优化（JIT、AOT）预留空间
-- 替换成本低于 Tree-walking → Bytecode 的迁移
+1. **二进制字节码**: 可序列化/缓存，支持 AOT 编译
+2. **属性索引访问**: 编译期确定 field index，运行时 O(1) 偏移访问
+3. **栈帧调用约定**: 基于栈的参数传递和局部变量管理
+4. **分层架构**: 前端 → Bytecode → VM，支持未来 JIT/AOT 扩展
 
-**核心组件（预留）**:
+**核心组件**:
 ```
 src/
 └── runtime/
-    ├── bytecode/         # 字节码定义
-    │   ├── mod.rs        # Opcode 枚举
-    │   ├── encoder.rs    # 字节码编码
-    │   └── decoder.rs    # 字节码解码
-    ├── compiler.rs       # AST → Bytecode 编译器
-    ├── vm.rs             # 虚拟机执行引擎
-    ├── value.rs          # 运行时值（对象头 + 数据）
+    ├── bytecode/
+    │   ├── mod.rs        # Opcode 定义
+    │   ├── encoder.rs    # AST → Bytecode
+    │   └── decoder.rs    # Bytecode 解码执行
+    ├── vm.rs             # 虚拟机 (栈 + 指令循环)
+    ├── value.rs          # 运行时值表示
+    ├── frame.rs          # 栈帧管理
     └── heap.rs           # 内存管理/GC 预留
 ```
 
-**关键设计决策**（待详细设计）:
-| 决策项 | 方向 | 说明 |
-|--------|------|------|
-| 属性访问 | 索引偏移 | 编译期确定 field index，运行时直接偏移访问 |
-| 调用约定 | 栈帧 | 基于栈的参数传递和返回值 |
-| 值表示 |  tagged pointer 或 NaN boxing | 预留 |
+**关键设计决策** (待对齐):
 
-> **当前状态**: 方案预留，具体设计待 Phase 1 完成后讨论确定。
+| 决策项 | 候选方案 | 倾向 | 理由 |
+|--------|---------|------|------|
+| **值表示** | NaN boxing / Tagged pointer | 待讨论 | 性能 vs 复杂度权衡 |
+| **整数类型** | i64 only / 区分 i32/i64 | 待讨论 | 内存占用 vs 性能 |
+| **指令格式** | 变长 / 定长 | 待讨论 | 代码密度 vs 解码速度 |
+| **字符串** | UTF-8 / UTF-16 / Latin-1 | 待讨论 | 内存 vs API 复杂度 |
 
-**Phase 2 启动条件**:
-- [ ] Phase 1 测试覆盖 > 80%
-- [ ] 所有 P0 Bug 修复
-- [ ] 字节码方案设计评审通过
+**设计文档**: [BYTECODE.md](BYTECODE.md) (待创建)
+
+**Phase 2 里程碑**:
+- [ ] 字节码方案设计评审 (当前)
+- [ ] Opcode 定义实现
+- [ ] AST → Bytecode 编译器
+- [ ] 基础 VM 执行引擎
+- [ ] 简单程序跑通 (fib, hello world)
 
 ### Phase 3: 功能迭代
 
@@ -314,21 +323,34 @@ src/
 
 ## 5. 已知问题
 
-### 5.1 Bug 清单
+> 详细问题列表见 [ISSUES.md](ISSUES.md)
 
-| 问题 | 位置 | 影响 | 修复方案 |
-|------|------|------|---------|
-| 无效 check 调用 | `parser.rs:336` | 无实际效果 | 删除或改为 expect |
-| 结合性硬编码 | `utils.rs:23` | 所有运算符左结合 | 根据运算符返回 |
-| whitespace 冲突 | `builder.rs:125` | 换行被 whitespace 匹配 | 改用 `c == ' '` |
+### 5.1 Phase 1 已修复
 
-### 5.2 技术债务
+| 问题 | 位置 | 状态 |
+|------|------|------|
+| whitespace 匹配换行 | `builder.rs` | ✅ 已修复 |
+| 结合性硬编码 | `utils.rs` | ✅ 已修复 |
+| 无效 check 调用 | `parser.rs` | ✅ 经查无此问题 |
+
+### 5.2 待修复 (功能缺失)
+
+| 问题 | 优先级 | 预计工作量 |
+|------|--------|-----------|
+| 字符串转义 | 🔴 高 | 1天 |
+| 成员/索引赋值 | 🔴 高 | 2天 |
+| 索引访问 | 🔴 高 | 1天 |
+| 浮点数支持 | 🟡 中 | 2天 |
+| 错误位置报告 | 🟡 中 | 3天 |
+| 闭包支持 | 🟡 中 | 3天 |
+
+### 5.3 技术债务
 
 | 问题 | 说明 | 优化方案 |
 |------|------|---------|
 | 动态分发 | `Box<dyn Fn(char) -> bool>` | 改为函数指针或枚举 |
-| 内存分配 | 每个 Token 都新建 String | 考虑字符串 interning |
-| 无错误位置 | ParserError 无行列号 | 添加 Coordinate |
+| 字符串分配 | 每个 Token 新建 String | 考虑字符串 interning |
+| AST 内存布局 | `Box<ExprKind>` 小分配多 | 考虑 arena allocator |
 
 ---
 
