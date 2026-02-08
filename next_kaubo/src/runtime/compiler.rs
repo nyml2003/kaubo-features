@@ -15,6 +15,9 @@ use crate::runtime::{
 pub enum CompileError {
     InvalidOperator,
     TooManyConstants,
+    TooManyLocals,
+    VariableAlreadyExists(String),
+    UninitializedVariable(String),
     Unimplemented(String),
 }
 
@@ -23,25 +26,41 @@ impl std::fmt::Display for CompileError {
         match self {
             CompileError::InvalidOperator => write!(f, "Invalid operator"),
             CompileError::TooManyConstants => write!(f, "Too many constants in one chunk"),
+            CompileError::TooManyLocals => write!(f, "Too many local variables"),
+            CompileError::VariableAlreadyExists(name) => write!(f, "Variable '{}' already exists", name),
+            CompileError::UninitializedVariable(name) => write!(f, "Variable '{}' is not initialized", name),
             CompileError::Unimplemented(s) => write!(f, "Unimplemented: {}", s),
         }
     }
 }
 
+/// 局部变量信息
+#[derive(Debug, Clone)]
+struct Local {
+    name: String,
+    depth: usize,
+    is_initialized: bool,
+}
+
 /// AST 编译器
 pub struct Compiler {
     chunk: Chunk,
+    locals: Vec<Local>,      // 局部变量表
+    scope_depth: usize,      // 当前作用域深度
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Self {
             chunk: Chunk::new(),
+            locals: Vec::new(),
+            scope_depth: 0,
         }
     }
 
     /// 编译整个模块（视为匿名函数体）
-    pub fn compile(&mut self, module: &Module) -> Result<Chunk, CompileError> {
+    /// 返回 (Chunk, 局部变量数量)
+    pub fn compile(&mut self, module: &Module) -> Result<(Chunk, usize), CompileError> {
         for stmt in &module.statements {
             self.compile_stmt(stmt)?;
         }
@@ -50,7 +69,7 @@ impl Compiler {
         self.chunk.write_op(OpCode::LoadNull, 0);
         self.chunk.write_op(OpCode::Return, 0);
         
-        Ok(self.chunk.clone())
+        Ok((self.chunk.clone(), self.locals.len()))
     }
 
     /// 编译语句
@@ -63,9 +82,15 @@ impl Compiler {
             }
             
             StmtKind::VarDecl(decl) => {
+                // 先声明变量（占位）
+                let idx = self.add_local(&decl.name)?;
+                
+                // 编译初始化表达式
                 self.compile_expr(&decl.initializer)?;
-                // TODO: 存储到局部变量
-                self.chunk.write_op(OpCode::Pop, 0);
+                
+                // 标记为已初始化并存储
+                self.mark_initialized();
+                self.emit_store_local(idx);
             }
             
             StmtKind::Return(ret) => {
@@ -142,16 +167,34 @@ impl Compiler {
                 self.compile_expr(&g.expression)?;
             }
             
-            ExprKind::VarRef(_) => {
-                return Err(CompileError::Unimplemented("Variable reference".to_string()));
+            ExprKind::VarRef(var_ref) => {
+                if let Some(idx) = self.resolve_local(&var_ref.name) {
+                    self.emit_load_local(idx);
+                } else {
+                    return Err(CompileError::Unimplemented(
+                        format!("Undefined variable: {}", var_ref.name)
+                    ));
+                }
             }
             
             ExprKind::FunctionCall(_) => {
                 return Err(CompileError::Unimplemented("Function call".to_string()));
             }
             
-            ExprKind::Assign(_) => {
-                return Err(CompileError::Unimplemented("Assignment".to_string()));
+            ExprKind::Assign(assign) => {
+                // 编译右值
+                self.compile_expr(&assign.value)?;
+                
+                // 存储到变量
+                if let Some(idx) = self.resolve_local(&assign.name) {
+                    self.emit_store_local(idx);
+                    // 赋值表达式返回 null（语句级别的副作用）
+                    self.chunk.write_op(OpCode::LoadNull, 0);
+                } else {
+                    return Err(CompileError::Unimplemented(
+                        format!("Undefined variable: {}", assign.name)
+                    ));
+                }
             }
             
             ExprKind::Lambda(_) => {
@@ -167,6 +210,11 @@ impl Compiler {
 
     /// 编译二元运算
     fn compile_binary(&mut self, bin: &Binary) -> Result<(), CompileError> {
+        // 特殊处理赋值运算符：= 
+        if bin.op == crate::compiler::lexer::token_kind::KauboTokenKind::Equal {
+            return self.compile_assignment(&bin.left, &bin.right);
+        }
+        
         // 先编译左操作数
         self.compile_expr(&bin.left)?;
         
@@ -190,6 +238,32 @@ impl Compiler {
         
         self.chunk.write_op(op, 0);
         Ok(())
+    }
+    
+    /// 编译赋值表达式 (处理 Binary 形式的赋值)
+    /// 赋值表达式返回 null（语句级别的副作用）
+    fn compile_assignment(&mut self, left: &Expr, right: &Expr) -> Result<(), CompileError> {
+        // 编译右值
+        self.compile_expr(right)?;
+        
+        // 左值必须是变量引用
+        match left.as_ref() {
+            ExprKind::VarRef(var_ref) => {
+                if let Some(idx) = self.resolve_local(&var_ref.name) {
+                    self.emit_store_local(idx);
+                    // 赋值表达式返回 null（不是被赋的值）
+                    self.chunk.write_op(OpCode::LoadNull, 0);
+                    Ok(())
+                } else {
+                    Err(CompileError::Unimplemented(
+                        format!("Undefined variable: {}", var_ref.name)
+                    ))
+                }
+            }
+            _ => Err(CompileError::Unimplemented(
+                "Left side of assignment must be a variable".to_string()
+            ))
+        }
     }
 
     /// 发射常量加载指令 (优化：使用 LoadConst0-15)
@@ -218,6 +292,105 @@ impl Compiler {
         };
         self.chunk.write_op(op, 0);
     }
+
+    // ==================== 局部变量管理 ====================
+
+    /// 进入新作用域
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    /// 退出作用域，返回弹出的变量数量
+    fn end_scope(&mut self) -> usize {
+        self.scope_depth -= 1;
+        
+        let mut popped = 0;
+        while let Some(local) = self.locals.last() {
+            if local.depth <= self.scope_depth {
+                break;
+            }
+            self.locals.pop();
+            popped += 1;
+        }
+        popped
+    }
+
+    /// 添加局部变量，返回其在栈中的索引
+    fn add_local(&mut self, name: &str) -> Result<u8, CompileError> {
+        // 检查局部变量数量上限
+        if self.locals.len() >= 256 {
+            return Err(CompileError::TooManyLocals);
+        }
+        
+        // 检查同作用域内是否已有同名变量
+        for local in self.locals.iter().rev() {
+            if local.depth < self.scope_depth {
+                break;
+            }
+            if local.name == name {
+                return Err(CompileError::VariableAlreadyExists(name.to_string()));
+            }
+        }
+        
+        self.locals.push(Local {
+            name: name.to_string(),
+            depth: self.scope_depth,
+            is_initialized: false,
+        });
+        
+        Ok((self.locals.len() - 1) as u8)
+    }
+
+    /// 标记最后一个变量为已初始化
+    fn mark_initialized(&mut self) {
+        if let Some(local) = self.locals.last_mut() {
+            local.is_initialized = true;
+        }
+    }
+
+    /// 解析变量名，返回其在局部变量表中的索引
+    fn resolve_local(&self, name: &str) -> Option<u8> {
+        for (i, local) in self.locals.iter().enumerate().rev() {
+            if local.name == name {
+                if !local.is_initialized {
+                    // 不能在初始化完成前使用
+                    return None;
+                }
+                return Some(i as u8);
+            }
+        }
+        None
+    }
+
+    /// 发射局部变量加载指令
+    fn emit_load_local(&mut self, idx: u8) {
+        match idx {
+            0 => self.chunk.write_op(OpCode::LoadLocal0, 0),
+            1 => self.chunk.write_op(OpCode::LoadLocal1, 0),
+            2 => self.chunk.write_op(OpCode::LoadLocal2, 0),
+            3 => self.chunk.write_op(OpCode::LoadLocal3, 0),
+            4 => self.chunk.write_op(OpCode::LoadLocal4, 0),
+            5 => self.chunk.write_op(OpCode::LoadLocal5, 0),
+            6 => self.chunk.write_op(OpCode::LoadLocal6, 0),
+            7 => self.chunk.write_op(OpCode::LoadLocal7, 0),
+            _ => self.chunk.write_op_u8(OpCode::LoadLocal, idx, 0),
+        }
+    }
+
+    /// 发射局部变量存储指令
+    fn emit_store_local(&mut self, idx: u8) {
+        match idx {
+            0 => self.chunk.write_op(OpCode::StoreLocal0, 0),
+            1 => self.chunk.write_op(OpCode::StoreLocal1, 0),
+            2 => self.chunk.write_op(OpCode::StoreLocal2, 0),
+            3 => self.chunk.write_op(OpCode::StoreLocal3, 0),
+            4 => self.chunk.write_op(OpCode::StoreLocal4, 0),
+            5 => self.chunk.write_op(OpCode::StoreLocal5, 0),
+            6 => self.chunk.write_op(OpCode::StoreLocal6, 0),
+            7 => self.chunk.write_op(OpCode::StoreLocal7, 0),
+            _ => self.chunk.write_op_u8(OpCode::StoreLocal, idx, 0),
+        }
+    }
 }
 
 impl Default for Compiler {
@@ -227,7 +400,8 @@ impl Default for Compiler {
 }
 
 /// 编译模块的便捷函数
-pub fn compile(module: &Module) -> Result<Chunk, CompileError> {
+/// 返回 (Chunk, 局部变量数量)
+pub fn compile(module: &Module) -> Result<(Chunk, usize), CompileError> {
     let mut compiler = Compiler::new();
     compiler.compile(module)
 }
@@ -241,7 +415,7 @@ mod tests {
     use crate::compiler::parser::parser::Parser;
     use crate::runtime::{VM, InterpretResult};
 
-    fn compile_code(code: &str) -> Result<Chunk, CompileError> {
+    fn compile_code(code: &str) -> Result<(Chunk, usize), CompileError> {
         let mut lexer = build_lexer();
         let _ = lexer.feed(&code.as_bytes().to_vec());
         let _ = lexer.terminate();
@@ -255,9 +429,10 @@ mod tests {
     }
 
     fn run_code(code: &str) -> Result<Value, String> {
-        let chunk = compile_code(code).map_err(|e| format!("Compile error: {:?}", e))?;
+        let (chunk, local_count) = compile_code(code)
+            .map_err(|e| format!("Compile error: {:?}", e))?;
         let mut vm = VM::new();
-        let result = vm.interpret(&chunk);
+        let result = vm.interpret_with_locals(&chunk, local_count);
         match result {
             InterpretResult::Ok => {
                 // 返回值在栈顶
@@ -270,19 +445,19 @@ mod tests {
 
     #[test]
     fn test_compile_literal() {
-        let chunk = compile_code("42;").unwrap();
+        let (chunk, _) = compile_code("42;").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
     #[test]
     fn test_compile_binary() {
-        let chunk = compile_code("1 + 2;").unwrap();
+        let (chunk, _) = compile_code("1 + 2;").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
     #[test]
     fn test_compile_complex() {
-        let chunk = compile_code("1 + 2 * 3;").unwrap();
+        let (chunk, _) = compile_code("1 + 2 * 3;").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
@@ -349,6 +524,44 @@ mod tests {
         // print 语句返回 null
         let result = run_code("print 42;").unwrap();
         assert!(result.is_null());
+    }
+
+    // ===== 变量测试 =====
+
+    #[test]
+    fn test_run_variable_declaration() {
+        // var x = 5; return x;
+        let result = run_code("var x = 5; return x;").unwrap();
+        assert_eq!(result.as_smi(), Some(5));
+    }
+
+    #[test]
+    fn test_run_variable_expression() {
+        // var x = 5; var y = x + 3; return y;
+        let result = run_code("var x = 5; var y = x + 3; return y;").unwrap();
+        assert_eq!(result.as_smi(), Some(8));
+    }
+
+    #[test]
+    fn test_run_variable_assignment() {
+        // var x = 5; x = 10; return x;
+        // 注意：赋值表达式返回 null，所以要用分号分隔语句
+        let result = run_code("var x = 5; x = 10; return x;").unwrap();
+        assert_eq!(result.as_smi(), Some(10));
+    }
+
+    #[test]
+    fn test_assignment_returns_null() {
+        // 赋值表达式本身返回 null
+        let result = run_code("var x = 5; return x = 10;").unwrap();
+        assert!(result.is_null());
+    }
+
+    #[test]
+    fn test_run_multiple_variables() {
+        // var a = 1; var b = 2; var c = 3; return a + b + c;
+        let result = run_code("var a = 1; var b = 2; var c = 3; return a + b + c;").unwrap();
+        assert_eq!(result.as_smi(), Some(6));
     }
 }
 

@@ -67,7 +67,7 @@ fn main() {
     println!("[步骤 3] 编译为字节码 (Compiler)...");
     use next_kaubo::runtime::compile;
     
-    let chunk = match compile(&ast) {
+    let (chunk, local_count) = match compile(&ast) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Compile error: {:?}", e);
@@ -77,6 +77,7 @@ fn main() {
     
     println!("常量池: {} 个", chunk.constants.len());
     println!("字节码: {} bytes", chunk.code.len());
+    println!("局部变量: {} 个", local_count);
     println!();
     
     // 打印反汇编
@@ -89,7 +90,7 @@ fn main() {
     use next_kaubo::runtime::VM;
     
     let mut vm = VM::new();
-    let result = vm.interpret(&chunk);
+    let result = vm.interpret_with_locals(&chunk, local_count);
     
     match result {
         next_kaubo::runtime::InterpretResult::Ok => {

@@ -11,14 +11,22 @@ pub enum InterpretResult {
     RuntimeError(String),
 }
 
+/// 调用栈帧
+pub struct CallFrame {
+    /// 当前执行的 Chunk
+    chunk: Chunk,
+    /// 指令指针在该帧中的偏移
+    ip: *const u8,
+    /// 该帧在值栈中的起始位置（局部变量基址）
+    slot_base: usize,
+}
+
 /// 虚拟机
 pub struct VM {
-    /// 值栈
+    /// 值栈（同时也是局部变量存储区）
     stack: Vec<Value>,
-    /// 指令指针 (指向当前执行的指令)
-    ip: *const u8,
-    /// 当前执行的 Chunk
-    current_chunk: Option<Chunk>,
+    /// 调用栈
+    frames: Vec<CallFrame>,
 }
 
 impl VM {
@@ -26,22 +34,37 @@ impl VM {
     pub fn new() -> Self {
         Self {
             stack: Vec::with_capacity(256),
-            ip: std::ptr::null(),
-            current_chunk: None,
+            frames: Vec::with_capacity(64),
         }
     }
 
     /// 解释执行一个 Chunk
     pub fn interpret(&mut self, chunk: &Chunk) -> InterpretResult {
-        // 保存 chunk 的引用
-        self.current_chunk = Some(chunk.clone());
-        let chunk_ref = self.current_chunk.as_ref().unwrap();
+        self.interpret_with_locals(chunk, 0)
+    }
 
-        // 设置指令指针
-        self.ip = chunk_ref.code.as_ptr();
+    /// 解释执行一个 Chunk，并预分配局部变量空间
+    pub fn interpret_with_locals(&mut self, chunk: &Chunk, local_count: usize) -> InterpretResult {
+        // 预分配局部变量空间（初始化为 null）
+        let slot_base = self.stack.len();
+        for _ in 0..local_count {
+            self.stack.push(Value::NULL);
+        }
+
+        // 创建初始调用帧
+        self.frames.push(CallFrame {
+            chunk: chunk.clone(),
+            ip: chunk.code.as_ptr(),
+            slot_base,
+        });
 
         // 执行主循环
-        self.run()
+        let result = self.run();
+
+        // 清理调用栈
+        self.frames.pop();
+
+        result
     }
 
     /// 执行字节码的主循环
@@ -54,7 +77,8 @@ impl VM {
             self.trace_instruction();
 
             // 读取操作码
-            let instruction = self.read_byte();
+            let instruction = unsafe { *self.current_ip() };
+            self.advance_ip(1);
             let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
 
             match op {
@@ -177,23 +201,109 @@ impl VM {
                     }
                 }
 
+                // ===== 局部变量 =====
+                LoadLocal0 => {
+                    let value = self.stack[self.slot_base()];
+                    self.push(value);
+                }
+                LoadLocal1 => {
+                    let value = self.stack[self.slot_base() + 1];
+                    self.push(value);
+                }
+                LoadLocal2 => {
+                    let value = self.stack[self.slot_base() + 2];
+                    self.push(value);
+                }
+                LoadLocal3 => {
+                    let value = self.stack[self.slot_base() + 3];
+                    self.push(value);
+                }
+                LoadLocal4 => {
+                    let value = self.stack[self.slot_base() + 4];
+                    self.push(value);
+                }
+                LoadLocal5 => {
+                    let value = self.stack[self.slot_base() + 5];
+                    self.push(value);
+                }
+                LoadLocal6 => {
+                    let value = self.stack[self.slot_base() + 6];
+                    self.push(value);
+                }
+                LoadLocal7 => {
+                    let value = self.stack[self.slot_base() + 7];
+                    self.push(value);
+                }
+                LoadLocal => {
+                    let idx = self.read_byte() as usize;
+                    let value = self.stack[self.slot_base() + idx];
+                    self.push(value);
+                }
+
+                StoreLocal0 => {
+                    let slot = self.slot_base();
+                    let value = self.pop();
+                    self.stack[slot] = value;
+                }
+                StoreLocal1 => {
+                    let slot = self.slot_base() + 1;
+                    let value = self.pop();
+                    self.stack[slot] = value;
+                }
+                StoreLocal2 => {
+                    let slot = self.slot_base() + 2;
+                    let value = self.pop();
+                    self.stack[slot] = value;
+                }
+                StoreLocal3 => {
+                    let slot = self.slot_base() + 3;
+                    let value = self.pop();
+                    self.stack[slot] = value;
+                }
+                StoreLocal4 => {
+                    let slot = self.slot_base() + 4;
+                    let value = self.pop();
+                    self.stack[slot] = value;
+                }
+                StoreLocal5 => {
+                    let slot = self.slot_base() + 5;
+                    let value = self.pop();
+                    self.stack[slot] = value;
+                }
+                StoreLocal6 => {
+                    let slot = self.slot_base() + 6;
+                    let value = self.pop();
+                    self.stack[slot] = value;
+                }
+                StoreLocal7 => {
+                    let slot = self.slot_base() + 7;
+                    let value = self.pop();
+                    self.stack[slot] = value;
+                }
+                StoreLocal => {
+                    let idx = self.read_byte() as usize;
+                    let slot = self.slot_base() + idx;
+                    let value = self.pop();
+                    self.stack[slot] = value;
+                }
+
                 // ===== 控制流 =====
                 Jump => {
                     let offset = self.read_i16();
-                    self.ip = unsafe { self.ip.offset(offset as isize) };
+                    self.jump_ip(offset as isize);
                 }
 
                 JumpIfFalse => {
                     let offset = self.read_i16();
                     let condition = self.pop(); // 弹出条件
                     if !condition.is_truthy() {
-                        self.ip = unsafe { self.ip.offset(offset as isize) };
+                        self.jump_ip(offset as isize);
                     }
                 }
 
                 JumpBack => {
                     let offset = self.read_i16();
-                    self.ip = unsafe { self.ip.offset(offset as isize) };
+                    self.jump_ip(offset as isize);
                 }
 
                 // ===== 函数 =====
@@ -228,11 +338,47 @@ impl VM {
 
     // ==================== 辅助方法 ====================
 
+    /// 获取当前帧的指令指针
+    #[inline]
+    fn current_ip(&self) -> *const u8 {
+        self.frames.last().unwrap().ip
+    }
+
+    /// 获取当前帧的可变指令指针
+    #[inline]
+    fn current_ip_mut(&mut self) -> &mut *const u8 {
+        &mut self.frames.last_mut().unwrap().ip
+    }
+
+    /// 获取当前帧的 slot_base
+    #[inline]
+    fn slot_base(&self) -> usize {
+        self.frames.last().unwrap().slot_base
+    }
+
+    /// 获取当前帧的 chunk
+    #[inline]
+    fn current_chunk(&self) -> &Chunk {
+        &self.frames.last().unwrap().chunk
+    }
+
+    /// 前进指令指针
+    #[inline]
+    fn advance_ip(&mut self, offset: usize) {
+        *self.current_ip_mut() = unsafe { self.current_ip().add(offset) };
+    }
+
+    /// 跳转指令指针
+    #[inline]
+    fn jump_ip(&mut self, offset: isize) {
+        *self.current_ip_mut() = unsafe { self.current_ip().offset(offset) };
+    }
+
     /// 读取下一个字节
     #[inline]
     fn read_byte(&mut self) -> u8 {
-        let byte = unsafe { *self.ip };
-        self.ip = unsafe { self.ip.add(1) };
+        let byte = unsafe { *self.current_ip() };
+        self.advance_ip(1);
         byte
     }
 
@@ -247,8 +393,7 @@ impl VM {
     /// 从常量池加载并压栈
     #[inline]
     fn push_const(&mut self, idx: usize) {
-        let chunk = self.current_chunk.as_ref().unwrap();
-        let value = chunk.constants[idx];
+        let value = self.current_chunk().constants[idx];
         self.push(value);
     }
 
@@ -429,12 +574,12 @@ impl VM {
         println!();
 
         // 反汇编当前指令
-        let offset = unsafe {
-            self.ip
-                .offset_from(self.current_chunk.as_ref().unwrap().code.as_ptr())
-        } as usize;
-        // TODO: 打印指令
-        println!("{:04} {:?}", offset, self.read_byte());
+        let frame = self.frames.last().unwrap();
+        let offset = unsafe { frame.ip.offset_from(frame.chunk.code.as_ptr()) } as usize;
+        // 只读取查看，不修改 ip
+        let instruction = unsafe { *frame.ip };
+        let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
+        println!("{:04} {:?}", offset, op);
     }
 }
 
@@ -601,5 +746,54 @@ mod tests {
         let result = vm.interpret(&chunk);
         assert_eq!(result, InterpretResult::Ok);
         assert!(vm.stack.last().unwrap().is_true());
+    }
+
+    #[test]
+    fn test_local_variables() {
+        // var x = 5; var y = x + 3;
+        // 使用 interpret_with_locals 预分配 2 个局部变量槽
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+
+        let c5 = chunk.add_constant(Value::smi(5));
+        let c3 = chunk.add_constant(Value::smi(3));
+
+        // x = 5
+        chunk.write_op_u8(LoadConst, c5, 1);
+        chunk.write_op(StoreLocal0, 1);
+
+        // y = x + 3
+        chunk.write_op(LoadLocal0, 1);  // 加载 x
+        chunk.write_op_u8(LoadConst, c3, 1);  // 加载 3
+        chunk.write_op(Add, 1);         // x + 3
+        chunk.write_op(StoreLocal1, 1); // y = result
+
+        // return y
+        chunk.write_op(LoadLocal1, 1);
+        chunk.write_op(Return, 1);
+
+        let result = vm.interpret_with_locals(&chunk, 2);
+        assert_eq!(result, InterpretResult::Ok);
+        assert_eq!(vm.stack.last().unwrap().as_smi(), Some(8));
+    }
+
+    #[test]
+    fn test_local_variables_high_index() {
+        // 测试高索引局部变量 (超过 7，需要使用 LoadLocal/StoreLocal 指令)
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+
+        // slot 8 = 42
+        let c42 = chunk.add_constant(Value::smi(42));
+        chunk.write_op_u8(LoadConst, c42, 1);
+        chunk.write_op_u8(StoreLocal, 8, 1);
+
+        // return slot 8
+        chunk.write_op_u8(LoadLocal, 8, 1);
+        chunk.write_op(Return, 1);
+
+        let result = vm.interpret_with_locals(&chunk, 10);
+        assert_eq!(result, InterpretResult::Ok);
+        assert_eq!(vm.stack.last().unwrap().as_smi(), Some(42));
     }
 }
