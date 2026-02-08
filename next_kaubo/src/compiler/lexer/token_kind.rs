@@ -28,6 +28,7 @@ pub enum KauboTokenKind {
     As,
     From,
     Pass,
+    Print,  // 临时调试用
     And,
     Or,
     Not,

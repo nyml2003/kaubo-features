@@ -7,6 +7,10 @@ pub trait CLexerTokenKindTrait: TokenKindTrait {
     fn newline() -> Self;
     fn comment() -> Self;
 
+    fn is_invalid_token(&self) -> bool {
+        self == &Self::invalid_token()
+    }
+
     fn is_whitespace(&self) -> bool {
         self == &Self::whitespace()
     }

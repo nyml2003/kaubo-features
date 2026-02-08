@@ -3,7 +3,7 @@ use crate::kit::lexer::{
     c_lexer::Lexer,
     state_machine::builder::{
         build_comment_machine, build_identifier_machine, build_integer_machine,
-        build_keyword_machine, build_multi_char_machine, build_newline_machine,
+        build_keyword_machine, build_multi_char_machine, build_newline_machines,
         build_single_char_machine, build_string_machine, build_tab_machine,
         build_whitespace_machine,
     },
@@ -66,6 +66,7 @@ pub fn build_lexer() -> Lexer<KauboTokenKind> {
         (KauboTokenKind::As, "as"),
         (KauboTokenKind::From, "from"),
         (KauboTokenKind::Pass, "pass"),
+        (KauboTokenKind::Print, "print"),
         (KauboTokenKind::And, "and"),
         (KauboTokenKind::Or, "or"),
         (KauboTokenKind::Not, "not"),
@@ -79,7 +80,10 @@ pub fn build_lexer() -> Lexer<KauboTokenKind> {
     lexer.register_machine(build_string_machine(KauboTokenKind::LiteralString).unwrap());
     lexer.register_machine(build_identifier_machine(KauboTokenKind::Identifier).unwrap());
 
-    lexer.register_machine(build_newline_machine(KauboTokenKind::NewLine).unwrap());
+    // 注册换行符状态机（支持 \r\n, \n, \r）
+    for machine in build_newline_machines(KauboTokenKind::NewLine) {
+        lexer.register_machine(machine);
+    }
     lexer.register_machine(build_whitespace_machine(KauboTokenKind::Whitespace).unwrap());
     lexer.register_machine(build_tab_machine(KauboTokenKind::Tab).unwrap());
     lexer.register_machine(build_comment_machine(KauboTokenKind::Comment).unwrap());

@@ -1,12 +1,18 @@
-//! Kaubo 编译器前端
+//! Kaubo 编译器
 //!
-//! 包含词法分析器和语法分析器的实现。
+//! 包含编译器前端 (Lexer/Parser) 和运行时 (VM)。
 
 pub mod compiler;
 pub mod kit;
+pub mod runtime;
+
+// 运行时核心类型重导出
+pub use runtime::Value;
 
 use compiler::lexer::{builder::build_lexer, token_kind::KauboTokenKind};
 use kit::lexer::types::Token;
+
+use crate::kit::lexer::types::CLexerTokenKindTrait;
 
 /// 词法分析结果
 pub type LexResult = Vec<Token<KauboTokenKind>>;
@@ -24,9 +30,14 @@ pub fn tokenize(input: &str) -> LexResult {
     let mut lexer = build_lexer();
     let _ = lexer.feed(&input.as_bytes().to_vec());
     let _ = lexer.terminate();
-    
+
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
+        if token.kind.is_invalid_token() {
+            eprintln!("Invalid token: {:?}", token);
+            eprintln!("current tokens: {:?}", tokens);
+            break;
+        }
         tokens.push(token);
     }
     tokens

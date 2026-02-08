@@ -6,8 +6,8 @@ use super::expr::{
 };
 use super::module::{Module, ModuleKind};
 use super::stmt::{
-    BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, ReturnStmt, Stmt, StmtKind, VarDeclStmt,
-    WhileStmt,
+    BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, PrintStmt, ReturnStmt, Stmt, StmtKind,
+    VarDeclStmt, WhileStmt,
 };
 use super::utils::{get_associativity, get_precedence};
 use crate::kit::lexer::c_lexer::Lexer;
@@ -103,6 +103,8 @@ impl Parser {
             self.parse_while_loop()
         } else if self.check(KauboTokenKind::For) {
             self.parse_for_loop()
+        } else if self.check(KauboTokenKind::Print) {
+            self.parse_print_statement()
         } else {
             // 表达式语句
             let expr = self.parse_expression(0)?;
@@ -396,6 +398,14 @@ impl Parser {
 
         self.expect(KauboTokenKind::Semicolon)?;
         Ok(Box::new(StmtKind::Return(ReturnStmt { value })))
+    }
+
+    /// 解析print语句 (临时调试用)
+    fn parse_print_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(); // 消费 'print'
+        let expression = self.parse_expression(0)?;
+        self.expect(KauboTokenKind::Semicolon)?;
+        Ok(Box::new(StmtKind::Print(PrintStmt { expression })))
     }
 
     /// 解析if语句

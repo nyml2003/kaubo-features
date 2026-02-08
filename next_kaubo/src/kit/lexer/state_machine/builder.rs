@@ -104,15 +104,27 @@ where
     Ok(machine)
 }
 
-pub fn build_newline_machine<Token>(token: Token) -> Result<Machine<Token>, BuildMachineError>
+/// 构建换行符状态机（组合实现）
+/// 在 lexer 中注册三个状态机，都返回相同的 NewLine token：
+/// - \r\n (Windows) - 优先匹配，最长匹配
+/// - \n (Unix/Linux/macOS)  
+/// - \r (旧 Mac)
+pub fn build_newline_machines<Token>(token: Token) -> Vec<Machine<Token>>
 where
     Token: TokenKindTrait + 'static,
 {
-    let mut machine = Machine::new(token);
-    let s0 = machine.get_current_state();
-    let s1 = machine.add_state(true);
-    machine.add_transition(s0, s1, Box::new(|c| c == '\n'))?;
-    Ok(machine)
+    let mut machines = Vec::new();
+    
+    // Windows: \r\n (双字符，优先匹配)
+    machines.push(build_multi_char_machine(token.clone(), vec!['\r', '\n']).unwrap());
+    
+    // Unix/Linux/macOS: \n
+    machines.push(build_single_char_machine(token.clone(), '\n').unwrap());
+    
+    // 旧 Mac: \r
+    machines.push(build_single_char_machine(token, '\r').unwrap());
+    
+    machines
 }
 
 pub fn build_whitespace_machine<Token>(token: Token) -> Result<Machine<Token>, BuildMachineError>

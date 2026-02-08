@@ -23,6 +23,8 @@ pub enum StmtKind {
     For(ForStmt),
     // Return返回语句
     Return(ReturnStmt),
+    // Print语句（临时调试用，如 `print expr;`）
+    Print(PrintStmt),
 }
 
 // 表达式语句结构体（包装一个表达式）
@@ -79,6 +81,12 @@ pub struct ReturnStmt {
     pub value: Option<Expr>, // 返回值表达式（可能为空，如return;，用Option表示）
 }
 
+// Print语句结构体（临时调试用）
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrintStmt {
+    pub expression: Expr, // 要打印的表达式
+}
+
 // 实现Display trait（可选，用于调试输出）
 impl fmt::Display for StmtKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -129,6 +137,9 @@ impl fmt::Display for StmtKind {
                 } else {
                     write!(f, "return;")
                 }
+            }
+            StmtKind::Print(print_stmt) => {
+                write!(f, "print {};", print_stmt.expression)
             }
         }
     }

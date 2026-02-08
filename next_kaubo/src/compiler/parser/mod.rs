@@ -1,6 +1,11 @@
 mod error;
-mod expr;
+pub mod expr;
 mod module;
 pub mod parser;
-mod stmt;
+pub mod stmt;
 mod utils;
+
+// 重新导出常用类型
+pub use expr::{Expr, ExprKind, Binary, Unary, LiteralInt};
+pub use stmt::{Stmt, StmtKind, PrintStmt};
+pub use module::{Module, ModuleKind};
