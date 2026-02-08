@@ -142,7 +142,34 @@ impl Chunk {
             // u8 操作数
             OpCode::LoadConst => {
                 let idx = self.code[offset + 1];
-                println!("{} {:3} {:?}", opcode.name(), idx, self.constants[idx as usize]);
+                println!(
+                    "{} {:3} {:?}",
+                    opcode.name(),
+                    idx,
+                    self.constants[idx as usize]
+                );
+                offset + 2
+            }
+
+            OpCode::Closure => {
+                let idx = self.code[offset + 1];
+                let constant = &self.constants[idx as usize];
+                println!("{} {:3} {:?}", opcode.name(), idx, constant);
+                // 如果是函数对象，反汇编函数体
+                if let Some(func_ptr) = constant.as_function() {
+                    let func = unsafe { &*func_ptr };
+                    println!("  --- Function (arity: {}) ---", func.arity);
+                    println!("Constants:");
+                    for (i, constant) in func.chunk.constants.iter().enumerate() {
+                        println!("  [{:3}] {:?}", i, constant);
+                    }
+                    println!("\nBytecode:");
+                    let mut offset = 0;
+                    while offset < func.chunk.code.len() {
+                        offset = func.chunk.disassemble_instruction(offset);
+                    }
+                    println!("  --- End Function ---");
+                }
                 offset + 2
             }
 
@@ -152,6 +179,8 @@ impl Chunk {
             | OpCode::StoreGlobal
             | OpCode::DefineGlobal
             | OpCode::Call
+            | OpCode::GetUpvalue
+            | OpCode::SetUpvalue
             | OpCode::BuildList => {
                 let operand = self.code[offset + 1];
                 println!("{} {}", opcode.name(), operand);
@@ -172,7 +201,12 @@ impl Chunk {
 
             OpCode::LoadConstWide => {
                 let idx = u16::from_le_bytes([self.code[offset + 1], self.code[offset + 2]]);
-                println!("{} {:3} {:?}", opcode.name(), idx, self.constants[idx as usize]);
+                println!(
+                    "{} {:3} {:?}",
+                    opcode.name(),
+                    idx,
+                    self.constants[idx as usize]
+                );
                 offset + 3
             }
 
@@ -216,7 +250,7 @@ mod tests {
         let jump_offset = chunk.write_jump(OpCode::Jump, 1);
         chunk.write_op(OpCode::Pop, 1);
         chunk.patch_jump(jump_offset);
-        
+
         // 反汇编验证
         chunk.disassemble("test");
     }
@@ -227,7 +261,7 @@ mod tests {
         let loop_start = chunk.current_offset();
         chunk.write_op(OpCode::Pop, 1);
         chunk.write_loop(loop_start, 1);
-        
+
         chunk.disassemble("loop test");
     }
 }

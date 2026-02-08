@@ -2,6 +2,8 @@
 //!
 //! 使用 IEEE 754 double 的 NaN 空间存储非浮点值
 
+use super::object::ObjFunction;
+
 /// NaN-boxed 值 (64-bit)
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq)]
@@ -16,6 +18,7 @@ const TAG_MASK: u64 = 0x7 << 48;
 const TAG_SMI: u64 = 0 << 48;     // 000 - 小整数
 const TAG_HEAP: u64 = 1 << 48;    // 001 - 堆对象指针
 const TAG_SPECIAL: u64 = 2 << 48; // 010 - 特殊值
+const TAG_FUNCTION: u64 = 3 << 48; // 011 - 函数对象
 
 const PAYLOAD_MASK: u64 = 0x0000_FFFF_FFFF_FFFF; // bits 47-0
 
@@ -56,6 +59,18 @@ impl Value {
         Self(QNAN | TAG_HEAP | compressed)
     }
 
+    /// 创建函数对象
+    #[inline]
+    pub fn function(ptr: *mut ObjFunction) -> Self {
+        let addr = ptr as u64;
+        debug_assert!(
+            addr & 0x7 == 0,
+            "Function pointer must be 8-byte aligned"
+        );
+        let compressed = (addr >> 3) & PAYLOAD_MASK;
+        Self(QNAN | TAG_FUNCTION | compressed)
+    }
+
     // ==================== 类型判断 ====================
 
     /// 是否为我们的 boxing 值 (非普通浮点数)
@@ -87,6 +102,12 @@ impl Value {
     #[inline]
     pub fn is_special(&self) -> bool {
         self.is_boxed() && (self.0 & TAG_MASK) == TAG_SPECIAL
+    }
+
+    /// 是否为函数对象
+    #[inline]
+    pub fn is_function(&self) -> bool {
+        self.is_boxed() && (self.0 & TAG_MASK) == TAG_FUNCTION
     }
 
     /// 是否为 null
@@ -150,6 +171,17 @@ impl Value {
         }
     }
 
+    /// 解包为函数对象指针
+    #[inline]
+    pub fn as_function(&self) -> Option<*mut ObjFunction> {
+        if self.is_function() {
+            let compressed = self.0 & PAYLOAD_MASK;
+            Some(((compressed << 3) as usize) as *mut ObjFunction)
+        } else {
+            None
+        }
+    }
+
     // ==================== 常量 ====================
 
     pub const NULL: Value = Value(QNAN | TAG_SPECIAL | VAL_NULL);
@@ -171,6 +203,8 @@ impl std::fmt::Debug for Value {
             write!(f, "True")
         } else if self.is_false() {
             write!(f, "False")
+        } else if self.is_function() {
+            write!(f, "Function({:p})", self.as_function().unwrap())
         } else if self.is_heap() {
             write!(f, "Object({:p})", self.as_object::<()>().unwrap())
         } else {
@@ -191,6 +225,8 @@ impl std::fmt::Display for Value {
             write!(f, "true")
         } else if self.is_false() {
             write!(f, "false")
+        } else if self.is_function() {
+            write!(f, "<function>")
         } else if self.is_heap() {
             write!(f, "<object>")
         } else {

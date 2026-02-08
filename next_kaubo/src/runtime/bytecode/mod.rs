@@ -89,6 +89,9 @@ pub enum OpCode {
 
     // ===== 函数 (0x90-0x9F) =====
     Call = 0x90,          // + u8 参数个数
+    Closure = 0x91,        // 创建闭包对象
+    GetUpvalue = 0x92,     // 读取 upvalue（预留）
+    SetUpvalue = 0x93,     // 设置 upvalue（预留）
     Return,
     ReturnValue,
 
@@ -168,6 +171,9 @@ impl OpCode {
             OpCode::JumpIfFalse => "JUMP_IF_FALSE",
             OpCode::JumpBack => "JUMP_BACK",
             OpCode::Call => "CALL",
+            OpCode::Closure => "CLOSURE",
+            OpCode::GetUpvalue => "GET_UPVALUE",
+            OpCode::SetUpvalue => "SET_UPVALUE",
             OpCode::Return => "RETURN",
             OpCode::ReturnValue => "RETURN_VALUE",
             OpCode::BuildList => "BUILD_LIST",
@@ -247,6 +253,9 @@ impl OpCode {
             | OpCode::StoreGlobal
             | OpCode::DefineGlobal
             | OpCode::Call
+            | OpCode::Closure
+            | OpCode::GetUpvalue
+            | OpCode::SetUpvalue
             | OpCode::BuildList => 1,
 
             // u16/i16 操作数

@@ -30,8 +30,6 @@ pub enum ExprKind {
     VarRef(VarRef),
     // 函数调用表达式
     FunctionCall(FunctionCall),
-    // 赋值表达式
-    Assign(Assign),
     // 匿名函数表达式
     Lambda(Lambda),
     // 成员访问表达式
@@ -102,13 +100,6 @@ pub struct FunctionCall {
     pub arguments: Vec<Expr>,
 }
 
-// 赋值表达式结构体
-#[derive(Debug, Clone, PartialEq)]
-pub struct Assign {
-    pub name: String,
-    pub value: Expr,
-}
-
 // 匿名函数表达式结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lambda {
@@ -154,7 +145,6 @@ impl fmt::Display for ExprKind {
                     .join(", ");
                 write!(f, "{}({})", call.function_expr, args)
             }
-            ExprKind::Assign(a) => write!(f, "{} = {}", a.name, a.value),
             ExprKind::Lambda(l) => {
                 let params = l.params.join(", ");
                 write!(f, "({}) => {:?}", params, l.body)
@@ -176,7 +166,9 @@ mod tests {
 
     #[test]
     fn test_literal_string_display() {
-        let expr = ExprKind::LiteralString(LiteralString { value: "hello".to_string() });
+        let expr = ExprKind::LiteralString(LiteralString {
+            value: "hello".to_string(),
+        });
         assert_eq!(format!("{}", expr), "\"hello\"");
     }
 
@@ -202,7 +194,9 @@ mod tests {
 
     #[test]
     fn test_var_ref_display() {
-        let expr = ExprKind::VarRef(VarRef { name: "x".to_string() });
+        let expr = ExprKind::VarRef(VarRef {
+            name: "x".to_string(),
+        });
         assert_eq!(format!("{}", expr), "x");
     }
 

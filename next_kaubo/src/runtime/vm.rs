@@ -2,6 +2,7 @@
 
 use crate::runtime::Value;
 use crate::runtime::bytecode::{OpCode, chunk::Chunk};
+use crate::runtime::object::ObjFunction;
 
 /// 解释执行结果
 #[derive(Debug, Clone, PartialEq)]
@@ -307,6 +308,49 @@ impl VM {
                 }
 
                 // ===== 函数 =====
+                Call => {
+                    let arg_count = self.read_byte();
+                    // 函数对象在栈顶（参数之后）
+                    let callee = self.peek(arg_count as usize);
+                    
+                    if let Some(func_ptr) = callee.as_function() {
+                        let func = unsafe { &*func_ptr };
+                        if func.arity != arg_count {
+                            return InterpretResult::RuntimeError(format!(
+                                "Expected {} arguments but got {}",
+                                func.arity, arg_count
+                            ));
+                        }
+                        
+                        // 创建新的调用帧
+                        let slot_base = self.stack.len() - arg_count as usize - 1;
+                        let new_frame = CallFrame {
+                            chunk: func.chunk.clone(),
+                            ip: func.chunk.code.as_ptr(),
+                            slot_base,
+                        };
+                        self.frames.push(new_frame);
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "Can only call functions".to_string()
+                        );
+                    }
+                }
+
+                Closure => {
+                    // 从常量池加载函数对象
+                    let const_idx = self.read_byte();
+                    let constant = self.current_chunk().constants[const_idx as usize];
+                    
+                    if constant.is_function() {
+                        self.push(constant);
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "Closure constant must be a function".to_string()
+                        );
+                    }
+                }
+
                 Return => {
                     return InterpretResult::Ok;
                 }
