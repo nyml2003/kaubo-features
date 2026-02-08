@@ -27,12 +27,12 @@ cargo run -- assets/a.txt
 
 ## 当前状态
 
-**Phase 2.2.5: Lambda 函数支持（阶段一）** ✅
+**Phase 2.3: 闭包支持** 🚧
 
-- ✅ W1-W2: 局部变量、变量读写赋值
-- ✅ W3: 控制流（if/while/for）
-- ✅ 阶段一: 基础 Lambda 函数定义和调用（无闭包）
-- 🚧 W4: for-in 循环（列表迭代）
+- ✅ Phase 2.2: 变量系统、控制流、列表、for-in 循环
+- 🚧 Phase 2.3: 闭包 Upvalue 机制
+- ⏳ Phase 2.4: 协程与迭代器
+- ⏳ Phase 2.6: 模块系统
 
 ## 项目结构
 
@@ -53,3 +53,13 @@ cargo make cov      # 查看覆盖率（82.11%）
 ---
 
 *最后更新: 2026-02-09*
+
+## 近期规划
+
+**Phase 2.3: 闭包支持** - 实现 Upvalue 机制，支持函数捕获外部变量
+
+```kaubo
+var x = 10;
+var f = |y| { return x + y; };  // 捕获外部变量 x
+print f(5);  // 15
+```

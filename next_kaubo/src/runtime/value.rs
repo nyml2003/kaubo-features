@@ -2,8 +2,7 @@
 //!
 //! 使用 IEEE 754 double 的 NaN 空间存储非浮点值
 
-use super::object::ObjFunction;
-use super::object::ObjString;
+use super::object::{ObjFunction, ObjList, ObjString, ObjIterator};
 
 /// NaN-boxed 值 (64-bit)
 #[repr(transparent)]
@@ -21,6 +20,8 @@ const TAG_HEAP: u64 = 1 << 48;    // 001 - 堆对象指针
 const TAG_SPECIAL: u64 = 2 << 48; // 010 - 特殊值
 const TAG_FUNCTION: u64 = 3 << 48; // 011 - 函数对象
 const TAG_STRING: u64 = 4 << 48;  // 100 - 字符串对象
+const TAG_LIST: u64 = 5 << 48;    // 101 - 列表对象
+const TAG_ITERATOR: u64 = 6 << 48; // 110 - 迭代器对象
 
 const PAYLOAD_MASK: u64 = 0x0000_FFFF_FFFF_FFFF; // bits 47-0
 
@@ -85,6 +86,30 @@ impl Value {
         Self(QNAN | TAG_STRING | compressed)
     }
 
+    /// 创建列表对象
+    #[inline]
+    pub fn list(ptr: *mut ObjList) -> Self {
+        let addr = ptr as u64;
+        debug_assert!(
+            addr & 0x7 == 0,
+            "List pointer must be 8-byte aligned"
+        );
+        let compressed = (addr >> 3) & PAYLOAD_MASK;
+        Self(QNAN | TAG_LIST | compressed)
+    }
+
+    /// 创建迭代器对象
+    #[inline]
+    pub fn iterator(ptr: *mut ObjIterator) -> Self {
+        let addr = ptr as u64;
+        debug_assert!(
+            addr & 0x7 == 0,
+            "Iterator pointer must be 8-byte aligned"
+        );
+        let compressed = (addr >> 3) & PAYLOAD_MASK;
+        Self(QNAN | TAG_ITERATOR | compressed)
+    }
+
     // ==================== 类型判断 ====================
 
     /// 是否为我们的 boxing 值 (非普通浮点数)
@@ -128,6 +153,18 @@ impl Value {
     #[inline]
     pub fn is_string(&self) -> bool {
         self.is_boxed() && (self.0 & TAG_MASK) == TAG_STRING
+    }
+
+    /// 是否为列表对象
+    #[inline]
+    pub fn is_list(&self) -> bool {
+        self.is_boxed() && (self.0 & TAG_MASK) == TAG_LIST
+    }
+
+    /// 是否为迭代器对象
+    #[inline]
+    pub fn is_iterator(&self) -> bool {
+        self.is_boxed() && (self.0 & TAG_MASK) == TAG_ITERATOR
     }
 
     /// 是否为 null
@@ -213,6 +250,28 @@ impl Value {
         }
     }
 
+    /// 解包为列表对象指针
+    #[inline]
+    pub fn as_list(&self) -> Option<*mut ObjList> {
+        if self.is_list() {
+            let compressed = self.0 & PAYLOAD_MASK;
+            Some(((compressed << 3) as usize) as *mut ObjList)
+        } else {
+            None
+        }
+    }
+
+    /// 解包为迭代器对象指针
+    #[inline]
+    pub fn as_iterator(&self) -> Option<*mut ObjIterator> {
+        if self.is_iterator() {
+            let compressed = self.0 & PAYLOAD_MASK;
+            Some(((compressed << 3) as usize) as *mut ObjIterator)
+        } else {
+            None
+        }
+    }
+
     // ==================== 常量 ====================
 
     pub const NULL: Value = Value(QNAN | TAG_SPECIAL | VAL_NULL);
@@ -238,6 +297,10 @@ impl std::fmt::Debug for Value {
             write!(f, "Function({:p})", self.as_function().unwrap())
         } else if self.is_string() {
             write!(f, "String({:p})", self.as_string().unwrap())
+        } else if self.is_list() {
+            write!(f, "List({:p})", self.as_list().unwrap())
+        } else if self.is_iterator() {
+            write!(f, "Iterator({:p})", self.as_iterator().unwrap())
         } else if self.is_heap() {
             write!(f, "Object({:p})", self.as_object::<()>().unwrap())
         } else {
@@ -268,6 +331,24 @@ impl std::fmt::Display for Value {
             } else {
                 write!(f, "<string>")
             }
+        } else if self.is_list() {
+            if let Some(ptr) = self.as_list() {
+                unsafe {
+                    write!(f, "[")?;
+                    let list = &*ptr;
+                    for (i, elem) in list.elements.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", elem)?;
+                    }
+                    write!(f, "]")
+                }
+            } else {
+                write!(f, "<list>")
+            }
+        } else if self.is_iterator() {
+            write!(f, "<iterator>")
         } else if self.is_heap() {
             write!(f, "<object>")
         } else {

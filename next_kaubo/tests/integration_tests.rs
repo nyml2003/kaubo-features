@@ -70,8 +70,8 @@ while (i < 10) {
 #[test]
 fn test_parse_for_loop() {
     let code = r#"
-for (item) in (list) {
-    print(item);
+for var item in list {
+    print item;
 }
 "#;
     let result = parse_code(code);
@@ -297,7 +297,7 @@ var factorial = |n| {
 
 var result = factorial(5);
 
-for (i) in (items) {
+for var i in items {
     if (i > 0) {
         print(i);
     }

@@ -6,7 +6,7 @@ use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind};
 use crate::runtime::{
     Value,
     bytecode::{OpCode, chunk::Chunk},
-    object::{ObjFunction, ObjString},
+    object::{ObjFunction, ObjList, ObjString},
 };
 
 /// 编译错误
@@ -50,6 +50,7 @@ pub struct Compiler {
     chunk: Chunk,
     locals: Vec<Local>, // 局部变量表
     scope_depth: usize, // 当前作用域深度
+    max_locals: usize,  // 最大局部变量数量（用于栈预分配）
 }
 
 impl Compiler {
@@ -58,11 +59,12 @@ impl Compiler {
             chunk: Chunk::new(),
             locals: Vec::new(),
             scope_depth: 0,
+            max_locals: 0,
         }
     }
 
     /// 编译整个模块（视为匿名函数体）
-    /// 返回 (Chunk, 局部变量数量)
+    /// 返回 (Chunk, 最大局部变量数量)
     pub fn compile(&mut self, module: &Module) -> Result<(Chunk, usize), CompileError> {
         for stmt in &module.statements {
             self.compile_stmt(stmt)?;
@@ -72,7 +74,7 @@ impl Compiler {
         self.chunk.write_op(OpCode::LoadNull, 0);
         self.chunk.write_op(OpCode::Return, 0);
 
-        Ok((self.chunk.clone(), self.locals.len()))
+        Ok((self.chunk.clone(), self.max_locals))
     }
 
     /// 编译语句
@@ -166,8 +168,21 @@ impl Compiler {
                 self.chunk.write_op(OpCode::LoadNull, 0);
             }
 
-            ExprKind::LiteralList(_) => {
-                return Err(CompileError::Unimplemented("List literal".to_string()));
+            ExprKind::LiteralList(list) => {
+                // 编译所有元素（从左到右，依次压栈）
+                let count = list.elements.len();
+                if count > 255 {
+                    return Err(CompileError::Unimplemented(
+                        "List too long (max 255 elements)".to_string()
+                    ));
+                }
+                
+                for elem in &list.elements {
+                    self.compile_expr(elem)?;
+                }
+                
+                // 生成 BuildList 指令
+                self.chunk.write_op_u8(OpCode::BuildList, count as u8, 0);
             }
 
             ExprKind::Binary(bin) => {
@@ -349,6 +364,9 @@ impl Compiler {
             is_initialized: false,
         });
 
+        // 更新最大局部变量数
+        self.max_locals = self.max_locals.max(self.locals.len());
+
         Ok((self.locals.len() - 1) as u8)
     }
 
@@ -494,27 +512,71 @@ impl Compiler {
         Ok(())
     }
 
-    /// 编译 for 循环（简化版，仅支持整数范围）
+    /// 编译 for-in 循环（基于迭代器协议）
+    /// 语法: for var item in iterable { body }
     fn compile_for(&mut self, for_stmt: &ForStmt) -> Result<(), CompileError> {
-        // 检查是否是 for i in (0..10) 形式
-        match for_stmt.iterator.as_ref() {
-            ExprKind::VarRef(VarRef { name }) => {
-                // 声明迭代变量
-                let _idx = self.add_local(name)?;
-                self.mark_initialized();
-
-                // 简化版：假设 iterable 是范围表达式
-                // 实际实现需要更复杂的处理
-                return Err(CompileError::Unimplemented(
-                    "For loop not fully implemented yet".to_string(),
-                ));
-            }
+        // 解析迭代变量声明
+        let var_name = match for_stmt.iterator.as_ref() {
+            ExprKind::VarRef(VarRef { name }) => name.clone(),
             _ => {
                 return Err(CompileError::Unimplemented(
                     "For loop iterator must be a variable".to_string(),
                 ));
             }
-        }
+        };
+
+        // 进入 for 循环作用域
+        self.begin_scope();
+
+        // 1. 获取迭代器: var $iter = iterable.iter();
+        self.compile_expr(&for_stmt.iterable)?;
+        self.chunk.write_op(OpCode::GetIter, 0);
+        let iter_idx = self.add_local("$iter")?;
+        self.mark_initialized();
+        self.emit_store_local(iter_idx);
+
+        // 2. 声明迭代变量（只声明一次，循环内赋值）
+        let var_idx = self.add_local(&var_name)?;
+        self.mark_initialized();
+
+        // 3. 循环开始
+        let loop_start = self.chunk.code.len();
+
+        // 4. 获取下一个值
+        self.emit_load_local(iter_idx);
+        self.chunk.write_op(OpCode::IterNext, 0);
+        
+        // 5. 复制值用于 null 检查
+        self.chunk.write_op(OpCode::Dup, 0);
+        
+        // 6. 检查是否为 null（结束标记）
+        self.chunk.write_op(OpCode::LoadNull, 0);
+        self.chunk.write_op(OpCode::Equal, 0);
+        let exit_jump = self.chunk.write_jump(OpCode::JumpIfFalse, 0);
+        
+        // 是 null，退出循环
+        // 注意：JumpIfFalse 已经弹出 true，栈上是 [null]
+        self.chunk.write_op(OpCode::Pop, 0); // 弹出 null 值
+        let exit_patch = self.chunk.write_jump(OpCode::Jump, 0); // 跳到循环外
+
+        // 7. 不是 null，赋值给迭代变量
+        self.chunk.patch_jump(exit_jump);
+        // 注意：JumpIfFalse 已经弹出 false，栈上只剩 next 值
+        self.emit_store_local(var_idx);  // 弹出 next 值，存入 item
+
+        // 8. 编译循环体
+        self.compile_stmt(&for_stmt.body)?;
+
+        // 9. 跳回循环开始
+        self.chunk.write_loop(loop_start, 0);
+
+        // 10. 修补退出跳转
+        self.chunk.patch_jump(exit_patch);
+
+        // 11. 退出作用域（item 和 $iter 被清理）
+        self.end_scope();
+        
+        Ok(())
     }
 
     // ==================== 函数编译 ====================

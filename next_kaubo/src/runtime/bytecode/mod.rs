@@ -97,7 +97,9 @@ pub enum OpCode {
 
     // ===== 列表 (0xB0-0xBF) =====
     BuildList = 0xB0,     // + u8 元素个数
-    IndexGet,
+    IndexGet,             // 列表索引读取
+    GetIter,              // 获取迭代器
+    IterNext,             // 获取迭代器下一个值，null 表示结束
 
     // ===== 调试 (0xF0-0xFF) =====
     Print = 0xF0,         // 调试用
@@ -178,6 +180,8 @@ impl OpCode {
             OpCode::ReturnValue => "RETURN_VALUE",
             OpCode::BuildList => "BUILD_LIST",
             OpCode::IndexGet => "INDEX_GET",
+            OpCode::GetIter => "GET_ITER",
+            OpCode::IterNext => "ITER_NEXT",
             OpCode::Print => "PRINT",
             OpCode::Invalid => "INVALID",
         }
@@ -242,6 +246,8 @@ impl OpCode {
             | OpCode::Return
             | OpCode::ReturnValue
             | OpCode::IndexGet
+            | OpCode::GetIter
+            | OpCode::IterNext
             | OpCode::Print
             | OpCode::Invalid => 0,
 

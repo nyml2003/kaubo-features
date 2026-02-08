@@ -2,7 +2,7 @@
 
 use crate::runtime::Value;
 use crate::runtime::bytecode::{OpCode, chunk::Chunk};
-use crate::runtime::object::ObjFunction;
+use crate::runtime::object::{ObjFunction, ObjIterator, ObjList};
 
 /// 解释执行结果
 #[derive(Debug, Clone, PartialEq)]
@@ -18,13 +18,13 @@ pub struct CallFrame {
     chunk: Chunk,
     /// 指令指针在该帧中的偏移
     ip: *const u8,
-    /// 该帧在值栈中的起始位置（局部变量基址）
-    slot_base: usize,
+    /// 该帧的局部变量数组
+    locals: Vec<Value>,
 }
 
 /// 虚拟机
 pub struct VM {
-    /// 值栈（同时也是局部变量存储区）
+    /// 操作数栈（独立于局部变量）
     stack: Vec<Value>,
     /// 调用栈
     frames: Vec<CallFrame>,
@@ -47,16 +47,16 @@ impl VM {
     /// 解释执行一个 Chunk，并预分配局部变量空间
     pub fn interpret_with_locals(&mut self, chunk: &Chunk, local_count: usize) -> InterpretResult {
         // 预分配局部变量空间（初始化为 null）
-        let slot_base = self.stack.len();
+        let mut locals = Vec::with_capacity(local_count);
         for _ in 0..local_count {
-            self.stack.push(Value::NULL);
+            locals.push(Value::NULL);
         }
 
         // 创建初始调用帧
         self.frames.push(CallFrame {
             chunk: chunk.clone(),
             ip: chunk.code.as_ptr(),
-            slot_base,
+            locals,
         });
 
         // 执行主循环
@@ -81,7 +81,7 @@ impl VM {
             let instruction = unsafe { *self.current_ip() };
             self.advance_ip(1);
             let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
-            // eprintln!("next instruction: {:?}, with stack: {:?}", op, self.stack);
+            eprintln!("next instruction: {:?}, with stack: {:?}", op, self.stack);
             match op {
                 // ===== 常量加载 =====
                 LoadConst0 => self.push_const(0),
@@ -214,88 +214,79 @@ impl VM {
 
                 // ===== 局部变量 =====
                 LoadLocal0 => {
-                    let value = self.stack[self.slot_base()];
+                    let value = self.get_local(0);
                     self.push(value);
                 }
                 LoadLocal1 => {
-                    let value = self.stack[self.slot_base() + 1];
+                    let value = self.get_local(1);
                     self.push(value);
                 }
                 LoadLocal2 => {
-                    let value = self.stack[self.slot_base() + 2];
+                    let value = self.get_local(2);
                     self.push(value);
                 }
                 LoadLocal3 => {
-                    let value = self.stack[self.slot_base() + 3];
+                    let value = self.get_local(3);
                     self.push(value);
                 }
                 LoadLocal4 => {
-                    let value = self.stack[self.slot_base() + 4];
+                    let value = self.get_local(4);
                     self.push(value);
                 }
                 LoadLocal5 => {
-                    let value = self.stack[self.slot_base() + 5];
+                    let value = self.get_local(5);
                     self.push(value);
                 }
                 LoadLocal6 => {
-                    let value = self.stack[self.slot_base() + 6];
+                    let value = self.get_local(6);
                     self.push(value);
                 }
                 LoadLocal7 => {
-                    let value = self.stack[self.slot_base() + 7];
+                    let value = self.get_local(7);
                     self.push(value);
                 }
                 LoadLocal => {
                     let idx = self.read_byte() as usize;
-                    let value = self.stack[self.slot_base() + idx];
+                    let value = self.get_local(idx);
                     self.push(value);
                 }
 
                 StoreLocal0 => {
-                    let slot = self.slot_base();
                     let value = self.pop();
-                    self.stack[slot] = value;
+                    self.set_local(0, value);
                 }
                 StoreLocal1 => {
-                    let slot = self.slot_base() + 1;
                     let value = self.pop();
-                    self.stack[slot] = value;
+                    self.set_local(1, value);
                 }
                 StoreLocal2 => {
-                    let slot = self.slot_base() + 2;
                     let value = self.pop();
-                    self.stack[slot] = value;
+                    self.set_local(2, value);
                 }
                 StoreLocal3 => {
-                    let slot = self.slot_base() + 3;
                     let value = self.pop();
-                    self.stack[slot] = value;
+                    self.set_local(3, value);
                 }
                 StoreLocal4 => {
-                    let slot = self.slot_base() + 4;
                     let value = self.pop();
-                    self.stack[slot] = value;
+                    self.set_local(4, value);
                 }
                 StoreLocal5 => {
-                    let slot = self.slot_base() + 5;
                     let value = self.pop();
-                    self.stack[slot] = value;
+                    self.set_local(5, value);
                 }
                 StoreLocal6 => {
-                    let slot = self.slot_base() + 6;
                     let value = self.pop();
-                    self.stack[slot] = value;
+                    self.set_local(6, value);
                 }
                 StoreLocal7 => {
-                    let slot = self.slot_base() + 7;
                     let value = self.pop();
-                    self.stack[slot] = value;
+                    self.set_local(7, value);
                 }
                 StoreLocal => {
                     let idx = self.read_byte() as usize;
-                    let slot = self.slot_base() + idx;
                     let value = self.pop();
-                    self.stack[slot] = value;
+                    self.set_local(idx, value);
                 }
 
                 // ===== 控制流 =====
@@ -321,8 +312,9 @@ impl VM {
                 Call => {
                     let arg_count = self.read_byte();
 
-                    // 函数对象在栈顶（参数之后）
-                    let callee = self.peek(0);
+                    // 栈布局：[arg0, arg1, ..., argN, func]
+                    // 先弹出函数对象（栈顶）
+                    let callee = self.pop();
                     if let Some(func_ptr) = callee.as_function() {
                         let func = unsafe { &*func_ptr };
                         if func.arity != arg_count {
@@ -332,12 +324,20 @@ impl VM {
                             ));
                         }
 
+                        // 收集参数（从栈顶，现在参数在栈顶）
+                        // pop 顺序：argN, argN-1, ..., arg0
+                        let mut locals = Vec::with_capacity(arg_count as usize);
+                        for _ in 0..arg_count {
+                            locals.push(self.pop());
+                        }
+                        // reverse 后：arg0, arg1, ..., argN
+                        locals.reverse();
+
                         // 创建新的调用帧
-                        let slot_base = self.stack.len() - arg_count as usize - 1;
                         let new_frame = CallFrame {
                             chunk: func.chunk.clone(),
                             ip: func.chunk.code.as_ptr(),
-                            slot_base,
+                            locals,
                         };
                         self.frames.push(new_frame);
                     } else {
@@ -362,20 +362,15 @@ impl VM {
                 }
 
                 Return => {
-                    // 1. 弹出当前函数的调用帧（必须操作，否则上层帧无法执行）
-                    let current_frame = self
-                        .frames
+                    // 1. 弹出当前函数的调用帧
+                    self.frames
                         .pop()
                         .expect("Runtime error: No call frame to pop");
 
-                    // 2. 清理栈中当前函数的参数+函数对象（仅保留调用前的栈状态）
-                    // slot_base 是当前函数局部变量的起始位置，截断到该位置即可清理参数
-                    self.stack.truncate(current_frame.slot_base);
-
-                    // 3. 压入 NULL 作为无返回值函数的返回值
+                    // 2. 压入 NULL 作为无返回值函数的返回值
                     self.push(Value::NULL);
 
-                    // 4. 只有当调用帧为空（主函数返回）时，才终止VM执行；否则继续执行上层帧
+                    // 3. 只有当调用帧为空（主函数返回）时，才终止VM执行；否则继续执行上层帧
                     if self.frames.is_empty() {
                         return InterpretResult::Ok;
                     }
@@ -385,25 +380,97 @@ impl VM {
                 // ===== 修复后的 RETURN_VALUE 指令 =====
                 ReturnValue => {
                     // 1. 弹出当前函数的调用帧
-                    let current_frame = self
-                        .frames
+                    self.frames
                         .pop()
                         .expect("Runtime error: No call frame to pop");
 
                     // 2. 保存栈顶的返回值（函数执行结果）
                     let return_value = self.pop();
 
-                    // 3. 清理栈中当前函数的参数+函数对象
-                    self.stack.truncate(current_frame.slot_base);
-
-                    // 4. 将返回值压回栈顶，供上层帧使用（比如主函数的PRINT指令）
+                    // 3. 将返回值压回栈顶，供上层帧使用（比如主函数的PRINT指令）
                     self.push(return_value);
 
-                    // 5. 仅主函数返回时终止，否则继续执行上层帧
+                    // 4. 仅主函数返回时终止，否则继续执行上层帧
                     if self.frames.is_empty() {
                         return InterpretResult::Ok;
                     }
                     // 非空则继续循环
+                }
+
+                // ===== 列表 =====
+                BuildList => {
+                    let count = self.read_byte() as usize;
+                    // 从栈顶弹出 count 个元素，创建列表
+                    let mut elements = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        elements.push(self.pop());
+                    }
+                    elements.reverse(); // 栈顶是最后一个元素
+
+                    let list = Box::new(ObjList::from_vec(elements));
+                    let list_ptr = Box::into_raw(list);
+                    self.push(Value::list(list_ptr));
+                }
+
+                IndexGet => {
+                    // 栈顶: [index, list]
+                    let index_val = self.pop();
+                    let list_val = self.pop();
+
+                    let index = match index_val.as_smi() {
+                        Some(i) => i,
+                        None => {
+                            return InterpretResult::RuntimeError(
+                                "Index must be an integer".to_string(),
+                            );
+                        }
+                    };
+
+                    if let Some(list_ptr) = list_val.as_list() {
+                        let list = unsafe { &*list_ptr };
+                        let idx = index as usize;
+                        if idx >= list.len() {
+                            return InterpretResult::RuntimeError(format!(
+                                "Index out of bounds: {} (length {})",
+                                idx,
+                                list.len()
+                            ));
+                        }
+                        let value = list.get(idx).unwrap_or(Value::NULL);
+                        self.push(value);
+                    } else {
+                        return InterpretResult::RuntimeError("Can only index lists".to_string());
+                    }
+                }
+
+                GetIter => {
+                    // 从列表获取迭代器
+                    let list_val = self.pop();
+
+                    if let Some(list_ptr) = list_val.as_list() {
+                        let iter = Box::new(ObjIterator::from_list(list_ptr));
+                        let iter_ptr = Box::into_raw(iter);
+                        self.push(Value::iterator(iter_ptr));
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "Can only iterate over lists".to_string(),
+                        );
+                    }
+                }
+
+                IterNext => {
+                    // 获取迭代器下一个值，null 表示结束
+                    let iter_val = self.pop();
+
+                    if let Some(iter_ptr) = iter_val.as_iterator() {
+                        let iter = unsafe { &mut *iter_ptr };
+                        match iter.next() {
+                            Some(value) => self.push(value),
+                            None => self.push(Value::NULL),
+                        }
+                    } else {
+                        return InterpretResult::RuntimeError("Expected iterator".to_string());
+                    }
                 }
 
                 // ===== 调试 =====
@@ -440,10 +507,37 @@ impl VM {
         &mut self.frames.last_mut().unwrap().ip
     }
 
-    /// 获取当前帧的 slot_base
+    /// 获取当前帧的可变 locals
     #[inline]
-    fn slot_base(&self) -> usize {
-        self.frames.last().unwrap().slot_base
+    fn current_locals_mut(&mut self) -> &mut Vec<Value> {
+        &mut self.frames.last_mut().unwrap().locals
+    }
+
+    /// 获取当前帧的 locals
+    #[inline]
+    fn current_locals(&self) -> &Vec<Value> {
+        &self.frames.last().unwrap().locals
+    }
+
+    /// 获取局部变量（自动扩展）
+    #[inline]
+    fn get_local(&self, idx: usize) -> Value {
+        let locals = self.current_locals();
+        if idx < locals.len() {
+            locals[idx]
+        } else {
+            Value::NULL
+        }
+    }
+
+    /// 设置局部变量（自动扩展）
+    #[inline]
+    fn set_local(&mut self, idx: usize, value: Value) {
+        let locals = self.current_locals_mut();
+        if idx >= locals.len() {
+            locals.resize(idx + 1, Value::NULL);
+        }
+        locals[idx] = value;
     }
 
     /// 获取当前帧的 chunk
@@ -510,7 +604,11 @@ impl VM {
     /// 查看栈顶元素 (distance=0 是栈顶)
     #[inline]
     fn peek(&self, distance: usize) -> Value {
-        let idx = self.stack.len() - 1 - distance;
+        let len = self.stack.len();
+        if len == 0 || distance >= len {
+            panic!("Stack underflow in peek");
+        }
+        let idx = len - 1 - distance;
         self.stack[idx]
     }
 

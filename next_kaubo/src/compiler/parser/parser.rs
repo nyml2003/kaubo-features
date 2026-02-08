@@ -452,6 +452,9 @@ impl Parser {
     /// 解析for循环
     fn parse_for_loop(&mut self) -> ParseResult<Stmt> {
         self.consume(); // 消费 'for'
+        
+        // 新语法: for var item in iterable { ... }
+        self.expect(KauboTokenKind::Var)?;
         let iterator = self.parse_expression(0)?;
         self.expect(KauboTokenKind::In)?;
         let iterable = self.parse_expression(0)?;
@@ -595,8 +598,8 @@ mod tests {
     #[test]
     fn test_parse_for_loop() {
         let code = r#"
-        for (item) in (list) {
-            print(item);
+        for var item in list {
+            print item;
         }
         "#;
         let result = parse_code(code);

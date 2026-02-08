@@ -6,7 +6,7 @@ use std::fs;
 fn main() {
     // 默认使用项目目录下的 assets/a.txt
     let path = std::env::args().nth(1).unwrap_or_else(|| {
-        r"C:\Users\nyml\code\kaubo-features\next_kaubo\assets\test_2.txt".to_string()
+        r"C:\Users\nyml\code\kaubo-features\next_kaubo\assets\a.txt".to_string()
     });
 
     println!("Kaubo VM - 字节码执行演示");
