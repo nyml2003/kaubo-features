@@ -295,7 +295,9 @@ src/
 | **指令格式** | 定长指令 (1-3 bytes) | ✅ 已实现 |
 | **字符串** | UTF-8 | ✅ 设计确定 |
 
-**设计文档**: [BYTECODE.md](BYTECODE.md)
+**设计文档**:
+- [BYTECODE.md](BYTECODE.md) - 字节码 VM 设计
+- [CLOSURE_COROUTINE_DESIGN.md](CLOSURE_COROUTINE_DESIGN.md) - 闭包与协程方案选型
 
 **Phase 2 里程碑**:
 - [x] 字节码方案设计评审 ✅
