@@ -1,7 +1,7 @@
 use super::super::lexer::token_kind::KauboTokenKind;
 use super::error::{ParseResult, ParserError};
 use super::expr::{
-    Assign, Binary, Expr, ExprKind, FunctionCall, Grouping, Lambda, LiteralFalse, LiteralInt,
+    Binary, Expr, ExprKind, FunctionCall, Grouping, Lambda, LiteralFalse, LiteralInt,
     LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, Unary, VarRef,
 };
 use super::module::{Module, ModuleKind};

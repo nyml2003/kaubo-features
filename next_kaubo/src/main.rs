@@ -2,7 +2,8 @@ mod compiler;
 mod kit;
 use std::{fs, thread::sleep, time::Duration};
 
-use crate::compiler::parser::parser::Parser;
+// Parser is not used currently, but will be used in future
+// use crate::compiler::parser::parser::Parser;
 fn main() {
     let mut lexer = compiler::lexer::builder::build_lexer();
     let content =

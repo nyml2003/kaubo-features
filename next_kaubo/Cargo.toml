@@ -5,3 +5,18 @@ edition = "2024"
 
 [dependencies]
 thiserror = "2.0.17"
+
+# 测试覆盖率配置 (cargo-tarpaulin)
+[profile.test]
+opt-level = 0
+debug = true
+
+# Tarpaulin 覆盖率配置
+# 运行: cargo tarpaulin
+[package.metadata.tarpaulin]
+# 输出格式
+out = ["Html", "Xml"]
+# 输出目录
+output-dir = "target/tarpaulin"
+# 失败阈值 (可选)
+# fail-under = 80

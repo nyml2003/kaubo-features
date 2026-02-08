@@ -122,7 +122,8 @@ where
     let mut machine = Machine::new(token);
     let s0 = machine.get_current_state();
     let s1 = machine.add_state(true);
-    machine.add_transition(s0, s1, Box::new(|c| c.is_whitespace()))?;
+    // 只匹配空格，不换行或制表符（它们有各自的状态机）
+    machine.add_transition(s0, s1, Box::new(|c| c == ' '))?;
     Ok(machine)
 }
 

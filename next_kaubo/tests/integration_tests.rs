@@ -125,3 +125,244 @@ fn test_parse_block() {
     let result = parse_code(code);
     assert!(result.is_ok(), "Failed to parse block: {:?}", result.err());
 }
+
+#[test]
+fn test_parse_arithmetic_expressions() {
+    // 测试基本算术运算
+    let cases = vec![
+        ("var a = 1 + 2;", "addition"),
+        ("var a = 10 - 3;", "subtraction"),
+        ("var a = 4 * 5;", "multiplication"),
+        ("var a = 20 / 4;", "division"),
+        ("var a = 1 + 2 * 3;", "mixed precedence"),
+        ("var a = (1 + 2) * 3;", "parentheses"),
+        ("var a = -5;", "unary minus"),
+        ("var a = --5;", "double unary minus"),
+    ];
+    
+    for (code, desc) in cases {
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+    }
+}
+
+#[test]
+fn test_parse_comparison_operators() {
+    let cases = vec![
+        ("var a = x == y;", "equal"),
+        ("var a = x != y;", "not equal"),
+        ("var a = x > y;", "greater than"),
+        ("var a = x < y;", "less than"),
+        ("var a = x >= y;", "greater than or equal"),
+        ("var a = x <= y;", "less than or equal"),
+    ];
+    
+    for (code, desc) in cases {
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+    }
+}
+
+#[test]
+fn test_parse_logical_operators() {
+    let cases = vec![
+        ("var a = x and y;", "logical and"),
+        ("var a = x or y;", "logical or"),
+        ("var a = not x;", "logical not"),
+        ("var a = not x and y;", "not and"),
+        ("var a = x and not y;", "and not"),
+        ("var a = x or y and z;", "or and precedence"),
+    ];
+    
+    for (code, desc) in cases {
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+    }
+}
+
+#[test]
+fn test_parse_boolean_literals() {
+    let cases = vec![
+        ("var a = true;", "true"),
+        ("var a = false;", "false"),
+        ("var a = null;", "null"),
+    ];
+    
+    for (code, desc) in cases {
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+    }
+}
+
+#[test]
+fn test_parse_assignment() {
+    let cases = vec![
+        ("x = 5;", "simple assignment"),
+        ("x = y = 5;", "chained assignment"),
+        ("x = a + b;", "assignment with expression"),
+    ];
+    
+    for (code, desc) in cases {
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+    }
+}
+
+#[test]
+fn test_parse_nested_function_calls() {
+    let code = r#"
+var result = outer(inner(x), y);
+"#;
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse nested function calls: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_chained_member_access() {
+    let code = r#"
+var x = obj.a.b.c;
+var y = obj.method1().method2();
+"#;
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse chained member access: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_complex_lambda() {
+    let code = r#"
+var calc = |a, b, c| {
+    var sum = a + b;
+    return sum * c;
+};
+"#;
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse complex lambda: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_empty_list() {
+    let code = "var empty = [];";
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse empty list: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_nested_list() {
+    let code = "var nested = [[1, 2], [3, 4]];";
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse nested list: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_if_elif_else_chain() {
+    let code = r#"
+if (a > b) {
+    return 1;
+} elif (a == b) {
+    return 0;
+} elif (a < b) {
+    return -1;
+} else {
+    return null;
+}
+"#;
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse if-elif-else chain: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_return_without_value() {
+    let code = r#"
+var f = |x| {
+    if (x < 0) {
+        return;
+    }
+    return x;
+};
+"#;
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse return without value: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_complex_program() {
+    let code = r#"
+var factorial = |n| {
+    if (n <= 1) {
+        return 1;
+    } else {
+        return n * factorial(n - 1);
+    }
+};
+
+var result = factorial(5);
+
+for (i) in (items) {
+    if (i > 0) {
+        print(i);
+    }
+}
+"#;
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse complex program: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_whitespace_variations() {
+    // 测试不同空白字符的处理
+    let cases = vec![
+        ("var x=1;", "no spaces"),
+        ("var  x  =  1  ;", "extra spaces"),
+        ("var\tx\t=\t1;", "tabs"),
+    ];
+    
+    for (code, desc) in cases {
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+    }
+}
+
+#[test]
+fn test_parse_pipe_operator() {
+    let code = "var result = x | f | g;";
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse pipe operator: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_lambda_no_params() {
+    let code = "var f = || { return 42; };";
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse lambda with no params: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_single_char_identifier() {
+    let code = r#"
+var a = 1;
+var b = 2;
+"#;
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse single char identifiers: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_underscore_identifier() {
+    let code = "var _private = 1;";
+    let result = parse_code(code);
+    assert!(result.is_ok(), "Failed to parse underscore identifier: {:?}", result.err());
+}
+
+#[test]
+fn test_parse_error_cases() {
+    // 这些应该是错误的
+    let error_cases = vec![
+        ("var ;", "var without identifier"),
+        ("var x = ;", "missing expression"),
+    ];
+    
+    for (code, desc) in error_cases {
+        let result = parse_code(code);
+        assert!(result.is_err(), "Expected error for {} but got Ok", desc);
+    }
+}

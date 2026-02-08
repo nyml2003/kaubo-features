@@ -1,0 +1,55 @@
+# cargo-make 配置文件
+# 安装: cargo install cargo-make
+# 使用: cargo make <task>
+
+[config]
+default_to_workspace = false
+
+# 默认任务
+[tasks.default]
+alias = "test"
+
+# 运行测试
+[tasks.test]
+command = "cargo"
+args = ["test"]
+
+# 生成覆盖率报告 (终端输出)
+[tasks.cov]
+command = "python"
+args = ["scripts/coverage.py"]
+
+# 生成覆盖率报告 (HTML)
+[tasks.cov-html]
+command = "python"
+args = ["scripts/coverage.py", "--html"]
+
+# 打开覆盖率报告
+[tasks.cov-open]
+command = "python"
+args = ["scripts/coverage.py", "--open"]
+
+# 清理生成的文件
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+# 运行程序
+[tasks.run]
+command = "cargo"
+args = ["run", "--", "assets/a.txt"]
+
+# 检查代码
+[tasks.check]
+command = "cargo"
+args = ["check"]
+
+# 格式化代码
+[tasks.fmt]
+command = "cargo"
+args = ["fmt"]
+
+# 运行 clippy
+[tasks.lint]
+command = "cargo"
+args = ["clippy", "--", "-D", "warnings"]
