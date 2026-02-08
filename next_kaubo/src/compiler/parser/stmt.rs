@@ -133,3 +133,80 @@ impl fmt::Display for StmtKind {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::expr::*;
+
+    fn make_expr(kind: ExprKind) -> Expr {
+        Box::new(kind)
+    }
+
+    #[test]
+    fn test_empty_stmt_display() {
+        let stmt = StmtKind::Empty(EmptyStmt);
+        assert_eq!(format!("{}", stmt), ";");
+    }
+
+    #[test]
+    fn test_block_stmt_display() {
+        let stmt = StmtKind::Block(BlockStmt { statements: vec![] });
+        assert!(format!("{}", stmt).contains('{'));
+    }
+
+    #[test]
+    fn test_var_decl_stmt_display() {
+        let stmt = StmtKind::VarDecl(VarDeclStmt {
+            name: "x".to_string(),
+            initializer: make_expr(ExprKind::LiteralInt(LiteralInt { value: 5 })),
+        });
+        assert!(format!("{}", stmt).contains("var x = 5"));
+    }
+
+    #[test]
+    fn test_while_stmt_display() {
+        let stmt = StmtKind::While(WhileStmt {
+            condition: make_expr(ExprKind::LiteralTrue(LiteralTrue)),
+            body: make_stmt(StmtKind::Empty(EmptyStmt)),
+        });
+        assert!(format!("{}", stmt).contains("while"));
+    }
+
+    #[test]
+    fn test_for_stmt_display() {
+        let stmt = StmtKind::For(ForStmt {
+            iterator: make_expr(ExprKind::VarRef(VarRef { name: "i".to_string() })),
+            iterable: make_expr(ExprKind::VarRef(VarRef { name: "list".to_string() })),
+            body: make_stmt(StmtKind::Empty(EmptyStmt)),
+        });
+        assert!(format!("{}", stmt).contains("for"));
+    }
+
+    #[test]
+    fn test_return_stmt_display() {
+        let stmt_with_value = StmtKind::Return(ReturnStmt {
+            value: Some(make_expr(ExprKind::LiteralInt(LiteralInt { value: 42 }))),
+        });
+        let stmt_without_value = StmtKind::Return(ReturnStmt { value: None });
+        
+        assert!(format!("{}", stmt_with_value).contains("return 42"));
+        assert_eq!(format!("{}", stmt_without_value), "return;");
+    }
+
+    #[test]
+    fn test_stmt_kind_clone() {
+        let stmt = StmtKind::Empty(EmptyStmt);
+        let cloned = stmt.clone();
+        assert_eq!(stmt, cloned);
+    }
+
+    #[test]
+    fn test_empty_stmt_default() {
+        let _ = EmptyStmt::default();
+    }
+
+    fn make_stmt(kind: StmtKind) -> Stmt {
+        Box::new(kind)
+    }
+}

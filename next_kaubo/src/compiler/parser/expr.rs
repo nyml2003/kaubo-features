@@ -163,3 +163,60 @@ impl fmt::Display for ExprKind {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_literal_int_display() {
+        let expr = ExprKind::LiteralInt(LiteralInt { value: 42 });
+        assert_eq!(format!("{}", expr), "42");
+    }
+
+    #[test]
+    fn test_literal_string_display() {
+        let expr = ExprKind::LiteralString(LiteralString { value: "hello".to_string() });
+        assert_eq!(format!("{}", expr), "\"hello\"");
+    }
+
+    #[test]
+    fn test_literal_bool_display() {
+        let expr_true = ExprKind::LiteralTrue(LiteralTrue);
+        let expr_false = ExprKind::LiteralFalse(LiteralFalse);
+        assert_eq!(format!("{}", expr_true), "true");
+        assert_eq!(format!("{}", expr_false), "false");
+    }
+
+    #[test]
+    fn test_literal_null_display() {
+        let expr = ExprKind::LiteralNull(LiteralNull);
+        assert_eq!(format!("{}", expr), "null");
+    }
+
+    #[test]
+    fn test_literal_list_display() {
+        let expr = ExprKind::LiteralList(LiteralList { elements: vec![] });
+        assert_eq!(format!("{}", expr), "[]");
+    }
+
+    #[test]
+    fn test_var_ref_display() {
+        let expr = ExprKind::VarRef(VarRef { name: "x".to_string() });
+        assert_eq!(format!("{}", expr), "x");
+    }
+
+    #[test]
+    fn test_expr_kind_clone() {
+        let expr = ExprKind::LiteralInt(LiteralInt { value: 42 });
+        let cloned = expr.clone();
+        assert_eq!(expr, cloned);
+    }
+
+    #[test]
+    fn test_struct_defaults() {
+        let _ = LiteralTrue::default();
+        let _ = LiteralFalse::default();
+        let _ = LiteralNull::default();
+    }
+}

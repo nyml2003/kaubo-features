@@ -14,20 +14,17 @@ alias = "test"
 command = "cargo"
 args = ["test"]
 
-# 生成覆盖率报告 (终端输出)
+# 生成覆盖率报告 - 终端输出 (cargo-llvm-cov + nightly, 支持分支覆盖率)
 [tasks.cov]
-command = "python"
-args = ["scripts/coverage.py"]
+script = "rustup run nightly cargo llvm-cov --branch --all-features"
 
-# 生成覆盖率报告 (HTML)
+# 生成 HTML 覆盖率报告
 [tasks.cov-html]
-command = "python"
-args = ["scripts/coverage.py", "--html"]
+script = "rustup run nightly cargo llvm-cov --branch --all-features --html --output-dir target/llvm-cov"
 
-# 打开覆盖率报告
+# 生成并打开 HTML 覆盖率报告
 [tasks.cov-open]
-command = "python"
-args = ["scripts/coverage.py", "--open"]
+script = "rustup run nightly cargo llvm-cov --branch --all-features --html --output-dir target/llvm-cov --open"
 
 # 清理生成的文件
 [tasks.clean]

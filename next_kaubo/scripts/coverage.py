@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-覆盖率报告生成脚本
+覆盖率报告生成脚本 (使用 cargo-llvm-cov + nightly)
+支持行覆盖率和分支覆盖率
 使用标准库，兼容 Python 3.6+
 """
 
@@ -11,83 +12,91 @@ import argparse
 import webbrowser
 
 
-def run_command(cmd, description):
-    """运行命令并打印结果"""
-    print(f"\n{'='*50}")
-    print(f"正在执行: {description}")
-    print(f"命令: {' '.join(cmd)}")
-    print('='*50)
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
-    if result.stdout:
-        print(result.stdout)
-    if result.stderr:
-        print(result.stderr, file=sys.stderr)
-    
-    return result.returncode == 0
+def check_tool(name, command):
+    """检查工具是否安装"""
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"错误: {name} 未安装")
+        print(f"请运行: cargo install {name}")
+        return False
+    print(f"{name} 已安装: {result.stdout.strip()}")
+    return True
 
 
-def parse_coverage_output(text):
-    """从 tarpaulin 输出中解析覆盖率"""
-    for line in text.split('\n'):
-        if '% coverage' in line and 'lines covered' in line:
-            return line.strip()
-    return None
+def check_nightly():
+    """检查 nightly 工具链是否安装"""
+    result = subprocess.run(['rustup', 'show'], capture_output=True, text=True)
+    if 'nightly' in result.stdout:
+        print("nightly 工具链已安装")
+        return True
+    print("错误: nightly 工具链未安装")
+    print("请运行: rustup install nightly")
+    return False
 
 
-def main():
-    parser = argparse.ArgumentParser(description='生成测试覆盖率报告')
-    parser.add_argument('--html', action='store_true', help='生成 HTML 报告')
-    parser.add_argument('--open', action='store_true', help='打开 HTML 报告')
-    args = parser.parse_args()
-    
-    # 检查 tarpaulin 是否安装
-    check = subprocess.run(['cargo', 'tarpaulin', '--version'], 
-                          capture_output=True, text=True)
-    if check.returncode != 0:
-        print("错误: cargo-tarpaulin 未安装")
-        print("请运行: cargo install cargo-tarpaulin")
-        sys.exit(1)
-    
-    # 构建 tarpaulin 命令
+def run_coverage(html=False, open_browser=False):
+    """运行覆盖率测试 (使用 nightly + 分支覆盖率)"""
     cmd = [
-        'cargo', 'tarpaulin',
-        '--include-tests',
-        '--all-targets',
-        '--output-dir', 'target/tarpaulin'
+        'cargo', '+nightly', 'llvm-cov',
+        '--branch',           # 启用分支覆盖率 (需要 nightly)
+        '--all-features',     # 测试所有特性
     ]
     
-    if args.html or args.open:
-        cmd.extend(['--out', 'Html', '--out', 'Xml'])
-    # 默认输出到终端，不需要额外参数
+    output_dir = 'target/llvm-cov'
+    html_file = os.path.join(output_dir, 'index.html')
     
-    # 运行覆盖率测试
-    print("开始生成覆盖率报告...")
-    success = run_command(cmd, "覆盖率测试")
+    if html or open_browser:
+        cmd.extend(['--html', '--output-dir', output_dir])
     
-    if not success:
+    print("\n" + "="*50)
+    print("正在运行覆盖率测试")
+    print("工具: cargo-llvm-cov + nightly (支持分支覆盖率)")
+    print("="*50)
+    print(f"命令: {' '.join(cmd)}")
+    print()
+    
+    result = subprocess.run(cmd)
+    
+    if result.returncode != 0:
         print("\n覆盖率测试失败!")
-        sys.exit(1)
+        return False
     
-    # 打印摘要
     print("\n" + "="*50)
     print("覆盖率测试完成!")
     print("="*50)
     
-    if args.html or args.open:
-        html_path = os.path.join('target', 'tarpaulin', 'tarpaulin-report.html')
-        xml_path = os.path.join('target', 'tarpaulin', 'cobertura.xml')
+    if html or open_browser:
+        print(f"\n报告位置: {os.path.abspath(output_dir)}")
+        print(f"HTML 文件: {os.path.abspath(html_file)}")
         
-        print(f"\n报告文件:")
-        print(f"  HTML: {os.path.abspath(html_path)}")
-        print(f"  XML:  {os.path.abspath(xml_path)}")
-        
-        if args.open and os.path.exists(html_path):
-            print(f"\n正在打开报告...")
-            webbrowser.open(f'file://{os.path.abspath(html_path)}')
+        if open_browser and os.path.exists(html_file):
+            print(f"\n正在打开浏览器...")
+            webbrowser.open(f'file://{os.path.abspath(html_file)}')
     
     print()
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='生成测试覆盖率报告 (cargo-llvm-cov + nightly, 支持分支覆盖率)'
+    )
+    parser.add_argument('--html', action='store_true', help='生成 HTML 报告')
+    parser.add_argument('--open', action='store_true', help='生成并打开 HTML 报告')
+    args = parser.parse_args()
+    
+    # 检查依赖
+    if not check_tool('cargo-llvm-cov', ['cargo', 'llvm-cov', '--version']):
+        sys.exit(1)
+    
+    if not check_nightly():
+        sys.exit(1)
+    
+    # 运行覆盖率测试
+    success = run_coverage(html=args.html, open_browser=args.open)
+    
+    if not success:
+        sys.exit(1)
 
 
 if __name__ == '__main__':

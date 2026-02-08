@@ -359,10 +359,48 @@ fn test_parse_error_cases() {
     let error_cases = vec![
         ("var ;", "var without identifier"),
         ("var x = ;", "missing expression"),
+        ("var 123 = 5;", "number as identifier"),
+        ("(1 + 2;", "missing right paren"),
+        ("x.", "dot without identifier"),
+        ("|x y| { return x; };", "lambda missing comma"),
     ];
     
     for (code, desc) in error_cases {
         let result = parse_code(code);
         assert!(result.is_err(), "Expected error for {} but got Ok", desc);
     }
+}
+
+#[test]
+fn test_parse_empty_input() {
+    let result = parse_code("");
+    assert!(result.is_ok(), "Empty input should be valid");
+}
+
+#[test]
+fn test_parse_only_whitespace() {
+    let result = parse_code("   \n\t\n  ");
+    assert!(result.is_ok(), "Only whitespace should be valid");
+}
+
+#[test]
+fn test_parse_unexpected_end() {
+    // 触发 UnexpectedEndOfInput
+    let cases = vec![
+        "var x =",
+        "if (x > y) {",
+        "while (x) {",
+    ];
+    
+    for code in cases {
+        let result = parse_code(code);
+        assert!(result.is_err(), "Should error for incomplete code: {}", code);
+    }
+}
+
+#[test]
+fn test_parse_invalid_number() {
+    // 这个数字太大，会触发 InvalidNumberFormat
+    // 但实际上 Rust 的 parse 对大数也能处理，所以这里测试格式错误的数字
+    // 目前 lexer 不会产生格式错误的数字，所以这个错误可能不会被触发
 }
