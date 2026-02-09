@@ -22,23 +22,28 @@ impl ObjUpvalue {
         }
     }
 
-    /// 获取当前值（栈上或已关闭）
+    /// 获取当前值（优先使用 closed，否则使用 location）
     pub fn get(&self) -> Value {
-        unsafe { *self.location }
+        match self.closed {
+            Some(value) => value,
+            None => unsafe { *self.location },
+        }
     }
 
-    /// 设置值
+    /// 设置值（优先写入 closed，否则写入 location）
     pub fn set(&mut self, value: Value) {
-        unsafe {
-            *self.location = value;
+        match self.closed {
+            Some(_) => self.closed = Some(value),
+            None => unsafe { *self.location = value; }
         }
     }
 
     /// 关闭 upvalue：将栈上的值复制到 closed
     pub fn close(&mut self) {
         if self.closed.is_none() {
-            self.closed = Some(self.get());
-            // location 现在指向 closed（可选，通常不再使用）
+            self.closed = Some(unsafe { *self.location });
+            // location 不再使用，设为 null
+            self.location = std::ptr::null_mut();
         }
     }
 }

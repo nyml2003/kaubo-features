@@ -43,14 +43,32 @@ struct Local {
     name: String,
     depth: usize,
     is_initialized: bool,
+    is_captured: bool, // 是否被内层闭包捕获
+}
+
+/// Upvalue 描述（编译时）
+#[derive(Debug, Clone)]
+struct Upvalue {
+    name: String,
+    index: u8,        // upvalue 索引
+    is_local: bool,   // true=捕获外层局部变量, false=继承外层的 upvalue
+}
+
+/// 变量类型（解析结果）
+#[derive(Debug, Clone, Copy)]
+enum Variable {
+    Local(u8),    // 局部变量索引
+    Upvalue(u8),  // upvalue 索引
 }
 
 /// AST 编译器
 pub struct Compiler {
     chunk: Chunk,
-    locals: Vec<Local>, // 局部变量表
-    scope_depth: usize, // 当前作用域深度
-    max_locals: usize,  // 最大局部变量数量（用于栈预分配）
+    locals: Vec<Local>,       // 局部变量表
+    upvalues: Vec<Upvalue>,   // upvalue 描述表
+    scope_depth: usize,       // 当前作用域深度
+    max_locals: usize,        // 最大局部变量数量（用于栈预分配）
+    enclosing: *mut Compiler, // 指向父编译器（用于解析 upvalue）
 }
 
 impl Compiler {
@@ -58,8 +76,22 @@ impl Compiler {
         Self {
             chunk: Chunk::new(),
             locals: Vec::new(),
+            upvalues: Vec::new(),
             scope_depth: 0,
             max_locals: 0,
+            enclosing: std::ptr::null_mut(),
+        }
+    }
+
+    /// 创建子编译器（用于编译嵌套函数）
+    fn new_child(enclosing: *mut Compiler) -> Self {
+        Self {
+            chunk: Chunk::new(),
+            locals: Vec::new(),
+            upvalues: Vec::new(),
+            scope_depth: 0,
+            max_locals: 0,
+            enclosing,
         }
     }
 
@@ -204,13 +236,15 @@ impl Compiler {
             }
 
             ExprKind::VarRef(var_ref) => {
-                if let Some(idx) = self.resolve_local(&var_ref.name) {
-                    self.emit_load_local(idx);
-                } else {
-                    return Err(CompileError::Unimplemented(format!(
-                        "Undefined variable: {}",
-                        var_ref.name
-                    )));
+                match self.resolve_variable(&var_ref.name) {
+                    Some(Variable::Local(idx)) => self.emit_load_local(idx),
+                    Some(Variable::Upvalue(idx)) => self.emit_load_upvalue(idx),
+                    None => {
+                        return Err(CompileError::Unimplemented(format!(
+                            "Undefined variable: {}",
+                            var_ref.name
+                        )));
+                    }
                 }
             }
 
@@ -274,17 +308,19 @@ impl Compiler {
         // 左值必须是变量引用
         match left.as_ref() {
             ExprKind::VarRef(var_ref) => {
-                if let Some(idx) = self.resolve_local(&var_ref.name) {
-                    self.emit_store_local(idx);
-                    // 赋值表达式返回 null（不是被赋的值）
-                    self.chunk.write_op(OpCode::LoadNull, 0);
-                    Ok(())
-                } else {
-                    Err(CompileError::Unimplemented(format!(
-                        "Undefined variable: {}",
-                        var_ref.name
-                    )))
+                match self.resolve_variable(&var_ref.name) {
+                    Some(Variable::Local(idx)) => self.emit_store_local(idx),
+                    Some(Variable::Upvalue(idx)) => self.emit_store_upvalue(idx),
+                    None => {
+                        return Err(CompileError::Unimplemented(format!(
+                            "Undefined variable: {}",
+                            var_ref.name
+                        )));
+                    }
                 }
+                // 赋值表达式返回 null（不是被赋的值）
+                self.chunk.write_op(OpCode::LoadNull, 0);
+                Ok(())
             }
             _ => Err(CompileError::Unimplemented(
                 "Left side of assignment must be a variable".to_string(),
@@ -362,6 +398,7 @@ impl Compiler {
             name: name.to_string(),
             depth: self.scope_depth,
             is_initialized: false,
+            is_captured: false,
         });
 
         // 更新最大局部变量数
@@ -388,6 +425,73 @@ impl Compiler {
                 return Some(i as u8);
             }
         }
+        None
+    }
+
+    /// 标记局部变量被捕获
+    fn mark_captured(&mut self, index: usize) {
+        if let Some(local) = self.locals.get_mut(index) {
+            local.is_captured = true;
+        }
+    }
+
+    /// 添加 upvalue 描述，返回其索引
+    fn add_upvalue(&mut self, name: &str, index: u8, is_local: bool) -> u8 {
+        // 检查是否已存在相同的 upvalue
+        for (i, upvalue) in self.upvalues.iter().enumerate() {
+            if upvalue.index == index && upvalue.is_local == is_local {
+                return i as u8;
+            }
+        }
+        
+        let upvalue = Upvalue {
+            name: name.to_string(),
+            index,
+            is_local,
+        };
+        self.upvalues.push(upvalue);
+        (self.upvalues.len() - 1) as u8
+    }
+
+    /// 递归解析 upvalue
+    /// 返回 Some(idx) 如果是 upvalue，None 如果未找到
+    fn resolve_upvalue(&mut self, name: &str) -> Option<u8> {
+        // 没有外层编译器，无法解析
+        if self.enclosing.is_null() {
+            return None;
+        }
+
+        unsafe {
+            // 1. 在外层编译器查找局部变量
+            if let Some(local_idx) = (*self.enclosing).resolve_local(name) {
+                // 找到了！标记为被捕获
+                (*self.enclosing).mark_captured(local_idx as usize);
+                // 添加 upvalue 描述（指向外层局部变量）
+                return Some(self.add_upvalue(name, local_idx, true));
+            }
+
+            // 2. 递归在外层查找 upvalue
+            if let Some(upvalue_idx) = (*self.enclosing).resolve_upvalue(name) {
+                // 继承外层的 upvalue
+                return Some(self.add_upvalue(name, upvalue_idx, false));
+            }
+        }
+
+        None
+    }
+
+    /// 统一变量解析：Local 或 Upvalue
+    fn resolve_variable(&mut self, name: &str) -> Option<Variable> {
+        // 1. 先查找局部变量
+        if let Some(idx) = self.resolve_local(name) {
+            return Some(Variable::Local(idx));
+        }
+        
+        // 2. 查找 upvalue（需要可变引用，因为可能添加 upvalue 描述）
+        if let Some(idx) = self.resolve_upvalue(name) {
+            return Some(Variable::Upvalue(idx));
+        }
+        
         None
     }
 
@@ -419,6 +523,16 @@ impl Compiler {
             7 => self.chunk.write_op(OpCode::StoreLocal7, 0),
             _ => self.chunk.write_op_u8(OpCode::StoreLocal, idx, 0),
         }
+    }
+
+    /// 发射 upvalue 加载指令
+    fn emit_load_upvalue(&mut self, idx: u8) {
+        self.chunk.write_op_u8(OpCode::GetUpvalue, idx, 0);
+    }
+
+    /// 发射 upvalue 存储指令
+    fn emit_store_upvalue(&mut self, idx: u8) {
+        self.chunk.write_op_u8(OpCode::SetUpvalue, idx, 0);
     }
 
     // ==================== 控制流编译 ====================
@@ -583,8 +697,8 @@ impl Compiler {
 
     /// 编译 lambda 表达式
     fn compile_lambda(&mut self, lambda: &Lambda) -> Result<(), CompileError> {
-        // 创建新的编译器实例来编译函数体
-        let mut function_compiler = Compiler::new();
+        // 创建子编译器，传递 self 作为 enclosing（用于解析 upvalue）
+        let mut function_compiler = Compiler::new_child(self);
 
         // 为每个参数添加局部变量
         for param in &lambda.params {
@@ -599,6 +713,9 @@ impl Compiler {
         function_compiler.chunk.write_op(OpCode::LoadNull, 0);
         function_compiler.chunk.write_op(OpCode::Return, 0);
 
+        // 获取 upvalue 信息
+        let upvalues = std::mem::take(&mut function_compiler.upvalues);
+
         // 创建函数对象
         let function = Box::new(ObjFunction::new(
             function_compiler.chunk,
@@ -611,12 +728,20 @@ impl Compiler {
         let function_value = Value::function(function_ptr);
         let idx = self.chunk.add_constant(function_value);
 
-        // 发射 Closure 指令：函数索引 + upvalue数量（目前为0）
+        // 发射 Closure 指令：函数索引 + upvalue数量 + upvalue描述符
         self.chunk.write_op(OpCode::Closure, 0);
         self.chunk.code.push(idx as u8);
         self.chunk.lines.push(0);
-        self.chunk.code.push(0u8); // upvalue_count = 0（暂时不支持闭包捕获）
+        self.chunk.code.push(upvalues.len() as u8);
         self.chunk.lines.push(0);
+        
+        // 输出 upvalue 描述符
+        for upvalue in &upvalues {
+            self.chunk.code.push(if upvalue.is_local { 1 } else { 0 });
+            self.chunk.lines.push(0);
+            self.chunk.code.push(upvalue.index);
+            self.chunk.lines.push(0);
+        }
 
         Ok(())
     }
@@ -861,21 +986,53 @@ mod tests {
         assert_eq!(result.as_smi(), Some(7));
     }
 
-    // TODO: 嵌套 lambda 测试需要先实现函数调用支持
-    // #[test]
-    // fn test_compile_nested_lambda() {
-    //     // 测试嵌套 lambda（不捕获变量）
-    //     let (chunk, _) =
-    //         compile_code("var outer = |x| { var inner = |y| { return y; }; return inner(x); };")
-    //             .unwrap();
-    //     assert!(chunk.code.len() > 0);
-    // }
+    #[test]
+    fn test_closure_capture() {
+        // 测试基础闭包捕获
+        let result = run_code("var x = 5; var f = || { return x; }; return f();").unwrap();
+        assert_eq!(result.as_smi(), Some(5));
+    }
 
-    // TODO: 目前语法不支持递归
+    #[test]
+    fn test_closure_capture_modify() {
+        // 测试闭包捕获并修改外部变量
+        // 第一次调用: y=10, y=11, 返回 11
+        // 第二次调用: y=11, y=12, 返回 12
+        // r1 + r2 = 11 + 12 = 23
+        let result = run_code("
+            var y = 10;
+            var g = || { y = y + 1; return y; };
+            var r1 = g();
+            var r2 = g();
+            return r1 + r2;
+        ").unwrap();
+        assert_eq!(result.as_smi(), Some(23));
+    }
+
+    #[test]
+    fn test_closure_multi_capture() {
+        // 测试多变量捕获
+        let result = run_code("
+            var a = 1;
+            var b = 2;
+            var h = || { return a + b; };
+            return h();
+        ").unwrap();
+        assert_eq!(result.as_smi(), Some(3));
+    }
+
+    // TODO: 嵌套闭包测试
     // #[test]
-    // fn test_compile_recursive_lambda() {
-    //     // 测试递归 lambda
-    //     let (chunk, _) = compile_code("var factorial = |n| { if (n <= 1) { return 1; } return n * factorial(n - 1); };").unwrap();
-    //     assert!(chunk.code.len() > 0);
+    // fn test_nested_closure() {
+    //     let result = run_code("
+    //         var outer = 100;
+    //         var f1 = || {
+    //             var inner = 10;
+    //             var f2 = || { return outer + inner; };
+    //             return f2();
+    //         };
+    //         return f1();
+    //     ").unwrap();
+    //     assert_eq!(result.as_smi(), Some(110));
     // }
 }
