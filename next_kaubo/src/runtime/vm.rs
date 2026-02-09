@@ -2,7 +2,7 @@
 
 use crate::runtime::Value;
 use crate::runtime::bytecode::{OpCode, chunk::Chunk};
-use crate::runtime::object::{ObjClosure, ObjFunction, ObjIterator, ObjList, ObjUpvalue};
+use crate::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjList, ObjUpvalue, CoroutineState};
 use std::ptr::NonNull;
 
 /// 解释执行结果
@@ -13,24 +13,7 @@ pub enum InterpretResult {
     RuntimeError(String),
 }
 
-/// 调用栈帧
-pub struct CallFrame {
-    /// 当前执行的闭包（如果是普通函数调用，也包装为闭包）
-    closure: *mut ObjClosure,
-    /// 指令指针在该帧中的偏移
-    ip: *const u8,
-    /// 该帧的局部变量数组
-    locals: Vec<Value>,
-    /// 该帧在值栈中的起始位置（用于计算局部变量地址）
-    stack_base: usize,
-}
-
-impl CallFrame {
-    /// 获取当前 chunk
-    fn chunk(&self) -> &Chunk {
-        unsafe { &(*(*self.closure).function).chunk }
-    }
-}
+// CallFrame 已从 object.rs 导入
 
 /// 虚拟机
 pub struct VM {
@@ -497,6 +480,164 @@ impl VM {
                     // 非空则继续循环
                 }
 
+                // ===== 协程 =====
+                CreateCoroutine => {
+                    // 从栈顶弹出闭包，创建协程对象
+                    let closure_val = self.pop();
+                    if let Some(closure_ptr) = closure_val.as_closure() {
+                        let coroutine = Box::new(ObjCoroutine::new(closure_ptr));
+                        self.push(Value::coroutine(Box::into_raw(coroutine)));
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "Coroutine must be created from a closure".to_string(),
+                        );
+                    }
+                }
+
+                Resume => {
+                    // 操作数：传入值个数
+                    let arg_count = self.read_byte();
+                    
+                    // 从栈顶弹出协程对象
+                    let coro_val = self.pop();
+                    if let Some(coro_ptr) = coro_val.as_coroutine() {
+                        let coro = unsafe { &mut *coro_ptr };
+                        
+                        // 检查协程状态
+                        if coro.state == CoroutineState::Dead {
+                            return InterpretResult::RuntimeError(
+                                "Cannot resume dead coroutine".to_string(),
+                            );
+                        }
+                        
+                        // 收集传入的参数
+                        let mut args = Vec::with_capacity(arg_count as usize);
+                        for _ in 0..arg_count {
+                            args.push(self.pop());
+                        }
+                        args.reverse();
+                        
+                        // 如果协程是第一次运行，需要初始化调用帧
+                        if coro.state == CoroutineState::Suspended && coro.frames.is_empty() {
+                            let closure = coro.entry_closure;
+                            let func = unsafe { &*(*closure).function };
+                            
+                            if func.arity != arg_count {
+                                return InterpretResult::RuntimeError(format!(
+                                    "Expected {} arguments but got {}",
+                                    func.arity, arg_count
+                                ));
+                            }
+                            
+                            // 创建初始调用帧
+                            coro.frames.push(CallFrame {
+                                closure,
+                                ip: func.chunk.code.as_ptr(),
+                                locals: args,
+                                stack_base: 0,
+                            });
+                        }
+                        
+                        // 切换到协程上下文执行（简化版：直接在当前 VM 中运行）
+                        coro.state = CoroutineState::Running;
+                        
+                        // 保存当前 VM 状态
+                        let saved_stack = std::mem::take(&mut self.stack);
+                        let saved_frames = std::mem::take(&mut self.frames);
+                        let saved_upvalues = std::mem::take(&mut self.open_upvalues);
+                        
+                        // 加载协程状态
+                        self.stack = std::mem::take(&mut coro.stack);
+                        self.frames = std::mem::take(&mut coro.frames);
+                        self.open_upvalues = std::mem::take(&mut coro.open_upvalues);
+                        
+                        // 执行协程
+                        let result = self.run();
+                        
+                        // 保存协程状态
+                        coro.stack = std::mem::take(&mut self.stack);
+                        coro.frames = std::mem::take(&mut self.frames);
+                        coro.open_upvalues = std::mem::take(&mut self.open_upvalues);
+                        
+                        // 根据执行结果处理
+                        match result {
+                            InterpretResult::Ok => {
+                                coro.state = CoroutineState::Dead;
+                                // 协程正常结束，获取返回值
+                                let return_val = coro.stack.last().copied().unwrap_or(Value::NULL);
+                                // 恢复主 VM 状态
+                                self.stack = saved_stack;
+                                self.frames = saved_frames;
+                                self.open_upvalues = saved_upvalues;
+                                // 将返回值压入主栈
+                                self.push(return_val);
+                            }
+                            InterpretResult::RuntimeError(msg) => {
+                                if msg == "yield" {
+                                    // 协程通过 yield 挂起
+                                    coro.state = CoroutineState::Suspended;
+                                    // 获取 yield 值（在协程栈顶）
+                                    let yield_val = coro.stack.last().copied().unwrap_or(Value::NULL);
+                                    // 恢复主 VM 状态
+                                    self.stack = saved_stack;
+                                    self.frames = saved_frames;
+                                    self.open_upvalues = saved_upvalues;
+                                    // 将 yield 值压入主栈
+                                    self.push(yield_val);
+                                } else {
+                                    coro.state = CoroutineState::Dead;
+                                    // 恢复主 VM 状态再返回错误
+                                    self.stack = saved_stack;
+                                    self.frames = saved_frames;
+                                    self.open_upvalues = saved_upvalues;
+                                    return InterpretResult::RuntimeError(msg);
+                                }
+                            }
+                            InterpretResult::CompileError(msg) => {
+                                coro.state = CoroutineState::Dead;
+                                // 恢复主 VM 状态再返回错误
+                                self.stack = saved_stack;
+                                self.frames = saved_frames;
+                                self.open_upvalues = saved_upvalues;
+                                return InterpretResult::CompileError(msg);
+                            }
+                        }
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "Can only resume coroutines".to_string(),
+                        );
+                    }
+                }
+
+                Yield => {
+                    // 从栈顶弹出要返回的值
+                    let value = self.pop();
+                    
+                    // 保存返回值到当前栈
+                    self.push(value);
+                    
+                    // 返回特殊错误表示 yield（简化实现）
+                    return InterpretResult::RuntimeError("yield".to_string());
+                }
+
+                CoroutineStatus => {
+                    // 从栈顶弹出协程对象
+                    let coro_val = self.pop();
+                    if let Some(coro_ptr) = coro_val.as_coroutine() {
+                        let coro = unsafe { &*coro_ptr };
+                        let status = match coro.state {
+                            CoroutineState::Suspended => 0i64,
+                            CoroutineState::Running => 1i64,
+                            CoroutineState::Dead => 2i64,
+                        };
+                        self.push(Value::smi(status as i32));
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "Expected a coroutine".to_string(),
+                        );
+                    }
+                }
+
                 // ===== 列表 =====
                 BuildList => {
                     let count = self.read_byte() as usize;
@@ -544,29 +685,109 @@ impl VM {
                 }
 
                 GetIter => {
-                    // 从列表获取迭代器
-                    let list_val = self.pop();
+                    // 获取迭代器：支持列表和协程
+                    let val = self.pop();
 
-                    if let Some(list_ptr) = list_val.as_list() {
+                    if let Some(list_ptr) = val.as_list() {
+                        // 列表 -> 列表迭代器
                         let iter = Box::new(ObjIterator::from_list(list_ptr));
+                        let iter_ptr = Box::into_raw(iter);
+                        self.push(Value::iterator(iter_ptr));
+                    } else if let Some(coro_ptr) = val.as_coroutine() {
+                        // 协程 -> 协程迭代器
+                        let iter = Box::new(ObjIterator::from_coroutine(coro_ptr));
                         let iter_ptr = Box::into_raw(iter);
                         self.push(Value::iterator(iter_ptr));
                     } else {
                         return InterpretResult::RuntimeError(
-                            "Can only iterate over lists".to_string(),
+                            "Can only iterate over lists or coroutines".to_string(),
                         );
                     }
                 }
 
                 IterNext => {
-                    // 获取迭代器下一个值，null 表示结束
+                    // 获取迭代器下一个值
                     let iter_val = self.pop();
 
                     if let Some(iter_ptr) = iter_val.as_iterator() {
                         let iter = unsafe { &mut *iter_ptr };
-                        match iter.next() {
-                            Some(value) => self.push(value),
-                            None => self.push(Value::NULL),
+                        
+                        // 检查是否是协程迭代器
+                        if let Some(coro_ptr) = iter.as_coroutine() {
+                            // 协程迭代器：resume 协程获取下一个值
+                            let coro = unsafe { &mut *coro_ptr };
+                            
+                            if coro.state == CoroutineState::Dead {
+                                self.push(Value::NULL);
+                            } else {
+                                // 如果是第一次运行，初始化调用帧
+                                if coro.state == CoroutineState::Suspended && coro.frames.is_empty() {
+                                    let closure = coro.entry_closure;
+                                    let func = unsafe { &*(*closure).function };
+                                    // 创建初始调用帧（无参数）
+                                    coro.frames.push(CallFrame {
+                                        closure,
+                                        ip: func.chunk.code.as_ptr(),
+                                        locals: Vec::new(),
+                                        stack_base: 0,
+                                    });
+                                }
+                                
+                                // 执行 resume
+                                coro.state = CoroutineState::Running;
+                                
+                                // 保存当前 VM 状态
+                                let saved_stack = std::mem::take(&mut self.stack);
+                                let saved_frames = std::mem::take(&mut self.frames);
+                                let saved_upvalues = std::mem::take(&mut self.open_upvalues);
+                                
+                                // 加载协程状态
+                                self.stack = std::mem::take(&mut coro.stack);
+                                self.frames = std::mem::take(&mut coro.frames);
+                                self.open_upvalues = std::mem::take(&mut coro.open_upvalues);
+                                
+                                // 执行协程（无参数 resume）
+                                let result = self.run();
+                                
+                                // 保存协程状态
+                                coro.stack = std::mem::take(&mut self.stack);
+                                coro.frames = std::mem::take(&mut self.frames);
+                                coro.open_upvalues = std::mem::take(&mut coro.open_upvalues);
+                                
+                                // 恢复主 VM 状态
+                                self.stack = saved_stack;
+                                self.frames = saved_frames;
+                                self.open_upvalues = saved_upvalues;
+                                
+                                // 处理结果
+                                match result {
+                                    InterpretResult::Ok => {
+                                        coro.state = CoroutineState::Dead;
+                                        let return_val = coro.stack.last().copied().unwrap_or(Value::NULL);
+                                        self.push(return_val);
+                                    }
+                                    InterpretResult::RuntimeError(msg) => {
+                                        if msg == "yield" {
+                                            coro.state = CoroutineState::Suspended;
+                                            let yield_val = coro.stack.last().copied().unwrap_or(Value::NULL);
+                                            self.push(yield_val);
+                                        } else {
+                                            coro.state = CoroutineState::Dead;
+                                            return InterpretResult::RuntimeError(msg);
+                                        }
+                                    }
+                                    InterpretResult::CompileError(msg) => {
+                                        coro.state = CoroutineState::Dead;
+                                        return InterpretResult::CompileError(msg);
+                                    }
+                                }
+                            }
+                        } else {
+                            // 普通迭代器
+                            match iter.next() {
+                                Some(value) => self.push(value),
+                                None => self.push(Value::NULL),
+                            }
                         }
                     } else {
                         return InterpretResult::RuntimeError("Expected iterator".to_string());

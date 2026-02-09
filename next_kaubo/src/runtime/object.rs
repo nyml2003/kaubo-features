@@ -144,70 +144,178 @@ impl Default for ObjList {
     }
 }
 
-/// 列表迭代器
+/// 迭代器源（支持多种可迭代类型）
 #[derive(Debug)]
-pub struct ListIterator {
-    /// 列表指针
-    list: *mut ObjList,
-    /// 当前索引
-    index: usize,
-    /// 是否结束
-    done: bool,
+pub enum IteratorSource {
+    /// 列表迭代器
+    List {
+        list: *mut ObjList,
+        index: usize,
+        done: bool,
+    },
+    /// 协程迭代器（通过 resume 获取值）
+    Coroutine {
+        coroutine: *mut ObjCoroutine,
+        done: bool,
+    },
 }
 
-impl ListIterator {
-    /// 创建新的列表迭代器
-    pub fn new(list: *mut ObjList) -> Self {
-        Self { list, index: 0, done: false }
-    }
-
-    /// 获取下一个元素，None 表示结束
-    pub fn next(&mut self) -> Option<Value> {
-        if self.done {
-            return None;
-        }
-        
-        unsafe {
-            let list = &*self.list;
-            if self.index < list.len() {
-                let value = list.get(self.index)?;
-                self.index += 1;
-                Some(value)
-            } else {
-                self.done = true;
-                None
-            }
-        }
-    }
-
-    /// 检查是否结束
-    pub fn is_done(&self) -> bool {
-        self.done
-    }
-}
-
-/// 迭代器对象（包装 Box<dyn Iterator>）
+/// 迭代器对象
 #[derive(Debug)]
 pub struct ObjIterator {
-    /// 迭代器具体实现
-    pub inner: ListIterator, // 目前只支持列表迭代器
+    /// 迭代器源
+    pub source: IteratorSource,
 }
 
 impl ObjIterator {
     /// 从列表创建迭代器
     pub fn from_list(list: *mut ObjList) -> Self {
         Self {
-            inner: ListIterator::new(list),
+            source: IteratorSource::List {
+                list,
+                index: 0,
+                done: false,
+            },
+        }
+    }
+
+    /// 从协程创建迭代器
+    pub fn from_coroutine(coroutine: *mut ObjCoroutine) -> Self {
+        Self {
+            source: IteratorSource::Coroutine {
+                coroutine,
+                done: false,
+            },
         }
     }
 
     /// 获取下一个元素
+    /// 对于列表：返回元素或 None
+    /// 对于协程：resume 协程，返回 yield 值；协程死亡时返回 None
     pub fn next(&mut self) -> Option<Value> {
-        self.inner.next()
+        match &mut self.source {
+            IteratorSource::List { list, index, done } => {
+                if *done {
+                    return None;
+                }
+                unsafe {
+                    let list_ref = &**list;
+                    if *index < list_ref.len() {
+                        let value = list_ref.get(*index)?;
+                        *index += 1;
+                        Some(value)
+                    } else {
+                        *done = true;
+                        None
+                    }
+                }
+            }
+            IteratorSource::Coroutine { coroutine, done } => {
+                if *done {
+                    return None;
+                }
+                unsafe {
+                    let coro = &mut **coroutine;
+                    if coro.state == CoroutineState::Dead {
+                        *done = true;
+                        return None;
+                    }
+                    // 协程迭代器暂不直接处理 resume
+                    // 实际 resume 由 VM 特殊处理
+                    // 这里返回一个标记值表示需要 resume
+                    Some(Value::coroutine(*coroutine))
+                }
+            }
+        }
     }
 
     /// 检查是否结束
     pub fn is_done(&self) -> bool {
-        self.inner.is_done()
+        match &self.source {
+            IteratorSource::List { done, .. } => *done,
+            IteratorSource::Coroutine { done, .. } => *done,
+        }
+    }
+
+    /// 获取协程指针（如果是协程迭代器）
+    pub fn as_coroutine(&self) -> Option<*mut ObjCoroutine> {
+        match &self.source {
+            IteratorSource::Coroutine { coroutine, .. } => Some(*coroutine),
+            _ => None,
+        }
     }
 }
+
+/// 调用帧（协程需要，所以定义在这里）
+#[derive(Debug)]
+pub struct CallFrame {
+    /// 当前执行的闭包
+    pub closure: *mut ObjClosure,
+    /// 指令指针在该帧中的偏移
+    pub ip: *const u8,
+    /// 该帧的局部变量数组
+    pub locals: Vec<Value>,
+    /// 该帧在值栈中的起始位置
+    pub stack_base: usize,
+}
+
+impl CallFrame {
+    /// 获取当前 chunk
+    pub fn chunk(&self) -> &Chunk {
+        unsafe { &(*(*self.closure).function).chunk }
+    }
+}
+
+/// 协程状态
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CoroutineState {
+    /// 已挂起，可以恢复执行
+    Suspended,
+    /// 正在运行
+    Running,
+    /// 已死亡（执行完毕）
+    Dead,
+}
+
+/// 协程对象 - 包含独立的执行上下文
+#[derive(Debug)]
+pub struct ObjCoroutine {
+    /// 协程状态
+    pub state: CoroutineState,
+    /// 调用栈（独立的）
+    pub frames: Vec<CallFrame>,
+    /// 值栈（独立的）
+    pub stack: Vec<Value>,
+    /// 打开的 upvalues
+    pub open_upvalues: Vec<*mut ObjUpvalue>,
+    /// 入口闭包（用于初始化）
+    pub entry_closure: *mut ObjClosure,
+}
+
+impl ObjCoroutine {
+    /// 创建新的协程（初始状态为 Suspended）
+    pub fn new(entry_closure: *mut ObjClosure) -> Self {
+        Self {
+            state: CoroutineState::Suspended,
+            frames: Vec::with_capacity(64),
+            stack: Vec::with_capacity(256),
+            open_upvalues: Vec::new(),
+            entry_closure,
+        }
+    }
+
+    /// 检查协程是否可以恢复
+    pub fn is_resumable(&self) -> bool {
+        self.state == CoroutineState::Suspended
+    }
+
+    /// 检查协程是否已死亡
+    pub fn is_dead(&self) -> bool {
+        self.state == CoroutineState::Dead
+    }
+}
+
+/// 协程状态值（用于在 Kaubo 代码中表示协程状态）
+pub const COROUTINE_STATE_SUSPENDED: i64 = 0;
+pub const COROUTINE_STATE_RUNNING: i64 = 1;
+pub const COROUTINE_STATE_DEAD: i64 = 2;

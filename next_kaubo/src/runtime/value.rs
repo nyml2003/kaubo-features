@@ -4,7 +4,7 @@
 //! 位布局: [1位符号][11位指数][7位Tag][45位Payload]
 //!          S         E(0x7FF)   Tag      Payload
 
-use super::object::{ObjClosure, ObjFunction, ObjIterator, ObjList, ObjString};
+use super::object::{ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjList, ObjString};
 
 /// NaN-boxed 值 (64-bit)
 #[repr(transparent)]
@@ -18,7 +18,7 @@ pub struct Value(u64);
 const QNAN: u64 = 0x7FF8_0000_0000_0000;
 
 /// 用于检测是否为我们的 boxing 值的掩码 (检查指数位)
-const EXP_MASK: u64 = 0x7FF0_0000_0000_0000;  // bits 62-52
+const EXP_MASK: u64 = 0x7FF0_0000_0000_0000; // bits 62-52
 
 /// Tag 掩码: bits 50-44 (7位)
 /// 注意: bit 51 是 QNAN 标志位，所以我们用 bits 50-44 存储 Tag
@@ -30,27 +30,28 @@ const PAYLOAD_MASK: u64 = 0xFFFFFFFFFFF;
 // ==================== Tag 定义 ====================
 // bits 50-44 (7位) = Tag
 // 0-7: 特殊值
-const TAG_NAN: u64 = 0 << 44;       // 0: 语言级 NaN
-const TAG_NULL: u64 = 1 << 44;      // 1: null
-const TAG_TRUE: u64 = 2 << 44;      // 2: true
-const TAG_FALSE: u64 = 3 << 44;     // 3: false
-const TAG_SMI: u64 = 4 << 44;       // 4: 小整数 (SMI，31位有符号)
+const TAG_NAN: u64 = 0 << 44; // 0: 语言级 NaN
+const TAG_NULL: u64 = 1 << 44; // 1: null
+const TAG_TRUE: u64 = 2 << 44; // 2: true
+const TAG_FALSE: u64 = 3 << 44; // 3: false
+const TAG_SMI: u64 = 4 << 44; // 4: 小整数 (SMI，31位有符号)
 // 5-7: 预留
 
 // 8-23: 内联整数 (-8 ~ +7)
-const TAG_INLINE_INT_START: u64 = 8 << 44;   // 对应 -8
-const TAG_INLINE_INT_END: u64 = 23 << 44;    // 对应 +7
+const TAG_INLINE_INT_START: u64 = 8 << 44; // 对应 -8
+const TAG_INLINE_INT_END: u64 = 23 << 44; // 对应 +7
 
 // 24-31: 预留内联值
 
 // 32+: 堆类型
-const TAG_HEAP_OBJECT: u64 = 32 << 44;   // 通用堆对象
-const TAG_STRING: u64 = 33 << 44;        // 字符串对象
-const TAG_FUNCTION: u64 = 34 << 44;      // 函数对象
-const TAG_LIST: u64 = 35 << 44;          // 列表对象
-const TAG_ITERATOR: u64 = 36 << 44;      // 迭代器对象
-const TAG_CLOSURE: u64 = 37 << 44;       // 闭包对象
-// 38-127: 预留其他堆类型
+const TAG_HEAP_OBJECT: u64 = 32 << 44; // 通用堆对象
+const TAG_STRING: u64 = 33 << 44; // 字符串对象
+const TAG_FUNCTION: u64 = 34 << 44; // 函数对象
+const TAG_LIST: u64 = 35 << 44; // 列表对象
+const TAG_ITERATOR: u64 = 36 << 44; // 迭代器对象
+const TAG_CLOSURE: u64 = 37 << 44; // 闭包对象
+const TAG_COROUTINE: u64 = 38 << 44; // 协程对象
+// 39-127: 预留其他堆类型
 
 /// SMI 最大值 (2^30 - 1)
 const SMI_MAX: i32 = (1 << 30) - 1;
@@ -64,10 +65,7 @@ impl Value {
     /// 范围: -2^30 ~ 2^30-1 (约 ±10亿)
     #[inline]
     pub fn smi(n: i32) -> Self {
-        debug_assert!(
-            n >= SMI_MIN && n <= SMI_MAX,
-            "SMI out of range: {}", n
-        );
+        debug_assert!(n >= SMI_MIN && n <= SMI_MAX, "SMI out of range: {}", n);
         // 保留低 31 位 (30 位数值 + 符号)
         let payload = (n as u64) & ((1 << 31) - 1);
         Self(QNAN | TAG_SMI | payload)
@@ -149,6 +147,12 @@ impl Value {
     #[inline]
     pub fn closure(ptr: *mut ObjClosure) -> Self {
         Self::encode_heap_ptr(ptr, TAG_CLOSURE)
+    }
+
+    /// 创建协程对象
+    #[inline]
+    pub fn coroutine(ptr: *mut ObjCoroutine) -> Self {
+        Self::encode_heap_ptr(ptr, TAG_COROUTINE)
     }
 
     // ==================== 类型判断 ====================
@@ -262,6 +266,12 @@ impl Value {
         self.is_boxed() && self.raw_tag() == 37
     }
 
+    /// 是否为协程对象
+    #[inline]
+    pub fn is_coroutine(&self) -> bool {
+        self.is_boxed() && self.raw_tag() == 38
+    }
+
     // ==================== 解包方法 ====================
 
     /// 解包为 SMI (i32)
@@ -355,6 +365,12 @@ impl Value {
         self.decode_heap_ptr(TAG_CLOSURE)
     }
 
+    /// 解包为协程对象
+    #[inline]
+    pub fn as_coroutine(&self) -> Option<*mut ObjCoroutine> {
+        self.decode_heap_ptr(TAG_COROUTINE)
+    }
+
     /// 解包为布尔值
     #[inline]
     pub fn as_bool(&self) -> Option<bool> {
@@ -402,6 +418,8 @@ impl std::fmt::Debug for Value {
             write!(f, "Closure")
         } else if self.is_heap() {
             write!(f, "Object({:p})", self.as_object::<()>().unwrap())
+        } else if self.is_coroutine() {
+            write!(f, "Coroutine")
         } else {
             write!(f, "Value({:016x})", self.0)
         }
@@ -450,6 +468,8 @@ impl std::fmt::Display for Value {
             write!(f, "<iterator>")
         } else if self.is_closure() {
             write!(f, "<closure>")
+        } else if self.is_coroutine() {
+            write!(f, "<coroutine>")
         } else if self.is_heap() {
             write!(f, "<object>")
         } else {

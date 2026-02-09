@@ -2,7 +2,7 @@ use super::super::lexer::token_kind::KauboTokenKind;
 use super::error::{ParseResult, ParserError};
 use super::expr::{
     Binary, Expr, ExprKind, FunctionCall, Grouping, Lambda, LiteralFalse, LiteralInt,
-    LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, Unary, VarRef,
+    LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, Unary, VarRef, YieldExpr,
 };
 use super::module::{Module, ModuleKind};
 use super::stmt::{
@@ -176,6 +176,21 @@ impl Parser {
 
             let operand = self.parse_unary()?;
             Ok(Box::new(ExprKind::Unary(Unary { op, operand })))
+        } else if self.check(KauboTokenKind::Yield) {
+            // 解析 yield 表达式
+            self.consume(); // 消耗 yield
+            
+            // yield 可以有值也可以没有值
+            let value = if self.check(KauboTokenKind::Semicolon) 
+                || self.check(KauboTokenKind::RightCurlyBrace) {
+                // yield; 或 yield } - 无值
+                None
+            } else {
+                // yield expr;
+                Some(self.parse_expression(0)?)
+            };
+            
+            Ok(Box::new(ExprKind::Yield(YieldExpr { value })))
         } else {
             self.parse_primary()
         }

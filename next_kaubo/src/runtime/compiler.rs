@@ -259,6 +259,17 @@ impl Compiler {
             ExprKind::MemberAccess(_) => {
                 return Err(CompileError::Unimplemented("Member access".to_string()));
             }
+
+            ExprKind::Yield(y) => {
+                // 编译 yield 表达式
+                if let Some(value) = &y.value {
+                    self.compile_expr(value)?;
+                } else {
+                    // yield; 等价于 yield null;
+                    self.chunk.write_op(OpCode::LoadNull, 0);
+                }
+                self.chunk.write_op(OpCode::Yield, 0);
+            }
         }
         Ok(())
     }
@@ -748,6 +759,54 @@ impl Compiler {
 
     /// 编译函数调用
     fn compile_function_call(&mut self, call: &FunctionCall) -> Result<(), CompileError> {
+        // 检查是否是内置协程函数
+        if let ExprKind::VarRef(var_ref) = call.function_expr.as_ref() {
+            match var_ref.name.as_str() {
+                "create_coroutine" => {
+                    // 编译参数（应该是一个闭包）
+                    if call.arguments.len() != 1 {
+                        return Err(CompileError::Unimplemented(
+                            "create_coroutine expects exactly 1 argument".to_string()
+                        ));
+                    }
+                    self.compile_expr(&call.arguments[0])?;
+                    // 发射 CreateCoroutine 指令
+                    self.chunk.write_op(OpCode::CreateCoroutine, 0);
+                    return Ok(());
+                }
+                "resume" => {
+                    // resume(co, value...)
+                    if call.arguments.is_empty() {
+                        return Err(CompileError::Unimplemented(
+                            "resume expects at least 1 argument".to_string()
+                        ));
+                    }
+                    // 编译参数（第一个是协程，后面是传入值）
+                    for arg in &call.arguments {
+                        self.compile_expr(arg)?;
+                    }
+                    // 发射 Resume 指令
+                    let arg_count = (call.arguments.len() - 1) as u8;
+                    self.chunk.write_op_u8(OpCode::Resume, arg_count, 0);
+                    return Ok(());
+                }
+                "coroutine_status" => {
+                    // coroutine_status(co)
+                    if call.arguments.len() != 1 {
+                        return Err(CompileError::Unimplemented(
+                            "coroutine_status expects exactly 1 argument".to_string()
+                        ));
+                    }
+                    self.compile_expr(&call.arguments[0])?;
+                    // 发射 CoroutineStatus 指令
+                    self.chunk.write_op(OpCode::CoroutineStatus, 0);
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+        
+        // 普通函数调用
         // 先编译参数（参数从左到右压栈）
         for arg in call.arguments.iter() {
             self.compile_expr(arg)?;

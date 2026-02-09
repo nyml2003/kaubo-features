@@ -181,10 +181,17 @@ impl Chunk {
             | OpCode::Call
             | OpCode::GetUpvalue
             | OpCode::SetUpvalue
-            | OpCode::BuildList => {
+            | OpCode::BuildList
+            | OpCode::Resume
+            | OpCode::CoroutineStatus => {
                 let operand = self.code[offset + 1];
                 println!("{} {}", opcode.name(), operand);
                 offset + 2
+            }
+            
+            OpCode::CreateCoroutine | OpCode::Yield => {
+                println!("{}", opcode.name());
+                offset + 1
             }
 
             // i16 操作数 (跳转)

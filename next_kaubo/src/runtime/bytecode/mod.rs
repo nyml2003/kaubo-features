@@ -96,6 +96,12 @@ pub enum OpCode {
     Return,
     ReturnValue,
 
+    // ===== 协程 (0x98-0x9F) =====
+    CreateCoroutine = 0x98, // 创建协程 (操作数: 函数常量索引)
+    Resume = 0x99,          // 恢复协程执行 (操作数: 传入值个数)
+    Yield = 0x9A,           // 挂起协程并返回值
+    CoroutineStatus = 0x9B, // 获取协程状态 (0=Suspended, 1=Running, 2=Dead)
+
     // ===== 列表 (0xB0-0xBF) =====
     BuildList = 0xB0,     // + u8 元素个数
     IndexGet,             // 列表索引读取
@@ -180,6 +186,10 @@ impl OpCode {
             OpCode::CloseUpvalues => "CLOSE_UPVALUES",
             OpCode::Return => "RETURN",
             OpCode::ReturnValue => "RETURN_VALUE",
+            OpCode::CreateCoroutine => "CREATE_COROUTINE",
+            OpCode::Resume => "RESUME",
+            OpCode::Yield => "YIELD",
+            OpCode::CoroutineStatus => "COROUTINE_STATUS",
             OpCode::BuildList => "BUILD_LIST",
             OpCode::IndexGet => "INDEX_GET",
             OpCode::GetIter => "GET_ITER",
@@ -250,6 +260,7 @@ impl OpCode {
             | OpCode::IndexGet
             | OpCode::GetIter
             | OpCode::IterNext
+            | OpCode::Yield
             | OpCode::Print
             | OpCode::Invalid => 0,
 
@@ -265,6 +276,9 @@ impl OpCode {
             | OpCode::GetUpvalue
             | OpCode::SetUpvalue
             | OpCode::CloseUpvalues
+            | OpCode::CreateCoroutine
+            | OpCode::Resume
+            | OpCode::CoroutineStatus
             | OpCode::BuildList => 1,
 
             // u16/i16 操作数

@@ -34,6 +34,8 @@ pub enum ExprKind {
     Lambda(Lambda),
     // 成员访问表达式
     MemberAccess(MemberAccess),
+    // Yield 表达式 (用于协程)
+    Yield(YieldExpr),
 }
 
 // 整数字面量结构体
@@ -114,6 +116,12 @@ pub struct MemberAccess {
     pub member: String,
 }
 
+// Yield 表达式结构体
+#[derive(Debug, Clone, PartialEq)]
+pub struct YieldExpr {
+    pub value: Option<Expr>,  // yield 的值，None 表示 yield;
+}
+
 // 实现Display trait（可选，用于调试输出）
 impl fmt::Display for ExprKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -150,6 +158,10 @@ impl fmt::Display for ExprKind {
                 write!(f, "({}) => {:?}", params, l.body)
             }
             ExprKind::MemberAccess(m) => write!(f, "{}.{}", m.object, m.member),
+            ExprKind::Yield(y) => match &y.value {
+                Some(v) => write!(f, "yield {}", v),
+                None => write!(f, "yield"),
+            },
         }
     }
 }

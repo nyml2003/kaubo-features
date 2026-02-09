@@ -554,12 +554,64 @@ assert(factorial(5) == 120);  // ✅ 通过
 
 **问题修复**: 修复了闭包 upvalue 内存安全 bug（详见 `docs/issues/closure-upvalue-bug.md`）
 
-### Phase 2.4：协程与迭代器 🚧 当前阶段
+### Phase 2.4：协程与迭代器 ✅ 已完成
 
-- [ ] 栈式协程（独立调用栈）
-- [ ] Yield/Resume 双向通信
-- [ ] 生成器函数（yield 语法）
-- [ ] 用户自定义迭代器
+**已完成**:
+- ✅ 协程核心架构
+  - `ObjCoroutine` / `CoroutineState` (Suspended/Running/Dead)
+  - 独立调用栈、值栈、upvalues
+  - Value 类型支持 (`Tag 38`)
+- ✅ 字节码指令集
+  - `CreateCoroutine` (0x98) - 从闭包创建协程
+  - `Resume` (0x99) - 恢复协程执行（支持传入值）
+  - `Yield` (0x9A) - 挂起并返回值
+  - `CoroutineStatus` (0x9B) - 获取状态 (0/1/2)
+- ✅ VM 协程切换
+  - 完整的上下文保存/恢复
+  - 协程状态机管理
+- ✅ `yield` 表达式（Parser + 编译器）
+  - 支持 `yield value;` 和 `yield;`
+- ✅ 内置协程函数
+  - `create_coroutine(fn)` - 创建协程
+  - `resume(co, ...args)` - 恢复协程
+  - `coroutine_status(co)` - 获取状态
+- ✅ 迭代器协议
+  - `IteratorSource` 枚举（List/Coroutine）
+  - `GetIter` / `IterNext` 指令支持协程
+  - for-in 循环迭代协程生成器
+
+**验收代码**:
+```kaubo
+// 基础协程
+var gen = || {
+    yield 1;
+    yield 2;
+    yield 3;
+    return 42;
+};
+var co = create_coroutine(gen);
+assert(resume(co) == 1);
+assert(resume(co) == 2);
+assert(resume(co) == 3);
+assert(resume(co) == 42);
+assert(coroutine_status(co) == 2);  // Dead
+
+// Fibonacci 生成器
+var fib = || {
+    var a = 0, b = 1;
+    while (true) {
+        yield a;
+        var t = a + b;
+        a = b;
+        b = t;
+    }
+};
+
+// for-in 迭代协程
+for var n in fib {
+    print n;  // 0, 1, 1, 2, 3, 5...
+}
+```
 
 ### Phase 2.5：Result 类型与错误处理 ⏳
 
@@ -604,5 +656,5 @@ assert(factorial(5) == 120);  // ✅ 通过
 ---
 
 *文档版本: 2.0*  
-*最后更新: 2026-02-09*  
-*状态: Phase 2.4 进行中*
+*最后更新: 2026-02-10*  
+*状态: Phase 2.5 进行中*
