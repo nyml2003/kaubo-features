@@ -2,7 +2,8 @@
 
 use crate::runtime::Value;
 use crate::runtime::bytecode::{OpCode, chunk::Chunk};
-use crate::runtime::object::{ObjFunction, ObjIterator, ObjList};
+use crate::runtime::object::{ObjClosure, ObjFunction, ObjIterator, ObjList, ObjUpvalue};
+use std::ptr::NonNull;
 
 /// 解释执行结果
 #[derive(Debug, Clone, PartialEq)]
@@ -14,12 +15,21 @@ pub enum InterpretResult {
 
 /// 调用栈帧
 pub struct CallFrame {
-    /// 当前执行的 Chunk
-    chunk: Chunk,
+    /// 当前执行的闭包（如果是普通函数调用，也包装为闭包）
+    closure: *mut ObjClosure,
     /// 指令指针在该帧中的偏移
     ip: *const u8,
     /// 该帧的局部变量数组
     locals: Vec<Value>,
+    /// 该帧在值栈中的起始位置（用于计算局部变量地址）
+    stack_base: usize,
+}
+
+impl CallFrame {
+    /// 获取当前 chunk
+    fn chunk(&self) -> &Chunk {
+        unsafe { &(*(*self.closure).function).chunk }
+    }
 }
 
 /// 虚拟机
@@ -28,6 +38,8 @@ pub struct VM {
     stack: Vec<Value>,
     /// 调用栈
     frames: Vec<CallFrame>,
+    /// 打开的 upvalues（按地址排序，方便二分查找）
+    open_upvalues: Vec<*mut ObjUpvalue>,
 }
 
 impl VM {
@@ -36,6 +48,7 @@ impl VM {
         Self {
             stack: Vec::with_capacity(256),
             frames: Vec::with_capacity(64),
+            open_upvalues: Vec::new(),
         }
     }
 
@@ -46,6 +59,12 @@ impl VM {
 
     /// 解释执行一个 Chunk，并预分配局部变量空间
     pub fn interpret_with_locals(&mut self, chunk: &Chunk, local_count: usize) -> InterpretResult {
+        // 创建函数对象
+        let function = Box::into_raw(Box::new(ObjFunction::new(chunk.clone(), 0, Some("<main>".to_string()))));
+        
+        // 创建闭包（虽然主函数没有 upvalues，但统一用闭包包装）
+        let closure = Box::into_raw(Box::new(ObjClosure::new(function)));
+        
         // 预分配局部变量空间（初始化为 null）
         let mut locals = Vec::with_capacity(local_count);
         for _ in 0..local_count {
@@ -54,9 +73,10 @@ impl VM {
 
         // 创建初始调用帧
         self.frames.push(CallFrame {
-            chunk: chunk.clone(),
+            closure,
             ip: chunk.code.as_ptr(),
             locals,
+            stack_base: 0,
         });
 
         // 执行主循环
@@ -64,6 +84,9 @@ impl VM {
 
         // 清理调用栈
         self.frames.pop();
+        
+        // 关闭所有 upvalues
+        self.close_upvalues(0);
 
         result
     }
@@ -312,10 +335,38 @@ impl VM {
                 Call => {
                     let arg_count = self.read_byte();
 
-                    // 栈布局：[arg0, arg1, ..., argN, func]
-                    // 先弹出函数对象（栈顶）
+                    // 栈布局：[arg0, arg1, ..., argN, closure]
+                    // 先弹出闭包对象（栈顶）
                     let callee = self.pop();
-                    if let Some(func_ptr) = callee.as_function() {
+                    if let Some(closure_ptr) = callee.as_closure() {
+                        let closure = unsafe { &*closure_ptr };
+                        let func = unsafe { &*closure.function };
+                        
+                        if func.arity != arg_count {
+                            return InterpretResult::RuntimeError(format!(
+                                "Expected {} arguments but got {}",
+                                func.arity, arg_count
+                            ));
+                        }
+
+                        // 收集参数（从栈顶）
+                        let mut locals = Vec::with_capacity(arg_count as usize);
+                        for _ in 0..arg_count {
+                            locals.push(self.pop());
+                        }
+                        locals.reverse();
+
+                        // 创建新的调用帧
+                        let stack_base = self.stack.len();
+                        let new_frame = CallFrame {
+                            closure: closure_ptr,
+                            ip: func.chunk.code.as_ptr(),
+                            locals,
+                            stack_base,
+                        };
+                        self.frames.push(new_frame);
+                    } else if let Some(func_ptr) = callee.as_function() {
+                        // 向后兼容：直接调用函数（无闭包）
                         let func = unsafe { &*func_ptr };
                         if func.arity != arg_count {
                             return InterpretResult::RuntimeError(format!(
@@ -324,20 +375,20 @@ impl VM {
                             ));
                         }
 
-                        // 收集参数（从栈顶，现在参数在栈顶）
-                        // pop 顺序：argN, argN-1, ..., arg0
                         let mut locals = Vec::with_capacity(arg_count as usize);
                         for _ in 0..arg_count {
                             locals.push(self.pop());
                         }
-                        // reverse 后：arg0, arg1, ..., argN
                         locals.reverse();
 
-                        // 创建新的调用帧
+                        // 包装为闭包
+                        let closure = Box::into_raw(Box::new(ObjClosure::new(func_ptr)));
+                        let stack_base = self.stack.len();
                         let new_frame = CallFrame {
-                            chunk: func.chunk.clone(),
+                            closure,
                             ip: func.chunk.code.as_ptr(),
                             locals,
+                            stack_base,
                         };
                         self.frames.push(new_frame);
                     } else {
@@ -351,9 +402,31 @@ impl VM {
                     // 从常量池加载函数对象
                     let const_idx = self.read_byte();
                     let constant = self.current_chunk().constants[const_idx as usize];
+                    let upvalue_count = self.read_byte();
 
-                    if constant.is_function() {
-                        self.push(constant);
+                    if let Some(func_ptr) = constant.as_function() {
+                        // 创建闭包对象
+                        let mut closure = Box::new(ObjClosure::new(func_ptr));
+                        
+                        // 捕获 upvalues
+                        for _ in 0..upvalue_count {
+                            let is_local = self.read_byte() != 0;
+                            let index = self.read_byte();
+                            
+                            if is_local {
+                                // 捕获当前帧的局部变量
+                                let location = self.current_local_ptr(index as usize);
+                                let upvalue = self.capture_upvalue(location);
+                                closure.add_upvalue(upvalue);
+                            } else {
+                                // 继承当前闭包的 upvalue
+                                let current_closure = self.current_closure();
+                                let upvalue = unsafe { (*current_closure).get_upvalue(index as usize).unwrap() };
+                                closure.add_upvalue(upvalue);
+                            }
+                        }
+                        
+                        self.push(Value::closure(Box::into_raw(closure)));
                     } else {
                         return InterpretResult::RuntimeError(
                             "Closure constant must be a function".to_string(),
@@ -361,16 +434,40 @@ impl VM {
                     }
                 }
 
+                GetUpvalue => {
+                    let idx = self.read_byte() as usize;
+                    let closure = self.current_closure();
+                    let upvalue = unsafe { (*closure).get_upvalue(idx).unwrap() };
+                    let value = unsafe { (*upvalue).get() };
+                    self.push(value);
+                }
+
+                SetUpvalue => {
+                    let idx = self.read_byte() as usize;
+                    let value = self.peek(0);
+                    let closure = self.current_closure();
+                    let upvalue = unsafe { (*closure).get_upvalue(idx).unwrap() };
+                    unsafe { (*upvalue).set(value); }
+                }
+
+                CloseUpvalues => {
+                    let slot = self.read_byte() as usize;
+                    self.close_upvalues(slot);
+                }
+
                 Return => {
-                    // 1. 弹出当前函数的调用帧
+                    // 1. 关闭当前帧的 upvalues
+                    self.close_upvalues(0);
+                    
+                    // 2. 弹出当前函数的调用帧
                     self.frames
                         .pop()
                         .expect("Runtime error: No call frame to pop");
 
-                    // 2. 压入 NULL 作为无返回值函数的返回值
+                    // 3. 压入 NULL 作为无返回值函数的返回值
                     self.push(Value::NULL);
 
-                    // 3. 只有当调用帧为空（主函数返回）时，才终止VM执行；否则继续执行上层帧
+                    // 4. 只有当调用帧为空（主函数返回）时，才终止VM执行；否则继续执行上层帧
                     if self.frames.is_empty() {
                         return InterpretResult::Ok;
                     }
@@ -379,18 +476,21 @@ impl VM {
 
                 // ===== 修复后的 RETURN_VALUE 指令 =====
                 ReturnValue => {
-                    // 1. 弹出当前函数的调用帧
+                    // 1. 关闭当前帧的 upvalues
+                    self.close_upvalues(0);
+                    
+                    // 2. 弹出当前函数的调用帧
                     self.frames
                         .pop()
                         .expect("Runtime error: No call frame to pop");
 
-                    // 2. 保存栈顶的返回值（函数执行结果）
+                    // 3. 保存栈顶的返回值（函数执行结果）
                     let return_value = self.pop();
 
-                    // 3. 将返回值压回栈顶，供上层帧使用（比如主函数的PRINT指令）
+                    // 4. 将返回值压回栈顶，供上层帧使用（比如主函数的PRINT指令）
                     self.push(return_value);
 
-                    // 4. 仅主函数返回时终止，否则继续执行上层帧
+                    // 5. 仅主函数返回时终止，否则继续执行上层帧
                     if self.frames.is_empty() {
                         return InterpretResult::Ok;
                     }
@@ -543,7 +643,63 @@ impl VM {
     /// 获取当前帧的 chunk
     #[inline]
     fn current_chunk(&self) -> &Chunk {
-        &self.frames.last().unwrap().chunk
+        self.frames.last().unwrap().chunk()
+    }
+
+    /// 获取当前闭包
+    #[inline]
+    fn current_closure(&self) -> *mut ObjClosure {
+        self.frames.last().unwrap().closure
+    }
+
+    /// 获取局部变量指针（用于 upvalue 捕获）
+    fn current_local_ptr(&mut self, idx: usize) -> *mut Value {
+        // 扩展 locals 以确保索引有效
+        let locals = self.current_locals_mut();
+        if idx >= locals.len() {
+            locals.resize(idx + 1, Value::NULL);
+        }
+        &mut locals[idx] as *mut Value
+    }
+
+    /// 捕获 upvalue（如果已存在则复用）
+    fn capture_upvalue(&mut self, location: *mut Value) -> *mut ObjUpvalue {
+        // 从后向前查找是否已有指向相同位置的 upvalue
+        for &upvalue in self.open_upvalues.iter().rev() {
+            unsafe {
+                if (*upvalue).location == location {
+                    return upvalue;
+                }
+            }
+        }
+        
+        // 创建新的 upvalue
+        let upvalue = Box::into_raw(Box::new(ObjUpvalue::new(location)));
+        self.open_upvalues.push(upvalue);
+        upvalue
+    }
+
+    /// 关闭从指定槽位开始的所有 upvalues
+    fn close_upvalues(&mut self, slot: usize) {
+        // 获取当前帧的 locals 起始地址
+        let frame_base = self.frames.last().map(|f| f.locals.as_ptr() as usize).unwrap_or(0);
+        let close_threshold = frame_base + slot * std::mem::size_of::<Value>();
+        
+        // 关闭所有地址 >= close_threshold 的 upvalue
+        let mut i = 0;
+        while i < self.open_upvalues.len() {
+            let upvalue = self.open_upvalues[i];
+            unsafe {
+                let upvalue_addr = (*upvalue).location as usize;
+                if upvalue_addr >= close_threshold {
+                    // 关闭这个 upvalue
+                    (*upvalue).close();
+                    self.open_upvalues.remove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
     }
 
     /// 前进指令指针
@@ -778,13 +934,6 @@ impl Default for VM {
 }
 
 use std::cmp::Ordering;
-
-impl Value {
-    /// 从 bool 创建 Value
-    fn bool_from(b: bool) -> Self {
-        if b { Self::TRUE } else { Self::FALSE }
-    }
-}
 
 // ==================== 测试 ====================
 

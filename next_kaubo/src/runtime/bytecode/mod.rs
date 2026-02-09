@@ -90,8 +90,9 @@ pub enum OpCode {
     // ===== 函数 (0x90-0x9F) =====
     Call = 0x90,          // + u8 参数个数
     Closure = 0x91,        // 创建闭包对象
-    GetUpvalue = 0x92,     // 读取 upvalue（预留）
-    SetUpvalue = 0x93,     // 设置 upvalue（预留）
+    GetUpvalue = 0x92,     // + u8 读取 upvalue
+    SetUpvalue = 0x93,     // + u8 设置 upvalue
+    CloseUpvalues = 0x94,  // + u8 关闭指定槽位以上的所有 upvalue
     Return,
     ReturnValue,
 
@@ -176,6 +177,7 @@ impl OpCode {
             OpCode::Closure => "CLOSURE",
             OpCode::GetUpvalue => "GET_UPVALUE",
             OpCode::SetUpvalue => "SET_UPVALUE",
+            OpCode::CloseUpvalues => "CLOSE_UPVALUES",
             OpCode::Return => "RETURN",
             OpCode::ReturnValue => "RETURN_VALUE",
             OpCode::BuildList => "BUILD_LIST",
@@ -262,6 +264,7 @@ impl OpCode {
             | OpCode::Closure
             | OpCode::GetUpvalue
             | OpCode::SetUpvalue
+            | OpCode::CloseUpvalues
             | OpCode::BuildList => 1,
 
             // u16/i16 操作数

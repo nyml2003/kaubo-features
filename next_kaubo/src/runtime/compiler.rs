@@ -611,8 +611,12 @@ impl Compiler {
         let function_value = Value::function(function_ptr);
         let idx = self.chunk.add_constant(function_value);
 
-        // 发射 Closure 指令，将函数对象压入栈
-        self.chunk.write_op_u8(OpCode::Closure, idx as u8, 0);
+        // 发射 Closure 指令：函数索引 + upvalue数量（目前为0）
+        self.chunk.write_op(OpCode::Closure, 0);
+        self.chunk.code.push(idx as u8);
+        self.chunk.lines.push(0);
+        self.chunk.code.push(0u8); // upvalue_count = 0（暂时不支持闭包捕获）
+        self.chunk.lines.push(0);
 
         Ok(())
     }

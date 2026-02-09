@@ -3,6 +3,75 @@
 use crate::runtime::bytecode::chunk::Chunk;
 use crate::runtime::Value;
 
+/// Upvalue 对象 - 表示对外部变量的引用
+/// 采用 Lua 风格：按引用捕获，变量离开栈时转储到 closed
+#[derive(Debug)]
+pub struct ObjUpvalue {
+    /// 指向外部变量的指针（栈上位置）
+    pub location: *mut Value,
+    /// 如果变量离开栈，转储到这里
+    pub closed: Option<Value>,
+}
+
+impl ObjUpvalue {
+    /// 创建新的 upvalue，指向栈上的位置
+    pub fn new(location: *mut Value) -> Self {
+        Self {
+            location,
+            closed: None,
+        }
+    }
+
+    /// 获取当前值（栈上或已关闭）
+    pub fn get(&self) -> Value {
+        unsafe { *self.location }
+    }
+
+    /// 设置值
+    pub fn set(&mut self, value: Value) {
+        unsafe {
+            *self.location = value;
+        }
+    }
+
+    /// 关闭 upvalue：将栈上的值复制到 closed
+    pub fn close(&mut self) {
+        if self.closed.is_none() {
+            self.closed = Some(self.get());
+            // location 现在指向 closed（可选，通常不再使用）
+        }
+    }
+}
+
+/// 闭包对象 - 包含函数和捕获的 upvalues
+#[derive(Debug)]
+pub struct ObjClosure {
+    /// 原始函数
+    pub function: *mut ObjFunction,
+    /// 捕获的 upvalues
+    pub upvalues: Vec<*mut ObjUpvalue>,
+}
+
+impl ObjClosure {
+    /// 创建新的闭包
+    pub fn new(function: *mut ObjFunction) -> Self {
+        Self {
+            function,
+            upvalues: Vec::new(),
+        }
+    }
+
+    /// 添加 upvalue
+    pub fn add_upvalue(&mut self, upvalue: *mut ObjUpvalue) {
+        self.upvalues.push(upvalue);
+    }
+
+    /// 获取 upvalue
+    pub fn get_upvalue(&self, index: usize) -> Option<*mut ObjUpvalue> {
+        self.upvalues.get(index).copied()
+    }
+}
+
 /// 函数对象
 #[derive(Debug)]
 pub struct ObjFunction {

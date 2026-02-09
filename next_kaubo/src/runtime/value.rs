@@ -349,6 +349,12 @@ impl Value {
         self.decode_heap_ptr(TAG_ITERATOR)
     }
 
+    /// 解包为闭包对象指针
+    #[inline]
+    pub fn as_closure(&self) -> Option<*mut ObjClosure> {
+        self.decode_heap_ptr(TAG_CLOSURE)
+    }
+
     /// 解包为布尔值
     #[inline]
     pub fn as_bool(&self) -> Option<bool> {
