@@ -4,7 +4,7 @@
 //! 位布局: [1位符号][11位指数][7位Tag][45位Payload]
 //!          S         E(0x7FF)   Tag      Payload
 
-use super::object::{ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjList, ObjString};
+use super::object::{ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjList, ObjOption, ObjResult, ObjString};
 
 /// NaN-boxed 值 (64-bit)
 #[repr(transparent)]
@@ -51,7 +51,9 @@ const TAG_LIST: u64 = 35 << 44; // 列表对象
 const TAG_ITERATOR: u64 = 36 << 44; // 迭代器对象
 const TAG_CLOSURE: u64 = 37 << 44; // 闭包对象
 const TAG_COROUTINE: u64 = 38 << 44; // 协程对象
-// 39-127: 预留其他堆类型
+const TAG_RESULT: u64 = 39 << 44; // Result 对象
+const TAG_OPTION: u64 = 40 << 44; // Option 对象
+// 41-127: 预留其他堆类型
 
 /// SMI 最大值 (2^30 - 1)
 const SMI_MAX: i32 = (1 << 30) - 1;

@@ -315,6 +315,123 @@ impl ObjCoroutine {
     }
 }
 
+// ==================== Result 和 Option 类型 ====================
+
+/// Result 类型变体
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ResultVariant {
+    Ok,
+    Err,
+}
+
+/// Result 对象 - 表示可能失败的操作
+#[derive(Debug)]
+pub struct ObjResult {
+    /// Ok 或 Err
+    pub variant: ResultVariant,
+    /// 存储的值
+    pub value: Value,
+}
+
+impl ObjResult {
+    /// 创建 Ok 结果
+    pub fn ok(value: Value) -> Self {
+        Self {
+            variant: ResultVariant::Ok,
+            value,
+        }
+    }
+
+    /// 创建 Err 结果
+    pub fn err(value: Value) -> Self {
+        Self {
+            variant: ResultVariant::Err,
+            value,
+        }
+    }
+
+    /// 是否为 Ok
+    pub fn is_ok(&self) -> bool {
+        self.variant == ResultVariant::Ok
+    }
+
+    /// 是否为 Err
+    pub fn is_err(&self) -> bool {
+        self.variant == ResultVariant::Err
+    }
+
+    /// 获取 Ok 值（如果是 Ok）
+    pub fn ok_value(&self) -> Option<Value> {
+        if self.is_ok() {
+            Some(self.value)
+        } else {
+            None
+        }
+    }
+
+    /// 获取 Err 值（如果是 Err）
+    pub fn err_value(&self) -> Option<Value> {
+        if self.is_err() {
+            Some(self.value)
+        } else {
+            None
+        }
+    }
+}
+
+/// Option 类型变体
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OptionVariant {
+    Some,
+    None,
+}
+
+/// Option 对象 - 表示可能不存在的值
+#[derive(Debug)]
+pub struct ObjOption {
+    /// Some 或 None
+    pub variant: OptionVariant,
+    /// Some 时存储的值
+    pub value: Value,
+}
+
+impl ObjOption {
+    /// 创建 Some
+    pub fn some(value: Value) -> Self {
+        Self {
+            variant: OptionVariant::Some,
+            value,
+        }
+    }
+
+    /// 创建 None
+    pub fn none() -> Self {
+        Self {
+            variant: OptionVariant::None,
+            value: Value::NULL,
+        }
+    }
+
+    /// 是否为 Some
+    pub fn is_some(&self) -> bool {
+        self.variant == OptionVariant::Some
+    }
+
+    /// 是否为 None
+    pub fn is_none(&self) -> bool {
+        self.variant == OptionVariant::None
+    }
+
+    /// 获取值（如果是 Some）
+    pub fn value(&self) -> Option<Value> {
+        if self.is_some() {
+            Some(self.value)
+        } else {
+            None
+        }
+    }
+}
+
 /// 协程状态值（用于在 Kaubo 代码中表示协程状态）
 pub const COROUTINE_STATE_SUSPENDED: i64 = 0;
 pub const COROUTINE_STATE_RUNNING: i64 = 1;
