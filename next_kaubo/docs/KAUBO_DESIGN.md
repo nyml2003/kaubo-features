@@ -232,21 +232,33 @@ impl Compiler {
 ### 4.1 核心数据结构
 
 ```rust
-/// Upvalue 对象 - 表示对外部变量的引用
+/// Upvalue 对象 - 表示对外部变量的引用（Lua 风格）
 pub struct ObjUpvalue {
     /// 指向外部变量的指针（栈上或已关闭）
-    location: *mut Value,
+    pub location: *mut Value,
     /// 如果变量离开栈，转储到这里
-    closed: Option<Value>,
+    pub closed: Option<Value>,
+}
+
+impl ObjUpvalue {
+    pub fn new(location: *mut Value) -> Self;
+    pub fn get(&self) -> Value;
+    pub fn set(&mut self, value: Value);
+    pub fn close(&mut self);  // 将栈值复制到 closed
 }
 
 /// 闭包对象 - 包含函数和捕获的 upvalues
 pub struct ObjClosure {
-    /// 原始函数
-    function: *mut ObjFunction,
-    /// 捕获的 upvalues
-    upvalues: Vec<*mut ObjUpvalue>,
+    pub function: *mut ObjFunction,
+    pub upvalues: Vec<*mut ObjUpvalue>,
 }
+
+impl ObjClosure {
+    pub fn new(function: *mut ObjFunction) -> Self;
+    pub fn add_upvalue(&mut self, upvalue: *mut ObjUpvalue);
+    pub fn get_upvalue(&self, index: usize) -> Option<*mut ObjUpvalue>;
+}
+```
 ```
 
 ### 4.2 捕获策略
@@ -318,7 +330,85 @@ impl Compiler {
 └─────────────┘
 ```
 
-### 4.5 验收代码
+### 4.5 VM 中的 Upvalue 管理
+
+```rust
+pub struct VM {
+    // ... 其他字段
+    open_upvalues: Vec<*mut ObjUpvalue>,  // 打开的 upvalues（按地址排序）
+}
+
+impl VM {
+    /// 捕获 upvalue（复用已存在的或创建新的）
+    fn capture_upvalue(&mut self, location: *mut Value) -> *mut ObjUpvalue {
+        // 从后向前查找是否已有指向相同位置的 upvalue
+        for &upvalue in self.open_upvalues.iter().rev() {
+            if unsafe { (*upvalue).location == location } {
+                return upvalue;  // 复用
+            }
+        }
+        // 创建新的 upvalue
+        let upvalue = Box::into_raw(Box::new(ObjUpvalue::new(location)));
+        self.open_upvalues.push(upvalue);
+        upvalue
+    }
+
+    /// 关闭从指定槽位开始的所有 upvalues
+    fn close_upvalues(&mut self, slot: usize) {
+        // 关闭所有地址 >= 指定位置的 upvalue
+        // 将值从栈复制到 closed 字段
+    }
+}
+```
+
+### 4.6 指令实现
+
+**Closure** 指令格式：`Closure | const_idx | upvalue_count | (is_local, index)...`
+
+```rust
+Closure => {
+    let const_idx = read_byte();
+    let upvalue_count = read_byte();
+    let func = constants[const_idx].as_function();
+    let mut closure = ObjClosure::new(func);
+    
+    for _ in 0..upvalue_count {
+        let is_local = read_byte() != 0;
+        let index = read_byte();
+        
+        if is_local {
+            // 捕获当前帧的局部变量
+            let location = current_local_ptr(index);
+            closure.add_upvalue(capture_upvalue(location));
+        } else {
+            // 继承当前闭包的 upvalue
+            let upvalue = current_closure().get_upvalue(index);
+            closure.add_upvalue(upvalue);
+        }
+    }
+    push(Value::closure(closure));
+}
+
+GetUpvalue => {
+    let idx = read_byte();
+    let upvalue = current_closure().get_upvalue(idx);
+    push(upvalue.get());
+}
+
+SetUpvalue => {
+    let idx = read_byte();
+    let value = peek(0);
+    let upvalue = current_closure().get_upvalue(idx);
+    upvalue.set(value);
+}
+
+CloseUpvalues => {
+    let slot = read_byte();
+    close_upvalues(slot);
+}
+```
+
+### 4.7 验收代码
 
 ```kaubo
 // 基础捕获
@@ -422,16 +512,25 @@ pub struct CallFrame {
 
 ### Phase 2.3：闭包支持 🚧 当前阶段
 
-**核心任务**:
-- [ ] `ObjUpvalue` 结构体
-- [ ] `ObjClosure` 结构体（替换直接使用 `ObjFunction`）
-- [ ] `Value::closure()` 构造方法，Tag 37
-- [ ] `GetUpvalue(u8)` / `SetUpvalue(u8)` 指令
-- [ ] `CloseUpvalues(u8)` 指令（函数返回时关闭）
-- [ ] 编译器：变量解析（局部/upvalue/模块）
-- [ ] 编译器：捕获分析，生成 upvalue 描述表
-- [ ] VM：创建闭包时分配 upvalues
-- [ ] VM：函数返回时关闭 upvalues
+**已完成**:
+- ✅ `ObjUpvalue` / `ObjClosure` 结构体 (`src/runtime/object.rs`)
+- ✅ `Value::closure()` 及类型判断方法 (`src/runtime/value.rs`, Tag 37)
+- ✅ `GetUpvalue(u8)` / `SetUpvalue(u8)` / `CloseUpvalues(u8)` 指令
+- ✅ VM：闭包调用、upvalue 捕获与关闭 (`src/runtime/vm.rs`)
+
+**进行中**:
+- 🚧 **编译器：变量解析与捕获分析**
+  - 作用域链跟踪（编译时维护嵌套函数层次）
+  - 变量解析：区分 Local / Upvalue / Module / Import
+  - 捕获分析：标记需要捕获的外部变量
+  - Upvalue 描述表：每个函数维护 upvalue 索引映射
+
+**验收代码**:
+```kaubo
+var x = 5;
+var f = || { return x; };
+assert(f() == 5);  // 当前失败：x 未定义
+```
 
 ### Phase 2.4：协程与迭代器 ⏳
 
