@@ -65,7 +65,8 @@ pub fn init_with_file<P: AsRef<std::path::Path>>(format: LogFormat, file: Option
         .with_target("kaubo::lexer", cfg.level_for(Phase::Lexer))
         .with_target("kaubo::parser", cfg.level_for(Phase::Parser))
         .with_target("kaubo::compiler", cfg.level_for(Phase::Compiler))
-        .with_target("kaubo::vm", cfg.level_for(Phase::Vm));
+        .with_target("kaubo::vm", cfg.level_for(Phase::Vm))
+        .with_target("kaubo::cli", cfg.global);
 
     // 如果指定了文件，创建文件输出层（同时输出到控制台和文件）
     if let Some(path) = file {

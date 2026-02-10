@@ -4,7 +4,7 @@
 
 use clap::Parser;
 use next_kaubo::logger::{LogFormat, init_with_file};
-use next_kaubo::{Config, LogConfig, compile, compile_and_run};
+use next_kaubo::{Config, LogConfig, Value, compile, compile_and_run};
 use std::process;
 use tracing::{Level, info};
 
@@ -54,6 +54,10 @@ struct Cli {
     #[arg(long)]
     show_steps: bool,
 
+    /// 显示源码内容
+    #[arg(long)]
+    show_source: bool,
+
     /// 日志输出到文件
     #[arg(long, value_name = "FILE")]
     log_file: Option<String>,
@@ -90,7 +94,6 @@ fn main() {
 
     // 初始化配置和日志
     let config = build_config(&cli);
-    println!("{:?}", cli.show_steps);
     next_kaubo::config::init(config);
 
     // 初始化日志（支持文件输出）
@@ -106,15 +109,20 @@ fn main() {
         init_with_file(format, None::<&str>);
     }
 
+    // 显示源码
+    if cli.show_source {
+        println!("[源码]");
+        for (i, line) in source.lines().enumerate() {
+            println!("{:3} | {}", i + 1, line);
+        }
+        println!("[执行结果]");
+    }
+
     // 显示步骤信息
     if cli.show_steps {
         info!(target: "kaubo::cli", "Kaubo VM - 字节码执行");
         info!(target: "kaubo::cli", "======================");
         info!(target: "kaubo::cli", "文件: {}", cli.file);
-        info!(target: "kaubo::cli", "[源码]");
-        for (i, line) in source.lines().enumerate() {
-            info!(target: "kaubo::cli", "{:3} | {}", i + 1, line);
-        }
     }
 
     // 执行
@@ -170,7 +178,9 @@ fn handle_run(source: &str, show_steps: bool) {
                 }
             } else if let Some(value) = output.value {
                 // 非步骤模式下只打印返回值（这是程序的实际输出）
-                println!("{}", value);
+                if value != Value::NULL {
+                    println!("{}", value);
+                }
             }
         }
         Err(e) => {
