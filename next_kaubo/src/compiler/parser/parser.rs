@@ -83,6 +83,20 @@ impl Parser {
         }
     }
 
+    /// 解析模块路径（如 std.core, math.geometry）
+    fn parse_module_path(&mut self) -> ParseResult<String> {
+        let mut path = self.expect_identifier()?;
+        
+        // 继续解析 .xxx 部分
+        while self.match_token(KauboTokenKind::Dot) {
+            let part = self.expect_identifier()?;
+            path.push('.');
+            path.push_str(&part);
+        }
+        
+        Ok(path)
+    }
+
     /// 解析模块（顶层语句集合）
     fn parse_module(&mut self) -> ParseResult<Module> {
         let mut statements = Vec::new();
@@ -540,7 +554,7 @@ impl Parser {
         if self.check(KauboTokenKind::From) {
             // from module import item1, item2;
             self.consume(); // 消费 'from'
-            let module_path = self.expect_identifier()?;
+            let module_path = self.parse_module_path()?;
             self.expect(KauboTokenKind::Import)?;
             
             // 解析导入的项列表
@@ -565,7 +579,7 @@ impl Parser {
         } else {
             // import module; 或 import module as alias;
             self.consume(); // 消费 'import'
-            let module_path = self.expect_identifier()?;
+            let module_path = self.parse_module_path()?;
             
             // 检查是否有别名
             let alias = if self.match_token(KauboTokenKind::As) {

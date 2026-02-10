@@ -89,6 +89,7 @@ pub struct Compiler {
     enclosing: *mut Compiler, // 指向父编译器（用于解析 upvalue）
     current_module: Option<ModuleInfo>, // 当前正在编译的模块
     modules: Vec<ModuleInfo>, // 文件内所有模块
+    imported_modules: Vec<String>, // 当前导入的模块名列表
 }
 
 impl Compiler {
@@ -102,6 +103,7 @@ impl Compiler {
             enclosing: std::ptr::null_mut(),
             current_module: None,
             modules: Vec::new(),
+            imported_modules: Vec::new(),
         }
     }
 
@@ -116,6 +118,7 @@ impl Compiler {
             enclosing,
             current_module: None,
             modules: Vec::new(),
+            imported_modules: Vec::new(),
         }
     }
 
@@ -668,11 +671,46 @@ impl Compiler {
                 return current.export_name_to_shape_id.get(export_name).copied();
             }
         }
-        None
+        // 在标准库模块中查找
+        self.find_std_module_shape_id(module_name, export_name)
+    }
+    
+    /// 查找标准库模块的 ShapeID
+    fn find_std_module_shape_id(&self, module_name: &str, export_name: &str) -> Option<u16> {
+        match module_name {
+            "std" => match export_name {
+                // 核心函数 (0-3)
+                "log" => Some(0),
+                "assert" => Some(1),
+                "type" => Some(2),
+                "to_string" => Some(3),
+                // 数学函数 (4-8)
+                "sqrt" => Some(4),
+                "sin" => Some(5),
+                "cos" => Some(6),
+                "floor" => Some(7),
+                "ceil" => Some(8),
+                // 数学常量 (9-10)
+                "PI" => Some(9),
+                "E" => Some(10),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
-    /// 检查名称是否是已定义的模块名
+    /// 检查名称是否是已定义的模块名（包括导入的）
     fn is_module_name(&self, name: &str) -> bool {
+        // 检查是否是已导入的模块
+        if self.imported_modules.iter().any(|m| m == name) {
+            return true;
+        }
+        
+        // 检查标准库模块（硬编码，启动时自动加载）
+        if name == "std" {
+            return true;
+        }
+        
         // 在已编译的模块中查找
         for module in &self.modules {
             if module.name == name {
@@ -949,11 +987,26 @@ impl Compiler {
     
     /// 编译导入语句
     /// import module; 或 from module import item;
-    fn compile_import(&mut self, _import_stmt: &crate::compiler::parser::stmt::ImportStmt) -> Result<(), CompileError> {
-        // 导入处理：创建模块引用变量
-        // 简化版：暂时生成空操作，实际模块链接在后续阶段
-        // TODO: 实现模块查找和导入
+    fn compile_import(&mut self, import_stmt: &crate::compiler::parser::stmt::ImportStmt) -> Result<(), CompileError> {
+        // 检查模块是否存在（同文件内模块或标准库模块）
+        let module_name = &import_stmt.module_path;
+        
+        if !self.is_module_name(module_name) && !self.is_std_module(module_name) {
+            return Err(CompileError::Unimplemented(format!(
+                "Module '{}' not found",
+                module_name
+            )));
+        }
+        
+        // 将模块名加入导入列表
+        self.imported_modules.push(module_name.clone());
+        
         Ok(())
+    }
+    
+    /// 检查是否是标准库模块
+    fn is_std_module(&self, name: &str) -> bool {
+        name == "std"
     }
 
     // ==================== 函数编译 ====================

@@ -29,13 +29,27 @@ pub struct VM {
 }
 
 impl VM {
-    /// 创建新的虚拟机
+    /// 创建新的虚拟机，并初始化标准库
     pub fn new() -> Self {
-        Self {
+        let mut vm = Self {
             stack: Vec::with_capacity(256),
             frames: Vec::with_capacity(64),
             open_upvalues: Vec::new(),
             globals: HashMap::new(),
+        };
+        vm.init_stdlib();
+        vm
+    }
+
+    /// 初始化标准库模块
+    fn init_stdlib(&mut self) {
+        use crate::runtime::stdlib::create_stdlib_modules;
+        
+        let modules = create_stdlib_modules();
+        for (name, module) in modules {
+            // 将模块对象转为 Value 并注册到 globals
+            let module_ptr = Box::into_raw(module);
+            self.globals.insert(name, Value::module(module_ptr));
         }
     }
 
@@ -403,6 +417,29 @@ impl VM {
                             stack_base,
                         };
                         self.frames.push(new_frame);
+                    } else if let Some(native_ptr) = callee.as_native() {
+                        // 调用原生函数
+                        let native = unsafe { &*native_ptr };
+                        
+                        if native.arity != arg_count {
+                            return InterpretResult::RuntimeError(format!(
+                                "Expected {} arguments but got {}",
+                                native.arity, arg_count
+                            ));
+                        }
+
+                        // 收集参数（从栈顶）
+                        let mut args = Vec::with_capacity(arg_count as usize);
+                        for _ in 0..arg_count {
+                            args.push(self.pop());
+                        }
+                        args.reverse();
+
+                        // 调用原生函数
+                        match native.call(&args) {
+                            Ok(result) => self.push(result),
+                            Err(msg) => return InterpretResult::RuntimeError(msg),
+                        }
                     } else {
                         return InterpretResult::RuntimeError(
                             "Can only call functions".to_string(),

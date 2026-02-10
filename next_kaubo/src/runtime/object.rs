@@ -538,3 +538,33 @@ impl Default for ObjModule {
         Self::new(String::new(), Vec::new(), std::collections::HashMap::new())
     }
 }
+
+/// 原生函数类型
+pub type NativeFn = fn(&[Value]) -> Result<Value, String>;
+
+/// 原生函数对象 - 包装 Rust 函数
+#[derive(Debug)]
+pub struct ObjNative {
+    /// 函数指针
+    pub function: NativeFn,
+    /// 函数名（用于调试）
+    pub name: String,
+    /// 参数数量（用于校验）
+    pub arity: u8,
+}
+
+impl ObjNative {
+    /// 创建新的原生函数对象
+    pub fn new(function: NativeFn, name: String, arity: u8) -> Self {
+        Self {
+            function,
+            name,
+            arity,
+        }
+    }
+
+    /// 调用原生函数
+    pub fn call(&self, args: &[Value]) -> Result<Value, String> {
+        (self.function)(args)
+    }
+}

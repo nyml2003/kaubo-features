@@ -5,7 +5,7 @@
 //!          S         E(0x7FF)   Tag      Payload
 
 use super::object::{
-    ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjOption,
+    ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjNative, ObjOption,
     ObjResult, ObjString,
 };
 
@@ -58,7 +58,8 @@ const TAG_RESULT: u64 = 39 << 44; // Result 对象
 const TAG_OPTION: u64 = 40 << 44; // Option 对象
 const TAG_JSON: u64 = 41 << 44; // JSON 对象
 const TAG_MODULE: u64 = 42 << 44; // 模块对象
-// 43-127: 预留其他堆类型
+const TAG_NATIVE: u64 = 43 << 44; // 原生函数对象
+// 44-127: 预留其他堆类型
 
 /// SMI 最大值 (2^30 - 1)
 const SMI_MAX: i32 = (1 << 30) - 1;
@@ -184,6 +185,12 @@ impl Value {
     #[inline]
     pub fn module(ptr: *mut ObjModule) -> Self {
         Self::encode_heap_ptr(ptr, TAG_MODULE)
+    }
+
+    /// 创建原生函数对象
+    #[inline]
+    pub fn native_fn(ptr: *mut ObjNative) -> Self {
+        Self::encode_heap_ptr(ptr, TAG_NATIVE)
     }
 
     // ==================== 类型判断 ====================
@@ -327,6 +334,12 @@ impl Value {
         self.is_boxed() && self.raw_tag() == 42
     }
 
+    /// 是否为原生函数对象
+    #[inline]
+    pub fn is_native(&self) -> bool {
+        self.is_boxed() && self.raw_tag() == 43
+    }
+
     // ==================== 解包方法 ====================
 
     /// 解包为 SMI (i32)
@@ -450,6 +463,12 @@ impl Value {
         self.decode_heap_ptr(TAG_MODULE)
     }
 
+    /// 解包为原生函数对象
+    #[inline]
+    pub fn as_native(&self) -> Option<*mut ObjNative> {
+        self.decode_heap_ptr(TAG_NATIVE)
+    }
+
     /// 解包为布尔值
     #[inline]
     pub fn as_bool(&self) -> Option<bool> {
@@ -507,6 +526,8 @@ impl std::fmt::Debug for Value {
             write!(f, "Json")
         } else if self.is_module() {
             write!(f, "Module")
+        } else if self.is_native() {
+            write!(f, "Native")
         } else {
             write!(f, "Value({:016x})", self.0)
         }
@@ -565,6 +586,8 @@ impl std::fmt::Display for Value {
             write!(f, "<json>, {:?}", self.as_json())
         } else if self.is_module() {
             write!(f, "<module>")
+        } else if self.is_native() {
+            write!(f, "<native>")
         } else if self.is_heap() {
             write!(f, "<object>")
         } else {
