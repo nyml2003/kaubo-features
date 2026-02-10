@@ -3,10 +3,10 @@
 //! 使用 clap 进行参数解析，调用 api 模块执行。
 
 use clap::Parser;
-use next_kaubo::logger::{init_with_file, LogFormat};
-use next_kaubo::{compile, compile_and_run, Config, LogConfig};
+use next_kaubo::logger::{LogFormat, init_with_file};
+use next_kaubo::{Config, LogConfig, compile, compile_and_run};
 use std::process;
-use tracing::{info, Level};
+use tracing::{Level, info};
 
 #[derive(Parser)]
 #[command(
@@ -90,15 +90,16 @@ fn main() {
 
     // 初始化配置和日志
     let config = build_config(&cli);
+    println!("{:?}", cli.show_steps);
     next_kaubo::config::init(config);
-    
+
     // 初始化日志（支持文件输出）
     let format = match cli.format {
         LogFormatArg::Pretty => LogFormat::Pretty,
         LogFormatArg::Compact => LogFormat::Compact,
         LogFormatArg::Json => LogFormat::Json,
     };
-    
+
     if let Some(log_file) = cli.log_file {
         init_with_file(format, Some(&log_file));
     } else {
@@ -203,6 +204,7 @@ fn build_config(cli: &Cli) -> Config {
             compiler: cli.log_compiler.map(to_tracing_level),
             vm: cli.log_vm.map(to_tracing_level),
         },
+
         ..Default::default()
     }
 }
