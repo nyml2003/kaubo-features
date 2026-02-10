@@ -25,12 +25,16 @@ use crate::runtime::value::Value;
 #[derive(Error, Debug, Clone)]
 pub enum KauboError {
     /// 词法分析错误
-    #[error("Lexer error: {0}")]
-    Lexer(String),
+    #[error("Lexer error: {message}")]
+    Lexer { message: String },
     
-    /// 语法分析错误
-    #[error("Parser error: {0}")]
-    Parser(String),
+    /// 语法分析错误（带位置信息）
+    #[error("Parser error: {message}")]
+    Parser { 
+        message: String,
+        line: Option<usize>,
+        column: Option<usize>,
+    },
     
     /// 编译错误
     #[error("Compiler error: {0}")]
@@ -43,18 +47,38 @@ pub enum KauboError {
 
 impl KauboError {
     /// 从 Lexer 错误转换
-    fn from_lexer_error<E: std::fmt::Debug>(e: E) -> Self {
-        KauboError::Lexer(format!("{:?}", e))
+    fn from_lexer_error<E: std::fmt::Display>(e: E) -> Self {
+        KauboError::Lexer { message: e.to_string() }
     }
 
     /// 从 Parser 错误转换
-    fn from_parser_error<E: std::fmt::Debug>(e: E) -> Self {
-        KauboError::Parser(format!("{:?}", e))
+    fn from_parser_error(e: crate::compiler::parser::error::ParserError) -> Self {
+        KauboError::Parser {
+            message: e.to_string(),
+            line: e.line(),
+            column: e.column(),
+        }
     }
 
     /// 从 Compiler 错误转换
     fn from_compiler_error(e: crate::runtime::CompileError) -> Self {
         KauboError::Compiler(format!("{:?}", e))
+    }
+
+    /// 获取错误行号（如果有）
+    pub fn line(&self) -> Option<usize> {
+        match self {
+            KauboError::Parser { line, .. } => *line,
+            _ => None,
+        }
+    }
+
+    /// 获取错误列号（如果有）
+    pub fn column(&self) -> Option<usize> {
+        match self {
+            KauboError::Parser { column, .. } => *column,
+            _ => None,
+        }
     }
 }
 
@@ -128,9 +152,11 @@ pub fn lex(source: &str) -> Result<Vec<crate::kit::lexer::types::Token<crate::co
 pub fn parse(_tokens: Vec<crate::kit::lexer::types::Token<crate::compiler::lexer::token_kind::KauboTokenKind>>) -> Result<crate::compiler::parser::Module, KauboError> {
     info!("Starting parser");
     
-    Err(KauboError::Parser(
-        "parse() is not yet implemented. Use compile() instead.".to_string()
-    ))
+    Err(KauboError::Parser {
+        message: "parse() is not yet implemented. Use compile() instead.".to_string(),
+        line: None,
+        column: None,
+    })
 }
 
 /// 编译 AST
@@ -258,7 +284,18 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let err = KauboError::Lexer("test error".to_string());
+        let err = KauboError::Lexer { message: "test error".to_string() };
         assert!(err.to_string().contains("Lexer error"));
+    }
+
+    #[test]
+    fn test_parser_error_with_location() {
+        let err = KauboError::Parser {
+            message: "unexpected token".to_string(),
+            line: Some(10),
+            column: Some(5),
+        };
+        assert_eq!(err.line(), Some(10));
+        assert_eq!(err.column(), Some(5));
     }
 }

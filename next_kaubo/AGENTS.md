@@ -131,6 +131,33 @@ cargo run --release -- assets/hello.kaubo -vv
 3. **GC 缺失** - 只分配不回收
 4. **文档测试** - 6 个 doc test 失败（示例需要 config 初始化）
 
+## 最近改进
+
+### 错误定位 (2026-02-10)
+
+语法分析错误现在包含精确的行号和列号，并显示多行源代码上下文：
+
+```
+❌ Parser error: [14:15] Missing right parenthesis ')'
+----|--
+ 11 | // 第11行
+ 12 | // 第12行
+ 13 | // 第13行 - 错误在这里
+ 14 | var y = (1 + 2;
+    |               ^
+ 15 | // 第15行
+ 16 | // 第16行
+----|--
+```
+
+**实现概要**:
+- `ParserError` 包含 `kind` 和 `location` 字段
+- `ErrorLocation` 支持 `At(Coordinate)`、`After(Coordinate)`、`Eof`、`Unknown`
+- Parser 在产生错误时自动捕获当前 token 的位置
+- API 错误类型 `KauboError::Parser` 保留 `line` 和 `column` 字段
+- CLI 显示错误行前后各2行上下文，用 `^` 标记错误位置
+- 行号自动对齐，分隔线自适应宽度
+
 ## 扩展方向
 
 | 优先级 | 任务 | 复杂度 |

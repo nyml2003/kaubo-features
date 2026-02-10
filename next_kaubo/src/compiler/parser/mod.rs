@@ -1,4 +1,4 @@
-mod error;
+pub mod error;
 pub mod expr;
 mod module;
 pub mod parser;
@@ -6,6 +6,7 @@ pub mod stmt;
 mod utils;
 
 // 重新导出常用类型
+pub use error::{ParserError, ParserErrorKind, ErrorLocation, ParseResult};
 pub use expr::{Expr, ExprKind, Binary, Unary, LiteralInt};
 pub use stmt::{Stmt, StmtKind, PrintStmt};
 pub use module::{Module, ModuleKind};

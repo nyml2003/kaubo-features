@@ -1,5 +1,5 @@
 use super::super::lexer::token_kind::KauboTokenKind;
-use super::error::{ParseResult, ParserError};
+use super::error::{ErrorLocation, ParseResult, ParserError, ParserErrorKind};
 use super::expr::{
     Binary, Expr, ExprKind, FunctionCall, Grouping, IndexAccess, JsonLiteral, Lambda, LiteralFalse,
     LiteralInt, LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, Unary, VarRef,
@@ -12,7 +12,7 @@ use super::stmt::{
 };
 use super::utils::{get_associativity, get_precedence};
 use crate::kit::lexer::c_lexer::Lexer;
-use crate::kit::lexer::types::Token;
+use crate::kit::lexer::types::{Coordinate, Token};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -60,12 +60,45 @@ impl Parser {
         }
     }
 
+    /// 获取当前token的位置信息
+    fn current_location(&self) -> ErrorLocation {
+        match &self.current_token {
+            Some(token) => ErrorLocation::At(token.coordinate.clone()),
+            None => ErrorLocation::Eof,
+        }
+    }
+
+    /// 获取当前token的坐标（如果有）
+    fn current_coordinate(&self) -> Option<Coordinate> {
+        self.current_token.as_ref().map(|t| t.coordinate.clone())
+    }
+
+    /// 获取当前token的文本表示
+    fn current_token_text(&self) -> String {
+        match &self.current_token {
+            Some(token) => format!("{:?}", token.kind),
+            None => "EOF".to_string(),
+        }
+    }
+
+    /// 创建带有当前位置的错误
+    fn error_here(&self, kind: ParserErrorKind) -> ParserError {
+        ParserError {
+            kind,
+            location: self.current_location(),
+        }
+    }
+
     /// 期望并消费指定类型的token，否则返回错误
     fn expect(&mut self, kind: KauboTokenKind) -> ParseResult<()> {
-        if self.match_token(kind) {
+        if self.match_token(kind.clone()) {
             Ok(())
         } else {
-            Err(ParserError::UnexpectedToken)
+            let expected = format!("{:?}", kind);
+            Err(self.error_here(ParserErrorKind::UnexpectedToken {
+                found: self.current_token_text(),
+                expected: vec![expected],
+            }))
         }
     }
 
@@ -74,14 +107,16 @@ impl Parser {
         let token = self
             .current_token
             .as_ref()
-            .ok_or(ParserError::UnexpectedEndOfInput)?;
+            .ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
 
         if token.kind == KauboTokenKind::Identifier {
             let name = token.value.clone();
             self.consume();
             Ok(name)
         } else {
-            Err(ParserError::UnexpectedToken)
+            Err(self.error_here(ParserErrorKind::ExpectedIdentifier {
+                found: self.current_token_text(),
+            }))
         }
     }
 
@@ -146,7 +181,10 @@ impl Parser {
                 // 解析变量声明（pub 修饰）
                 self.parse_var_declaration_with_pub(true)
             } else {
-                Err(ParserError::UnexpectedToken)
+                Err(self.error_here(ParserErrorKind::UnexpectedToken {
+                    found: self.current_token_text(),
+                    expected: vec!["var".to_string()],
+                }))
             }
         } else {
             // 表达式语句
@@ -251,7 +289,7 @@ impl Parser {
         let token = self
             .current_token
             .as_ref()
-            .ok_or(ParserError::UnexpectedEndOfInput)?;
+            .ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
 
         match token.kind {
             KauboTokenKind::LiteralInteger => self.parse_int(),
@@ -273,7 +311,10 @@ impl Parser {
             KauboTokenKind::Identifier => self.parse_identifier_expression(),
             KauboTokenKind::Pipe => self.parse_lambda(),
             KauboTokenKind::Json => self.parse_json_literal(),
-            _ => Err(ParserError::UnexpectedToken),
+            _ => Err(self.error_here(ParserErrorKind::UnexpectedToken {
+                found: self.current_token_text(),
+                expected: vec!["expression".to_string()],
+            })),
         }
     }
 
@@ -290,7 +331,7 @@ impl Parser {
             let key_token = self
                 .current_token
                 .as_ref()
-                .ok_or(ParserError::UnexpectedEndOfInput)?;
+                .ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
 
             let key = if key_token.kind == KauboTokenKind::LiteralString {
                 let k = key_token.value.clone();
@@ -303,7 +344,10 @@ impl Parser {
                 self.consume();
                 k
             } else {
-                return Err(ParserError::UnexpectedToken);
+                return Err(self.error_here(ParserErrorKind::UnexpectedToken {
+                    found: self.current_token_text(),
+                    expected: vec!["string".to_string(), "identifier".to_string()],
+                }));
             };
 
             self.expect(KauboTokenKind::Colon)?;
@@ -333,9 +377,9 @@ impl Parser {
                 let token = self
                     .current_token
                     .as_ref()
-                    .ok_or(ParserError::ExpectedIdentifierAfterDot)?;
+                    .ok_or_else(|| self.error_here(ParserErrorKind::ExpectedIdentifierAfterDot))?;
                 if token.kind != KauboTokenKind::Identifier {
-                    return Err(ParserError::ExpectedIdentifierAfterDot);
+                    return Err(self.error_here(ParserErrorKind::ExpectedIdentifierAfterDot));
                 }
 
                 let member_name = token.value.clone();
@@ -367,10 +411,11 @@ impl Parser {
     /// 解析整数字面量
     fn parse_int(&mut self) -> ParseResult<Expr> {
         let token = self.current_token.as_ref().unwrap();
+        let coord = token.coordinate.clone();
         let num = token
             .value
             .parse()
-            .map_err(|_| ParserError::InvalidNumberFormat)?;
+            .map_err(|_| ParserError::here(ParserErrorKind::InvalidNumberFormat(token.value.clone()), coord))?;
         self.consume();
         Ok(Box::new(ExprKind::LiteralInt(LiteralInt { value: num })))
     }
@@ -399,7 +444,8 @@ impl Parser {
             }
         }
 
-        self.expect(KauboTokenKind::RightSquareBracket)?;
+        self.expect(KauboTokenKind::RightSquareBracket)
+            .map_err(|_| self.error_here(ParserErrorKind::MissingRightBracket))?;
         Ok(Box::new(ExprKind::LiteralList(LiteralList { elements })))
     }
 
@@ -410,7 +456,7 @@ impl Parser {
         let expr = self.parse_expression(0)?;
 
         self.expect(KauboTokenKind::RightParenthesis)
-            .map_err(|_| ParserError::MissingRightParen)?;
+            .map_err(|_| self.error_here(ParserErrorKind::MissingRightParen))?;
 
         Ok(Box::new(ExprKind::Grouping(Grouping { expression: expr })))
     }
@@ -441,7 +487,7 @@ impl Parser {
                     } else if self.check(KauboTokenKind::Pipe) {
                         break;
                     } else {
-                        return Err(ParserError::ExpectedCommaOrPipeInLambda);
+                        return Err(self.error_here(ParserErrorKind::ExpectedCommaOrPipeInLambda));
                     }
                 } else {
                     break;
@@ -469,7 +515,7 @@ impl Parser {
         }
 
         self.expect(KauboTokenKind::RightParenthesis)
-            .map_err(|_| ParserError::MissingRightParen)?;
+            .map_err(|_| self.error_here(ParserErrorKind::MissingRightParen))?;
 
         Ok(Box::new(ExprKind::FunctionCall(FunctionCall {
             function_expr,
@@ -494,9 +540,14 @@ impl Parser {
         let token = self
             .current_token
             .as_ref()
-            .ok_or(ParserError::UnexpectedToken)?;
+            .ok_or_else(|| self.error_here(ParserErrorKind::UnexpectedToken {
+                found: self.current_token_text(),
+                expected: vec!["identifier".to_string()],
+            }))?;
         if token.kind != KauboTokenKind::Identifier {
-            return Err(ParserError::UnexpectedToken);
+            return Err(self.error_here(ParserErrorKind::ExpectedIdentifier {
+                found: self.current_token_text(),
+            }));
         }
         let name = token.value.clone();
         self.consume();
