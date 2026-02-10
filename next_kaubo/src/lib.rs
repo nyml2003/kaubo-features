@@ -1,46 +1,60 @@
-//! Kaubo 编译器
+//! Kaubo - A modern scripting language
 //!
-//! 包含编译器前端 (Lexer/Parser) 和运行时 (VM)。
+//! Kaubo is a modern, concise scripting language designed for embedded scenarios
+//! and rapid prototyping.
+//!
+//! # Quick Start
+//!
+//! ```
+//! use kaubo::{init, compile_and_run, Config};
+//!
+//! init(Config::default());
+//! let result = compile_and_run("return 1 + 2;").unwrap();
+//! println!("Result: {:?}", result.value);
+//! ```
 
+// 模块声明
 pub mod compiler;
 pub mod kit;
 pub mod runtime;
 
-// 运行时核心类型重导出
+// 新增模块
+pub mod api;
+pub mod config;
+pub mod logger;
+
+// 重导出常用类型
+pub use api::{compile, compile_and_run, execute, CompileOutput, ExecuteOutput, KauboError};
+pub use config::{Config, LogConfig, LimitConfig, CompilerConfig, Phase, init as init_config, config};
+pub use logger::{init_logger, init_with_file, LogFormat};
 pub use runtime::Value;
 
-use compiler::lexer::{builder::build_lexer, token_kind::KauboTokenKind};
-use kit::lexer::types::Token;
-
-use crate::kit::lexer::types::CLexerTokenKindTrait;
-
-/// 词法分析结果
-pub type LexResult = Vec<Token<KauboTokenKind>>;
-
-/// 对输入字符串进行词法分析
+/// 初始化（使用前先调用）
 ///
 /// # Example
-/// ```
-/// use next_kaubo::tokenize;
+/// ```no_run
+/// use kaubo::{init, Config};
 ///
-/// let tokens = tokenize("var x = 5;");
-/// assert_eq!(tokens.len(), 5); // var, x, =, 5, ;
+/// init(Config::default());
 /// ```
-pub fn tokenize(input: &str) -> LexResult {
-    let mut lexer = build_lexer();
-    let _ = lexer.feed(&input.as_bytes().to_vec());
-    let _ = lexer.terminate();
+pub fn init(config: Config) {
+    config::init(config);
+    logger::init_logger();
+}
 
-    let mut tokens = Vec::new();
-    while let Some(token) = lexer.next_token() {
-        if token.kind.is_invalid_token() {
-            eprintln!("Invalid token: {:?}", token);
-            eprintln!("current tokens: {:?}", tokens);
-            break;
-        }
-        tokens.push(token);
+/// 快速执行（使用默认配置）
+///
+/// # Example
+/// ```no_run
+/// use kaubo::quick_run;
+///
+/// let result = quick_run("return 42;").unwrap();
+/// ```
+pub fn quick_run(source: &str) -> Result<ExecuteOutput, KauboError> {
+    if !config::is_initialized() {
+        init(Config::default());
     }
-    tokens
+    compile_and_run(source)
 }
 
 #[cfg(test)]
@@ -48,21 +62,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tokenize_simple() {
-        let tokens = tokenize("var x = 5;");
-        assert!(!tokens.is_empty());
-        assert_eq!(tokens[0].kind, KauboTokenKind::Var);
+    fn test_init() {
+        init(Config::default());
+        assert!(config::is_initialized());
     }
 
     #[test]
-    fn test_tokenize_empty() {
-        let tokens = tokenize("");
-        assert!(tokens.is_empty());
-    }
-
-    #[test]
-    fn test_tokenize_whitespace() {
-        let tokens = tokenize("   \n\t  ");
-        assert!(tokens.is_empty());
+    fn test_quick_run() {
+        let result = quick_run("return 42;").unwrap();
+        // Value 比较使用 as_int()
+        let value = result.value.as_ref().and_then(|v| v.as_int());
+        assert_eq!(value, Some(42));
     }
 }

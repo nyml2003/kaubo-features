@@ -2,6 +2,7 @@
 
 use super::OpCode;
 use crate::runtime::Value;
+use tracing::debug;
 
 /// 字节码块
 #[derive(Debug, Clone)]
@@ -114,12 +115,12 @@ impl Chunk {
 
     /// 反汇编打印 (调试用)
     pub fn disassemble(&self, name: &str) {
-        println!("== {} ==", name);
-        println!("Constants:");
+        debug!(target: "kaubo::bytecode", "== {} ==", name);
+        debug!(target: "kaubo::bytecode", "Constants:");
         for (i, constant) in self.constants.iter().enumerate() {
-            println!("  [{:3}] {:?}", i, constant);
+            debug!(target: "kaubo::bytecode", "  [{:3}] {:?}", i, constant);
         }
-        println!("\nBytecode:");
+        debug!(target: "kaubo::bytecode", "Bytecode:");
 
         let mut offset = 0;
         while offset < self.code.len() {
@@ -129,14 +130,11 @@ impl Chunk {
 
     /// 反汇编单条指令
     fn disassemble_instruction(&self, offset: usize) -> usize {
-        print!("{:04} ", offset);
-
-        // 打印行号
-        if offset > 0 && self.lines[offset] == self.lines[offset - 1] {
-            print!("   | ");
+        let line_info = if offset > 0 && self.lines[offset] == self.lines[offset - 1] {
+            "   | ".to_string()
         } else {
-            print!("{:4} ", self.lines[offset]);
-        }
+            format!("{:4} ", self.lines[offset])
+        };
 
         let instruction = self.code[offset];
         let opcode = OpCode::from(instruction);
@@ -144,16 +142,17 @@ impl Chunk {
         match opcode {
             // 无操作数指令
             op if op.operand_size() == 0 => {
-                println!("{}", op.name());
+                debug!(target: "kaubo::bytecode", "{:04} {}{}", offset, line_info, op.name());
                 offset + 1
             }
 
             // u8 操作数
             OpCode::LoadConst => {
                 let idx = self.code[offset + 1];
-                println!(
-                    "{} {:3} {:?}",
-                    opcode.name(),
+                debug!(
+                    target: "kaubo::bytecode",
+                    "{:04} {}{} {:3} {:?}",
+                    offset, line_info, opcode.name(),
                     idx,
                     self.constants[idx as usize]
                 );
@@ -163,21 +162,21 @@ impl Chunk {
             OpCode::Closure => {
                 let idx = self.code[offset + 1];
                 let constant = &self.constants[idx as usize];
-                println!("{} {:3} {:?}", opcode.name(), idx, constant);
+                debug!(target: "kaubo::bytecode", "{:04} {}{} {:3} {:?}", offset, line_info, opcode.name(), idx, constant);
                 // 如果是函数对象，反汇编函数体
                 if let Some(func_ptr) = constant.as_function() {
                     let func = unsafe { &*func_ptr };
-                    println!("  --- Function (arity: {}) ---", func.arity);
-                    println!("Constants:");
+                    debug!(target: "kaubo::bytecode", "  --- Function (arity: {}) ---", func.arity);
+                    debug!(target: "kaubo::bytecode", "  Constants:");
                     for (i, constant) in func.chunk.constants.iter().enumerate() {
-                        println!("  [{:3}] {:?}", i, constant);
+                        debug!(target: "kaubo::bytecode", "    [{:3}] {:?}", i, constant);
                     }
-                    println!("\nBytecode:");
-                    let mut offset = 0;
-                    while offset < func.chunk.code.len() {
-                        offset = func.chunk.disassemble_instruction(offset);
+                    debug!(target: "kaubo::bytecode", "  Bytecode:");
+                    let mut inner_offset = 0;
+                    while inner_offset < func.chunk.code.len() {
+                        inner_offset = func.chunk.disassemble_instruction(inner_offset);
                     }
-                    println!("  --- End Function ---");
+                    debug!(target: "kaubo::bytecode", "  --- End Function ---");
                 }
                 offset + 2
             }
@@ -194,24 +193,24 @@ impl Chunk {
             | OpCode::Resume
             | OpCode::CoroutineStatus => {
                 let operand = self.code[offset + 1];
-                println!("{} {}", opcode.name(), operand);
+                debug!(target: "kaubo::bytecode", "{:04} {}{} {}", offset, line_info, opcode.name(), operand);
                 offset + 2
             }
             
             OpCode::CreateCoroutine | OpCode::Yield | OpCode::IndexGet | OpCode::IndexSet => {
-                println!("{}", opcode.name());
+                debug!(target: "kaubo::bytecode", "{:04} {}{}", offset, line_info, opcode.name());
                 offset + 1
             }
             
             OpCode::BuildJson => {
                 let operand = self.code[offset + 1];
-                println!("{} {}", opcode.name(), operand);
+                debug!(target: "kaubo::bytecode", "{:04} {}{} {}", offset, line_info, opcode.name(), operand);
                 offset + 2
             }
 
             OpCode::ModuleGet => {
                 let shape_id = u16::from_le_bytes([self.code[offset + 1], self.code[offset + 2]]);
-                println!("{} {}", opcode.name(), shape_id);
+                debug!(target: "kaubo::bytecode", "{:04} {}{} {}", offset, line_info, opcode.name(), shape_id);
                 offset + 3
             }
 
@@ -223,15 +222,16 @@ impl Chunk {
                 } else {
                     offset + 3 - (-jump) as usize
                 };
-                println!("{} {} (to {})", opcode.name(), jump, target);
+                debug!(target: "kaubo::bytecode", "{:04} {}{} {} (to {})", offset, line_info, opcode.name(), jump, target);
                 offset + 3
             }
 
             OpCode::LoadConstWide => {
                 let idx = u16::from_le_bytes([self.code[offset + 1], self.code[offset + 2]]);
-                println!(
-                    "{} {:3} {:?}",
-                    opcode.name(),
+                debug!(
+                    target: "kaubo::bytecode",
+                    "{:04} {}{} {:3} {:?}",
+                    offset, line_info, opcode.name(),
                     idx,
                     self.constants[idx as usize]
                 );
@@ -239,7 +239,7 @@ impl Chunk {
             }
 
             _ => {
-                println!("Unknown opcode {}", instruction);
+                debug!(target: "kaubo::bytecode", "{:04} {}Unknown opcode {}", offset, line_info, instruction);
                 offset + 1
             }
         }

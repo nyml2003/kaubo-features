@@ -117,6 +117,7 @@ impl RingBuffer {
     }
 
     /// 尝试获取数据（非阻塞式）：空时返回None
+    #[allow(dead_code)]
     fn try_pop(&self) -> Option<Result<u8, RingBufferError>> {
         let mut inner = match self.inner.lock() {
             Ok(guard) => guard,
@@ -136,6 +137,7 @@ impl RingBuffer {
     }
 
     /// 尝试观察缓冲区头部数据（非阻塞式）
+    #[allow(dead_code)]
     fn try_peek(&self) -> Option<Result<u8, RingBufferError>> {
         let inner = match self.inner.lock() {
             Ok(guard) => guard,
@@ -177,6 +179,7 @@ impl RingBuffer {
     }
 
     /// 检查缓冲区是否已关闭
+    #[allow(dead_code)]
     fn is_closed(&self) -> Result<bool, RingBufferError> {
         let inner = self
             .inner
@@ -195,6 +198,7 @@ impl RingBuffer {
     }
 
     /// 检查缓冲区是否已满
+    #[allow(dead_code)]
     fn is_full(&self) -> Result<bool, RingBufferError> {
         let inner = self
             .inner
@@ -213,6 +217,7 @@ impl RingBuffer {
     }
 
     /// 检查缓冲区中的数据量是否大于等于指定值
+    #[allow(dead_code)]
     fn is_size_at_least(&self, size: usize) -> Result<bool, RingBufferError> {
         let inner = self
             .inner
@@ -222,6 +227,7 @@ impl RingBuffer {
     }
 
     /// 获取缓冲区的总容量
+    #[allow(dead_code)]
     fn get_capacity(&self) -> Result<usize, RingBufferError> {
         let inner = self
             .inner

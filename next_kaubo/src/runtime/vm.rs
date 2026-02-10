@@ -2,9 +2,9 @@
 
 use crate::runtime::Value;
 use crate::runtime::bytecode::{OpCode, chunk::Chunk};
-use crate::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjUpvalue, CoroutineState, ObjString};
+use crate::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjUpvalue, CoroutineState};
 use std::collections::HashMap;
-use std::ptr::NonNull;
+
 
 /// 解释执行结果
 #[derive(Debug, Clone, PartialEq)]
@@ -105,7 +105,10 @@ impl VM {
             let instruction = unsafe { *self.current_ip() };
             self.advance_ip(1);
             let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
-            eprintln!("next instruction: {:?}, with stack: {:?}", op, self.stack);
+            
+            // VM 执行追踪（使用条件编译或日志级别控制）
+            #[cfg(feature = "trace_execution")]
+            tracing::trace!(target: "kaubo::vm", ?op, stack = ?self.stack, "execute");
             match op {
                 // ===== 常量加载 =====
                 LoadConst0 => self.push_const(0),
@@ -200,10 +203,25 @@ impl VM {
                     }
                 }
 
+                Not => {
+                    let v = self.pop();
+                    // 逻辑取非：真值变为 false，假值变为 true
+                    if v.is_truthy() {
+                        self.push(Value::FALSE);
+                    } else {
+                        self.push(Value::TRUE);
+                    }
+                }
+
                 // ===== 比较运算 =====
                 Equal => {
                     let (a, b) = self.pop_two();
                     self.push(Value::bool_from(a == b));
+                }
+
+                NotEqual => {
+                    let (a, b) = self.pop_two();
+                    self.push(Value::bool_from(a != b));
                 }
 
                 Greater => {
@@ -421,7 +439,9 @@ impl VM {
                         // 调用原生函数
                         let native = unsafe { &*native_ptr };
                         
-                        if native.arity != arg_count {
+                        // 变参函数：arity=255 表示可变参数
+                        // 否则参数数量必须等于 arity（或支持变参的函数内部处理）
+                        if native.arity != 255 && arg_count != native.arity {
                             return InterpretResult::RuntimeError(format!(
                                 "Expected {} arguments but got {}",
                                 native.arity, arg_count

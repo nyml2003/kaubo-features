@@ -1,14 +1,14 @@
 use super::super::lexer::token_kind::KauboTokenKind;
 use super::error::{ParseResult, ParserError};
 use super::expr::{
-    Binary, Expr, ExprKind, FunctionCall, Grouping, IndexAccess, JsonLiteral, Lambda, LiteralFalse, 
-    LiteralInt, LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, Unary, VarRef, 
+    Binary, Expr, ExprKind, FunctionCall, Grouping, IndexAccess, JsonLiteral, Lambda, LiteralFalse,
+    LiteralInt, LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, Unary, VarRef,
     YieldExpr,
 };
 use super::module::{Module, ModuleKind};
 use super::stmt::{
-    BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, ImportStmt, ModuleStmt, PrintStmt, 
-    ReturnStmt, Stmt, StmtKind, VarDeclStmt, WhileStmt,
+    BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, ImportStmt, ModuleStmt, ReturnStmt,
+    Stmt, StmtKind, VarDeclStmt, WhileStmt,
 };
 use super::utils::{get_associativity, get_precedence};
 use crate::kit::lexer::c_lexer::Lexer;
@@ -71,9 +71,11 @@ impl Parser {
 
     /// 期望一个标识符，返回其名称
     fn expect_identifier(&mut self) -> ParseResult<String> {
-        let token = self.current_token.as_ref()
+        let token = self
+            .current_token
+            .as_ref()
             .ok_or(ParserError::UnexpectedEndOfInput)?;
-        
+
         if token.kind == KauboTokenKind::Identifier {
             let name = token.value.clone();
             self.consume();
@@ -86,14 +88,14 @@ impl Parser {
     /// 解析模块路径（如 std.core, math.geometry）
     fn parse_module_path(&mut self) -> ParseResult<String> {
         let mut path = self.expect_identifier()?;
-        
+
         // 继续解析 .xxx 部分
         while self.match_token(KauboTokenKind::Dot) {
             let part = self.expect_identifier()?;
             path.push('.');
             path.push_str(&part);
         }
-        
+
         Ok(path)
     }
 
@@ -220,17 +222,18 @@ impl Parser {
         } else if self.check(KauboTokenKind::Yield) {
             // 解析 yield 表达式
             self.consume(); // 消耗 yield
-            
+
             // yield 可以有值也可以没有值
-            let value = if self.check(KauboTokenKind::Semicolon) 
-                || self.check(KauboTokenKind::RightCurlyBrace) {
+            let value = if self.check(KauboTokenKind::Semicolon)
+                || self.check(KauboTokenKind::RightCurlyBrace)
+            {
                 // yield; 或 yield } - 无值
                 None
             } else {
                 // yield expr;
                 Some(self.parse_expression(0)?)
             };
-            
+
             Ok(Box::new(ExprKind::Yield(YieldExpr { value })))
         } else {
             self.parse_primary()
@@ -279,19 +282,21 @@ impl Parser {
     fn parse_json_literal(&mut self) -> ParseResult<Expr> {
         self.consume(); // 消费 'json'
         self.expect(KauboTokenKind::LeftCurlyBrace)?;
-        
+
         let mut entries = Vec::new();
-        
+
         while !self.check(KauboTokenKind::RightCurlyBrace) {
             // 解析键（必须是字符串）
-            let key_token = self.current_token.as_ref()
+            let key_token = self
+                .current_token
+                .as_ref()
                 .ok_or(ParserError::UnexpectedEndOfInput)?;
-            
+
             let key = if key_token.kind == KauboTokenKind::LiteralString {
                 let k = key_token.value.clone();
                 self.consume();
                 // 去除引号
-                k[1..k.len()-1].to_string()
+                k[1..k.len() - 1].to_string()
             } else if key_token.kind == KauboTokenKind::Identifier {
                 // 也支持裸标识符作为键（像 JavaScript）
                 let k = key_token.value.clone();
@@ -300,21 +305,21 @@ impl Parser {
             } else {
                 return Err(ParserError::UnexpectedToken);
             };
-            
+
             self.expect(KauboTokenKind::Colon)?;
-            
+
             // 解析值
             let value = self.parse_expression(0)?;
             entries.push((key, value));
-            
+
             // 可选的逗号
             if !self.match_token(KauboTokenKind::Comma) {
                 break;
             }
         }
-        
+
         self.expect(KauboTokenKind::RightCurlyBrace)?;
-        
+
         Ok(Box::new(ExprKind::JsonLiteral(JsonLiteral { entries })))
     }
 
@@ -476,12 +481,12 @@ impl Parser {
     fn parse_var_declaration(&mut self) -> ParseResult<Stmt> {
         self.parse_var_declaration_inner(false)
     }
-    
+
     /// 解析变量声明（带 pub 标记）
     fn parse_var_declaration_with_pub(&mut self, is_public: bool) -> ParseResult<Stmt> {
         self.parse_var_declaration_inner(is_public)
     }
-    
+
     /// 解析变量声明内部实现
     fn parse_var_declaration_inner(&mut self, is_public: bool) -> ParseResult<Stmt> {
         self.consume(); // 消费 'var'
@@ -521,30 +526,22 @@ impl Parser {
         Ok(Box::new(StmtKind::Return(ReturnStmt { value })))
     }
 
-    /// 解析print语句 (临时调试用)
-    fn parse_print_statement(&mut self) -> ParseResult<Stmt> {
-        self.consume(); // 消费 'print'
-        let expression = self.parse_expression(0)?;
-        self.expect(KauboTokenKind::Semicolon)?;
-        Ok(Box::new(StmtKind::Print(PrintStmt { expression })))
-    }
-
     /// 解析模块定义语句
     /// module name { ... }
     fn parse_module_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(); // 消费 'module'
-        
+
         // 解析模块名
         let name = self.expect_identifier()?;
-        
+
         // 解析模块体（代码块）
         let body = self.parse_block()?;
-        
+
         Ok(Box::new(StmtKind::Module(ModuleStmt { name, body })))
     }
 
     /// 解析导入语句
-    /// import module; 
+    /// import module;
     /// import module as alias;
     /// from module import item1, item2;
     fn parse_import_statement(&mut self) -> ParseResult<Stmt> {
@@ -554,43 +551,43 @@ impl Parser {
             self.consume(); // 消费 'from'
             let module_path = self.parse_module_path()?;
             self.expect(KauboTokenKind::Import)?;
-            
+
             // 解析导入的项列表
             let mut items = Vec::new();
             loop {
                 let item = self.expect_identifier()?;
                 items.push(item);
-                
+
                 if self.match_token(KauboTokenKind::Comma) {
                     continue;
                 } else {
                     break;
                 }
             }
-            
+
             self.expect(KauboTokenKind::Semicolon)?;
-            Ok(Box::new(StmtKind::Import(ImportStmt { 
-                module_path, 
-                items, 
-                alias: None 
+            Ok(Box::new(StmtKind::Import(ImportStmt {
+                module_path,
+                items,
+                alias: None,
             })))
         } else {
             // import module; 或 import module as alias;
             self.consume(); // 消费 'import'
             let module_path = self.parse_module_path()?;
-            
+
             // 检查是否有别名
             let alias = if self.match_token(KauboTokenKind::As) {
                 Some(self.expect_identifier()?)
             } else {
                 None
             };
-            
+
             self.expect(KauboTokenKind::Semicolon)?;
-            Ok(Box::new(StmtKind::Import(ImportStmt { 
-                module_path, 
-                items: Vec::new(), 
-                alias 
+            Ok(Box::new(StmtKind::Import(ImportStmt {
+                module_path,
+                items: Vec::new(),
+                alias,
             })))
         }
     }
@@ -639,7 +636,7 @@ impl Parser {
     /// 解析for循环
     fn parse_for_loop(&mut self) -> ParseResult<Stmt> {
         self.consume(); // 消费 'for'
-        
+
         // 新语法: for var item in iterable { ... }
         self.expect(KauboTokenKind::Var)?;
         let iterator = self.parse_expression(0)?;
@@ -680,9 +677,10 @@ mod tests {
         let mut lexer = build_lexer();
         let _ = lexer.feed(&r#""hello";"#.as_bytes().to_vec());
         let _ = lexer.terminate();
-        
+
         println!("Tokens from lexer:");
-        for i in 0..10 {  // 最多打印 10 个 token，防止死循环
+        for i in 0..10 {
+            // 最多打印 10 个 token，防止死循环
             match lexer.next_token() {
                 Some(token) => println!("  [{}] {:?} = {:?}", i, token.kind, token.value),
                 None => {
@@ -691,13 +689,17 @@ mod tests {
                 }
             }
         }
-        
+
         let code = r#""hello";"#;
         let result = parse_code(code);
         if let Err(ref e) = result {
             println!("Parse error: {:?}", e);
         }
-        assert!(result.is_ok(), "Failed to parse string literal: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Failed to parse string literal: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -865,7 +867,7 @@ mod tests {
             ("a > b;", "GreaterThan"),
             ("a <= b;", "LessThanEqual"),
         ];
-        
+
         for (code, expected_op) in cases {
             let result = parse_code(code);
             if let Err(ref e) = result {
@@ -932,7 +934,7 @@ mod tests {
 
     #[test]
     fn test_parse_error_missing_semicolon() {
-        let code = "var x = 5";  // 缺少分号
+        let code = "var x = 5"; // 缺少分号
         let result = parse_code(code);
         // 当前实现可能允许最后一个语句无分号
         // 这个测试用于确认当前行为

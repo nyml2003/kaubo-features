@@ -22,7 +22,7 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
     exports.push(create_native_value(print_fn, "print", 1));
     name_to_shape.insert("print".to_string(), 0u16);
 
-    exports.push(create_native_value(assert_fn, "assert", 2));
+    exports.push(create_native_value(assert_fn, "assert", 255));  // 255 = 变参
     name_to_shape.insert("assert".to_string(), 1u16);
 
     exports.push(create_native_value(type_fn, "type", 1));

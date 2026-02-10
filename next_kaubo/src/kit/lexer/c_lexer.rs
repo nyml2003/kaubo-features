@@ -6,6 +6,7 @@ use super::state_machine::manager::Manager;
 use super::types::{Coordinate, EatStatus, Token};
 use crate::kit::lexer::types::CLexerTokenKindTrait;
 use crate::kit::ring_buffer::ring_buffer::RingBuffer;
+use tracing::trace;
 
 pub struct Lexer<TokenKind>
 where
@@ -78,19 +79,20 @@ where
 
     /// 获取下一个Token
     pub fn next_token(&mut self) -> Option<Token<TokenKind>> {
-        /* eprintln!(
-            "[next_token] 开始, eof={}, char_count={}, buf_empty={}",
-            self.eof,
-            self.current_token_char_count,
-            self.ring_buffer.is_empty().unwrap()
-        ); */
+        trace!(
+            target: "kaubo::lexer",
+            eof = self.eof,
+            char_count = self.current_token_char_count,
+            buf_empty = ?self.ring_buffer.is_empty().unwrap(),
+            "next_token start"
+        );
 
         // 检查缓冲区状态：空且已关闭 → 结算最后一个Token
         if self.ring_buffer.is_empty().unwrap() && self.eof {
-            eprintln!("[next_token] 缓冲区空且EOF");
+            trace!(target: "kaubo::lexer", "next_token: buffer empty and EOF");
             // 如果没有正在处理的token，直接返回None
             if self.current_token_char_count == 0 {
-                eprintln!("[next_token] 无待处理token，返回None");
+                trace!(target: "kaubo::lexer", "next_token: no pending token, returning None");
                 return None;
             }
             return self.finalize_last_token();
@@ -100,18 +102,19 @@ where
         loop {
             match self.eat().unwrap() {
                 EatStatus::Continue => {
-                    // eprintln!("[next_token] eat Continue");
+                    trace!(target: "kaubo::lexer", "next_token: eat Continue");
                     continue;
                 }
                 EatStatus::Stop => {
-                    // eprintln!("[next_token] eat Stop，调用build_token");
+                    trace!(target: "kaubo::lexer", "next_token: eat Stop, calling build_token");
                     return self.build_token();
                 }
                 EatStatus::Eof => {
-                    /*eprintln!(
-                        "[next_token] eat Eof, char_count={}",
-                        self.current_token_char_count
-                    );*/
+                    trace!(
+                    target: "kaubo::lexer",
+                    char_count = self.current_token_char_count,
+                    "next_token: eat Eof"
+                );
                     // EOF时如果没有正在处理的token，返回None
                     if self.current_token_char_count == 0 {
                         return None;
@@ -119,7 +122,7 @@ where
                     return self.finalize_last_token();
                 }
                 EatStatus::Wait => {
-                    eprintln!("[next_token] eat Wait，返回None");
+                    trace!(target: "kaubo::lexer", "next_token: eat Wait, returning None");
                     return None;
                 }
             }
@@ -145,19 +148,21 @@ where
     }
     /// 读取一个char并驱动状态机
     fn eat(&mut self) -> Result<EatStatus, LexerError> {
-        /*eprintln!(
-            "[eat] 开始, char_count={}, byte_count={}",
-            self.current_token_char_count, self.current_token_byte_count
-        );*/
+        trace!(
+            target: "kaubo::lexer",
+            char_count = self.current_token_char_count,
+            byte_count = self.current_token_byte_count,
+            "eat start"
+        );
 
         // 尝试获取当前位置的引导字节
         let leading_byte = match self.ring_buffer.try_peek_k(self.current_token_byte_count) {
             Some(Ok(byte)) => {
-                // eprintln!("[eat] 引导字节: 0x{:02X} ('{}')", byte, byte as char);
+                trace!(target: "kaubo::lexer", byte = format_args!("0x{:02X}", byte), "eat: leading byte");
                 byte
             }
             Some(Err(_)) | None => {
-                eprintln!("[eat] 无法获取引导字节");
+                trace!(target: "kaubo::lexer", "eat: cannot get leading byte");
                 // 无法获取引导字节，返回Wait
                 return Ok(EatStatus::Wait);
             }
@@ -166,11 +171,11 @@ where
         // 获取UTF-8编码长度
         let code_point_len = match self.utf8_char_len_from_lead(leading_byte) {
             Some(len) => {
-                // eprintln!("[eat] UTF-8长度: {}", len);
+                trace!(target: "kaubo::lexer", len = len, "eat: UTF-8 length");
                 len
             }
             None => {
-                eprintln!("[eat] 非法UTF-8字节");
+                trace!(target: "kaubo::lexer", "eat: invalid UTF-8 byte");
                 // 非法UTF-8字节，返回Stop
                 return Ok(EatStatus::Stop);
             }
@@ -179,13 +184,15 @@ where
         // 检查缓冲区是否有足够的字节
         let required_length = self.current_token_byte_count + code_point_len;
         let buffer_size = self.ring_buffer.get_size()?;
-        /*eprintln!(
-            "[eat] 需要{}字节, 缓冲区有{}字节",
-            required_length, buffer_size
-        );*/
+        trace!(
+            target: "kaubo::lexer",
+            required = required_length,
+            buffer_size = buffer_size,
+            "eat: checking buffer"
+        );
 
         if required_length > buffer_size {
-            eprintln!("[eat] 缓冲区不足, eof={}", self.eof);
+            trace!(target: "kaubo::lexer", eof = self.eof, "eat: buffer insufficient");
             // 缓冲区不足，检查是否已到EOF
             return Ok(if self.eof {
                 EatStatus::Eof
@@ -219,11 +226,11 @@ where
         // eprintln!("[eat] 字符: '{}'", c);
 
         if !self.manager.process_event(c) {
-            // eprintln!("[eat] 状态机处理失败，返回Stop");
+            trace!(target: "kaubo::lexer", "eat: state machine failed, Stop");
             // 处理失败，停止当前Token
             return Ok(EatStatus::Stop);
         }
-        // eprintln!("[eat] 状态机处理成功，返回Continue");
+        trace!(target: "kaubo::lexer", "eat: state machine success, Continue");
 
         // 所有字节处理成功，更新计数
         self.current_token_char_count += 1;
@@ -314,37 +321,40 @@ where
 
     /// 正常构建Token
     fn build_token(&mut self) -> Option<Token<TokenKind>> {
-        /*eprintln!(
-            "[build_token] 开始, char_count={}, byte_count={}",
-            self.current_token_char_count, self.current_token_byte_count
-        );*/
+        trace!(
+            target: "kaubo::lexer",
+            char_count = self.current_token_char_count,
+            byte_count = self.current_token_byte_count,
+            "build_token start"
+        );
 
         // 弹出当前Token的字节数据
         let token_bytes = match self.pop_token_bytes(self.current_token_byte_count) {
             Ok(bytes) => bytes,
             Err(_) => {
-                eprintln!("[build_token] pop_token_bytes 失败");
+                trace!(target: "kaubo::lexer", "build_token: pop_token_bytes failed");
                 return None;
             }
         };
 
         // 转换为字符串
         let token_str = String::from_utf8_lossy(&token_bytes).to_string();
-        /*eprintln!(
-            "[build_token] token_str='{}', len={}",
-            token_str,
-            token_str.len()
-        );*/
+        trace!(
+            target: "kaubo::lexer",
+            token = %token_str,
+            len = token_str.len(),
+            "build_token: token string"
+        );
 
         // 获取最佳匹配状态机
         let (best_machine_id, _) = self.manager.select_best_match();
-        //eprintln!("[build_token] best_machine_id={:?}", best_machine_id);
+        trace!(target: "kaubo::lexer", best_machine_id = ?best_machine_id, "build_token: best machine");
 
         let token_kind =
             match best_machine_id.and_then(|id| self.manager.get_machine_token_kind_by_index(id)) {
                 Some(token_kind) => token_kind,
                 None => {
-                    eprintln!("[build_token] 无匹配状态机");
+                    trace!(target: "kaubo::lexer", "build_token: no matching state machine");
                     // 无匹配状态机，构建无效Token
                     let token = Token {
                         kind: TokenKind::invalid_token(),
@@ -360,26 +370,26 @@ where
         // 处理特殊Token类型
         match () {
             _ if token_kind.is_whitespace() => {
-                //eprintln!("[build_token] 跳过 whitespace");
+                trace!(target: "kaubo::lexer", "build_token: skip whitespace");
                 self.update_cursor();
                 self.reset_token_state();
                 self.next_token()
             }
             _ if token_kind.is_newline() => {
-                //eprintln!("[build_token] 跳过 newline");
+                trace!(target: "kaubo::lexer", "build_token: skip newline");
                 self.update_cursor();
                 self.reset_token_state();
                 self.next_token()
             }
             _ if token_kind.is_tab() => {
-                //eprintln!("[build_token] 跳过 tab");
+                trace!(target: "kaubo::lexer", "build_token: skip tab");
                 // 制表符按4个空格计算列号
                 self.cursor_coordinate.column += 4;
                 self.reset_token_state();
                 self.next_token()
             }
             _ if token_kind.is_comment() => {
-                //eprintln!("[build_token] 跳过 comment");
+                trace!(target: "kaubo::lexer", "build_token: skip comment");
                 self.update_cursor();
                 self.reset_token_state();
                 self.next_token()

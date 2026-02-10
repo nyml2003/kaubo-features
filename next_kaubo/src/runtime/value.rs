@@ -21,6 +21,7 @@ pub struct Value(u64);
 const QNAN: u64 = 0x7FF8_0000_0000_0000;
 
 /// 用于检测是否为我们的 boxing 值的掩码 (检查指数位)
+#[allow(dead_code)]
 const EXP_MASK: u64 = 0x7FF0_0000_0000_0000; // bits 62-52
 
 /// Tag 掩码: bits 50-44 (7位)
@@ -33,6 +34,7 @@ const PAYLOAD_MASK: u64 = 0xFFFFFFFFFFF;
 // ==================== Tag 定义 ====================
 // bits 50-44 (7位) = Tag
 // 0-7: 特殊值
+#[allow(dead_code)]
 const TAG_NAN: u64 = 0 << 44; // 0: 语言级 NaN
 const TAG_NULL: u64 = 1 << 44; // 1: null
 const TAG_TRUE: u64 = 2 << 44; // 2: true
@@ -41,7 +43,9 @@ const TAG_SMI: u64 = 4 << 44; // 4: 小整数 (SMI，31位有符号)
 // 5-7: 预留
 
 // 8-23: 内联整数 (-8 ~ +7)
+#[allow(dead_code)]
 const TAG_INLINE_INT_START: u64 = 8 << 44; // 对应 -8
+#[allow(dead_code)]
 const TAG_INLINE_INT_END: u64 = 23 << 44; // 对应 +7
 
 // 24-31: 预留内联值

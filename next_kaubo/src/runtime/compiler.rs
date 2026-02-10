@@ -6,7 +6,7 @@ use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind};
 use crate::runtime::{
     Value,
     bytecode::{OpCode, chunk::Chunk},
-    object::{ObjFunction, ObjList, ObjString},
+    object::{ObjFunction, ObjString},
 };
 use std::collections::HashMap;
 
@@ -49,6 +49,7 @@ struct Local {
 
 /// Upvalue 描述（编译时）
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Upvalue {
     name: String,
     index: u8,        // upvalue 索引
@@ -57,6 +58,7 @@ struct Upvalue {
 
 /// 导出项信息
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Export {
     name: String,
     is_public: bool,  // pub 修饰
@@ -1251,13 +1253,6 @@ mod tests {
     #[test]
     fn test_run_null() {
         let result = run_code("return null;").unwrap();
-        assert!(result.is_null());
-    }
-
-    #[test]
-    fn test_run_print() {
-        // print 语句返回 null
-        let result = run_code("print 42;").unwrap();
         assert!(result.is_null());
     }
 
