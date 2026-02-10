@@ -62,6 +62,7 @@ pub fn init_with_file<P: AsRef<std::path::Path>>(format: LogFormat, file: Option
 
     // 构建各阶段的目标过滤器
     let targets = Targets::new()
+        .with_default(cfg.global)
         .with_target("kaubo::lexer", cfg.level_for(Phase::Lexer))
         .with_target("kaubo::parser", cfg.level_for(Phase::Parser))
         .with_target("kaubo::compiler", cfg.level_for(Phase::Compiler))
