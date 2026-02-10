@@ -2,7 +2,8 @@
 
 use crate::runtime::Value;
 use crate::runtime::bytecode::{OpCode, chunk::Chunk};
-use crate::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjList, ObjUpvalue, CoroutineState};
+use crate::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjUpvalue, CoroutineState, ObjString};
+use std::collections::HashMap;
 use std::ptr::NonNull;
 
 /// 解释执行结果
@@ -23,6 +24,8 @@ pub struct VM {
     frames: Vec<CallFrame>,
     /// 打开的 upvalues（按地址排序，方便二分查找）
     open_upvalues: Vec<*mut ObjUpvalue>,
+    /// 全局变量表
+    globals: HashMap<String, Value>,
 }
 
 impl VM {
@@ -32,6 +35,7 @@ impl VM {
             stack: Vec::with_capacity(256),
             frames: Vec::with_capacity(64),
             open_upvalues: Vec::new(),
+            globals: HashMap::new(),
         }
     }
 
@@ -293,6 +297,31 @@ impl VM {
                     let idx = self.read_byte() as usize;
                     let value = self.pop();
                     self.set_local(idx, value);
+                }
+
+                // ===== 全局变量 =====
+                LoadGlobal => {
+                    let idx = self.read_byte() as usize;
+                    let name = self.get_constant_string(idx);
+                    if let Some(value) = self.globals.get(&name) {
+                        self.push(*value);
+                    } else {
+                        return InterpretResult::RuntimeError(format!("Undefined global variable: {}", name));
+                    }
+                }
+                
+                StoreGlobal => {
+                    let idx = self.read_byte() as usize;
+                    let name = self.get_constant_string(idx);
+                    let value = self.pop();
+                    self.globals.insert(name, value);
+                }
+                
+                DefineGlobal => {
+                    let idx = self.read_byte() as usize;
+                    let name = self.get_constant_string(idx);
+                    let value = self.pop();
+                    self.globals.insert(name, value);
                 }
 
                 // ===== 控制流 =====
@@ -653,34 +682,138 @@ impl VM {
                     self.push(Value::list(list_ptr));
                 }
 
-                IndexGet => {
-                    // 栈顶: [index, list]
-                    let index_val = self.pop();
-                    let list_val = self.pop();
-
-                    let index = match index_val.as_smi() {
-                        Some(i) => i,
-                        None => {
+                BuildJson => {
+                    let count = self.read_byte() as usize;
+                    // 从栈顶弹出键值对（值先入栈，然后是键），创建 JSON 对象
+                    let mut entries = std::collections::HashMap::with_capacity(count);
+                    for _ in 0..count {
+                        let key_val = self.pop();
+                        let value = self.pop();
+                        
+                        // 键必须是字符串
+                        if let Some(key_ptr) = key_val.as_string() {
+                            let key_str = unsafe { &(*key_ptr).chars };
+                            entries.insert(key_str.clone(), value);
+                        } else {
                             return InterpretResult::RuntimeError(
-                                "Index must be an integer".to_string(),
+                                "JSON key must be a string".to_string()
                             );
                         }
-                    };
+                    }
+                    
+                    let json = Box::new(ObjJson::from_hashmap(entries));
+                    let json_ptr = Box::into_raw(json);
+                    self.push(Value::json(json_ptr));
+                }
 
-                    if let Some(list_ptr) = list_val.as_list() {
-                        let list = unsafe { &*list_ptr };
-                        let idx = index as usize;
-                        if idx >= list.len() {
+                BuildModule => {
+                    let count = self.read_byte() as usize;
+                    // 从栈顶弹出导出值（逆序），创建模块对象
+                    // 按逆序弹出，这样先定义的导出项索引小
+                    let mut exports = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        exports.push(self.pop());
+                    }
+                    exports.reverse();
+                    
+                    // 创建模块对象（暂时不设置名称和 name_to_index，后续由编译器提供）
+                    let module = Box::new(ObjModule::new(String::new(), exports, std::collections::HashMap::new()));
+                    let module_ptr = Box::into_raw(module);
+                    self.push(Value::module(module_ptr));
+                }
+
+                ModuleGet => {
+                    // 栈顶: [module]
+                    let module_val = self.pop();
+                    let shape_id = self.read_u16();
+                    
+                    if let Some(module_ptr) = module_val.as_module() {
+                        let module = unsafe { &*module_ptr };
+                        if let Some(value) = module.get_by_shape_id(shape_id) {
+                            self.push(value);
+                        } else {
                             return InterpretResult::RuntimeError(format!(
-                                "Index out of bounds: {} (length {})",
-                                idx,
-                                list.len()
+                                "Module field with ShapeID {} not found",
+                                shape_id
                             ));
                         }
-                        let value = list.get(idx).unwrap_or(Value::NULL);
-                        self.push(value);
                     } else {
-                        return InterpretResult::RuntimeError("Can only index lists".to_string());
+                        return InterpretResult::RuntimeError("ModuleGet requires a module".to_string());
+                    }
+                }
+
+                IndexGet => {
+                    // 栈顶: [index, object]
+                    let index_val = self.pop();
+                    let obj_val = self.pop();
+
+                    // 列表索引（整数）
+                    if let Some(idx) = index_val.as_smi() {
+                        if let Some(list_ptr) = obj_val.as_list() {
+                            let list = unsafe { &*list_ptr };
+                            let i = idx as usize;
+                            if i >= list.len() {
+                                return InterpretResult::RuntimeError(format!(
+                                    "Index out of bounds: {} (length {})",
+                                    i,
+                                    list.len()
+                                ));
+                            }
+                            let value = list.get(i).unwrap_or(Value::NULL);
+                            self.push(value);
+                        } else {
+                            return InterpretResult::RuntimeError("Can only index lists with integers".to_string());
+                        }
+                    }
+                    // JSON 对象索引（字符串键）
+                    else if let Some(key_ptr) = index_val.as_string() {
+                        if let Some(json_ptr) = obj_val.as_json() {
+                            let json = unsafe { &*json_ptr };
+                            let key = unsafe { &(*key_ptr).chars };
+                            let value = json.get(key).unwrap_or(Value::NULL);
+                            self.push(value);
+                        } else {
+                            return InterpretResult::RuntimeError("Can only index JSON objects with strings".to_string());
+                        }
+                    } else {
+                        return InterpretResult::RuntimeError("Index must be an integer (for list) or string (for JSON)".to_string());
+                    }
+                }
+
+                IndexSet => {
+                    // 栈布局: [value, key, object] (object 在栈顶)
+                    let obj_val = self.pop();
+                    let key_val = self.pop();
+                    let value = self.pop();
+
+                    // JSON 对象索引（字符串键）
+                    if let Some(key_ptr) = key_val.as_string() {
+                        if let Some(json_ptr) = obj_val.as_json() {
+                            let json = unsafe { &mut *json_ptr };
+                            let key = unsafe { &(*key_ptr).chars };
+                            json.set(key.clone(), value);
+                        } else {
+                            return InterpretResult::RuntimeError("Can only set keys on JSON objects".to_string());
+                        }
+                    } 
+                    // 列表索引（整数）
+                    else if let Some(idx) = key_val.as_smi() {
+                        if let Some(list_ptr) = obj_val.as_list() {
+                            let list = unsafe { &mut *list_ptr };
+                            let i = idx as usize;
+                            if i >= list.len() {
+                                return InterpretResult::RuntimeError(format!(
+                                    "Index out of bounds: {} (length {})",
+                                    i,
+                                    list.len()
+                                ));
+                            }
+                            list.elements[i] = value;
+                        } else {
+                            return InterpretResult::RuntimeError("Can only index lists with integers".to_string());
+                        }
+                    } else {
+                        return InterpretResult::RuntimeError("Key must be a string (for JSON) or integer (for list)".to_string());
                     }
                 }
 
@@ -867,6 +1000,17 @@ impl VM {
         self.frames.last().unwrap().chunk()
     }
 
+    /// 获取常量池中的字符串
+    #[inline]
+    fn get_constant_string(&self, idx: usize) -> String {
+        let constant = self.current_chunk().constants[idx];
+        if let Some(s) = constant.as_string() {
+            unsafe { (*s).chars.clone() }
+        } else {
+            String::new()
+        }
+    }
+
     /// 获取当前闭包
     #[inline]
     fn current_closure(&self) -> *mut ObjClosure {
@@ -949,6 +1093,14 @@ impl VM {
         let b1 = self.read_byte();
         let b2 = self.read_byte();
         i16::from_le_bytes([b1, b2])
+    }
+
+    /// 读取 u16
+    #[inline]
+    fn read_u16(&mut self) -> u16 {
+        let b1 = self.read_byte();
+        let b2 = self.read_byte();
+        u16::from_le_bytes([b1, b2])
     }
 
     /// 从常量池加载并压栈

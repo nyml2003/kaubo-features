@@ -25,6 +25,10 @@ pub enum StmtKind {
     Return(ReturnStmt),
     // Print语句（临时调试用，如 `print expr;`）
     Print(PrintStmt),
+    // 模块定义语句（如 `module foo { ... }`）
+    Module(ModuleStmt),
+    // 导入语句（如 `import foo;` 或 `from foo import bar;`）
+    Import(ImportStmt),
 }
 
 // 表达式语句结构体（包装一个表达式）
@@ -46,8 +50,9 @@ pub struct BlockStmt {
 // 变量声明语句结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct VarDeclStmt {
-    pub name: String,      // 变量名
-    pub initializer: Expr, // 初始化表达式（对应C++的ExprPtr）
+    pub name: String,       // 变量名
+    pub initializer: Expr,  // 初始化表达式（对应C++的ExprPtr）
+    pub is_public: bool,    // 是否 pub 导出
 }
 
 // If语句结构体
@@ -85,6 +90,21 @@ pub struct ReturnStmt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrintStmt {
     pub expression: Expr, // 要打印的表达式
+}
+
+// 模块定义语句结构体
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleStmt {
+    pub name: String,         // 模块名
+    pub body: Stmt,           // 模块体（代码块）
+}
+
+// 导入语句结构体
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportStmt {
+    pub module_path: String,           // 模块路径
+    pub items: Vec<String>,            // 导入的项（空表示导入整个模块）
+    pub alias: Option<String>,         // 别名（如 `import foo as bar`）
 }
 
 // 实现Display trait（可选，用于调试输出）
@@ -141,6 +161,23 @@ impl fmt::Display for StmtKind {
             StmtKind::Print(print_stmt) => {
                 write!(f, "print {};", print_stmt.expression)
             }
+            StmtKind::Module(module_stmt) => {
+                write!(f, "module {} {}", module_stmt.name, module_stmt.body)
+            }
+            StmtKind::Import(import_stmt) => {
+                if import_stmt.items.is_empty() {
+                    // import module;
+                    if let Some(alias) = &import_stmt.alias {
+                        write!(f, "import {} as {};", import_stmt.module_path, alias)
+                    } else {
+                        write!(f, "import {};", import_stmt.module_path)
+                    }
+                } else {
+                    // from module import item1, item2;
+                    let items = import_stmt.items.join(", ");
+                    write!(f, "from {} import {};", import_stmt.module_path, items)
+                }
+            }
         }
     }
 }
@@ -171,6 +208,7 @@ mod tests {
         let stmt = StmtKind::VarDecl(VarDeclStmt {
             name: "x".to_string(),
             initializer: make_expr(ExprKind::LiteralInt(LiteralInt { value: 5 })),
+            is_public: false,
         });
         assert!(format!("{}", stmt).contains("var x = 5"));
     }

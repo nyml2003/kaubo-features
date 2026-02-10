@@ -7,7 +7,7 @@ pub enum KauboTokenKind {
     Utf8Error = 0,
     Comment,
 
-    // 关键字 (11-35)
+    // 关键字 (11-37)
     Var,
     If,
     Else,
@@ -34,6 +34,9 @@ pub enum KauboTokenKind {
     Not,
     Async,
     Await,
+    Module,
+    Pub,
+    Json,
 
     // 字面量 (100-101)
     LiteralInteger = 100,

@@ -1,13 +1,14 @@
 //! AST → Bytecode 编译器
 
 use crate::compiler::parser::expr::{FunctionCall, Lambda, VarRef};
-use crate::compiler::parser::stmt::{ForStmt, IfStmt, WhileStmt};
+use crate::compiler::parser::stmt::{ForStmt, IfStmt, ModuleStmt, WhileStmt};
 use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind};
 use crate::runtime::{
     Value,
     bytecode::{OpCode, chunk::Chunk},
     object::{ObjFunction, ObjList, ObjString},
 };
+use std::collections::HashMap;
 
 /// 编译错误
 #[derive(Debug, Clone)]
@@ -54,6 +55,23 @@ struct Upvalue {
     is_local: bool,   // true=捕获外层局部变量, false=继承外层的 upvalue
 }
 
+/// 导出项信息
+#[derive(Debug, Clone)]
+struct Export {
+    name: String,
+    is_public: bool,  // pub 修饰
+    local_idx: u8,    // 对应的局部变量索引
+    shape_id: u16,    // ShapeID（编译期确定的静态索引）
+}
+
+/// 模块信息（编译时）
+#[derive(Debug, Clone)]
+struct ModuleInfo {
+    name: String,
+    exports: Vec<Export>,
+    export_name_to_shape_id: HashMap<String, u16>, // 名称到 ShapeID 的映射
+}
+
 /// 变量类型（解析结果）
 #[derive(Debug, Clone, Copy)]
 enum Variable {
@@ -69,6 +87,8 @@ pub struct Compiler {
     scope_depth: usize,       // 当前作用域深度
     max_locals: usize,        // 最大局部变量数量（用于栈预分配）
     enclosing: *mut Compiler, // 指向父编译器（用于解析 upvalue）
+    current_module: Option<ModuleInfo>, // 当前正在编译的模块
+    modules: Vec<ModuleInfo>, // 文件内所有模块
 }
 
 impl Compiler {
@@ -80,6 +100,8 @@ impl Compiler {
             scope_depth: 0,
             max_locals: 0,
             enclosing: std::ptr::null_mut(),
+            current_module: None,
+            modules: Vec::new(),
         }
     }
 
@@ -92,6 +114,8 @@ impl Compiler {
             scope_depth: 0,
             max_locals: 0,
             enclosing,
+            current_module: None,
+            modules: Vec::new(),
         }
     }
 
@@ -128,6 +152,20 @@ impl Compiler {
                 // 标记为已初始化并存储
                 self.mark_initialized();
                 self.emit_store_local(idx);
+                
+                // 如果是 pub 且在当前模块中，记录导出
+                if decl.is_public {
+                    if let Some(ref mut module) = self.current_module {
+                        let shape_id = module.exports.len() as u16;
+                        module.exports.push(Export {
+                            name: decl.name.clone(),
+                            is_public: true,
+                            local_idx: idx,
+                            shape_id,
+                        });
+                        module.export_name_to_shape_id.insert(decl.name.clone(), shape_id);
+                    }
+                }
             }
 
             StmtKind::Return(ret) => {
@@ -165,6 +203,14 @@ impl Compiler {
 
             StmtKind::For(for_stmt) => {
                 self.compile_for(for_stmt)?;
+            }
+
+            StmtKind::Module(module_stmt) => {
+                self.compile_module(module_stmt)?;
+            }
+
+            StmtKind::Import(import_stmt) => {
+                self.compile_import(import_stmt)?;
             }
         }
         Ok(())
@@ -240,10 +286,21 @@ impl Compiler {
                     Some(Variable::Local(idx)) => self.emit_load_local(idx),
                     Some(Variable::Upvalue(idx)) => self.emit_load_upvalue(idx),
                     None => {
-                        return Err(CompileError::Unimplemented(format!(
-                            "Undefined variable: {}",
-                            var_ref.name
-                        )));
+                        // 检查是否是模块名（全局变量）
+                        if self.is_module_name(&var_ref.name) {
+                            // 模块作为全局变量访问
+                            let name_obj = Box::new(ObjString::new(var_ref.name.clone()));
+                            let name_ptr = Box::into_raw(name_obj) as *mut ObjString;
+                            let name_val = Value::string(name_ptr);
+                            let name_idx = self.chunk.add_constant(name_val);
+                            self.emit_constant(name_idx);
+                            self.chunk.write_op(OpCode::LoadGlobal, 0);
+                        } else {
+                            return Err(CompileError::Unimplemented(format!(
+                                "Undefined variable: {}",
+                                var_ref.name
+                            )));
+                        }
                     }
                 }
             }
@@ -256,8 +313,67 @@ impl Compiler {
                 self.compile_lambda(lambda)?;
             }
 
-            ExprKind::MemberAccess(_) => {
-                return Err(CompileError::Unimplemented("Member access".to_string()));
+            ExprKind::MemberAccess(member) => {
+                // 成员访问语法糖: obj.name 等价于 obj["name"]
+                // 对于模块访问，使用 ModuleGet 指令（编译期确定的 ShapeID）
+                
+                if let ExprKind::VarRef(var_ref) = member.object.as_ref() {
+                    if let Some(shape_id) = self.find_module_shape_id(&var_ref.name, &member.member) {
+                        // 模块访问：LoadGlobal + ModuleGet(shape_id)
+                        // 加载模块（全局变量）
+                        let name_obj = Box::new(ObjString::new(var_ref.name.clone()));
+                        let name_ptr = Box::into_raw(name_obj) as *mut ObjString;
+                        let name_val = Value::string(name_ptr);
+                        let name_idx = self.chunk.add_constant(name_val);
+                        self.chunk.write_op_u8(OpCode::LoadGlobal, name_idx, 0);
+                        
+                        // ModuleGet 指令（ShapeID 作为 u16 操作数）
+                        self.chunk.write_op(OpCode::ModuleGet, 0);
+                        self.chunk.write_u16(shape_id, 0);
+                        return Ok(());
+                    }
+                }
+                
+                // 普通对象访问（JSON）：编译对象 + 字符串键 + IndexGet
+                self.compile_expr(&member.object)?;
+                let key_obj = Box::new(ObjString::new(member.member.clone()));
+                let key_ptr = Box::into_raw(key_obj) as *mut ObjString;
+                let key_val = Value::string(key_ptr);
+                let idx = self.chunk.add_constant(key_val);
+                self.emit_constant(idx);
+                self.chunk.write_op(OpCode::IndexGet, 0);
+            }
+
+            ExprKind::IndexAccess(index) => {
+                // 编译索引访问: list[index]
+                self.compile_expr(&index.object)?;  // list
+                self.compile_expr(&index.index)?;   // index
+                self.chunk.write_op(OpCode::IndexGet, 0);
+            }
+
+            ExprKind::JsonLiteral(json) => {
+                // 编译 JSON 字面量: json { "key": value, ... }
+                // 栈布局: [value1, key1, value2, key2, ...]（从后往前压栈）
+                let count = json.entries.len();
+                if count > 255 {
+                    return Err(CompileError::Unimplemented(
+                        "JSON literal too large (max 255 entries)".to_string()
+                    ));
+                }
+                
+                // 逆序处理，这样 BuildJson 可以按正确顺序弹出
+                for (key, value) in json.entries.iter().rev() {
+                    // 值先入栈
+                    self.compile_expr(value)?;
+                    // 键（字符串）入栈
+                    let key_obj = Box::new(ObjString::new(key.clone()));
+                    let key_ptr = Box::into_raw(key_obj) as *mut ObjString;
+                    let key_val = Value::string(key_ptr);
+                    let idx = self.chunk.add_constant(key_val);
+                    self.emit_constant(idx);
+                }
+                
+                self.chunk.write_op_u8(OpCode::BuildJson, count as u8, 0);
             }
 
             ExprKind::Yield(y) => {
@@ -313,12 +429,12 @@ impl Compiler {
     /// 编译赋值表达式 (处理 Binary 形式的赋值)
     /// 赋值表达式返回 null（语句级别的副作用）
     fn compile_assignment(&mut self, left: &Expr, right: &Expr) -> Result<(), CompileError> {
-        // 编译右值
-        self.compile_expr(right)?;
-
-        // 左值必须是变量引用
+        // 左值可能是变量引用或索引访问
         match left.as_ref() {
             ExprKind::VarRef(var_ref) => {
+                // 编译右值
+                self.compile_expr(right)?;
+                
                 match self.resolve_variable(&var_ref.name) {
                     Some(Variable::Local(idx)) => self.emit_store_local(idx),
                     Some(Variable::Upvalue(idx)) => self.emit_store_upvalue(idx),
@@ -333,8 +449,39 @@ impl Compiler {
                 self.chunk.write_op(OpCode::LoadNull, 0);
                 Ok(())
             }
+            
+            ExprKind::IndexAccess(index) => {
+                // 索引赋值: list[index] = value
+                // 栈布局: [value, index, list]
+                self.compile_expr(right)?;     // value
+                self.compile_expr(&index.index)?; // index
+                self.compile_expr(&index.object)?; // list
+                self.chunk.write_op(OpCode::IndexSet, 0);
+                // 返回 null
+                self.chunk.write_op(OpCode::LoadNull, 0);
+                Ok(())
+            }
+            
+            ExprKind::MemberAccess(member) => {
+                // 成员赋值: obj.name = value
+                // 等价于 obj["name"] = value
+                // 栈布局: [value, "name", obj]
+                self.compile_expr(right)?;     // value
+                // 成员名作为字符串
+                let key_obj = Box::new(ObjString::new(member.member.clone()));
+                let key_ptr = Box::into_raw(key_obj) as *mut ObjString;
+                let key_val = Value::string(key_ptr);
+                let idx = self.chunk.add_constant(key_val);
+                self.emit_constant(idx);       // key
+                self.compile_expr(&member.object)?; // obj
+                self.chunk.write_op(OpCode::IndexSet, 0);
+                // 返回 null
+                self.chunk.write_op(OpCode::LoadNull, 0);
+                Ok(())
+            }
+            
             _ => Err(CompileError::Unimplemented(
-                "Left side of assignment must be a variable".to_string(),
+                "Left side of assignment must be a variable, index access, or member access".to_string(),
             )),
         }
     }
@@ -504,6 +651,41 @@ impl Compiler {
         }
         
         None
+    }
+
+    /// 查找模块导出项的 ShapeID
+    /// 返回 Some(shape_id) 如果找到模块和导出项
+    fn find_module_shape_id(&self, module_name: &str, export_name: &str) -> Option<u16> {
+        // 在已编译的模块中查找
+        for module in &self.modules {
+            if module.name == module_name {
+                return module.export_name_to_shape_id.get(export_name).copied();
+            }
+        }
+        // 在当前正在编译的模块中查找
+        if let Some(ref current) = self.current_module {
+            if current.name == module_name {
+                return current.export_name_to_shape_id.get(export_name).copied();
+            }
+        }
+        None
+    }
+
+    /// 检查名称是否是已定义的模块名
+    fn is_module_name(&self, name: &str) -> bool {
+        // 在已编译的模块中查找
+        for module in &self.modules {
+            if module.name == name {
+                return true;
+            }
+        }
+        // 在当前正在编译的模块中查找
+        if let Some(ref current) = self.current_module {
+            if current.name == name {
+                return true;
+            }
+        }
+        false
     }
 
     /// 发射局部变量加载指令
@@ -701,6 +883,76 @@ impl Compiler {
         // 11. 退出作用域（item 和 $iter 被清理）
         self.end_scope();
         
+        Ok(())
+    }
+
+    // ==================== 模块编译 ====================
+
+    /// 编译模块定义
+    /// module name { ... }
+    /// 模块在运行时是一个 ObjModule 对象，导出项按索引存储
+    fn compile_module(&mut self, module_stmt: &ModuleStmt) -> Result<(), CompileError> {
+        // 进入模块作用域
+        self.begin_scope();
+        
+        // 创建模块信息
+        let module_info = ModuleInfo {
+            name: module_stmt.name.clone(),
+            exports: Vec::new(),
+            export_name_to_shape_id: HashMap::new(),
+        };
+        
+        // 设置当前模块
+        let prev_module = self.current_module.take();
+        self.current_module = Some(module_info);
+        
+        // 编译模块体
+        self.compile_stmt(&module_stmt.body)?;
+        
+        // 收集导出信息并生成模块对象
+        if let Some(info) = self.current_module.take() {
+            let export_count = info.exports.len();
+            
+            // 对于每个导出项，加载其值（正序压栈，BuildModule 会 reverse）
+            for export in info.exports.iter() {
+                // 加载导出值（从局部变量）
+                self.emit_load_local(export.local_idx);
+            }
+            
+            // 生成 BuildModule 指令创建模块对象
+            if export_count > 255 {
+                return Err(CompileError::Unimplemented(
+                    "Module has too many exports (max 255)".to_string()
+                ));
+            }
+            self.chunk.write_op_u8(OpCode::BuildModule, export_count as u8, 0);
+            
+            // 定义全局变量：模块名
+            let module_name_obj = Box::new(ObjString::new(module_stmt.name.clone()));
+            let module_name_ptr = Box::into_raw(module_name_obj) as *mut ObjString;
+            let module_name_val = Value::string(module_name_ptr);
+            let module_name_idx = self.chunk.add_constant(module_name_val);
+            self.chunk.write_op_u8(OpCode::DefineGlobal, module_name_idx, 0);
+            
+            // 保存模块信息
+            self.modules.push(info);
+        }
+        
+        // 恢复之前的模块上下文
+        self.current_module = prev_module;
+        
+        // 退出模块作用域
+        self.end_scope();
+        
+        Ok(())
+    }
+    
+    /// 编译导入语句
+    /// import module; 或 from module import item;
+    fn compile_import(&mut self, _import_stmt: &crate::compiler::parser::stmt::ImportStmt) -> Result<(), CompileError> {
+        // 导入处理：创建模块引用变量
+        // 简化版：暂时生成空操作，实际模块链接在后续阶段
+        // TODO: 实现模块查找和导入
         Ok(())
     }
 

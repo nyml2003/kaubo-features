@@ -72,6 +72,9 @@ pub fn build_lexer() -> Lexer<KauboTokenKind> {
         (KauboTokenKind::Not, "not"),
         (KauboTokenKind::Async, "async"),
         (KauboTokenKind::Await, "await"),
+        (KauboTokenKind::Module, "module"),
+        (KauboTokenKind::Pub, "pub"),
+        (KauboTokenKind::Json, "json"),
     ] {
         lexer.register_machine(build_keyword_machine(keyword, kind).unwrap());
     }
@@ -275,6 +278,9 @@ mod tests {
             ("not", KauboTokenKind::Not),
             ("async", KauboTokenKind::Async),
             ("await", KauboTokenKind::Await),
+            ("module", KauboTokenKind::Module),
+            ("pub", KauboTokenKind::Pub),
+            ("json", KauboTokenKind::Json),
         ];
 
         for (code, expected) in cases {

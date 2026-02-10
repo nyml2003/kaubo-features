@@ -105,8 +105,20 @@ pub enum OpCode {
     // ===== 列表 (0xB0-0xBF) =====
     BuildList = 0xB0,     // + u8 元素个数
     IndexGet,             // 列表索引读取
+    IndexSet,             // 列表索引赋值
     GetIter,              // 获取迭代器
     IterNext,             // 获取迭代器下一个值，null 表示结束
+    
+    // ===== JSON (0xC0-0xCF) =====
+    BuildJson = 0xC0,     // + u8 键值对个数，键和值从栈弹出
+    JsonGet,              // JSON 字符串键获取: 栈顶[key, json] → value
+    JsonSet,              // JSON 字符串键设置: 栈顶[value, key, json] → null
+
+
+    // ===== 模块 (0xD0-0xDF) =====
+    BuildModule = 0xD0,   // + u8 导出项个数，值从栈弹出，创建模块对象
+    ModuleGet,            // + u16 ShapeID，从模块获取字段（编译期确定）
+    // ModuleSet 预留（未来支持模块字段可变性）
 
     // ===== 调试 (0xF0-0xFF) =====
     Print = 0xF0,         // 调试用
@@ -191,7 +203,13 @@ impl OpCode {
             OpCode::Yield => "YIELD",
             OpCode::CoroutineStatus => "COROUTINE_STATUS",
             OpCode::BuildList => "BUILD_LIST",
+            OpCode::BuildJson => "BUILD_JSON",
+            OpCode::BuildModule => "BUILD_MODULE",
+            OpCode::ModuleGet => "MODULE_GET",
+            OpCode::JsonGet => "JSON_GET",
+            OpCode::JsonSet => "JSON_SET",
             OpCode::IndexGet => "INDEX_GET",
+            OpCode::IndexSet => "INDEX_SET",
             OpCode::GetIter => "GET_ITER",
             OpCode::IterNext => "ITER_NEXT",
             OpCode::Print => "PRINT",
@@ -258,6 +276,9 @@ impl OpCode {
             | OpCode::Return
             | OpCode::ReturnValue
             | OpCode::IndexGet
+            | OpCode::IndexSet
+            | OpCode::JsonGet
+            | OpCode::JsonSet
             | OpCode::GetIter
             | OpCode::IterNext
             | OpCode::Yield
@@ -279,11 +300,14 @@ impl OpCode {
             | OpCode::CreateCoroutine
             | OpCode::Resume
             | OpCode::CoroutineStatus
-            | OpCode::BuildList => 1,
+            | OpCode::BuildList
+            | OpCode::BuildJson
+            | OpCode::BuildModule => 1,
 
             // u16/i16 操作数
             OpCode::LoadConstWide => 2,
             OpCode::Jump | OpCode::JumpIfFalse | OpCode::JumpBack => 2,
+            OpCode::ModuleGet => 2,
         }
     }
 }

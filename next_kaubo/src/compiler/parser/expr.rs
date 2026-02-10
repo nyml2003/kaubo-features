@@ -34,6 +34,10 @@ pub enum ExprKind {
     Lambda(Lambda),
     // 成员访问表达式
     MemberAccess(MemberAccess),
+    // 索引访问表达式
+    IndexAccess(IndexAccess),
+    // JSON 字面量表达式
+    JsonLiteral(JsonLiteral),
     // Yield 表达式 (用于协程)
     Yield(YieldExpr),
 }
@@ -116,6 +120,19 @@ pub struct MemberAccess {
     pub member: String,
 }
 
+// 索引访问表达式结构体
+#[derive(Debug, Clone, PartialEq)]
+pub struct IndexAccess {
+    pub object: Expr,
+    pub index: Expr,
+}
+
+// JSON 字面量结构体
+#[derive(Debug, Clone, PartialEq)]
+pub struct JsonLiteral {
+    pub entries: Vec<(String, Expr)>,  // 键值对列表
+}
+
 // Yield 表达式结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct YieldExpr {
@@ -158,6 +175,14 @@ impl fmt::Display for ExprKind {
                 write!(f, "({}) => {:?}", params, l.body)
             }
             ExprKind::MemberAccess(m) => write!(f, "{}.{}", m.object, m.member),
+            ExprKind::IndexAccess(i) => write!(f, "{}[{}]", i.object, i.index),
+            ExprKind::JsonLiteral(json) => {
+                let entries = json.entries.iter()
+                    .map(|(k, v)| format!("\"{}\": {}", k, v))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "json {{ {} }}", entries)
+            }
             ExprKind::Yield(y) => match &y.value {
                 Some(v) => write!(f, "yield {}", v),
                 None => write!(f, "yield"),

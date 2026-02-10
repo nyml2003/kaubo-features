@@ -4,7 +4,10 @@
 //! 位布局: [1位符号][11位指数][7位Tag][45位Payload]
 //!          S         E(0x7FF)   Tag      Payload
 
-use super::object::{ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjList, ObjOption, ObjResult, ObjString};
+use super::object::{
+    ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjOption,
+    ObjResult, ObjString,
+};
 
 /// NaN-boxed 值 (64-bit)
 #[repr(transparent)]
@@ -53,7 +56,9 @@ const TAG_CLOSURE: u64 = 37 << 44; // 闭包对象
 const TAG_COROUTINE: u64 = 38 << 44; // 协程对象
 const TAG_RESULT: u64 = 39 << 44; // Result 对象
 const TAG_OPTION: u64 = 40 << 44; // Option 对象
-// 41-127: 预留其他堆类型
+const TAG_JSON: u64 = 41 << 44; // JSON 对象
+const TAG_MODULE: u64 = 42 << 44; // 模块对象
+// 43-127: 预留其他堆类型
 
 /// SMI 最大值 (2^30 - 1)
 const SMI_MAX: i32 = (1 << 30) - 1;
@@ -155,6 +160,30 @@ impl Value {
     #[inline]
     pub fn coroutine(ptr: *mut ObjCoroutine) -> Self {
         Self::encode_heap_ptr(ptr, TAG_COROUTINE)
+    }
+
+    /// 创建 Result 对象
+    #[inline]
+    pub fn result(ptr: *mut ObjResult) -> Self {
+        Self::encode_heap_ptr(ptr, TAG_RESULT)
+    }
+
+    /// 创建 Option 对象
+    #[inline]
+    pub fn option(ptr: *mut ObjOption) -> Self {
+        Self::encode_heap_ptr(ptr, TAG_OPTION)
+    }
+
+    /// 创建 JSON 对象
+    #[inline]
+    pub fn json(ptr: *mut ObjJson) -> Self {
+        Self::encode_heap_ptr(ptr, TAG_JSON)
+    }
+
+    /// 创建模块对象
+    #[inline]
+    pub fn module(ptr: *mut ObjModule) -> Self {
+        Self::encode_heap_ptr(ptr, TAG_MODULE)
     }
 
     // ==================== 类型判断 ====================
@@ -274,6 +303,30 @@ impl Value {
         self.is_boxed() && self.raw_tag() == 38
     }
 
+    /// 是否为 Result 对象
+    #[inline]
+    pub fn is_result(&self) -> bool {
+        self.is_boxed() && self.raw_tag() == 39
+    }
+
+    /// 是否为 Option 对象
+    #[inline]
+    pub fn is_option(&self) -> bool {
+        self.is_boxed() && self.raw_tag() == 40
+    }
+
+    /// 是否为 JSON 对象
+    #[inline]
+    pub fn is_json(&self) -> bool {
+        self.is_boxed() && self.raw_tag() == 41
+    }
+
+    /// 是否为模块对象
+    #[inline]
+    pub fn is_module(&self) -> bool {
+        self.is_boxed() && self.raw_tag() == 42
+    }
+
     // ==================== 解包方法 ====================
 
     /// 解包为 SMI (i32)
@@ -373,6 +426,30 @@ impl Value {
         self.decode_heap_ptr(TAG_COROUTINE)
     }
 
+    /// 解包为 Result 对象
+    #[inline]
+    pub fn as_result(&self) -> Option<*mut ObjResult> {
+        self.decode_heap_ptr(TAG_RESULT)
+    }
+
+    /// 解包为 Option 对象
+    #[inline]
+    pub fn as_option(&self) -> Option<*mut ObjOption> {
+        self.decode_heap_ptr(TAG_OPTION)
+    }
+
+    /// 解包为 JSON 对象
+    #[inline]
+    pub fn as_json(&self) -> Option<*mut ObjJson> {
+        self.decode_heap_ptr(TAG_JSON)
+    }
+
+    /// 解包为模块对象
+    #[inline]
+    pub fn as_module(&self) -> Option<*mut ObjModule> {
+        self.decode_heap_ptr(TAG_MODULE)
+    }
+
     /// 解包为布尔值
     #[inline]
     pub fn as_bool(&self) -> Option<bool> {
@@ -422,6 +499,14 @@ impl std::fmt::Debug for Value {
             write!(f, "Object({:p})", self.as_object::<()>().unwrap())
         } else if self.is_coroutine() {
             write!(f, "Coroutine")
+        } else if self.is_result() {
+            write!(f, "Result")
+        } else if self.is_option() {
+            write!(f, "Option")
+        } else if self.is_json() {
+            write!(f, "Json")
+        } else if self.is_module() {
+            write!(f, "Module")
         } else {
             write!(f, "Value({:016x})", self.0)
         }
@@ -472,6 +557,14 @@ impl std::fmt::Display for Value {
             write!(f, "<closure>")
         } else if self.is_coroutine() {
             write!(f, "<coroutine>")
+        } else if self.is_result() {
+            write!(f, "<result>")
+        } else if self.is_option() {
+            write!(f, "<option>")
+        } else if self.is_json() {
+            write!(f, "<json>, {:?}", self.as_json())
+        } else if self.is_module() {
+            write!(f, "<module>")
         } else if self.is_heap() {
             write!(f, "<object>")
         } else {

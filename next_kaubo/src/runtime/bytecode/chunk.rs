@@ -47,6 +47,15 @@ impl Chunk {
         self.lines.push(line);
     }
 
+    /// 写入 u16 操作数
+    pub fn write_u16(&mut self, value: u16, line: usize) {
+        let bytes = value.to_le_bytes();
+        self.code.push(bytes[0]);
+        self.code.push(bytes[1]);
+        self.lines.push(line);
+        self.lines.push(line);
+    }
+
     /// 写入跳转指令 (占位，稍后 patch)
     pub fn write_jump(&mut self, op: OpCode, line: usize) -> usize {
         self.write_op(op, line);
@@ -189,9 +198,21 @@ impl Chunk {
                 offset + 2
             }
             
-            OpCode::CreateCoroutine | OpCode::Yield => {
+            OpCode::CreateCoroutine | OpCode::Yield | OpCode::IndexGet | OpCode::IndexSet => {
                 println!("{}", opcode.name());
                 offset + 1
+            }
+            
+            OpCode::BuildJson => {
+                let operand = self.code[offset + 1];
+                println!("{} {}", opcode.name(), operand);
+                offset + 2
+            }
+
+            OpCode::ModuleGet => {
+                let shape_id = u16::from_le_bytes([self.code[offset + 1], self.code[offset + 2]]);
+                println!("{} {}", opcode.name(), shape_id);
+                offset + 3
             }
 
             // i16 操作数 (跳转)

@@ -1,17 +1,17 @@
 # Kaubo 设计文档
 
-本文档描述 Kaubo 语言的设计决策、字节码规范和待实现特性。
+> 本文档是 Kaubo 语言的完整设计规范，包含字节码、类型系统、模块架构等。
 
 ---
 
 ## 目录
 
 1. [字节码设计](#1-字节码设计)
-2. [值表示（NaN Boxing）](#2-值表示na-n-boxing)
-3. [变量解析](#3-变量解析)
-4. [闭包设计](#4-闭包设计)
-5. [模块系统设计](#5-模块系统设计)
-6. [待实现计划](#6-待实现计划)
+2. [值表示（NaN Boxing）](#2-值表示nan-boxing)
+3. [访问系统设计](#3-访问系统设计)
+4. [模块系统设计](#4-模块系统设计)
+5. [测试计划](#5-测试计划)
+6. [项目状态](#6-项目状态)
 
 ---
 
@@ -21,67 +21,70 @@
 
 ```rust
 pub enum OpCode {
-    // 常量加载 (0x00-0x1F)
+    // ===== 常量加载 (0x00-0x1F) =====
     LoadConst0 = 0x00, LoadConst1, ..., LoadConst15,
-    LoadConst,           // 0x10 + u8
-    LoadConstWide,       // 0x11 + u16
+    LoadConst,           // 0x10 + u8 索引
+    LoadConstWide,       // 0x11 + u16 索引
+
     LoadNull = 0x18, LoadTrue, LoadFalse, LoadZero, LoadOne,
 
-    // 栈操作 (0x20-0x2F)
+    // ===== 栈操作 (0x20-0x2F) =====
     Pop = 0x20, Dup, Swap,
 
-    // 局部变量 (0x30-0x47)
+    // ===== 局部变量 (0x30-0x47) =====
     LoadLocal0 = 0x30, ..., LoadLocal7,
     LoadLocal,           // 0x38 + u8
     StoreLocal0 = 0x40, ..., StoreLocal7,
     StoreLocal,          // 0x48 + u8
 
-    // 算术运算 (0x60-0x6F)
-    Add = 0x60, Sub, Mul, Div, Neg,
+    // ===== 全局变量 (0x50-0x57) =====
+    LoadGlobal = 0x50,   // + u8 模块名索引（模块注册表）
+    StoreGlobal,         // + u8 索引
+    DefineGlobal,        // + u8 索引
 
-    // 比较运算 (0x70-0x77)
+    // ===== 算术运算 (0x60-0x6F) =====
+    Add = 0x60, Sub, Mul, Div,
+    Neg = 0x68,
+
+    // ===== 比较运算 (0x70-0x77) =====
     Equal = 0x70, NotEqual, Greater, GreaterEqual, Less, LessEqual,
 
-    // 逻辑运算 (0x78-0x7B)
+    // ===== 逻辑运算 (0x78-0x7B) =====
     Not = 0x78,
 
-    // 控制流 (0x80-0x8F)
+    // ===== 控制流 (0x80-0x8F) =====
     Jump = 0x80, JumpIfFalse, JumpBack,
 
-    // 函数 (0x90-0x9F)
-    Call = 0x90, Return, ReturnValue,
-    Closure,              // 创建闭包/函数对象
-    GetUpvalue,           // 读取 upvalue（预留）
-    SetUpvalue,           // 设置 upvalue（预留）
+    // ===== 函数 (0x90-0x9F) =====
+    Call = 0x90, Closure, GetUpvalue, SetUpvalue, CloseUpvalues,
+    Return, ReturnValue,
 
-    // 模块 (0xA0-0xAF)
-    ImportBuiltin = 0xA0, // + u8 模块名索引
-    ImportModule,         // + u8 用户模块索引
-    GetModuleMember,      // + u8 成员名索引
+    // ===== 协程 (0x98-0x9F) =====
+    CreateCoroutine = 0x98, Resume, Yield, CoroutineStatus,
 
-    // 列表 (0xB0-0xBF)
-    BuildList = 0xB0,     // + u8 元素个数
-    IndexGet,             // 列表索引读取
+    // ===== 列表 (0xB0-0xBF) =====
+    BuildList = 0xB0, IndexGet, IndexSet, GetIter, IterNext,
 
-    // 调试 (0xF0-0xFF)
+    // ===== JSON (0xC0-0xCF) =====
+    BuildJson = 0xC0, JsonGet, JsonSet,
+
+    // ===== 模块 (0xD0-0xDF) =====
+    BuildModule = 0xD0, LoadModule,
+
+    // ===== 调试 (0xF0-0xFF) =====
     Print = 0xF0, Invalid = 0xFF,
 }
 ```
 
-### 1.2 调用约定
+### 1.2 访问指令语义
 
-```
-栈帧布局:
-┌─────────────────────────────┐ ← 栈顶
-│          操作数栈            │
-├─────────────────────────────┤
-│  局部变量 0 (slot_base)      │
-│  局部变量 1                  │
-│  ...                        │
-├─────────────────────────────┤
-│      返回地址 / 原 FP         │
-└─────────────────────────────┘
-```
+| 指令 | 操作数 | 栈变化 | 说明 |
+|------|--------|--------|------|
+| `IndexGet` | - | `[obj, idx] → [value]` | 整数索引访问 List/Module |
+| `IndexSet` | - | `[obj, idx, val] → []` | 整数索引赋值 List/Module |
+| `JsonGet` | - | `[json, key] → [value]` | 字符串键访问 JSON |
+| `JsonSet` | - | `[json, key, val] → []` | 字符串键赋值 JSON |
+| `LoadModule` | u8 | `[] → [module]` | 从模块注册表加载模块 |
 
 ---
 
@@ -111,17 +114,22 @@ pub enum OpCode {
 | 1 | null | 直接位比较 |
 | 2 | true | 直接位比较 |
 | 3 | false | 直接位比较 |
-| 4 | SMI | 小整数，Payload 低 31 位存储值 (-2^30 ~ 2^30-1) |
+| 4 | SMI | 小整数 (31-bit) |
 | 5-7 | 预留 | 未来特殊值 |
-| 8-23 | InlineInt | 内联整数 -8~+7，值 = Tag-16，零 Payload |
+| 8-23 | InlineInt | 内联整数 -8~+7 |
 | 24-31 | 预留 | 内联值扩展 |
-| 32 | Heap | 通用堆对象指针 |
+| 32 | Heap | 通用堆对象 |
 | 33 | String | 字符串对象 |
 | 34 | Function | 函数对象 |
 | 35 | List | 列表对象 |
 | 36 | Iterator | 迭代器对象 |
-| 37 | Closure | 闭包对象（预留）|
-| 38-127 | 预留 | Map/Set/Date/Error 等堆类型 |
+| 37 | Closure | 闭包对象 |
+| 38 | Coroutine | 协程对象 |
+| 39 | Result | Result 对象 |
+| 40 | Option | Option 对象 |
+| 41 | JSON | JSON 对象 |
+| 42 | Module | 模块对象 |
+| 43-127 | 预留 | Map/Set/Date/Error 等 |
 
 ### 2.3 整数编码策略
 
@@ -133,528 +141,442 @@ Value::int(n) 匹配:
   其他     → 溢出（未来用堆 BigInt）
 ```
 
-### 2.4 关键常量
+---
+
+## 3. 访问系统设计
+
+### 3.1 设计原则
+
+- **IndexGet/IndexSet**: 仅整数索引，仅支持 List（运行时动态索引）
+- **ModuleGet**: ShapeID 索引，仅支持 Module（编译期确定）
+- **JsonGet/JsonSet**: 字符串键，仅支持 JSON 对象
+- **模块注册表**: 模块存入 globals 注册表，与普通变量统一存储
+
+### 3.2 语法映射
+
+| 语法 | 类型 | 编译结果 |
+|------|------|----------|
+| `list[0]` | List | `LoadLocal(list) + LoadConst(0) + IndexGet` |
+| `list[0] = x` | List | `LoadLocal(list) + LoadConst(0) + LoadLocal(x) + IndexSet` |
+| `module.name` | Module | `LoadGlobal(module) + ModuleGet(shape_id)` (shape_id编译期确定) |
+| `json["key"]` | JSON | `LoadLocal(json) + LoadConst("key") + JsonGet` |
+| `json.key` | JSON | `LoadLocal(json) + LoadConst("key") + JsonGet` (语法糖) |
+| `json["key"] = x` | JSON | `LoadLocal(json) + LoadConst("key") + LoadLocal(x) + JsonSet` |
+
+**访问方式选择**：
+- **List**: 动态整数索引 → `IndexGet`
+- **Module**: 编译期确定字段名 → `ModuleGet`（静态布局，O(1)）
+- **JSON**: 动态字符串键 → `JsonGet`
+
+> **注意**：模块不支持运行时动态索引（`math[idx]` 非法），因为模块是静态布局的。
+
+### 3.3 VM 模块存储
+
+模块作为普通全局变量存储，通过 `LoadGlobal` 访问：
 
 ```rust
-const QNAN: u64 = 0x7FF8_0000_0000_0000;  // 基础 NaN
-const TAG_MASK: u64 = 0x7F << 44;          // bits 50-44
-const PAYLOAD_MASK: u64 = 0xFFFFFFFFFFF;   // bits 43-0 (44位)
+struct VM {
+    stack: Vec<Value>,
+    frames: Vec<CallFrame>,
+    open_upvalues: Vec<*mut ObjUpvalue>,
+    globals: HashMap<String, Value>,  // 模块和普通变量统一存储
+}
 ```
+
+**设计理由**：
+- 简化 VM 结构，模块就是值为 `ObjModule` 的全局变量
+- 编译期保证模块名的唯一性
+- `LoadModule` 指令实际就是 `LoadGlobal` 的语义
 
 ---
 
-## 3. 变量解析
+## 4. 模块系统设计
 
-### 3.1 无全局变量模式
+### 4.1 设计原则
 
-Kaubo 采用**无全局变量**设计，所有变量来源必须显式声明。
+- **显式导出**: 使用 `pub` 关键字标记导出项
+- **静态布局**: 模块导出项在编译期完全确定，运行时内存布局固定
+- **ShapeID 机制**: 每个模块字段有编译期确定的 ShapeID（u16），运行时 O(1) 访问
+- **注册表机制**: 模块存入专用注册表，与普通变量隔离
 
-**6 种变量来源**（按解析优先级）：
-
-| # | 来源 | 例子 | 说明 |
-|---|------|------|------|
-| 1 | 局部变量 | `var x = 5` | 当前函数内声明 |
-| 2 | Upvalue | `\|\| { return x; }` | 外层函数变量，闭包捕获 |
-| 3 | 模块变量 | 模块级 `var x` | 当前模块内声明 |
-| 4 | 用户模块导入 | `math.PI` | `import math` |
-| 5 | Builtin 导入 | `std.core.print` | `import std.core` |
-| 6 | 未定义 | - | 编译错误 |
-
-### 3.2 导入语法
+### 4.2 模块定义
 
 ```kaubo
-// 方式 A：模块前缀（推荐）
-import std.core;
-import std.math;
-
-fun demo() {
-    std.core.print("Hello");
-    var pi = std.math.PI;
-}
-
-// 方式 B：选择性导入
-from std.core import print, assert;
-from std.math import sqrt;
-
-fun demo() {
-    print("Hello");  // 直接使用
-}
-
-// 方式 C：重命名
-from std.core import print as log;
-```
-
-### 3.3 编译时解析
-
-```rust
-enum Variable {
-    Local(u8),
-    Upvalue(u8),
-    Module(u8),
-    Import { module: u8, name: u8 },
-    Builtin { module: u8, name: u8 },
-    Undefined,
-}
-
-impl Compiler {
-    fn resolve_variable(&mut self, name: &str) -> Variable {
-        // 1. 局部变量
-        if let Some(idx) = self.find_local(name) {
-            return Variable::Local(idx);
-        }
-        
-        // 2. Upvalue（递归向外查找）
-        if let Some(idx) = self.resolve_upvalue(name) {
-            return Variable::Upvalue(idx);
-        }
-        
-        // 3. 当前模块变量
-        if let Some(idx) = self.find_module_var(name) {
-            return Variable::Module(idx);
-        }
-        
-        // 4. 显式导入（用户模块或 builtin）
-        if let Some(var) = self.find_import(name) {
-            return var;
-        }
-        
-        // 5. 未定义
-        self.error(format!("undefined variable: {}", name));
-        Variable::Undefined
-    }
-}
-```
-
----
-
-## 4. 闭包设计
-
-### 4.1 核心数据结构
-
-```rust
-/// Upvalue 对象 - 表示对外部变量的引用（Lua 风格）
-pub struct ObjUpvalue {
-    /// 指向外部变量的指针（栈上或已关闭）
-    pub location: *mut Value,
-    /// 如果变量离开栈，转储到这里
-    pub closed: Option<Value>,
-}
-
-impl ObjUpvalue {
-    pub fn new(location: *mut Value) -> Self;
-    pub fn get(&self) -> Value;
-    pub fn set(&mut self, value: Value);
-    pub fn close(&mut self);  // 将栈值复制到 closed
-}
-
-/// 闭包对象 - 包含函数和捕获的 upvalues
-pub struct ObjClosure {
-    pub function: *mut ObjFunction,
-    pub upvalues: Vec<*mut ObjUpvalue>,
-}
-
-impl ObjClosure {
-    pub fn new(function: *mut ObjFunction) -> Self;
-    pub fn add_upvalue(&mut self, upvalue: *mut ObjUpvalue);
-    pub fn get_upvalue(&self, index: usize) -> Option<*mut ObjUpvalue>;
-}
-```
-```
-
-### 4.2 捕获策略
-
-- **按引用捕获**（Lua 风格）：闭包内外共享同一变量
-- **立即堆分配**：创建 upvalue 时即分配堆内存
-- **写时关闭**：当外部函数返回时，将栈上的值复制到 upvalue 的 `closed` 字段
-
-### 4.3 编译时 Upvalue 解析
-
-```rust
-/// Upvalue 描述（编译时）
-struct UpvalueDescriptor {
-    name: String,
-    index: u8,        // 在该层的索引
-    is_local: bool,   // true=局部变量, false=继承的 upvalue
-}
-
-impl Compiler {
-    /// 递归解析 upvalue
-    fn resolve_upvalue(&mut self, name: &str) -> Option<u8> {
-        let parent_idx = self.scope.parent?;
-        
-        // 在父作用域查找局部变量
-        if let Some((local_idx, _)) = self.scopes[parent_idx].find_local(name) {
-            self.scopes[parent_idx].mark_captured(local_idx);
-            return Some(self.add_upvalue(UpvalueDescriptor {
-                name: name.to_string(),
-                index: local_idx,
-                is_local: true,
-            }));
-        }
-        
-        // 递归查找更外层
-        if let Some(upvalue_idx) = self.resolve_upvalue_recursive(name, parent_idx) {
-            return Some(self.add_upvalue(UpvalueDescriptor {
-                name: name.to_string(),
-                index: upvalue_idx,
-                is_local: false,
-            }));
-        }
-        
-        None
-    }
-}
-```
-
-### 4.4 内存布局示例
-
-```
-外部函数栈帧:
-┌─────────────┐
-│ local x: 5  │ ← slot 0
-└─────────────┘
-      ↑
-      │ 引用
-┌─────────────┐     ┌─────────────┐
-│ Upvalue     │────→│ location    │────→ slot 0 (栈上)
-│ { location, │     │ closed: None│
-│   closed }  │     └─────────────┘
-└─────────────┘
-      ↑
-      │ 包含
-┌─────────────┐
-│ Closure     │
-│ { function, │
-│   upvalues: │
-│   [upvalue] }│
-└─────────────┘
-```
-
-### 4.5 VM 中的 Upvalue 管理
-
-```rust
-pub struct VM {
-    // ... 其他字段
-    open_upvalues: Vec<*mut ObjUpvalue>,  // 打开的 upvalues（按地址排序）
-}
-
-impl VM {
-    /// 捕获 upvalue（复用已存在的或创建新的）
-    fn capture_upvalue(&mut self, location: *mut Value) -> *mut ObjUpvalue {
-        // 从后向前查找是否已有指向相同位置的 upvalue
-        for &upvalue in self.open_upvalues.iter().rev() {
-            if unsafe { (*upvalue).location == location } {
-                return upvalue;  // 复用
-            }
-        }
-        // 创建新的 upvalue
-        let upvalue = Box::into_raw(Box::new(ObjUpvalue::new(location)));
-        self.open_upvalues.push(upvalue);
-        upvalue
-    }
-
-    /// 关闭从指定槽位开始的所有 upvalues
-    fn close_upvalues(&mut self, slot: usize) {
-        // 关闭所有地址 >= 指定位置的 upvalue
-        // 将值从栈复制到 closed 字段
-    }
-}
-```
-
-### 4.6 指令实现
-
-**Closure** 指令格式：`Closure | const_idx | upvalue_count | (is_local, index)...`
-
-```rust
-Closure => {
-    let const_idx = read_byte();
-    let upvalue_count = read_byte();
-    let func = constants[const_idx].as_function();
-    let mut closure = ObjClosure::new(func);
-    
-    for _ in 0..upvalue_count {
-        let is_local = read_byte() != 0;
-        let index = read_byte();
-        
-        if is_local {
-            // 捕获当前帧的局部变量
-            let location = current_local_ptr(index);
-            closure.add_upvalue(capture_upvalue(location));
-        } else {
-            // 继承当前闭包的 upvalue
-            let upvalue = current_closure().get_upvalue(index);
-            closure.add_upvalue(upvalue);
-        }
-    }
-    push(Value::closure(closure));
-}
-
-GetUpvalue => {
-    let idx = read_byte();
-    let upvalue = current_closure().get_upvalue(idx);
-    push(upvalue.get());
-}
-
-SetUpvalue => {
-    let idx = read_byte();
-    let value = peek(0);
-    let upvalue = current_closure().get_upvalue(idx);
-    upvalue.set(value);
-}
-
-CloseUpvalues => {
-    let slot = read_byte();
-    close_upvalues(slot);
-}
-```
-
-### 4.7 验收代码
-
-```kaubo
-// 基础捕获
-var x = 5;
-var f = || { return x; };
-assert(f() == 5);
-
-// 修改外部变量
-var y = 10;
-var g = || { y = y + 1; return y; };
-assert(g() == 11);
-assert(y == 11);
-
-// 多变量捕获
-var a = 1;
-var b = 2;
-var h = || { return a + b; };
-assert(h() == 3);
-
-// 嵌套闭包
-var outer = 100;
-var f1 = || {
-    var inner = 10;
-    var f2 = || { return outer + inner; };
-    return f2();
-};
-assert(f1() == 110);
-```
-
----
-
-## 5. 模块系统设计
-
-### 5.1 设计原则
-
-- **无全局变量**：所有变量必须显式声明来源
-- **显式导入**：Builtin 模块也需要 `import`
-- **文件即模块**：`math.kaubo` 文件对应 `math` 模块
-
-### 5.2 模块定义
-
-```kaubo
-// math.kaubo
 module math {
-    // 默认 private
-    var PI = 3.14;
-    
-    // pub 导出
-    pub fun add(a, b) { return a + b; }
-    pub fun square(x) { return x * x; }
+    pub var PI = 3.14159;           // 导出项 0，ShapeID=0
+    pub var add = |a, b| {          // 导出项 1，ShapeID=1
+        return a + b;
+    };
+    var private_var = 100;          // 未导出，不在 exports 中
 }
 ```
 
-### 5.3 模块使用
+**语法说明**：
+- 保留 `pub var` 语法，但语义改为**静态字段定义**
+- 导出项按定义顺序分配 ShapeID（从 0 开始）
+- 模块内导出项数量上限：65535（u16）
+
+### 4.3 模块访问
 
 ```kaubo
-// main.kaubo
-import math;              // 导入用户模块
-import std.core;          // 导入 builtin
+// 属性访问（编译期确定 ShapeID）
+print math.PI;           // LoadGlobal("math") + ModuleGet(0)
+print math.add(1, 2);    // LoadGlobal("math") + ModuleGet(1) + Call
 
-print math.add(1, 2);
-std.core.print("Hello");
-
-// 选择性导入
-from math import square;
-print square(5);
+// 运行时动态索引（不支持！）
+// var idx = 0;
+// print math[idx];      // 编译错误：模块不支持动态索引
 ```
 
-### 5.4 Builtin 模块
+**设计原则**：
+- 模块字段必须在编译期完全确定
+- 只支持 `module.name` 形式的属性访问
+- 不支持 `module[idx]` 形式的动态索引（会破坏静态布局）
+
+### 4.4 编译流程
 
 ```
-std.core      // 核心：print, assert, panic, typeof
-std.math      // 数学：sin, cos, sqrt, PI
-std.string    // 字符串：len, concat, slice
-std.io        // IO：read_line, write_file
-std.collections // 集合：List, Map, Set 类型
+1. Parser: module { ... } → ModuleStmt
+2. Compiler: 
+   - 编译模块体，收集 pub 标记的导出项
+   - 为每个导出项分配 ShapeID（按定义顺序，u16）
+   - 生成 BuildModule 指令创建模块对象
+3. VM: 
+   - BuildModule 创建 ObjModule（固定长度 exports）
+   - 存入 globals 注册表
 ```
 
-### 5.5 运行时模块对象
+### 4.5 运行时模块对象
 
 ```rust
 pub struct ObjModule {
-    name: String,
-    exports: HashMap<String, Value>,
-    variables: Vec<Value>,
-    imports: Vec<Gc<ObjModule>>,
+    pub name: String,
+    pub exports: Box<[Value]>,                  // 固定长度数组，按 ShapeID 索引
+    pub name_to_index: HashMap<String, u16>,   // 名称到 ShapeID 映射（编译期/调试用）
 }
 
-pub struct CallFrame {
-    chunk: Chunk,
-    ip: *const u8,
-    locals: Vec<Value>,
-    module: Gc<ObjModule>,  // 当前模块（用于访问模块变量）
-    upvalues: Option<Vec<Gc<ObjUpvalue>>>,
+impl ObjModule {
+    /// 通过 ShapeID 获取导出项（O(1)）
+    pub fn get_by_shape_id(&self, shape_id: u16) -> Option<Value> {
+        self.exports.get(shape_id as usize).copied()
+    }
+}
+```
+
+### 4.6 模块访问指令
+
+| 指令 | 操作数 | 栈变化 | 说明 |
+|------|--------|--------|------|
+| `LoadModule` | u8 | `[] → [module]` | 从全局变量加载模块 |
+| `ModuleGet` | u16 | `[module] → [value]` | 通过 ShapeID 获取字段 |
+
+**字节码示例**：
+```
+math.PI
+  LoadGlobal "math"     // 加载模块对象
+  ModuleGet 0           // 获取 ShapeID=0 的字段 (PI)
+
+math.add(1, 2)
+  LoadGlobal "math"     // 加载模块对象
+  ModuleGet 1           // 获取 ShapeID=1 的字段 (add)
+  LoadConst 1           // 参数 1
+  LoadConst 2           // 参数 2
+  Call 2                // 调用
+```
+
+### 4.7 模块可变性
+
+**Phase 1 限制**：模块导出项**只读**，暂不支持 `ModuleSet`。
+
+```kaubo
+module math { pub PI = 3.14; }
+math.PI = 3.14159;  // 运行时错误：模块字段只读
+```
+
+未来如需可变性，将添加 `ModuleSet` 指令。
+
+### 4.8 结构体系统（Phase 3）
+
+**设计原则**：
+- 结构体**只描述内存布局**（纯数据）
+- 方法必须通过 **Interface** 定义
+- 通过 **impl** 语法为结构体实现 Interface
+- 类似 Go（struct + interface）和 Rust（struct + trait）的混合
+
+#### 4.8.1 结构体定义
+
+```kaubo
+// 结构体：纯数据布局，ShapeID 系统复用模块的静态布局机制
+struct Point {
+    x: float,
+    y: float,
+}
+
+struct Rect {
+    origin: Point,
+    width: float,
+    height: float,
+}
+```
+
+**特性**：
+- 字段必须显式声明类型（未来支持类型推断）
+- 编译期确定 Shape，运行时 O(1) 字段访问
+- 结构体本身无方法
+
+#### 4.8.2 Interface 定义
+
+```kaubo
+// Interface：方法契约集合
+interface Shape {
+    area() -> float;
+    perimeter() -> float;
+}
+
+interface Drawable {
+    draw(canvas: Canvas);
+    move(dx: float, dy: float);
+}
+```
+
+**特性**：
+- Interface 只定义方法签名，无默认实现（初期）
+- 隐式实现：结构体实现 Interface 的所有方法即自动满足该 Interface
+- 支持 Interface 组合
+
+#### 4.8.3 实现语法
+
+```kaubo
+// 为 Point 实现方法（类似 Go 的接收者语法）
+impl Point {
+    // 构造函数（约定俗成）
+    new(x: float, y: float) -> Point {
+        return Point { x: x, y: y };
+    }
+    
+    // 方法（第一个参数是 self）
+    distance(other: Point) -> float {
+        var dx = self.x - other.x;
+        var dy = self.y - other.y;
+        return math.sqrt(dx * dx + dy * dy);
+    }
+}
+
+// 为 Rect 实现 Shape Interface
+impl Shape for Rect {
+    area() -> float {
+        return self.width * self.height;
+    }
+    
+    perimeter() -> float {
+        return 2 * (self.width + self.height);
+    }
+}
+
+// 为 Rect 实现 Drawable Interface
+impl Drawable for Rect {
+    draw(canvas: Canvas) {
+        // ...
+    }
+    
+    move(dx: float, dy: float) {
+        self.origin.x = self.origin.x + dx;
+        self.origin.y = self.origin.y + dy;
+    }
+}
+```
+
+#### 4.8.4 内存布局
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    结构体内存布局                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  ObjectHeader │ ShapeID │ Field1 │ Field2 │ ...                  │
+│   (16 bytes)  │ (u16)   │        │        │                      │
+└─────────────────────────────────────────────────────────────────┘
+                 ↓
+        ┌─────────────────┐
+        │ Shape 表（全局） │
+        │  - 结构体名称    │
+        │  - 字段数量      │
+        │  - 每个字段偏移  │
+        │  - 实现的 Interfaces │
+        └─────────────────┘
+```
+
+**与模块的关系**：
+- 模块是编译期单例，结构体是运行时多实例
+- 共享 Shape 系统的基础设施
+- 模块的字段访问和结构体的字段访问使用相同的底层机制
+
+### 4.9 未来：标准库注册表
+
+```rust
+// 内置模块注册
+lazy_static! {
+    static ref BUILTIN_MODULES: HashMap<&'static str, BuiltinModule> = {
+        let mut m = HashMap::new();
+        m.insert("std.core", create_core_module());
+        m.insert("std.math", create_math_module());
+        m
+    };
+}
+
+// std.core 模块
+fn create_core_module() -> BuiltinModule {
+    let mut fields = HashMap::new();
+    fields.insert("print".to_string(), Value::native_fn(print_fn));
+    fields.insert("assert".to_string(), Value::native_fn(assert_fn));
+    BuiltinModule::new(fields)
 }
 ```
 
 ---
 
-## 6. 待实现计划
+## 5. 测试计划
 
-### Phase 2.3：闭包支持 ✅ 已完成
+### 5.1 当前测试统计
 
-**已完成**:
-- ✅ `ObjUpvalue` / `ObjClosure` 结构体 (`src/runtime/object.rs`)
-- ✅ `Value::closure()` 及类型判断方法 (`src/runtime/value.rs`, Tag 37)
-- ✅ `GetUpvalue(u8)` / `SetUpvalue(u8)` / `CloseUpvalues(u8)` 指令
-- ✅ VM：闭包调用、upvalue 捕获与关闭 (`src/runtime/vm.rs`)
-- ✅ 编译器：变量解析与捕获分析
-  - 作用域链跟踪（编译时维护嵌套函数层次）
-  - 变量解析：区分 Local / Upvalue / Module / Import
-  - 递归 Upvalue 解析（嵌套闭包捕获）
-  - Upvalue 描述表：每个函数维护 upvalue 索引映射
+- **单元测试**: 227 个
+- **集成测试文件**: 21 个
+- **代码覆盖率**: 约 65%
 
-**验收代码**:
-```kaubo
-var x = 5;
-var f = || { return x; };
-assert(f() == 5);  // ✅ 通过
+### 5.2 测试缺口
 
-// 多变量捕获
-var a = 1;
-var b = 2;
-var g = || { return a + b; };
-assert(g() == 3);  // ✅ 通过
+| 类别 | 缺口 | 优先级 |
+|------|------|--------|
+| 边界条件 | 列表越界、空列表、除零 | 高 |
+| JSON 测试 | 嵌套深度、特殊键名 | 高 |
+| 协程测试 | 异常处理、嵌套协程 | 中 |
+| 闭包测试 | 多层嵌套、循环引用 | 中 |
+| 性能测试 | 大列表、深递归 | 低 |
 
-// 可修改捕获
-var c = 10;
-var h = || { c = c + 1; return c; };
-assert(h() == 11);  // ✅ 通过
-assert(c == 11);    // ✅ 外部变量同步更新
+### 5.3 测试文件规划
 
-// Y 组合子（高阶闭包嵌套）
-var Y = |f|{
-    return |x|{ return f(|n|{ return x(x)(n); }); }
-           (|x|{ return f(|n|{ return x(x)(n); }); });
-};
-var factorial = Y(|f|{
-    return |n|{ if (n == 0) { return 1; } else { return n * f(n - 1); } };
-});
-assert(factorial(5) == 120);  // ✅ 通过
+```
+tests/
+├── boundary_tests.rs      # 边界条件测试
+├── json_tests.rs          # JSON 功能测试
+├── coroutine_tests.rs     # 协程测试
+├── closure_tests.rs       # 闭包测试
+├── module_tests.rs        # 模块系统测试
+└── benchmarks/            # 性能基准测试
 ```
 
-**问题修复**: 修复了闭包 upvalue 内存安全 bug（详见 `docs/issues/closure-upvalue-bug.md`）
+### 5.4 目标指标
 
-### Phase 2.4：协程与迭代器 ✅ 已完成
+| 指标 | 当前 | 目标 |
+|------|------|------|
+| 单元测试数 | 227 | 350+ |
+| 代码覆盖率 | ~65% | 85%+ |
+| 集成测试文件 | 21 | 40+ |
+| 平均测试时间 | 12s | <5s |
 
-**已完成**:
-- ✅ 协程核心架构
-  - `ObjCoroutine` / `CoroutineState` (Suspended/Running/Dead)
-  - 独立调用栈、值栈、upvalues
-  - Value 类型支持 (`Tag 38`)
-- ✅ 字节码指令集
-  - `CreateCoroutine` (0x98) - 从闭包创建协程
-  - `Resume` (0x99) - 恢复协程执行（支持传入值）
-  - `Yield` (0x9A) - 挂起并返回值
-  - `CoroutineStatus` (0x9B) - 获取状态 (0/1/2)
-- ✅ VM 协程切换
-  - 完整的上下文保存/恢复
-  - 协程状态机管理
-- ✅ `yield` 表达式（Parser + 编译器）
-  - 支持 `yield value;` 和 `yield;`
-- ✅ 内置协程函数
-  - `create_coroutine(fn)` - 创建协程
-  - `resume(co, ...args)` - 恢复协程
-  - `coroutine_status(co)` - 获取状态
-- ✅ 迭代器协议
-  - `IteratorSource` 枚举（List/Coroutine）
-  - `GetIter` / `IterNext` 指令支持协程
-  - for-in 循环迭代协程生成器
+---
 
-**验收代码**:
-```kaubo
-// 基础协程
-var gen = || {
-    yield 1;
-    yield 2;
-    yield 3;
-    return 42;
-};
-var co = create_coroutine(gen);
-assert(resume(co) == 1);
-assert(resume(co) == 2);
-assert(resume(co) == 3);
-assert(resume(co) == 42);
-assert(coroutine_status(co) == 2);  // Dead
+## 6. 项目状态与路线图
 
-// Fibonacci 生成器
-var fib = || {
-    var a = 0, b = 1;
-    while (true) {
-        yield a;
-        var t = a + b;
-        a = b;
-        b = t;
-    }
-};
+### 6.1 开发阶段总览
 
-// for-in 迭代协程
-for var n in fib {
-    print n;  // 0, 1, 1, 2, 3, 5...
-}
+```
+Phase 2.x (当前) ──► Phase 3.0 ──► Phase 4.0 ──► Phase 5.0
+基础语言功能       Shape系统      类型系统       工程化
 ```
 
-### Phase 2.5：Result 类型与错误处理 ⏳
+### 6.2 已实现功能 ✅
 
-- [ ] `Result<T, E>` 类型
-- [ ] `Option<T>` 类型（替换 null）
-- [ ] match 表达式
-- [ ] 错误传播机制
+| 特性 | 状态 | 说明 |
+|------|------|------|
+| 变量声明 | ✅ | `var x = 5;` |
+| 基本类型 | ✅ | int, float, bool, null, string |
+| 算术/比较/逻辑 | ✅ | 完整运算符支持 |
+| 条件/循环 | ✅ | if/elif/else, while, for-in |
+| 列表 | ✅ | `[1, 2, 3]`, 索引访问/赋值 |
+| Lambda/闭包 | ✅ | 自动 upvalue 管理 |
+| 协程 | ✅ | create_coroutine, yield, resume |
+| JSON | ✅ | 字面量、成员访问、赋值 |
+| 模块定义 | ✅ | `module { ... }`, `pub` |
 
-### Phase 2.6：模块系统与标准库 ⏳
+### 6.3 进行中 🚧
 
-- [ ] 单文件内模块语法
-- [ ] `import` / `from...import` 语法
-- [ ] `pub` 导出关键字
-- [ ] Builtin 模块注册表（`std.core`, `std.math` 等）
-- [ ] 多文件模块加载（文件系统）
+| 特性 | 状态 | 说明 |
+|------|------|------|
+| 模块静态化 | 🚧 | ShapeID 系统，O(1) 字段访问 |
+| 浮点数解析修复 | 🚧 | 小数解析问题 |
 
-### Phase 2.7：严格类型系统 ⏳
+### 6.4 完整特性优先级矩阵
 
-- [ ] 类型标注语法 (`var x: Int`)
-- [ ] 函数签名标注
-- [ ] 类型推断
-- [ ] 类型检查器
+| 特性 | 阶段 | 难度 | 价值 | 依赖 | 优先级 |
+|------|------|------|------|------|--------|
+| **模块静态化** | 2.7 | ⭐⭐⭐ | ⭐⭐⭐ | - | 🔥 P0 |
+| **浮点数修复** | 2.7 | ⭐ | ⭐⭐ | - | 🔥 P0 |
+| **break/continue** | 2.8 | ⭐ | ⭐⭐⭐ | - | ⭐ P1 |
+| **边界测试** | 2.8 | ⭐⭐ | ⭐⭐⭐ | - | ⭐ P1 |
+| **标准库 (std.core)** | 2.9 | ⭐⭐ | ⭐⭐⭐ | 模块静态化 | ⭐ P1 |
+| **结构体 (struct)** | 3.0 | ⭐⭐⭐ | ⭐⭐⭐ | 模块静态化 | ⭐ P1 |
+| **Interface 系统** | 3.1 | ⭐⭐⭐ | ⭐⭐⭐ | 结构体 | ⭐ P1 |
+| **impl 实现语法** | 3.2 | ⭐⭐⭐⭐ | ⭐⭐⭐ | Interface | 🌙 P2 |
+| **Result/Option 方法** | 3.2 | ⭐⭐ | ⭐⭐ | - | 🌙 P2 |
+| **typeof 运算符** | 3.2 | ⭐ | ⭐ | - | 🌙 P2 |
+| **字符串插值** | 3.3 | ⭐⭐ | ⭐⭐ | - | 🌙 P2 |
+| **match 表达式** | 3.4 | ⭐⭐⭐ | ⭐⭐⭐ | - | 🌙 P3 |
+| **泛型** | 4.0 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | 类型系统 | 🌙 P3 |
+| **错误传播 `?`** | 4.0 | ⭐⭐⭐ | ⭐⭐ | Result | 🌙 P3 |
+| **包管理器** | 5.0 | ⭐⭐⭐⭐ | ⭐⭐⭐ | - | 🌙 P3 |
 
-### Phase 2.8：GC 与优化 ⏳
+### 6.5 阶段详细规划
 
-- [ ] 标记-清除 GC
-- [ ] 对象生命周期管理
-- [ ] 循环引用处理
+#### Phase 2.x：基础完善（当前 - 2月底）
 
-### Phase 3：包管理 ⏳
+**目标**：语言基础功能稳定，模块系统可用
 
-- [ ] 包配置格式
-- [ ] 依赖解析
-- [ ] 包发布/安装
+| 版本 | 特性 | 交付标准 |
+|------|------|----------|
+| 2.7 | 模块静态化 + 浮点数修复 | `math.PI` 编译期 O(1) 访问，小数解析正确 |
+| 2.8 | break/continue + 边界测试 | 循环控制完善，测试覆盖率 85%+ |
+| 2.9 | 标准库基础 | `std.core` (print, assert, type), `std.math` (sqrt, sin, cos) |
 
-### Phase 4：性能优化 ⏳
+#### Phase 3.0：Shape 系统（3月 - 4月）
 
-- [ ] JIT 编译（基线 JIT）
-- [ ] 内联缓存
-- [ ] 逃逸分析
+**目标**：静态布局基础设施，支持结构体
+
+| 版本 | 特性 | 说明 |
+|------|------|------|
+| 3.0 | 结构体基础 | `struct Point { x: float, y: float }`, 实例创建，字段访问 |
+| 3.1 | Interface 系统 | `interface Shape { area() -> float; }` |
+| 3.2 | impl 语法 + 方法调用 | `impl Point { distance(other) -> float { ... } }` |
+| 3.3 | 语法糖 | 字符串插值、typeof、Result/Option 方法 |
+| 3.4 | match 表达式 | 模式匹配基础 |
+
+#### Phase 4.0：类型系统（5月 - 6月）
+
+**目标**：静态类型检查，泛型支持
+
+| 版本 | 特性 | 说明 |
+|------|------|------|
+| 4.0 | 可选类型标注 | `var x: int = 5;` |
+| 4.1 | 泛型结构体 | `struct Box<T> { value: T }` |
+| 4.2 | 泛型 Interface | `interface Container<T> { get() -> T; }` |
+| 4.3 | 错误传播 `?` | `var x = may_fail()?;` |
+
+#### Phase 5.0：工程化（7月以后）
+
+**目标**：生产可用，生态建设
+
+| 版本 | 特性 | 说明 |
+|------|------|------|
+| 5.0 | 包管理器 | `kaubo add some_pkg` |
+| 5.1 | LSP 支持 | IDE 自动补全、跳转 |
+| 5.2 | 编译优化 | AOT 编译、代码优化 |
+
+### 6.4 技术债务
+
+- 编译器警告（约 40+ 个未使用代码）
+- Parser/Compiler 文件过大，需拆分
+- 字符串复制优化（使用 Rc/Arc）
 
 ---
 
 *文档版本: 2.0*  
-*最后更新: 2026-02-10*  
-*状态: Phase 2.5 进行中*
+*最后更新: 2026-02-10*

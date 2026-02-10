@@ -436,3 +436,105 @@ impl ObjOption {
 pub const COROUTINE_STATE_SUSPENDED: i64 = 0;
 pub const COROUTINE_STATE_RUNNING: i64 = 1;
 pub const COROUTINE_STATE_DEAD: i64 = 2;
+
+/// JSON 对象 - 用于 JSON 字面量声明
+/// 功能丰富的 JSON 数据类型，支持对象、数组、嵌套结构
+#[derive(Debug)]
+pub struct ObjJson {
+    /// 键值对存储（使用 HashMap）
+    pub entries: std::collections::HashMap<String, Value>,
+}
+
+impl ObjJson {
+    /// 创建空 JSON 对象
+    pub fn new() -> Self {
+        Self {
+            entries: std::collections::HashMap::new(),
+        }
+    }
+
+    /// 从 HashMap 创建
+    pub fn from_hashmap(entries: std::collections::HashMap<String, Value>) -> Self {
+        Self { entries }
+    }
+
+    /// 获取值
+    pub fn get(&self, key: &str) -> Option<Value> {
+        self.entries.get(key).copied()
+    }
+
+    /// 设置值
+    pub fn set(&mut self, key: String, value: Value) {
+        self.entries.insert(key, value);
+    }
+
+    /// 检查是否包含键
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.entries.contains_key(key)
+    }
+
+    /// 获取长度
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// 是否为空
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl Default for ObjJson {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 模块对象 - 用于存储模块导出项
+/// 导出项按 ShapeID 索引，编译期完全确定，运行时静态布局
+#[derive(Debug)]
+pub struct ObjModule {
+    /// 模块名
+    pub name: String,
+    /// 导出项数组（固定长度，按 ShapeID 索引）
+    pub exports: Box<[Value]>,
+    /// 名称到 ShapeID 的映射（编译期/调试用）
+    pub name_to_index: std::collections::HashMap<String, u16>,
+}
+
+impl ObjModule {
+    /// 创建模块对象（编译期构建）
+    pub fn new(name: String, exports: Vec<Value>, name_to_index: std::collections::HashMap<String, u16>) -> Self {
+        Self {
+            name,
+            exports: exports.into_boxed_slice(),
+            name_to_index,
+        }
+    }
+
+    /// 通过 ShapeID 获取导出项（O(1)）
+    pub fn get_by_shape_id(&self, shape_id: u16) -> Option<Value> {
+        self.exports.get(shape_id as usize).copied()
+    }
+
+    /// 通过名称获取 ShapeID（编译期/调试用）
+    pub fn get_shape_id(&self, name: &str) -> Option<u16> {
+        self.name_to_index.get(name).copied()
+    }
+
+    /// 获取导出项数量
+    pub fn len(&self) -> usize {
+        self.exports.len()
+    }
+
+    /// 是否为空
+    pub fn is_empty(&self) -> bool {
+        self.exports.is_empty()
+    }
+}
+
+impl Default for ObjModule {
+    fn default() -> Self {
+        Self::new(String::new(), Vec::new(), std::collections::HashMap::new())
+    }
+}

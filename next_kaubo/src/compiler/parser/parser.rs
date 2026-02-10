@@ -1,13 +1,14 @@
 use super::super::lexer::token_kind::KauboTokenKind;
 use super::error::{ParseResult, ParserError};
 use super::expr::{
-    Binary, Expr, ExprKind, FunctionCall, Grouping, Lambda, LiteralFalse, LiteralInt,
-    LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, Unary, VarRef, YieldExpr,
+    Binary, Expr, ExprKind, FunctionCall, Grouping, IndexAccess, JsonLiteral, Lambda, LiteralFalse, 
+    LiteralInt, LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, Unary, VarRef, 
+    YieldExpr,
 };
 use super::module::{Module, ModuleKind};
 use super::stmt::{
-    BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, PrintStmt, ReturnStmt, Stmt, StmtKind,
-    VarDeclStmt, WhileStmt,
+    BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, ImportStmt, ModuleStmt, PrintStmt, 
+    ReturnStmt, Stmt, StmtKind, VarDeclStmt, WhileStmt,
 };
 use super::utils::{get_associativity, get_precedence};
 use crate::kit::lexer::c_lexer::Lexer;
@@ -68,6 +69,20 @@ impl Parser {
         }
     }
 
+    /// 期望一个标识符，返回其名称
+    fn expect_identifier(&mut self) -> ParseResult<String> {
+        let token = self.current_token.as_ref()
+            .ok_or(ParserError::UnexpectedEndOfInput)?;
+        
+        if token.kind == KauboTokenKind::Identifier {
+            let name = token.value.clone();
+            self.consume();
+            Ok(name)
+        } else {
+            Err(ParserError::UnexpectedToken)
+        }
+    }
+
     /// 解析模块（顶层语句集合）
     fn parse_module(&mut self) -> ParseResult<Module> {
         let mut statements = Vec::new();
@@ -105,6 +120,20 @@ impl Parser {
             self.parse_for_loop()
         } else if self.check(KauboTokenKind::Print) {
             self.parse_print_statement()
+        } else if self.check(KauboTokenKind::Module) {
+            self.parse_module_statement()
+        } else if self.check(KauboTokenKind::Import) {
+            self.parse_import_statement()
+        } else if self.check(KauboTokenKind::Pub) {
+            // pub 关键字：标记为 public 导出
+            self.consume(); // 消费 'pub'
+            // 目前只支持 pub var ...
+            if self.check(KauboTokenKind::Var) {
+                // 解析变量声明（pub 修饰）
+                self.parse_var_declaration_with_pub(true)
+            } else {
+                Err(ParserError::UnexpectedToken)
+            }
         } else {
             // 表达式语句
             let expr = self.parse_expression(0)?;
@@ -228,8 +257,53 @@ impl Parser {
             KauboTokenKind::LeftParenthesis => self.parse_parenthesized(),
             KauboTokenKind::Identifier => self.parse_identifier_expression(),
             KauboTokenKind::Pipe => self.parse_lambda(),
+            KauboTokenKind::Json => self.parse_json_literal(),
             _ => Err(ParserError::UnexpectedToken),
         }
+    }
+
+    /// 解析 JSON 字面量
+    /// json { "key": value, ... }
+    fn parse_json_literal(&mut self) -> ParseResult<Expr> {
+        self.consume(); // 消费 'json'
+        self.expect(KauboTokenKind::LeftCurlyBrace)?;
+        
+        let mut entries = Vec::new();
+        
+        while !self.check(KauboTokenKind::RightCurlyBrace) {
+            // 解析键（必须是字符串）
+            let key_token = self.current_token.as_ref()
+                .ok_or(ParserError::UnexpectedEndOfInput)?;
+            
+            let key = if key_token.kind == KauboTokenKind::LiteralString {
+                let k = key_token.value.clone();
+                self.consume();
+                // 去除引号
+                k[1..k.len()-1].to_string()
+            } else if key_token.kind == KauboTokenKind::Identifier {
+                // 也支持裸标识符作为键（像 JavaScript）
+                let k = key_token.value.clone();
+                self.consume();
+                k
+            } else {
+                return Err(ParserError::UnexpectedToken);
+            };
+            
+            self.expect(KauboTokenKind::Colon)?;
+            
+            // 解析值
+            let value = self.parse_expression(0)?;
+            entries.push((key, value));
+            
+            // 可选的逗号
+            if !self.match_token(KauboTokenKind::Comma) {
+                break;
+            }
+        }
+        
+        self.expect(KauboTokenKind::RightCurlyBrace)?;
+        
+        Ok(Box::new(ExprKind::JsonLiteral(JsonLiteral { entries })))
     }
 
     /// 解析后缀表达式（成员访问、函数调用）
@@ -256,6 +330,15 @@ impl Parser {
             } else if self.check(KauboTokenKind::LeftParenthesis) {
                 // 函数调用：a() 或 a.b()
                 expr = self.parse_function_call(expr)?;
+            } else if self.check(KauboTokenKind::LeftSquareBracket) {
+                // 索引访问：a[i]
+                self.consume(); // 消费 '['
+                let index = self.parse_expression(0)?;
+                self.expect(KauboTokenKind::RightSquareBracket)?;
+                expr = Box::new(ExprKind::IndexAccess(IndexAccess {
+                    object: expr,
+                    index,
+                }));
             } else {
                 break;
             }
@@ -377,8 +460,18 @@ impl Parser {
         })))
     }
 
-    /// 解析变量声明
+    /// 解析变量声明（非 pub）
     fn parse_var_declaration(&mut self) -> ParseResult<Stmt> {
+        self.parse_var_declaration_inner(false)
+    }
+    
+    /// 解析变量声明（带 pub 标记）
+    fn parse_var_declaration_with_pub(&mut self, is_public: bool) -> ParseResult<Stmt> {
+        self.parse_var_declaration_inner(is_public)
+    }
+    
+    /// 解析变量声明内部实现
+    fn parse_var_declaration_inner(&mut self, is_public: bool) -> ParseResult<Stmt> {
         self.consume(); // 消费 'var'
 
         let token = self
@@ -398,6 +491,7 @@ impl Parser {
         Ok(Box::new(StmtKind::VarDecl(VarDeclStmt {
             name,
             initializer,
+            is_public,
         })))
     }
 
@@ -421,6 +515,72 @@ impl Parser {
         let expression = self.parse_expression(0)?;
         self.expect(KauboTokenKind::Semicolon)?;
         Ok(Box::new(StmtKind::Print(PrintStmt { expression })))
+    }
+
+    /// 解析模块定义语句
+    /// module name { ... }
+    fn parse_module_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(); // 消费 'module'
+        
+        // 解析模块名
+        let name = self.expect_identifier()?;
+        
+        // 解析模块体（代码块）
+        let body = self.parse_block()?;
+        
+        Ok(Box::new(StmtKind::Module(ModuleStmt { name, body })))
+    }
+
+    /// 解析导入语句
+    /// import module; 
+    /// import module as alias;
+    /// from module import item1, item2;
+    fn parse_import_statement(&mut self) -> ParseResult<Stmt> {
+        // 检查是 from...import 还是 import
+        if self.check(KauboTokenKind::From) {
+            // from module import item1, item2;
+            self.consume(); // 消费 'from'
+            let module_path = self.expect_identifier()?;
+            self.expect(KauboTokenKind::Import)?;
+            
+            // 解析导入的项列表
+            let mut items = Vec::new();
+            loop {
+                let item = self.expect_identifier()?;
+                items.push(item);
+                
+                if self.match_token(KauboTokenKind::Comma) {
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            
+            self.expect(KauboTokenKind::Semicolon)?;
+            Ok(Box::new(StmtKind::Import(ImportStmt { 
+                module_path, 
+                items, 
+                alias: None 
+            })))
+        } else {
+            // import module; 或 import module as alias;
+            self.consume(); // 消费 'import'
+            let module_path = self.expect_identifier()?;
+            
+            // 检查是否有别名
+            let alias = if self.match_token(KauboTokenKind::As) {
+                Some(self.expect_identifier()?)
+            } else {
+                None
+            };
+            
+            self.expect(KauboTokenKind::Semicolon)?;
+            Ok(Box::new(StmtKind::Import(ImportStmt { 
+                module_path, 
+                items: Vec::new(), 
+                alias 
+            })))
+        }
     }
 
     /// 解析if语句
