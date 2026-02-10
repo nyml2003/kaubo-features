@@ -66,7 +66,6 @@ pub fn build_lexer() -> Lexer<KauboTokenKind> {
         (KauboTokenKind::As, "as"),
         (KauboTokenKind::From, "from"),
         (KauboTokenKind::Pass, "pass"),
-        (KauboTokenKind::Print, "print"),
         (KauboTokenKind::And, "and"),
         (KauboTokenKind::Or, "or"),
         (KauboTokenKind::Not, "not"),

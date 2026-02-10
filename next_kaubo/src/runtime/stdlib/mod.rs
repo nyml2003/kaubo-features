@@ -19,8 +19,8 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
     let mut name_to_shape = HashMap::new();
 
     // ===== 核心函数 (0-3) =====
-    exports.push(create_native_value(log_fn, "log", 1));
-    name_to_shape.insert("log".to_string(), 0u16);
+    exports.push(create_native_value(print_fn, "print", 1));
+    name_to_shape.insert("print".to_string(), 0u16);
 
     exports.push(create_native_value(assert_fn, "assert", 2));
     name_to_shape.insert("assert".to_string(), 1u16);
@@ -67,9 +67,9 @@ fn create_native_value(func: NativeFn, name: &str, arity: u8) -> Value {
 
 // ===== 核心函数实现 =====
 
-fn log_fn(args: &[Value]) -> Result<Value, String> {
+fn print_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("log() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!("print() takes exactly 1 argument ({} given)", args.len()));
     }
     println!("{}", args[0]);
     Ok(Value::NULL)

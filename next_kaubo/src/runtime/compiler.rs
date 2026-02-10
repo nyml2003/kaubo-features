@@ -680,7 +680,7 @@ impl Compiler {
         match module_name {
             "std" => match export_name {
                 // 核心函数 (0-3)
-                "log" => Some(0),
+                "print" => Some(0),
                 "assert" => Some(1),
                 "type" => Some(2),
                 "to_string" => Some(3),

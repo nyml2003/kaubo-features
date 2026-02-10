@@ -132,8 +132,6 @@ impl Parser {
             self.parse_while_loop()
         } else if self.check(KauboTokenKind::For) {
             self.parse_for_loop()
-        } else if self.check(KauboTokenKind::Print) {
-            self.parse_print_statement()
         } else if self.check(KauboTokenKind::Module) {
             self.parse_module_statement()
         } else if self.check(KauboTokenKind::Import) {
