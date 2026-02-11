@@ -118,6 +118,8 @@ pub enum OpCode {
     // ===== 模块 (0xD0-0xDF) =====
     BuildModule = 0xD0,   // + u8 导出项个数，值从栈弹出，创建模块对象
     ModuleGet,            // + u16 ShapeID，从模块获取字段（编译期确定）
+    GetModuleExport,      // 从模块动态获取导出项：栈顶[module, name] -> value
+    GetModule,            // 根据模块名获取模块对象：栈顶[name] -> module
     // ModuleSet 预留（未来支持模块字段可变性）
 
     // ===== 调试 (0xF0-0xFF) =====
@@ -206,6 +208,8 @@ impl OpCode {
             OpCode::BuildJson => "BUILD_JSON",
             OpCode::BuildModule => "BUILD_MODULE",
             OpCode::ModuleGet => "MODULE_GET",
+            OpCode::GetModuleExport => "GET_MODULE_EXPORT",
+            OpCode::GetModule => "GET_MODULE",
             OpCode::JsonGet => "JSON_GET",
             OpCode::JsonSet => "JSON_SET",
             OpCode::IndexGet => "INDEX_GET",
@@ -303,6 +307,12 @@ impl OpCode {
             | OpCode::BuildList
             | OpCode::BuildJson
             | OpCode::BuildModule => 1,
+            
+            // u8 操作数（常量池索引）
+            OpCode::GetModuleExport => 1,
+            
+            // 无操作数（运行时从栈获取参数）
+            OpCode::GetModule => 0,
 
             // u16/i16 操作数
             OpCode::LoadConstWide => 2,

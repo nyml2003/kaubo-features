@@ -522,6 +522,12 @@ impl ObjModule {
         self.name_to_index.get(name).copied()
     }
 
+    /// 通过名称获取导出项（运行时动态查找）
+    pub fn get(&self, name: &str) -> Option<Value> {
+        self.get_shape_id(name)
+            .and_then(|shape_id| self.get_by_shape_id(shape_id))
+    }
+
     /// 获取导出项数量
     pub fn len(&self) -> usize {
         self.exports.len()

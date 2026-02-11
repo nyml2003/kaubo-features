@@ -7,13 +7,13 @@ use super::expr::{
 };
 use super::module::{Module, ModuleKind};
 use super::stmt::{
-    BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, ImportStmt, ModuleStmt, ReturnStmt,
-    Stmt, StmtKind, VarDeclStmt, WhileStmt,
+    BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, ImportStmt, ModuleStmt, ReturnStmt, Stmt,
+    StmtKind, VarDeclStmt, WhileStmt,
 };
 use super::utils::{get_associativity, get_precedence};
-use crate::kit::lexer::Lexer;
 use crate::kit::lexer::scanner::Token;
 use crate::kit::lexer::types::Coordinate;
+use crate::kit::lexer::Lexer;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -180,10 +180,13 @@ impl Parser {
             self.parse_module_statement()
         } else if self.check(KauboTokenKind::Import) {
             self.parse_import_statement()
+        } else if self.check(KauboTokenKind::From) {
+            // from...import 也是导入语句
+            self.parse_import_statement()
         } else if self.check(KauboTokenKind::Pub) {
             // pub 关键字：标记为 public 导出
             self.consume(); // 消费 'pub'
-            // 目前只支持 pub var ...
+                            // 目前只支持 pub var ...
             if self.check(KauboTokenKind::Var) {
                 // 解析变量声明（pub 修饰）
                 self.parse_var_declaration_with_pub(true)
@@ -343,8 +346,12 @@ impl Parser {
             let key = if key_token.kind == KauboTokenKind::LiteralString {
                 let k = key_token.text.clone().unwrap_or_default();
                 self.consume();
-                // 去除引号
-                k[1..k.len() - 1].to_string()
+                // 去除引号（安全检查）
+                if k.len() >= 2 && k.starts_with('"') && k.ends_with('"') {
+                    k[1..k.len() - 1].to_string()
+                } else {
+                    k
+                }
             } else if key_token.kind == KauboTokenKind::Identifier {
                 // 也支持裸标识符作为键（像 JavaScript）
                 let k = key_token.text.clone().unwrap_or_default();
@@ -423,9 +430,9 @@ impl Parser {
             column: token.span.start.column,
         };
         let text = token.text.clone().unwrap_or_default();
-        let num = text
-            .parse()
-            .map_err(|_| ParserError::here(ParserErrorKind::InvalidNumberFormat(text.clone()), coord))?;
+        let num = text.parse().map_err(|_| {
+            ParserError::here(ParserErrorKind::InvalidNumberFormat(text.clone()), coord)
+        })?;
         self.consume();
         Ok(Box::new(ExprKind::LiteralInt(LiteralInt { value: num })))
     }
@@ -435,7 +442,7 @@ impl Parser {
         let token = self.current_token.as_ref().unwrap();
         // 移除首尾引号
         let text = token.text.clone().unwrap_or_default();
-        let s = text[1..text.len() - 1].to_string();
+        let s = text.to_string();
         self.consume();
         Ok(Box::new(ExprKind::LiteralString(LiteralString {
             value: s,
@@ -548,13 +555,12 @@ impl Parser {
     fn parse_var_declaration_inner(&mut self, is_public: bool) -> ParseResult<Stmt> {
         self.consume(); // 消费 'var'
 
-        let token = self
-            .current_token
-            .as_ref()
-            .ok_or_else(|| self.error_here(ParserErrorKind::UnexpectedToken {
+        let token = self.current_token.as_ref().ok_or_else(|| {
+            self.error_here(ParserErrorKind::UnexpectedToken {
                 found: self.current_token_text(),
                 expected: vec!["identifier".to_string()],
-            }))?;
+            })
+        })?;
         if token.kind != KauboTokenKind::Identifier {
             return Err(self.error_here(ParserErrorKind::ExpectedIdentifier {
                 found: self.current_token_text(),
@@ -1001,5 +1007,343 @@ mod tests {
         // 当前实现可能允许最后一个语句无分号
         // 这个测试用于确认当前行为
         println!("Result: {:?}", result);
+    }
+
+    // ===== 索引访问测试 =====
+
+    #[test]
+    fn test_parse_index_access() {
+        let code = "list[0];";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse index access: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_index_access_expression() {
+        let code = "list[i + 1];";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse index with expression: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_nested_index_access() {
+        let code = "matrix[i][j];";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse nested index: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_chained_index_and_member() {
+        let code = "data.items[0].name;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse chained index and member: {:?}", result.err());
+    }
+
+    // ===== JSON 字面量测试 =====
+
+    #[test]
+    fn test_parse_json_literal_empty() {
+        let code = "json {};";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse empty JSON: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_json_literal_single_entry() {
+        let code = r#"json { "key": 42 };"#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse single-entry JSON: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_json_literal_multiple_entries() {
+        let code = r#"json { "name": "test", "value": 123, "active": true };"#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse multi-entry JSON: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_json_literal_identifier_keys() {
+        // JSON 也支持裸标识符作为键
+        let code = "json { name: \"test\", value: 123 };";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse JSON with identifier keys: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_json_literal_nested() {
+        let code = r#"json { "outer": json { "inner": 42 } };"#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse nested JSON: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_json_literal_with_expression() {
+        let code = r#"json { "result": a + b, "value": foo() };"#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse JSON with expressions: {:?}", result.err());
+    }
+
+    // ===== 模块定义测试 =====
+
+    #[test]
+    fn test_parse_module_definition() {
+        let code = r#"
+        module math {
+            var PI = 314;
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse module definition: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_module_with_exports() {
+        let code = r#"
+        module utils {
+            pub var version = 1;
+            var internal = 0;
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse module with exports: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_nested_module() {
+        let code = r#"
+        module outer {
+            module inner {
+                var x = 1;
+            }
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse nested module: {:?}", result.err());
+    }
+
+    // ===== 导入语句测试 =====
+
+    #[test]
+    fn test_parse_import_simple() {
+        let code = "import std;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse simple import: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_import_with_alias() {
+        let code = "import std as standard;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse import with alias: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_import_module_path() {
+        let code = "import std.math.geometry;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse module path import: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_from_import_single() {
+        let code = "from std import print;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse from import single: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_from_import_multiple() {
+        let code = "from std import print, assert, type;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse from import multiple: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_from_import_module_path() {
+        let code = "from std.math import sqrt, sin, cos;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse from import with path: {:?}", result.err());
+    }
+
+    // ===== Yield 表达式测试 =====
+
+    #[test]
+    fn test_parse_yield_without_value() {
+        let code = "yield;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse yield without value: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_yield_with_value() {
+        let code = "yield 42;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse yield with value: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_yield_with_expression() {
+        let code = "yield a + b;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse yield with expression: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_yield_in_lambda() {
+        let code = r#"
+        var gen = || {
+            yield 1;
+            yield 2;
+            return 3;
+        };
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse yield in lambda: {:?}", result.err());
+    }
+
+    // ===== 更复杂的组合测试 =====
+
+    #[test]
+    fn test_parse_complex_chained_calls() {
+        let code = r#"
+        var result = obj.method1(a, b).method2(c).field.method3();
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse complex chained calls: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_function_call_with_complex_args() {
+        let code = r#"
+        foo(a + b, obj.field, list[0], || { return 1; });
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse function call with complex args: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_assignment_to_index() {
+        let code = "list[0] = 42;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse index assignment: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_assignment_to_member() {
+        let code = "obj.field = value;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse member assignment: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_pub_var_declaration() {
+        let code = "pub var x = 5;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse pub var: {:?}", result.err());
+    }
+
+    // ===== 更多错误场景测试 =====
+
+    #[test]
+    fn test_parse_error_invalid_json_key() {
+        // JSON 键必须是字符串或标识符
+        let code = "json { 123: value };";
+        let result = parse_code(code);
+        assert!(result.is_err(), "Should error for invalid JSON key");
+    }
+
+    #[test]
+    fn test_parse_error_unclosed_json() {
+        let code = r#"json { "key": value"#;
+        let result = parse_code(code);
+        assert!(result.is_err(), "Should error for unclosed JSON");
+    }
+
+    #[test]
+    fn test_parse_error_unclosed_list() {
+        let code = "[1, 2, 3;";
+        let result = parse_code(code);
+        assert!(result.is_err(), "Should error for unclosed list");
+    }
+
+    #[test]
+    fn test_parse_error_lambda_missing_pipe() {
+        let code = "var f = |x { return x; };";
+        let result = parse_code(code);
+        assert!(result.is_err(), "Should error for lambda missing closing pipe");
+    }
+
+    #[test]
+    fn test_parse_error_lambda_missing_comma() {
+        let code = "var f = |x y| { return x; };";
+        let result = parse_code(code);
+        assert!(result.is_err(), "Should error for lambda missing comma");
+    }
+
+    #[test]
+    fn test_parse_error_import_missing_semicolon() {
+        let code = "import std";
+        let result = parse_code(code);
+        // 最后一个语句可能允许无分号
+        println!("Import without semicolon: {:?}", result);
+    }
+
+    #[test]
+    fn test_parse_error_from_import_missing_items() {
+        let code = "from std import;";
+        let result = parse_code(code);
+        assert!(result.is_err(), "Should error for from import without items");
+    }
+
+    #[test]
+    fn test_parse_empty_module_body() {
+        let code = "module empty {}";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse empty module body: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_multiple_semicolons() {
+        let code = "var x = 1;;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse multiple semicolons: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_deeply_nested_expressions() {
+        let code = "((((1 + 2))));";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse deeply nested parens: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_complex_if_elif_else() {
+        let code = r#"
+        if (a == 1) {
+            return 1;
+        } elif (a == 2) {
+            return 2;
+        } elif (a == 3) {
+            return 3;
+        } elif (a == 4) {
+            return 4;
+        } else {
+            return 0;
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse complex if-elif-else: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_while_with_complex_condition() {
+        let code = r#"
+        while (i > 0 and i < 100) {
+            i = i + 1;
+        }
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse while with complex condition: {:?}", result.err());
     }
 }

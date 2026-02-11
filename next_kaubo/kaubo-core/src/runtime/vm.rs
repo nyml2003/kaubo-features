@@ -840,6 +840,66 @@ impl VM {
                     }
                 }
 
+                GetModuleExport => {
+                    // 栈顶: [module] -> value
+                    // 操作数: u8 常量池索引（导出项名称字符串）
+                    let module_val = self.pop();
+                    let name_idx = self.read_byte() as usize;
+                    
+                    // 从常量池获取名称字符串
+                    let name = if let Some(constant) = self.current_chunk().constants.get(name_idx) {
+                        if let Some(ptr) = constant.as_string() {
+                            unsafe { (&*ptr).chars.clone() }
+                        } else {
+                            return InterpretResult::RuntimeError(
+                                "GetModuleExport name must be a string".to_string()
+                            );
+                        }
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            format!("Invalid constant index for GetModuleExport: {}", name_idx)
+                        );
+                    };
+                    
+                    if let Some(module_ptr) = module_val.as_module() {
+                        let module = unsafe { &*module_ptr };
+                        if let Some(value) = module.get(&name) {
+                            self.push(value);
+                        } else {
+                            return InterpretResult::RuntimeError(format!(
+                                "Export '{}' not found in module",
+                                name
+                            ));
+                        }
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "GetModuleExport requires a module".to_string()
+                        );
+                    }
+                }
+
+                GetModule => {
+                    // 栈顶: [module_name] -> module
+                    let name_val = self.pop();
+                    
+                    let name = if let Some(ptr) = name_val.as_string() {
+                        unsafe { (&*ptr).chars.clone() }
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "GetModule requires a string name".to_string()
+                        );
+                    };
+                    
+                    if let Some(value) = self.globals.get(&name) {
+                        self.push(*value);
+                    } else {
+                        return InterpretResult::RuntimeError(format!(
+                            "Module '{}' not found",
+                            name
+                        ));
+                    }
+                }
+
                 IndexGet => {
                     // 栈顶: [index, object]
                     let index_val = self.pop();

@@ -92,6 +92,7 @@ pub struct Compiler {
     current_module: Option<ModuleInfo>, // 当前正在编译的模块
     modules: Vec<ModuleInfo>, // 文件内所有模块
     imported_modules: Vec<String>, // 当前导入的模块名列表
+    module_aliases: HashMap<String, String>, // 局部变量名 -> 模块名（用于 import x as y）
 }
 
 impl Compiler {
@@ -106,6 +107,7 @@ impl Compiler {
             current_module: None,
             modules: Vec::new(),
             imported_modules: Vec::new(),
+            module_aliases: HashMap::new(),
         }
     }
 
@@ -121,6 +123,7 @@ impl Compiler {
             current_module: None,
             modules: Vec::new(),
             imported_modules: Vec::new(),
+            module_aliases: HashMap::new(),
         }
     }
 
@@ -324,13 +327,26 @@ impl Compiler {
                 
                 if let ExprKind::VarRef(var_ref) = member.object.as_ref() {
                     if let Some(shape_id) = self.find_module_shape_id(&var_ref.name, &member.member) {
-                        // 模块访问：LoadGlobal + ModuleGet(shape_id)
-                        // 加载模块（全局变量）
-                        let name_obj = Box::new(ObjString::new(var_ref.name.clone()));
-                        let name_ptr = Box::into_raw(name_obj) as *mut ObjString;
-                        let name_val = Value::string(name_ptr);
-                        let name_idx = self.chunk.add_constant(name_val);
-                        self.chunk.write_op_u8(OpCode::LoadGlobal, name_idx, 0);
+                        // 检查是否是模块别名（局部变量）
+                        if self.module_aliases.contains_key(&var_ref.name) {
+                            // 模块别名是局部变量：LoadLocal + ModuleGet(shape_id)
+                            // 查找局部变量索引
+                            if let Some(local_idx) = self.resolve_local(&var_ref.name) {
+                                self.emit_load_local(local_idx);
+                            } else {
+                                return Err(CompileError::Unimplemented(format!(
+                                    "Module alias '{}' not found as local variable",
+                                    var_ref.name
+                                )));
+                            }
+                        } else {
+                            // 模块是全局变量：LoadGlobal + ModuleGet(shape_id)
+                            let name_obj = Box::new(ObjString::new(var_ref.name.clone()));
+                            let name_ptr = Box::into_raw(name_obj) as *mut ObjString;
+                            let name_val = Value::string(name_ptr);
+                            let name_idx = self.chunk.add_constant(name_val);
+                            self.chunk.write_op_u8(OpCode::LoadGlobal, name_idx, 0);
+                        }
                         
                         // ModuleGet 指令（ShapeID 作为 u16 操作数）
                         self.chunk.write_op(OpCode::ModuleGet, 0);
@@ -730,20 +746,25 @@ impl Compiler {
     /// 查找模块导出项的 ShapeID
     /// 返回 Some(shape_id) 如果找到模块和导出项
     fn find_module_shape_id(&self, module_name: &str, export_name: &str) -> Option<u16> {
+        // 检查是否是模块别名（如 import std as s; 中的 s）
+        let actual_module_name = self.module_aliases.get(module_name)
+            .map(|s| s.as_str())
+            .unwrap_or(module_name);
+        
         // 在已编译的模块中查找
         for module in &self.modules {
-            if module.name == module_name {
+            if module.name == actual_module_name {
                 return module.export_name_to_shape_id.get(export_name).copied();
             }
         }
         // 在当前正在编译的模块中查找
         if let Some(ref current) = self.current_module {
-            if current.name == module_name {
+            if current.name == actual_module_name {
                 return current.export_name_to_shape_id.get(export_name).copied();
             }
         }
         // 在标准库模块中查找
-        self.find_std_module_shape_id(module_name, export_name)
+        self.find_std_module_shape_id(actual_module_name, export_name)
     }
     
     /// 查找标准库模块的 ShapeID
@@ -1063,6 +1084,8 @@ impl Compiler {
     /// 编译导入语句
     /// import module; 或 from module import item;
     fn compile_import(&mut self, import_stmt: &crate::compiler::parser::stmt::ImportStmt) -> Result<(), CompileError> {
+        use crate::runtime::object::ObjString;
+        
         // 检查模块是否存在（同文件内模块或标准库模块）
         let module_name = &import_stmt.module_path;
         
@@ -1075,6 +1098,72 @@ impl Compiler {
         
         // 将模块名加入导入列表
         self.imported_modules.push(module_name.clone());
+        
+        // 处理 from...import 语句：为每个导入的项创建局部变量
+        if !import_stmt.items.is_empty() {
+            // from module import item1, item2, ...
+            for item_name in &import_stmt.items {
+                // 为导入的项创建局部变量
+                self.add_local(item_name)?;
+                
+                // 加载模块并获取导出项
+                // 1. 加载模块名（字符串常量）
+                let module_str_obj = Box::new(ObjString::new(module_name.clone()));
+                let module_str_ptr = Box::into_raw(module_str_obj) as *mut ObjString;
+                let module_name_val = Value::string(module_str_ptr);
+                let module_name_constant = self.chunk.add_constant(module_name_val);
+                self.emit_constant(module_name_constant);
+                
+                // 2. 获取模块对象
+                self.chunk.write_op(OpCode::GetModule, 0);
+                
+                // 3. 添加导出项名称到常量池（用于 GetModuleExport）
+                let item_str_obj = Box::new(ObjString::new(item_name.clone()));
+                let item_str_ptr = Box::into_raw(item_str_obj) as *mut ObjString;
+                let item_name_val = Value::string(item_str_ptr);
+                let item_name_constant = self.chunk.add_constant(item_name_val);
+                
+                if item_name_constant > 255 {
+                    return Err(CompileError::TooManyConstants);
+                }
+                
+                // 4. 使用 GetModuleExport 从模块获取导出项
+                // 操作数: u8 常量池索引
+                self.chunk.write_op(OpCode::GetModuleExport, 0);
+                self.chunk.code.push(item_name_constant as u8);
+                self.chunk.lines.push(0);
+                
+                // 5. 存储到局部变量
+                let local_idx = (self.locals.len() - 1) as u8;
+                self.emit_store_local(local_idx);
+                
+                // 6. 标记为已初始化
+                self.mark_initialized();
+            }
+        } else if let Some(alias) = &import_stmt.alias {
+            // import module as alias
+            // 记录别名到模块名的映射（用于后续成员访问解析）
+            self.module_aliases.insert(alias.clone(), module_name.clone());
+            
+            // 为别名创建局部变量
+            self.add_local(alias)?;
+            
+            // 加载模块名
+            let module_str_obj = Box::new(ObjString::new(module_name.clone()));
+            let module_str_ptr = Box::into_raw(module_str_obj) as *mut ObjString;
+            let module_name_val = Value::string(module_str_ptr);
+            let module_name_constant = self.chunk.add_constant(module_name_val);
+            self.emit_constant(module_name_constant);
+            
+            // 获取模块对象
+            self.chunk.write_op(OpCode::GetModule, 0);
+            
+            // 存储到别名变量
+            let local_idx = (self.locals.len() - 1) as u8;
+            self.emit_store_local(local_idx);
+            self.mark_initialized();
+        }
+        // 否则是简单的 import module;，不做特殊处理（运行时会加载模块到全局）
         
         Ok(())
     }

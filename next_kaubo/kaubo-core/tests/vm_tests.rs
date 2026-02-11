@@ -647,6 +647,455 @@ fn test_deep_nesting() {
     assert_eq!(get_int(&result), Some(5));
 }
 
+// ===== 列表操作测试 =====
+
+#[test]
+fn test_list_index_first_element() {
+    let code = r#"
+        var list = [10, 20, 30];
+        return list[0];
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(10));
+}
+
+#[test]
+fn test_list_index_last_element() {
+    let code = r#"
+        var list = [10, 20, 30];
+        return list[2];
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(30));
+}
+
+#[test]
+fn test_list_index_with_variable() {
+    let code = r#"
+        var list = [10, 20, 30];
+        var i = 1;
+        return list[i];
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(20));
+}
+
+#[test]
+fn test_list_index_with_expression() {
+    let code = r#"
+        var list = [10, 20, 30];
+        return list[1 + 1];
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(30));
+}
+
+#[test]
+fn test_list_nested_index() {
+    let code = r#"
+        var matrix = [[1, 2], [3, 4]];
+        return matrix[1][0];
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(3));
+}
+
+#[test]
+fn test_list_assignment_simple() {
+    let code = r#"
+        var list = [1, 2, 3];
+        list[0] = 100;
+        return list[0];
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(100));
+}
+
+#[test]
+fn test_list_assignment_with_variable_index() {
+    let code = r#"
+        var list = [1, 2, 3];
+        var i = 1;
+        list[i] = 200;
+        return list[i];
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(200));
+}
+
+#[test]
+fn test_list_assignment_multiple() {
+    let code = r#"
+        var list = [0, 0, 0];
+        list[0] = 1;
+        list[1] = 2;
+        list[2] = 3;
+        return list[0] + list[1] + list[2];
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(6));
+}
+
+#[test]
+fn test_empty_list_creation() {
+    let result = run_code("return [];").unwrap();
+    assert!(result.return_value.unwrap().is_list());
+}
+
+#[test]
+fn test_list_with_expressions() {
+    let code = r#"
+        var a = 1;
+        var b = 2;
+        var list = [a + b, a * b, a - b];
+        return list[1];
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(2));
+}
+
+// ===== For 循环测试 =====
+
+#[test]
+fn test_for_loop_simple() {
+    let code = r#"
+        var sum = 0;
+        for var x in [1, 2, 3, 4, 5] {
+            sum = sum + x;
+        }
+        return sum;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(15));
+}
+
+#[test]
+fn test_for_loop_empty_list() {
+    let code = r#"
+        var sum = 0;
+        for var x in [] {
+            sum = sum + x;
+        }
+        return sum;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(0));
+}
+
+#[test]
+fn test_for_loop_single_element() {
+    let code = r#"
+        var result = 0;
+        for var x in [42] {
+            result = x;
+        }
+        return result;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(42));
+}
+
+#[test]
+fn test_for_loop_with_nested_if() {
+    let code = r#"
+        var sum = 0;
+        for var x in [1, 2, 3, 4, 5] {
+            if (x > 2) {
+                sum = sum + x;
+            }
+        }
+        return sum;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(12)); // 3 + 4 + 5
+}
+
+// ===== 成员访问测试 =====
+
+#[test]
+fn test_member_access_simple() {
+    // Note: 需要 JSON 对象来测试成员访问
+    // 这里假设 std 模块返回的对象支持成员访问
+    let code = r#"
+        import std;
+        return std.PI;
+    "#;
+    let result = run_code(code);
+    assert!(result.is_ok(), "Member access should work: {:?}", result.err());
+}
+
+#[test]
+fn test_chained_member_access() {
+    let code = r#"
+        import std;
+        var x = std.PI;
+        return x;
+    "#;
+    let result = run_code(code);
+    assert!(result.is_ok(), "Chained member access should work: {:?}", result.err());
+}
+
+// ===== 复杂条件测试 =====
+
+#[test]
+fn test_if_with_logical_and() {
+    let code = r#"
+        var x = 5;
+        var y = 10;
+        if (x > 0 and y > 5) {
+            return 1;
+        }
+        return 0;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(1));
+}
+
+#[test]
+fn test_if_with_logical_or() {
+    let code = r#"
+        var x = 5;
+        var y = 0;
+        if (x > 10 or y == 0) {
+            return 1;
+        }
+        return 0;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(1));
+}
+
+#[test]
+fn test_if_with_not() {
+    let code = r#"
+        var flag = false;
+        if (not flag) {
+            return 1;
+        }
+        return 0;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(1));
+}
+
+#[test]
+fn test_if_with_complex_condition() {
+    let code = r#"
+        var a = 5;
+        var b = 10;
+        var c = 15;
+        if (a < b and b < c) {
+            return 1;
+        }
+        return 0;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(1));
+}
+
+// ===== 函数和闭包测试 =====
+
+#[test]
+fn test_lambda_no_params() {
+    let code = r#"
+        var f = || { return 42; };
+        return f();
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(42));
+}
+
+#[test]
+fn test_lambda_single_param() {
+    let code = r#"
+        var double = |x| { return x * 2; };
+        return double(5);
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(10));
+}
+
+#[test]
+fn test_lambda_multiple_params() {
+    let code = r#"
+        var add3 = |a, b, c| { return a + b + c; };
+        return add3(1, 2, 3);
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(6));
+}
+
+#[test]
+fn test_lambda_as_argument() {
+    let code = r#"
+        var apply = |f, x| { return f(x); };
+        var double = |n| { return n * 2; };
+        return apply(double, 5);
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(10));
+}
+
+#[test]
+fn test_closure_captures_multiple_vars() {
+    let code = r#"
+        var makeAdder = |x, y| {
+            return |z| {
+                return x + y + z;
+            };
+        };
+        var add5 = makeAdder(2, 3);
+        return add5(10);
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(15));
+}
+
+#[test]
+fn test_closure_modifies_capture() {
+    let code = r#"
+        var makeCounter = || {
+            var count = 0;
+            return || {
+                count = count + 1;
+                return count;
+            };
+        };
+        var counter = makeCounter();
+        counter();
+        return counter();
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(2));
+}
+
+// ===== 边界情况测试 =====
+
+#[test]
+fn test_variable_shadowing_in_block() {
+    let code = r#"
+        var x = 1;
+        {
+            var x = 2;
+        }
+        return x;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(1));
+}
+
+#[test]
+fn test_variable_in_nested_block() {
+    let code = r#"
+        var result = 0;
+        {
+            var x = 42;
+            result = x;
+        }
+        return result;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(42));
+}
+
+#[test]
+fn test_early_return_from_nested_if() {
+    let code = r#"
+        var test = |x| {
+            if (x > 0) {
+                if (x > 5) {
+                    return 100;
+                }
+                return 50;
+            }
+            return 0;
+        };
+        return test(10);
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(100));
+}
+
+#[test]
+fn test_while_loop_zero_iterations() {
+    let code = r#"
+        var count = 0;
+        while (false) {
+            count = count + 1;
+        }
+        return count;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(0));
+}
+
+#[test]
+fn test_while_loop_single_iteration() {
+    let code = r#"
+        var count = 0;
+        var flag = true;
+        while (flag) {
+            count = count + 1;
+            flag = false;
+        }
+        return count;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(1));
+}
+
+// ===== 算术运算边界测试 =====
+
+#[test]
+fn test_arithmetic_with_negative_numbers() {
+    let code = r#"
+        var a = -5;
+        var b = -3;
+        return a + b;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(-8));
+}
+
+#[test]
+fn test_arithmetic_large_numbers() {
+    let code = r#"
+        var a = 1000000;
+        var b = 2000000;
+        return a + b;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(3000000));
+}
+
+#[test]
+fn test_chained_unary_minus() {
+    let code = r#"
+        var x = 5;
+        return --x;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(5));
+}
+
+#[test]
+fn test_mixed_arithmetic_precedence() {
+    let code = r#"
+        return 2 + 3 * 4 - 5;
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(9)); // 2 + 12 - 5 = 9
+}
+
+#[test]
+fn test_arithmetic_with_parentheses() {
+    let code = r#"
+        return (2 + 3) * (4 - 1);
+    "#;
+    let result = run_code(code).unwrap();
+    assert_eq!(get_int(&result), Some(15)); // 5 * 3 = 15
+}
+
 #[test]
 fn test_return_without_value() {
     // 测试无值返回
