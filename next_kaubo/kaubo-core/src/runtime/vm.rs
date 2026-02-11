@@ -53,6 +53,21 @@ impl VM {
         }
     }
 
+    /// 获取栈的可变引用（crate 内部使用）
+    pub(crate) fn stack_mut(&mut self) -> &mut Vec<Value> {
+        &mut self.stack
+    }
+
+    /// 获取调用帧的可变引用（crate 内部使用）
+    pub(crate) fn frames_mut(&mut self) -> &mut Vec<CallFrame> {
+        &mut self.frames
+    }
+
+    /// 获取 upvalues 的可变引用（crate 内部使用）
+    pub(crate) fn open_upvalues_mut(&mut self) -> &mut Vec<*mut ObjUpvalue> {
+        &mut self.open_upvalues
+    }
+
     /// 解释执行一个 Chunk
     pub fn interpret(&mut self, chunk: &Chunk) -> InterpretResult {
         self.interpret_with_locals(chunk, 0)
@@ -93,7 +108,9 @@ impl VM {
     }
 
     /// 执行字节码的主循环
-    fn run(&mut self) -> InterpretResult {
+    /// 
+    /// 注意：此方法为 crate 内部可见，用于 VM-aware 原生函数
+    pub(crate) fn run(&mut self) -> InterpretResult {
         use OpCode::*;
 
         loop {
@@ -457,6 +474,30 @@ impl VM {
 
                         // 调用原生函数
                         match native.call(&args) {
+                            Ok(result) => self.push(result),
+                            Err(msg) => return InterpretResult::RuntimeError(msg),
+                        }
+                    } else if let Some(native_vm_ptr) = callee.as_native_vm() {
+                        // 调用 VM-aware 原生函数
+                        let native_vm = unsafe { &*native_vm_ptr };
+                        
+                        // 参数校验
+                        if native_vm.arity != 255 && arg_count != native_vm.arity {
+                            return InterpretResult::RuntimeError(format!(
+                                "Expected {} arguments but got {}",
+                                native_vm.arity, arg_count
+                            ));
+                        }
+
+                        // 收集参数（从栈顶）
+                        let mut args = Vec::with_capacity(arg_count as usize);
+                        for _ in 0..arg_count {
+                            args.push(self.pop());
+                        }
+                        args.reverse();
+
+                        // 调用 VM-aware 原生函数，传入 self (VM)
+                        match native_vm.call(self, &args) {
                             Ok(result) => self.push(result),
                             Err(msg) => return InterpretResult::RuntimeError(msg),
                         }

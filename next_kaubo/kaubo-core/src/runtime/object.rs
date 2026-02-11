@@ -568,3 +568,33 @@ impl ObjNative {
         (self.function)(args)
     }
 }
+
+/// VM-aware 原生函数类型 - 可以访问 VM 内部状态
+pub type NativeVmFn = fn(&mut crate::runtime::VM, &[Value]) -> Result<Value, String>;
+
+/// VM-aware 原生函数对象 - 可以访问 VM 的完整状态
+#[derive(Debug)]
+pub struct ObjNativeVm {
+    /// 函数指针
+    pub function: NativeVmFn,
+    /// 函数名（用于调试）
+    pub name: String,
+    /// 参数数量（255 表示变参）
+    pub arity: u8,
+}
+
+impl ObjNativeVm {
+    /// 创建新的 VM-aware 原生函数对象
+    pub fn new(function: NativeVmFn, name: String, arity: u8) -> Self {
+        Self {
+            function,
+            name,
+            arity,
+        }
+    }
+
+    /// 调用 VM-aware 原生函数
+    pub fn call(&self, vm: &mut crate::runtime::VM, args: &[Value]) -> Result<Value, String> {
+        (self.function)(vm, args)
+    }
+}

@@ -397,9 +397,21 @@ impl Compiler {
 
     /// 编译二元运算
     fn compile_binary(&mut self, bin: &Binary) -> Result<(), CompileError> {
+        use crate::compiler::lexer::token_kind::KauboTokenKind;
+
         // 特殊处理赋值运算符：=
-        if bin.op == crate::compiler::lexer::token_kind::KauboTokenKind::Equal {
+        if bin.op == KauboTokenKind::Equal {
             return self.compile_assignment(&bin.left, &bin.right);
+        }
+
+        // 短路求值：and
+        if bin.op == KauboTokenKind::And {
+            return self.compile_and(&bin.left, &bin.right);
+        }
+
+        // 短路求值：or
+        if bin.op == KauboTokenKind::Or {
+            return self.compile_or(&bin.left, &bin.right);
         }
 
         // 先编译左操作数
@@ -410,24 +422,81 @@ impl Compiler {
 
         // 生成运算指令
         let op = match bin.op {
-            crate::compiler::lexer::token_kind::KauboTokenKind::Plus => OpCode::Add,
-            crate::compiler::lexer::token_kind::KauboTokenKind::Minus => OpCode::Sub,
-            crate::compiler::lexer::token_kind::KauboTokenKind::Asterisk => OpCode::Mul,
-            crate::compiler::lexer::token_kind::KauboTokenKind::Slash => OpCode::Div,
-            crate::compiler::lexer::token_kind::KauboTokenKind::DoubleEqual => OpCode::Equal,
-            crate::compiler::lexer::token_kind::KauboTokenKind::ExclamationEqual => {
-                OpCode::NotEqual
-            }
-            crate::compiler::lexer::token_kind::KauboTokenKind::GreaterThan => OpCode::Greater,
-            crate::compiler::lexer::token_kind::KauboTokenKind::GreaterThanEqual => {
-                OpCode::GreaterEqual
-            }
-            crate::compiler::lexer::token_kind::KauboTokenKind::LessThan => OpCode::Less,
-            crate::compiler::lexer::token_kind::KauboTokenKind::LessThanEqual => OpCode::LessEqual,
+            KauboTokenKind::Plus => OpCode::Add,
+            KauboTokenKind::Minus => OpCode::Sub,
+            KauboTokenKind::Asterisk => OpCode::Mul,
+            KauboTokenKind::Slash => OpCode::Div,
+            KauboTokenKind::DoubleEqual => OpCode::Equal,
+            KauboTokenKind::ExclamationEqual => OpCode::NotEqual,
+            KauboTokenKind::GreaterThan => OpCode::Greater,
+            KauboTokenKind::GreaterThanEqual => OpCode::GreaterEqual,
+            KauboTokenKind::LessThan => OpCode::Less,
+            KauboTokenKind::LessThanEqual => OpCode::LessEqual,
             _ => return Err(CompileError::InvalidOperator),
         };
 
         self.chunk.write_op(op, 0);
+        Ok(())
+    }
+
+    /// 编译逻辑与 (and) - 短路求值
+    /// a and b 等价于: if a then b else a
+    fn compile_and(&mut self, left: &Expr, right: &Expr) -> Result<(), CompileError> {
+        // 编译左操作数
+        self.compile_expr(left)?;
+
+        // 复制左操作数用于条件判断（因为 JumpIfFalse 会弹出值）
+        self.chunk.write_op(OpCode::Dup, 0);
+
+        // 如果左操作数为假，跳转到结束（保留左操作数作为结果）
+        let jump_offset = self.chunk.write_jump(OpCode::JumpIfFalse, 0);
+
+        // 左操作数为真，需要计算右操作数
+        // 弹出复制的左操作数值
+        self.chunk.write_op(OpCode::Pop, 0);
+        
+        // 编译右操作数
+        self.compile_expr(right)?;
+
+        // 修补跳转偏移量
+        self.chunk.patch_jump(jump_offset);
+
+        Ok(())
+    }
+
+    /// 编译逻辑或 (or) - 短路求值
+    /// a or b 等价于: if a then a else b
+    fn compile_or(&mut self, left: &Expr, right: &Expr) -> Result<(), CompileError> {
+        // 编译左操作数
+        self.compile_expr(left)?;
+
+        // 如果左操作数为真，跳过右操作数（短路）
+        // JumpIfFalse 会弹出栈顶值，所以我们需要额外处理
+        // 先复制一份左操作数用于判断
+        self.chunk.write_op(OpCode::Dup, 0);
+        
+        // 如果为假，跳转到右操作数计算
+        let jump_offset = self.chunk.write_jump(OpCode::JumpIfFalse, 0);
+
+        // 左操作数为真，不需要右操作数
+        // 弹出复制的值，保留原始左操作数作为结果
+        self.chunk.write_op(OpCode::Pop, 0);
+        
+        // 跳过右操作数的代码
+        let end_jump = self.chunk.write_jump(OpCode::Jump, 0);
+
+        // 修补第一个跳转（跳到右操作数计算）
+        self.chunk.patch_jump(jump_offset);
+
+        // 弹出为假的左操作数值
+        self.chunk.write_op(OpCode::Pop, 0);
+        
+        // 编译右操作数
+        self.compile_expr(right)?;
+
+        // 修补结束跳转
+        self.chunk.patch_jump(end_jump);
+
         Ok(())
     }
 
@@ -695,6 +764,10 @@ impl Compiler {
                 // 数学常量 (9-10)
                 "PI" => Some(9),
                 "E" => Some(10),
+                // 协程函数 (11-13)
+                "create_coroutine" => Some(11),
+                "resume" => Some(12),
+                "coroutine_status" => Some(13),
                 _ => None,
             },
             _ => None,
@@ -1066,53 +1139,6 @@ impl Compiler {
 
     /// 编译函数调用
     fn compile_function_call(&mut self, call: &FunctionCall) -> Result<(), CompileError> {
-        // 检查是否是内置协程函数
-        if let ExprKind::VarRef(var_ref) = call.function_expr.as_ref() {
-            match var_ref.name.as_str() {
-                "create_coroutine" => {
-                    // 编译参数（应该是一个闭包）
-                    if call.arguments.len() != 1 {
-                        return Err(CompileError::Unimplemented(
-                            "create_coroutine expects exactly 1 argument".to_string()
-                        ));
-                    }
-                    self.compile_expr(&call.arguments[0])?;
-                    // 发射 CreateCoroutine 指令
-                    self.chunk.write_op(OpCode::CreateCoroutine, 0);
-                    return Ok(());
-                }
-                "resume" => {
-                    // resume(co, value...)
-                    if call.arguments.is_empty() {
-                        return Err(CompileError::Unimplemented(
-                            "resume expects at least 1 argument".to_string()
-                        ));
-                    }
-                    // 编译参数（第一个是协程，后面是传入值）
-                    for arg in &call.arguments {
-                        self.compile_expr(arg)?;
-                    }
-                    // 发射 Resume 指令
-                    let arg_count = (call.arguments.len() - 1) as u8;
-                    self.chunk.write_op_u8(OpCode::Resume, arg_count, 0);
-                    return Ok(());
-                }
-                "coroutine_status" => {
-                    // coroutine_status(co)
-                    if call.arguments.len() != 1 {
-                        return Err(CompileError::Unimplemented(
-                            "coroutine_status expects exactly 1 argument".to_string()
-                        ));
-                    }
-                    self.compile_expr(&call.arguments[0])?;
-                    // 发射 CoroutineStatus 指令
-                    self.chunk.write_op(OpCode::CoroutineStatus, 0);
-                    return Ok(());
-                }
-                _ => {}
-            }
-        }
-        
         // 普通函数调用
         // 先编译参数（参数从左到右压栈）
         for arg in call.arguments.iter() {

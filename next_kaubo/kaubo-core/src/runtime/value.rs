@@ -63,6 +63,7 @@ const TAG_OPTION: u64 = 40 << 44; // Option 对象
 const TAG_JSON: u64 = 41 << 44; // JSON 对象
 const TAG_MODULE: u64 = 42 << 44; // 模块对象
 const TAG_NATIVE: u64 = 43 << 44; // 原生函数对象
+const TAG_NATIVE_VM: u64 = 44 << 44; // VM-aware 原生函数对象
 // 44-127: 预留其他堆类型
 
 /// SMI 最大值 (2^30 - 1)
@@ -195,6 +196,12 @@ impl Value {
     #[inline]
     pub fn native_fn(ptr: *mut ObjNative) -> Self {
         Self::encode_heap_ptr(ptr, TAG_NATIVE)
+    }
+
+    /// 创建 VM-aware 原生函数对象
+    #[inline]
+    pub fn native_vm_fn(ptr: *mut crate::runtime::object::ObjNativeVm) -> Self {
+        Self::encode_heap_ptr(ptr, TAG_NATIVE_VM)
     }
 
     // ==================== 类型判断 ====================
@@ -344,6 +351,12 @@ impl Value {
         self.is_boxed() && self.raw_tag() == 43
     }
 
+    /// 是否为 VM-aware 原生函数对象
+    #[inline]
+    pub fn is_native_vm(&self) -> bool {
+        self.is_boxed() && self.raw_tag() == 44
+    }
+
     // ==================== 解包方法 ====================
 
     /// 解包为 SMI (i32)
@@ -473,6 +486,12 @@ impl Value {
         self.decode_heap_ptr(TAG_NATIVE)
     }
 
+    /// 解包为 VM-aware 原生函数对象
+    #[inline]
+    pub fn as_native_vm(&self) -> Option<*mut crate::runtime::object::ObjNativeVm> {
+        self.decode_heap_ptr(TAG_NATIVE_VM)
+    }
+
     /// 解包为布尔值
     #[inline]
     pub fn as_bool(&self) -> Option<bool> {
@@ -532,6 +551,8 @@ impl std::fmt::Debug for Value {
             write!(f, "Module")
         } else if self.is_native() {
             write!(f, "Native")
+        } else if self.is_native_vm() {
+            write!(f, "NativeVm")
         } else {
             write!(f, "Value({:016x})", self.0)
         }
@@ -592,6 +613,8 @@ impl std::fmt::Display for Value {
             write!(f, "<module>")
         } else if self.is_native() {
             write!(f, "<native>")
+        } else if self.is_native_vm() {
+            write!(f, "<native_vm>")
         } else if self.is_heap() {
             write!(f, "<object>")
         } else {

@@ -7,11 +7,15 @@
 //! - 启动时自动注册到 globals
 
 use crate::runtime::Value;
-use crate::runtime::object::ObjModule;
+use crate::runtime::object::{ObjModule, ObjNativeVm};
+use crate::runtime::VM;
 use std::collections::HashMap;
 
 /// 原生函数指针类型
 pub type NativeFn = fn(&[Value]) -> Result<Value, String>;
+
+/// VM-aware 原生函数指针类型
+pub type NativeVmFn = fn(&mut VM, &[Value]) -> Result<Value, String>;
 
 /// 创建标准库模块
 pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
@@ -54,6 +58,16 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
     exports.push(Value::float(std::f64::consts::E));
     name_to_shape.insert("E".to_string(), 10u16);
 
+    // ===== 协程函数 (11-13) - VM-aware 原生函数 =====
+    exports.push(create_native_vm_value(create_coroutine_fn, "create_coroutine", 1));
+    name_to_shape.insert("create_coroutine".to_string(), 11u16);
+
+    exports.push(create_native_vm_value(resume_fn, "resume", 255)); // 变参
+    name_to_shape.insert("resume".to_string(), 12u16);
+
+    exports.push(create_native_vm_value(coroutine_status_fn, "coroutine_status", 1));
+    name_to_shape.insert("coroutine_status".to_string(), 13u16);
+
     let module = ObjModule::new("std".to_string(), exports, name_to_shape);
     vec![("std".to_string(), Box::new(module))]
 }
@@ -63,6 +77,12 @@ fn create_native_value(func: NativeFn, name: &str, arity: u8) -> Value {
     use crate::runtime::object::ObjNative;
     let native = Box::new(ObjNative::new(func, name.to_string(), arity));
     Value::native_fn(Box::into_raw(native))
+}
+
+/// 辅助函数：创建 VM-aware 原生函数 Value
+fn create_native_vm_value(func: NativeVmFn, name: &str, arity: u8) -> Value {
+    let native_vm = Box::new(ObjNativeVm::new(func, name.to_string(), arity));
+    Value::native_vm_fn(Box::into_raw(native_vm))
 }
 
 // ===== 核心函数实现 =====
@@ -210,5 +230,141 @@ fn to_f64(value: &Value) -> Result<f64, String> {
         Ok(value.as_float())
     } else {
         Err(format!("Expected number, got unknown type"))
+    }
+}
+
+// ===== VM-aware 协程函数实现 =====
+
+use crate::runtime::object::{ObjCoroutine, CoroutineState};
+
+/// create_coroutine(closure) -> coroutine
+fn create_coroutine_fn(_vm: &mut VM, args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("create_coroutine() takes exactly 1 argument ({} given)", args.len()));
+    }
+
+    if let Some(closure_ptr) = args[0].as_closure() {
+        let coroutine = Box::new(ObjCoroutine::new(closure_ptr));
+        Ok(Value::coroutine(Box::into_raw(coroutine)))
+    } else {
+        Err("Coroutine must be created from a closure".to_string())
+    }
+}
+
+/// resume(coroutine, ...values) -> yielded_value
+fn resume_fn(vm: &mut VM, args: &[Value]) -> Result<Value, String> {
+    if args.is_empty() {
+        return Err("resume() expects at least 1 argument (coroutine)".to_string());
+    }
+
+    let coro_val = args[0];
+    if let Some(coro_ptr) = coro_val.as_coroutine() {
+        let coro = unsafe { &mut *coro_ptr };
+
+        // 检查协程状态
+        if coro.state == CoroutineState::Dead {
+            return Err("Cannot resume dead coroutine".to_string());
+        }
+
+        // 收集传入的参数（除了第一个协程参数）
+        let arg_count = args.len() - 1;
+        let mut resume_args = Vec::with_capacity(arg_count);
+        for i in 1..args.len() {
+            resume_args.push(args[i]);
+        }
+
+        // 如果协程是第一次运行，需要初始化调用帧
+        if coro.state == CoroutineState::Suspended && coro.frames.is_empty() {
+            let closure = coro.entry_closure;
+            let func = unsafe { &*(*closure).function };
+
+            if func.arity != arg_count as u8 {
+                return Err(format!(
+                    "Expected {} arguments but got {}",
+                    func.arity, arg_count
+                ));
+            }
+
+            // 创建初始调用帧
+            coro.frames.push(crate::runtime::object::CallFrame {
+                closure,
+                ip: func.chunk.code.as_ptr(),
+                locals: resume_args,
+                stack_base: 0,
+            });
+        }
+
+        // 切换到协程上下文执行
+        coro.state = CoroutineState::Running;
+
+        // 保存当前 VM 状态
+        let saved_stack = std::mem::take(vm.stack_mut());
+        let saved_frames = std::mem::take(vm.frames_mut());
+        let saved_upvalues = std::mem::take(vm.open_upvalues_mut());
+
+        // 加载协程状态
+        *vm.stack_mut() = std::mem::take(&mut coro.stack);
+        *vm.frames_mut() = std::mem::take(&mut coro.frames);
+        *vm.open_upvalues_mut() = std::mem::take(&mut coro.open_upvalues);
+
+        // 执行协程
+        let result = vm.run();
+
+        // 保存协程状态
+        coro.stack = std::mem::take(vm.stack_mut());
+        coro.frames = std::mem::take(vm.frames_mut());
+        coro.open_upvalues = std::mem::take(vm.open_upvalues_mut());
+
+        // 恢复主 VM 状态
+        *vm.stack_mut() = saved_stack;
+        *vm.frames_mut() = saved_frames;
+        *vm.open_upvalues_mut() = saved_upvalues;
+
+        // 根据执行结果处理
+        match result {
+            crate::runtime::InterpretResult::Ok => {
+                coro.state = CoroutineState::Dead;
+                // 协程正常结束，获取返回值
+                let return_val = coro.stack.last().copied().unwrap_or(Value::NULL);
+                Ok(return_val)
+            }
+            crate::runtime::InterpretResult::RuntimeError(msg) => {
+                if msg == "yield" {
+                    // 协程通过 yield 挂起
+                    coro.state = CoroutineState::Suspended;
+                    // 获取 yield 值（在协程栈顶）
+                    let yield_val = coro.stack.last().copied().unwrap_or(Value::NULL);
+                    Ok(yield_val)
+                } else {
+                    coro.state = CoroutineState::Dead;
+                    Err(msg)
+                }
+            }
+            crate::runtime::InterpretResult::CompileError(msg) => {
+                coro.state = CoroutineState::Dead;
+                Err(msg)
+            }
+        }
+    } else {
+        Err("Can only resume coroutines".to_string())
+    }
+}
+
+/// coroutine_status(coroutine) -> int (0=Suspended, 1=Running, 2=Dead)
+fn coroutine_status_fn(_vm: &mut VM, args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("coroutine_status() takes exactly 1 argument ({} given)", args.len()));
+    }
+
+    if let Some(coro_ptr) = args[0].as_coroutine() {
+        let coro = unsafe { &*coro_ptr };
+        let status = match coro.state {
+            CoroutineState::Suspended => 0i64,
+            CoroutineState::Running => 1i64,
+            CoroutineState::Dead => 2i64,
+        };
+        Ok(Value::smi(status as i32))
+    } else {
+        Err("Expected a coroutine".to_string())
     }
 }
