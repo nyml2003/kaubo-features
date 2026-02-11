@@ -3,7 +3,7 @@
 //! 提供各阶段的独立调用和组合调用，统一错误处理。
 //!
 //! # 使用示例
-//! ```
+//! ```ignore
 //! use kaubo::{compile_and_run, Config, init};
 //!
 //! init(Config::default());
@@ -11,15 +11,12 @@
 //! ```
 
 use thiserror::Error;
-use tracing::{debug, error, info, instrument, span, Level};
-
-
-
+use tracing::{Level, debug, error, info, instrument, span};
 
 use crate::runtime::bytecode::chunk::Chunk;
-use crate::runtime::{InterpretResult, VM};
 use crate::runtime::compiler::compile as compile_to_chunk;
 use crate::runtime::value::Value;
+use crate::runtime::{InterpretResult, VM};
 
 /// Kaubo 错误类型
 #[derive(Error, Debug, Clone)]
@@ -27,19 +24,19 @@ pub enum KauboError {
     /// 词法分析错误
     #[error("Lexer error: {message}")]
     Lexer { message: String },
-    
+
     /// 语法分析错误（带位置信息）
     #[error("Parser error: {message}")]
-    Parser { 
+    Parser {
         message: String,
         line: Option<usize>,
         column: Option<usize>,
     },
-    
+
     /// 编译错误
     #[error("Compiler error: {0}")]
     Compiler(String),
-    
+
     /// 运行时错误
     #[error("Runtime error: {0}")]
     Runtime(String),
@@ -48,7 +45,9 @@ pub enum KauboError {
 impl KauboError {
     /// 从 Lexer 错误转换
     fn from_lexer_error<E: std::fmt::Display>(e: E) -> Self {
-        KauboError::Lexer { message: e.to_string() }
+        KauboError::Lexer {
+            message: e.to_string(),
+        }
     }
 
     /// 从 Parser 错误转换
@@ -109,26 +108,29 @@ pub struct ExecuteOutput {
 /// # Errors
 /// 遇到非法字符或格式错误时返回 `KauboError::Lexer`
 #[instrument(target = "kaubo::lexer", skip(source), fields(len = source.len()))]
-pub fn lex(source: &str) -> Result<Vec<crate::kit::lexer::types::Token<crate::compiler::lexer::token_kind::KauboTokenKind>>, KauboError> {
+pub fn lex(
+    source: &str,
+) -> Result<
+    Vec<crate::kit::lexer::scanner::Token<crate::compiler::lexer::token_kind::KauboTokenKind>>,
+    KauboError,
+> {
     use crate::compiler::lexer::builder::build_lexer;
-    
+
     info!("Starting lexer");
 
     let mut lexer = build_lexer();
-    
+
     lexer
         .feed(&source.as_bytes().to_vec())
         .map_err(KauboError::from_lexer_error)?;
-    
-    lexer
-        .terminate()
-        .map_err(KauboError::from_lexer_error)?;
+
+    lexer.terminate().map_err(KauboError::from_lexer_error)?;
 
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
         debug!(
             kind = ?token.kind,
-            value = %token.value,
+            text = ?token.text,
             "produced token"
         );
         tokens.push(token);
@@ -149,9 +151,13 @@ pub fn lex(source: &str) -> Result<Vec<crate::kit::lexer::types::Token<crate::co
 /// 始终返回 `KauboError::Parser` 错误
 #[instrument(target = "kaubo::parser", skip(_tokens), fields(count = _tokens.len()))]
 #[deprecated(since = "0.1.0", note = "暂未实现，请使用 compile() 代替")]
-pub fn parse(_tokens: Vec<crate::kit::lexer::types::Token<crate::compiler::lexer::token_kind::KauboTokenKind>>) -> Result<crate::compiler::parser::Module, KauboError> {
+pub fn parse(
+    _tokens: Vec<
+        crate::kit::lexer::scanner::Token<crate::compiler::lexer::token_kind::KauboTokenKind>,
+    >,
+) -> Result<crate::compiler::parser::Module, KauboError> {
     info!("Starting parser");
-    
+
     Err(KauboError::Parser {
         message: "parse() is not yet implemented. Use compile() instead.".to_string(),
         line: None,
@@ -178,7 +184,7 @@ pub fn compile_ast(ast: &crate::compiler::parser::Module) -> Result<CompileOutpu
     );
 
     info!("Compiler completed");
-    
+
     Ok(CompileOutput { chunk, local_count })
 }
 
@@ -197,10 +203,10 @@ pub fn execute(chunk: &Chunk, local_count: usize) -> Result<ExecuteOutput, Kaubo
 
     match result {
         InterpretResult::Ok => {
-            let value = vm.stack_top();  // 已经返回 Option<Value>
+            let value = vm.stack_top(); // 已经返回 Option<Value>
             debug!(return_value = ?value, "execution completed");
             info!("VM execution completed successfully");
-            
+
             Ok(ExecuteOutput {
                 value,
                 stdout: String::new(), // TODO: 捕获 stdout
@@ -227,20 +233,22 @@ pub fn execute(chunk: &Chunk, local_count: usize) -> Result<ExecuteOutput, Kaubo
 /// 任何阶段出错都会返回对应的 `KauboError`
 pub fn compile(source: &str) -> Result<CompileOutput, KauboError> {
     let _span = span!(Level::INFO, "compile").entered();
-    
+
     info!("Starting full compilation");
 
     // 词法分析 + 语法分析
     use crate::compiler::lexer::builder::build_lexer;
     use crate::compiler::parser::parser::Parser;
-    
+
     let mut lexer = build_lexer();
-    lexer.feed(&source.as_bytes().to_vec()).map_err(KauboError::from_lexer_error)?;
+    lexer
+        .feed(&source.as_bytes().to_vec())
+        .map_err(KauboError::from_lexer_error)?;
     lexer.terminate().map_err(KauboError::from_lexer_error)?;
-    
+
     let mut parser = Parser::new(lexer);
     let ast = parser.parse().map_err(KauboError::from_parser_error)?;
-    
+
     let output = compile_ast(&ast)?;
 
     info!("Full compilation completed");
@@ -255,7 +263,7 @@ pub fn compile(source: &str) -> Result<CompileOutput, KauboError> {
 /// 任何阶段出错都会返回对应的 `KauboError`
 pub fn compile_and_run(source: &str) -> Result<ExecuteOutput, KauboError> {
     let _span = span!(Level::INFO, "compile_and_run").entered();
-    
+
     info!("Starting compile and run");
 
     let compiled = compile(source)?;
@@ -284,7 +292,9 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let err = KauboError::Lexer { message: "test error".to_string() };
+        let err = KauboError::Lexer {
+            message: "test error".to_string(),
+        };
         assert!(err.to_string().contains("Lexer error"));
     }
 

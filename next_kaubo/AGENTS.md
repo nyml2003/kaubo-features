@@ -18,6 +18,7 @@
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │   Source    │ -> │    Lexer    │ -> │   Parser    │ -> │  Compiler   │
 │   (.kaubo)  │    │ (kaubo::lexer)│   │(kaubo::parser)│  │(kaubo::compiler)│
+│             │    │  src/kit/lexer/│   │              │  │              │
 └─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘
                                                                   │
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐            │
@@ -34,8 +35,9 @@
 | `src/config.rs` | 全局配置 | 低 |
 | `src/logger.rs` | 日志初始化 | 低 |
 | `src/main.rs` | CLI 入口 | 中 |
-| `src/compiler/lexer/` | 词法分析 | 中 |
+| `src/kit/lexer/` | 词法分析器 (手写 Scanner) | 中 |
 | `src/compiler/parser/` | 语法分析 | 中 |
+| `src/compiler/lexer/token_kind.rs` | Token 类型定义 | 低 |
 | `src/runtime/compiler.rs` | AST → Bytecode | 高 |
 | `src/runtime/vm.rs` | 虚拟机执行 | 高 |
 | `src/runtime/stdlib/` | 标准库 | 高 |
@@ -158,12 +160,32 @@ cargo run --release -- assets/hello.kaubo -vv
 - CLI 显示错误行前后各2行上下文，用 `^` 标记错误位置
 - 行号自动对齐，分隔线自适应宽度
 
+## Token 结构变更
+
+Lexer V2 改造后 Token 结构发生变化：
+
+| 旧字段 | 新字段 | 说明 |
+|--------|--------|------|
+| `token.coordinate` | `token.span.start` | Position 在 span 内 |
+| `token.value` | `token.text` | 类型改为 `Option<String>` |
+
+**迁移示例**:
+```rust
+// 访问行号
+// 旧: token.coordinate.line
+// 新: token.span.start.line
+
+// 访问文本
+// 旧: token.value.clone()
+// 新: token.text.clone().unwrap_or_default()
+```
+
 ## 扩展方向
 
 | 优先级 | 任务 | 复杂度 |
 |--------|------|--------|
 | 高 | 浮点数字面量支持 | 中 |
-| 高 | 错误信息改进（行列号） | 中 |
+| 中 | Phase 1: SourceSpan 集成到错误系统 | 中 |
 | 中 | 字符串/列表标准库方法 | 低 |
 | 中 | `@ProgramStart` 装饰器 | 中 |
 | 低 | 垃圾回收 | 高 |
@@ -171,9 +193,11 @@ cargo run --release -- assets/hello.kaubo -vv
 
 ## 技术债务
 
-- [ ] `parse()` API 需要重构以支持直接传入 tokens
+- [x] ~~`parse()` API 需要重构以支持直接传入 tokens~~ ✅ 已完成（Lexer V2）
+- [x] ~~Lexer 状态机需要简化~~ ✅ 已完成（替换为手写 Scanner）
 - [ ] 部分 `#[allow(dead_code)]` 需要清理或实现
 - [ ] 文档测试需要配置初始化支持
+- [ ] Parser 错误系统需要迁移到 SourceSpan
 
 ## 参考文档
 

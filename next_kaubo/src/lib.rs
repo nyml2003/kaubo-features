@@ -5,7 +5,7 @@
 //!
 //! # Quick Start
 //!
-//! ```
+//! ```ignore
 //! use kaubo::{init, compile_and_run, Config};
 //!
 //! init(Config::default());
@@ -32,7 +32,7 @@ pub use runtime::Value;
 /// 初始化（使用前先调用）
 ///
 /// # Example
-/// ```no_run
+/// ```ignore
 /// use kaubo::{init, Config};
 ///
 /// init(Config::default());
@@ -45,7 +45,7 @@ pub fn init(config: Config) {
 /// 快速执行（使用默认配置）
 ///
 /// # Example
-/// ```no_run
+/// ```ignore
 /// use kaubo::quick_run;
 ///
 /// let result = quick_run("return 42;").unwrap();

@@ -1,252 +1,145 @@
-use super::token_kind::KauboTokenKind;
-use crate::kit::lexer::{
-    c_lexer::Lexer,
-    state_machine::builder::{
-        build_comment_machine, build_identifier_machine, build_integer_machine,
-        build_keyword_machine, build_multi_char_machine, build_newline_machines,
-        build_single_char_machine, build_string_machine, build_tab_machine,
-        build_whitespace_machine,
-    },
-};
-pub fn build_lexer() -> Lexer<KauboTokenKind> {
-    let mut lexer: Lexer<KauboTokenKind> = Lexer::new(1024);
+//! Lexer 构建器
+//!
+//! 使用新的 Lexer V2 实现
 
-    for (kind, operator) in vec![
-        (KauboTokenKind::ExclamationEqual, "!="),
-        (KauboTokenKind::DoubleEqual, "=="),
-        (KauboTokenKind::LessThanEqual, "<="),
-        (KauboTokenKind::GreaterThanEqual, ">="),
-    ] {
-        lexer.register_machine(build_multi_char_machine(kind, operator.chars().collect()).unwrap());
-    }
+use crate::kit::lexer::Lexer;
 
-    for (kind, operator) in vec![
-        (KauboTokenKind::GreaterThan, ">"),
-        (KauboTokenKind::LessThan, "<"),
-        (KauboTokenKind::Plus, "+"),
-        (KauboTokenKind::Minus, "-"),
-        (KauboTokenKind::Asterisk, "*"),
-        (KauboTokenKind::Slash, "/"),
-        (KauboTokenKind::Colon, ":"),
-        (KauboTokenKind::Comma, ","),
-        (KauboTokenKind::Semicolon, ";"),
-        (KauboTokenKind::LeftParenthesis, "("),
-        (KauboTokenKind::RightParenthesis, ")"),
-        (KauboTokenKind::LeftCurlyBrace, "{"),
-        (KauboTokenKind::RightCurlyBrace, "}"),
-        (KauboTokenKind::LeftSquareBracket, "["),
-        (KauboTokenKind::RightSquareBracket, "]"),
-        (KauboTokenKind::Dot, "."),
-        (KauboTokenKind::Pipe, "|"),
-        (KauboTokenKind::Equal, "="),
-    ] {
-        lexer.register_machine(
-            build_single_char_machine(kind, operator.chars().next().unwrap()).unwrap(),
-        );
-    }
-
-    for (kind, keyword) in vec![
-        (KauboTokenKind::Var, "var"),
-        (KauboTokenKind::If, "if"),
-        (KauboTokenKind::Else, "else"),
-        (KauboTokenKind::Elif, "elif"),
-        (KauboTokenKind::While, "while"),
-        (KauboTokenKind::For, "for"),
-        (KauboTokenKind::Return, "return"),
-        (KauboTokenKind::In, "in"),
-        (KauboTokenKind::Yield, "yield"),
-        (KauboTokenKind::True, "true"),
-        (KauboTokenKind::False, "false"),
-        (KauboTokenKind::Null, "null"),
-        (KauboTokenKind::Break, "break"),
-        (KauboTokenKind::Continue, "continue"),
-        (KauboTokenKind::Struct, "struct"),
-        (KauboTokenKind::Interface, "interface"),
-        (KauboTokenKind::Import, "import"),
-        (KauboTokenKind::As, "as"),
-        (KauboTokenKind::From, "from"),
-        (KauboTokenKind::Pass, "pass"),
-        (KauboTokenKind::And, "and"),
-        (KauboTokenKind::Or, "or"),
-        (KauboTokenKind::Not, "not"),
-        (KauboTokenKind::Async, "async"),
-        (KauboTokenKind::Await, "await"),
-        (KauboTokenKind::Module, "module"),
-        (KauboTokenKind::Pub, "pub"),
-        (KauboTokenKind::Json, "json"),
-    ] {
-        lexer.register_machine(build_keyword_machine(keyword, kind).unwrap());
-    }
-
-    lexer.register_machine(build_integer_machine(KauboTokenKind::LiteralInteger).unwrap());
-    lexer.register_machine(build_string_machine(KauboTokenKind::LiteralString).unwrap());
-    lexer.register_machine(build_identifier_machine(KauboTokenKind::Identifier).unwrap());
-
-    // 注册换行符状态机（支持 \r\n, \n, \r）
-    for machine in build_newline_machines(KauboTokenKind::NewLine) {
-        lexer.register_machine(machine);
-    }
-    lexer.register_machine(build_whitespace_machine(KauboTokenKind::Whitespace).unwrap());
-    lexer.register_machine(build_tab_machine(KauboTokenKind::Tab).unwrap());
-    lexer.register_machine(build_comment_machine(KauboTokenKind::Comment).unwrap());
-
-    return lexer;
+/// 创建新的 Lexer
+/// 
+/// 使用 V2 实现（手写 Scanner 替代状态机）
+pub fn build_lexer() -> Lexer {
+    Lexer::new(1024)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::lexer::token_kind::KauboTokenKind;
+
+    fn lex_all(input: &str) -> Vec<(KauboTokenKind, Option<String>)> {
+        let mut lexer = build_lexer();
+        lexer.feed(input.as_bytes()).unwrap();
+        lexer.terminate().unwrap();
+
+        let mut tokens = Vec::new();
+        while let Some(token) = lexer.next_token() {
+            tokens.push((token.kind, token.text));
+        }
+        tokens
+    }
 
     #[test]
     fn test_build_lexer() {
-        // 确保 lexer 被正确创建（能成功创建即表示成功）
         let _lexer = build_lexer();
     }
 
     #[test]
     fn test_lexer_tokenizes_keywords() {
-        let mut lexer = build_lexer();
         let code = "var if else while for return true false null";
-        let _ = lexer.feed(&code.as_bytes().to_vec());
-        let _ = lexer.terminate();
-
+        let tokens = lex_all(code);
+        
         let expected = vec![
-            KauboTokenKind::Var,
-            KauboTokenKind::If,
-            KauboTokenKind::Else,
-            KauboTokenKind::While,
-            KauboTokenKind::For,
-            KauboTokenKind::Return,
-            KauboTokenKind::True,
-            KauboTokenKind::False,
-            KauboTokenKind::Null,
+            (KauboTokenKind::Var, "var".to_string()),
+            (KauboTokenKind::If, "if".to_string()),
+            (KauboTokenKind::Else, "else".to_string()),
+            (KauboTokenKind::While, "while".to_string()),
+            (KauboTokenKind::For, "for".to_string()),
+            (KauboTokenKind::Return, "return".to_string()),
+            (KauboTokenKind::True, "true".to_string()),
+            (KauboTokenKind::False, "false".to_string()),
+            (KauboTokenKind::Null, "null".to_string()),
         ];
 
-        for expected_kind in expected {
-            let token = lexer.next_token();
-            assert!(token.is_some(), "Expected token {:?}", expected_kind);
-            assert_eq!(token.unwrap().kind, expected_kind);
+        for (i, (expected_kind, expected_value)) in expected.iter().enumerate() {
+            assert_eq!(tokens[i].0, *expected_kind, "Token {} kind mismatch", i);
+            assert_eq!(tokens[i].1, Some(expected_value.to_string()), "Token {} value mismatch", i);
         }
     }
 
     #[test]
     fn test_lexer_tokenizes_operators() {
-        let mut lexer = build_lexer();
         let code = "+ - * / == != <= >= = < >";
-        let _ = lexer.feed(&code.as_bytes().to_vec());
-        let _ = lexer.terminate();
+        let tokens = lex_all(code);
 
-        let expected = vec![
-            KauboTokenKind::Plus,
-            KauboTokenKind::Minus,
-            KauboTokenKind::Asterisk,
-            KauboTokenKind::Slash,
-            KauboTokenKind::DoubleEqual,
-            KauboTokenKind::ExclamationEqual,
-            KauboTokenKind::LessThanEqual,
-            KauboTokenKind::GreaterThanEqual,
-            KauboTokenKind::Equal,
-            KauboTokenKind::LessThan,
-            KauboTokenKind::GreaterThan,
-        ];
-
-        for expected_kind in expected {
-            let token = lexer.next_token();
-            assert!(token.is_some(), "Expected token {:?}", expected_kind);
-            assert_eq!(token.unwrap().kind, expected_kind);
-        }
+        assert_eq!(tokens[0].0, KauboTokenKind::Plus);
+        assert_eq!(tokens[1].0, KauboTokenKind::Minus);
+        assert_eq!(tokens[2].0, KauboTokenKind::Asterisk);
+        assert_eq!(tokens[3].0, KauboTokenKind::Slash);
+        assert_eq!(tokens[4].0, KauboTokenKind::DoubleEqual);
+        assert_eq!(tokens[5].0, KauboTokenKind::ExclamationEqual);
+        assert_eq!(tokens[6].0, KauboTokenKind::LessThanEqual);
+        assert_eq!(tokens[7].0, KauboTokenKind::GreaterThanEqual);
+        assert_eq!(tokens[8].0, KauboTokenKind::Equal);
+        assert_eq!(tokens[9].0, KauboTokenKind::LessThan);
+        assert_eq!(tokens[10].0, KauboTokenKind::GreaterThan);
     }
 
     #[test]
     fn test_lexer_tokenizes_delimiters() {
-        let mut lexer = build_lexer();
         let code = "( ) { } [ ] ; , . |";
-        let _ = lexer.feed(&code.as_bytes().to_vec());
-        let _ = lexer.terminate();
+        let tokens = lex_all(code);
 
-        let expected = vec![
-            KauboTokenKind::LeftParenthesis,
-            KauboTokenKind::RightParenthesis,
-            KauboTokenKind::LeftCurlyBrace,
-            KauboTokenKind::RightCurlyBrace,
-            KauboTokenKind::LeftSquareBracket,
-            KauboTokenKind::RightSquareBracket,
-            KauboTokenKind::Semicolon,
-            KauboTokenKind::Comma,
-            KauboTokenKind::Dot,
-            KauboTokenKind::Pipe,
-        ];
-
-        for expected_kind in expected {
-            let token = lexer.next_token();
-            assert!(token.is_some(), "Expected token {:?}", expected_kind);
-            assert_eq!(token.unwrap().kind, expected_kind);
-        }
+        assert_eq!(tokens[0].0, KauboTokenKind::LeftParenthesis);
+        assert_eq!(tokens[1].0, KauboTokenKind::RightParenthesis);
+        assert_eq!(tokens[2].0, KauboTokenKind::LeftCurlyBrace);
+        assert_eq!(tokens[3].0, KauboTokenKind::RightCurlyBrace);
+        assert_eq!(tokens[4].0, KauboTokenKind::LeftSquareBracket);
+        assert_eq!(tokens[5].0, KauboTokenKind::RightSquareBracket);
+        assert_eq!(tokens[6].0, KauboTokenKind::Semicolon);
+        assert_eq!(tokens[7].0, KauboTokenKind::Comma);
+        assert_eq!(tokens[8].0, KauboTokenKind::Dot);
+        assert_eq!(tokens[9].0, KauboTokenKind::Pipe);
     }
 
     #[test]
     fn test_lexer_tokenizes_integer() {
-        let mut lexer = build_lexer();
         let code = "12345";
-        let _ = lexer.feed(&code.as_bytes().to_vec());
-        let _ = lexer.terminate();
-
-        let token = lexer.next_token();
-        assert!(token.is_some());
-        assert_eq!(token.unwrap().kind, KauboTokenKind::LiteralInteger);
+        let tokens = lex_all(code);
+        
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].0, KauboTokenKind::LiteralInteger);
+        assert_eq!(tokens[0].1, Some("12345".to_string()));
     }
 
     #[test]
     fn test_lexer_tokenizes_string() {
-        let mut lexer = build_lexer();
         let code = r#""hello world""#;
-        let _ = lexer.feed(&code.as_bytes().to_vec());
-        let _ = lexer.terminate();
-
-        let token = lexer.next_token();
-        assert!(token.is_some());
-        assert_eq!(token.unwrap().kind, KauboTokenKind::LiteralString);
+        let tokens = lex_all(code);
+        
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].0, KauboTokenKind::LiteralString);
+        assert_eq!(tokens[0].1, Some("hello world".to_string()));
     }
 
     #[test]
     fn test_lexer_tokenizes_identifier() {
-        let mut lexer = build_lexer();
         let code = "my_variable _private test123";
-        let _ = lexer.feed(&code.as_bytes().to_vec());
-        let _ = lexer.terminate();
-
-        for _ in 0..3 {
-            let token = lexer.next_token();
-            assert!(token.is_some());
-            assert_eq!(token.unwrap().kind, KauboTokenKind::Identifier);
+        let tokens = lex_all(code);
+        
+        for i in 0..3 {
+            assert_eq!(tokens[i].0, KauboTokenKind::Identifier);
         }
     }
 
     #[test]
     fn test_lexer_tokenizes_comment() {
-        let mut lexer = build_lexer();
         let code = "// this is a comment\nvar x;";
-        let _ = lexer.feed(&code.as_bytes().to_vec());
-        let _ = lexer.terminate();
-
+        let tokens = lex_all(code);
+        
         // 跳过注释和换行，应该得到 var
-        let token = lexer.next_token();
-        assert!(token.is_some());
-        assert_eq!(token.unwrap().kind, KauboTokenKind::Var);
+        assert_eq!(tokens[0].0, KauboTokenKind::Var);
+        assert_eq!(tokens[1].0, KauboTokenKind::Identifier);
+        assert_eq!(tokens[2].0, KauboTokenKind::Semicolon);
     }
 
     #[test]
     fn test_lexer_tokenizes_whitespace() {
-        let mut lexer = build_lexer();
         let code = "  \t\nvar";
-        let _ = lexer.feed(&code.as_bytes().to_vec());
-        let _ = lexer.terminate();
-
-        // 空白和制表符应该被识别
-        let token = lexer.next_token();
-        assert!(token.is_some());
-        // 跳过空白后应该得到 var
-        assert_eq!(token.unwrap().kind, KauboTokenKind::Var);
+        let tokens = lex_all(code);
+        
+        // 空白和制表符应该被识别并跳过
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].0, KauboTokenKind::Var);
     }
 
     #[test]
@@ -283,13 +176,9 @@ mod tests {
         ];
 
         for (code, expected) in cases {
-            let mut lexer = build_lexer();
-            let _ = lexer.feed(&code.as_bytes().to_vec());
-            let _ = lexer.terminate();
-
-            let token = lexer.next_token();
-            assert!(token.is_some(), "Failed to tokenize '{}'", code);
-            assert_eq!(token.unwrap().kind, expected, "Wrong token kind for '{}'", code);
+            let tokens = lex_all(code);
+            assert!(tokens.len() > 0, "Failed to tokenize '{}'", code);
+            assert_eq!(tokens[0].0, expected, "Wrong token kind for '{}'", code);
         }
     }
 }

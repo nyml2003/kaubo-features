@@ -1,4 +1,4 @@
-use crate::kit::lexer::{state_machine::types::TokenKindTrait, types::CLexerTokenKindTrait};
+//! Kaubo Token 类型定义
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Default)]
 #[repr(u8)]
@@ -83,29 +83,5 @@ pub enum KauboTokenKind {
 impl Into<u8> for KauboTokenKind {
     fn into(self) -> u8 {
         self as u8
-    }
-}
-
-impl TokenKindTrait for KauboTokenKind {}
-
-impl CLexerTokenKindTrait for KauboTokenKind {
-    fn invalid_token() -> Self {
-        KauboTokenKind::InvalidToken
-    }
-
-    fn whitespace() -> Self {
-        KauboTokenKind::Whitespace
-    }
-
-    fn tab() -> Self {
-        KauboTokenKind::Tab
-    }
-
-    fn newline() -> Self {
-        KauboTokenKind::NewLine
-    }
-
-    fn comment() -> Self {
-        KauboTokenKind::Comment
     }
 }

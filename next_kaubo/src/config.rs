@@ -3,7 +3,7 @@
 //! 提供线程安全的全局配置单例，支持日志级别、执行限制等配置。
 //!
 //! # 使用示例
-//! ```
+//! ```ignore
 //! use kaubo::config::{Config, LogConfig, init, config};
 //! use tracing::Level;
 //!

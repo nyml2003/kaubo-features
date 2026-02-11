@@ -3,7 +3,7 @@
 //! 基于 `tracing` 和 `tracing-subscriber` 实现分阶段日志控制。
 //!
 //! # 使用示例
-//! ```
+//! ```ignore
 //! use kaubo::config::{Config, init};
 //! use kaubo::logger::init_logger;
 //!

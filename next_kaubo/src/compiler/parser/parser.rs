@@ -11,18 +11,19 @@ use super::stmt::{
     Stmt, StmtKind, VarDeclStmt, WhileStmt,
 };
 use super::utils::{get_associativity, get_precedence};
-use crate::kit::lexer::c_lexer::Lexer;
-use crate::kit::lexer::types::{Coordinate, Token};
+use crate::kit::lexer::Lexer;
+use crate::kit::lexer::scanner::Token;
+use crate::kit::lexer::types::Coordinate;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct Parser {
-    lexer: Rc<RefCell<Lexer<KauboTokenKind>>>,
-    current_token: Option<Token<KauboTokenKind>>, // (类型, 文本值)
+    lexer: Rc<RefCell<Lexer>>,
+    current_token: Option<Token<KauboTokenKind>>,
 }
 
 impl Parser {
-    pub fn new(lexer: Lexer<KauboTokenKind>) -> Self {
+    pub fn new(lexer: Lexer) -> Self {
         let lexer = Rc::new(RefCell::new(lexer));
         let mut parser = Self {
             lexer,
@@ -63,14 +64,20 @@ impl Parser {
     /// 获取当前token的位置信息
     fn current_location(&self) -> ErrorLocation {
         match &self.current_token {
-            Some(token) => ErrorLocation::At(token.coordinate.clone()),
+            Some(token) => ErrorLocation::At(Coordinate {
+                line: token.span.start.line,
+                column: token.span.start.column,
+            }),
             None => ErrorLocation::Eof,
         }
     }
 
     /// 获取当前token的坐标（如果有）
     fn current_coordinate(&self) -> Option<Coordinate> {
-        self.current_token.as_ref().map(|t| t.coordinate.clone())
+        self.current_token.as_ref().map(|t| Coordinate {
+            line: t.span.start.line,
+            column: t.span.start.column,
+        })
     }
 
     /// 获取当前token的文本表示
@@ -110,7 +117,7 @@ impl Parser {
             .ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
 
         if token.kind == KauboTokenKind::Identifier {
-            let name = token.value.clone();
+            let name = token.text.clone().unwrap_or_default();
             self.consume();
             Ok(name)
         } else {
@@ -334,13 +341,13 @@ impl Parser {
                 .ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
 
             let key = if key_token.kind == KauboTokenKind::LiteralString {
-                let k = key_token.value.clone();
+                let k = key_token.text.clone().unwrap_or_default();
                 self.consume();
                 // 去除引号
                 k[1..k.len() - 1].to_string()
             } else if key_token.kind == KauboTokenKind::Identifier {
                 // 也支持裸标识符作为键（像 JavaScript）
-                let k = key_token.value.clone();
+                let k = key_token.text.clone().unwrap_or_default();
                 self.consume();
                 k
             } else {
@@ -382,7 +389,7 @@ impl Parser {
                     return Err(self.error_here(ParserErrorKind::ExpectedIdentifierAfterDot));
                 }
 
-                let member_name = token.value.clone();
+                let member_name = token.text.clone().unwrap_or_default();
                 self.consume();
                 expr = Box::new(ExprKind::MemberAccess(MemberAccess {
                     object: expr,
@@ -411,11 +418,14 @@ impl Parser {
     /// 解析整数字面量
     fn parse_int(&mut self) -> ParseResult<Expr> {
         let token = self.current_token.as_ref().unwrap();
-        let coord = token.coordinate.clone();
-        let num = token
-            .value
+        let coord = Coordinate {
+            line: token.span.start.line,
+            column: token.span.start.column,
+        };
+        let text = token.text.clone().unwrap_or_default();
+        let num = text
             .parse()
-            .map_err(|_| ParserError::here(ParserErrorKind::InvalidNumberFormat(token.value.clone()), coord))?;
+            .map_err(|_| ParserError::here(ParserErrorKind::InvalidNumberFormat(text.clone()), coord))?;
         self.consume();
         Ok(Box::new(ExprKind::LiteralInt(LiteralInt { value: num })))
     }
@@ -424,7 +434,8 @@ impl Parser {
     fn parse_string(&mut self) -> ParseResult<Expr> {
         let token = self.current_token.as_ref().unwrap();
         // 移除首尾引号
-        let s = token.value[1..token.value.len() - 1].to_string();
+        let text = token.text.clone().unwrap_or_default();
+        let s = text[1..text.len() - 1].to_string();
         self.consume();
         Ok(Box::new(ExprKind::LiteralString(LiteralString {
             value: s,
@@ -464,7 +475,7 @@ impl Parser {
     /// 解析标识符引用
     fn parse_identifier_expression(&mut self) -> ParseResult<Expr> {
         let token = self.current_token.as_ref().unwrap();
-        let name = token.value.clone();
+        let name = token.text.clone().unwrap_or_default();
         self.consume();
         Ok(Box::new(ExprKind::VarRef(VarRef { name })))
     }
@@ -479,7 +490,7 @@ impl Parser {
         if !self.check(KauboTokenKind::Pipe) {
             while let Some(token) = &self.current_token {
                 if token.kind == KauboTokenKind::Identifier {
-                    params.push(token.value.clone());
+                    params.push(token.text.clone().unwrap_or_default());
                     self.consume();
 
                     if self.match_token(KauboTokenKind::Comma) {
@@ -549,7 +560,7 @@ impl Parser {
                 found: self.current_token_text(),
             }));
         }
-        let name = token.value.clone();
+        let name = token.text.clone().unwrap_or_default();
         self.consume();
 
         self.expect(KauboTokenKind::Equal)?;
@@ -733,7 +744,7 @@ mod tests {
         for i in 0..10 {
             // 最多打印 10 个 token，防止死循环
             match lexer.next_token() {
-                Some(token) => println!("  [{}] {:?} = {:?}", i, token.kind, token.value),
+                Some(token) => println!("  [{}] {:?} = {:?}", i, token.kind, token.text),
                 None => {
                     println!("  [{}] None (EOF)", i);
                     break;
