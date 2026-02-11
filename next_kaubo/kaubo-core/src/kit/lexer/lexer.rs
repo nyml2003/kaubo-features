@@ -2,11 +2,9 @@
 //!
 //! 使用新的 KauboScanner，直接返回 V2 Token
 
-use crate::kit::lexer::{
-    CharStream, KauboScanner, KauboMode, Scanner, ScanResult,
-};
 use crate::kit::lexer::core::StreamError;
 use crate::kit::lexer::scanner::Token;
+use crate::kit::lexer::{CharStream, KauboMode, KauboScanner, ScanResult, Scanner};
 
 use tracing::{debug, trace, warn};
 
@@ -51,8 +49,8 @@ impl Lexer {
         loop {
             match self.scanner.next_token(&mut self.stream) {
                 ScanResult::Token(token) => {
-                    debug!(target: "kaubo::lexer", 
-                        kind = ?token.kind, 
+                    debug!(target: "kaubo::lexer",
+                        kind = ?token.kind,
                         text = ?token.text,
                         line = token.span.start.line,
                         column = token.span.start.column,
@@ -91,7 +89,7 @@ impl Lexer {
 
 impl Default for Lexer {
     fn default() -> Self {
-        Self::new(4096)
+        Self::new(40960)
     }
 }
 

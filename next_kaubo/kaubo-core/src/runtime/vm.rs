@@ -211,6 +211,15 @@ impl VM {
                     }
                 }
 
+                Mod => {
+                    let (a, b) = self.pop_two();
+                    let result = self.mod_values(a, b);
+                    match result {
+                        Ok(v) => self.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
+                    }
+                }
+
                 Neg => {
                     let v = self.pop();
                     let result = self.neg_value(v);
@@ -976,7 +985,7 @@ impl VM {
                 }
 
                 GetIter => {
-                    // 获取迭代器：支持列表和协程
+                    // 获取迭代器：支持列表、协程和 JSON 对象
                     let val = self.pop();
 
                     if let Some(list_ptr) = val.as_list() {
@@ -989,9 +998,14 @@ impl VM {
                         let iter = Box::new(ObjIterator::from_coroutine(coro_ptr));
                         let iter_ptr = Box::into_raw(iter);
                         self.push(Value::iterator(iter_ptr));
+                    } else if let Some(json_ptr) = val.as_json() {
+                        // JSON 对象 -> JSON 迭代器（遍历键）
+                        let iter = Box::new(ObjIterator::from_json(json_ptr));
+                        let iter_ptr = Box::into_raw(iter);
+                        self.push(Value::iterator(iter_ptr));
                     } else {
                         return InterpretResult::RuntimeError(
-                            "Can only iterate over lists or coroutines".to_string(),
+                            "Can only iterate over lists, coroutines, or json objects".to_string(),
                         );
                     }
                 }
@@ -1303,6 +1317,15 @@ impl VM {
 
     /// 加法
     fn add_values(&self, a: Value, b: Value) -> Result<Value, String> {
+        // 字符串拼接
+        if let (Some(ap), Some(bp)) = (a.as_string(), b.as_string()) {
+            let a_str = unsafe { &(*ap).chars };
+            let b_str = unsafe { &(*bp).chars };
+            let concatenated = format!("{}{}", a_str, b_str);
+            let string_obj = Box::new(crate::runtime::object::ObjString::new(concatenated));
+            return Ok(Value::string(Box::into_raw(string_obj)));
+        }
+
         // 优先尝试整数加法
         if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
             // 检查溢出
@@ -1396,6 +1419,36 @@ impl VM {
         }
 
         Ok(Value::float(af / bf))
+    }
+
+    /// 取模/求余
+    fn mod_values(&self, a: Value, b: Value) -> Result<Value, String> {
+        // 优先尝试整数取模
+        if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
+            if bi == 0 {
+                return Err("Modulo by zero".to_string());
+            }
+            return Ok(Value::smi(ai % bi));
+        }
+
+        // 回退到浮点数
+        let af = if a.is_float() {
+            a.as_float()
+        } else {
+            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+        };
+
+        let bf = if b.is_float() {
+            b.as_float()
+        } else {
+            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+        };
+
+        if bf == 0.0 {
+            return Err("Modulo by zero".to_string());
+        }
+
+        Ok(Value::float(af % bf))
     }
 
     /// 取负

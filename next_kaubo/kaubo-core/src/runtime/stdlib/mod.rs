@@ -68,6 +68,39 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
     exports.push(create_native_vm_value(coroutine_status_fn, "coroutine_status", 1));
     name_to_shape.insert("coroutine_status".to_string(), 13u16);
 
+    // ===== 列表操作函数 (14-18) =====
+    exports.push(create_native_value(len_fn, "len", 1));
+    name_to_shape.insert("len".to_string(), 14u16);
+
+    exports.push(create_native_value(push_fn, "push", 2));
+    name_to_shape.insert("push".to_string(), 15u16);
+
+    exports.push(create_native_value(is_empty_fn, "is_empty", 1));
+    name_to_shape.insert("is_empty".to_string(), 16u16);
+
+    // ===== 实用函数 (17-18) =====
+    exports.push(create_native_value(range_fn, "range", 255)); // 变参 1-3
+    name_to_shape.insert("range".to_string(), 17u16);
+
+    exports.push(create_native_value(clone_fn, "clone", 1));
+    name_to_shape.insert("clone".to_string(), 18u16);
+
+    // ===== 文件系统函数 (19-23) =====
+    exports.push(create_native_value(read_file_fn, "read_file", 1));
+    name_to_shape.insert("read_file".to_string(), 19u16);
+
+    exports.push(create_native_value(write_file_fn, "write_file", 2));
+    name_to_shape.insert("write_file".to_string(), 20u16);
+
+    exports.push(create_native_value(exists_fn, "exists", 1));
+    name_to_shape.insert("exists".to_string(), 21u16);
+
+    exports.push(create_native_value(is_file_fn, "is_file", 1));
+    name_to_shape.insert("is_file".to_string(), 22u16);
+
+    exports.push(create_native_value(is_dir_fn, "is_dir", 1));
+    name_to_shape.insert("is_dir".to_string(), 23u16);
+
     let module = ObjModule::new("std".to_string(), exports, name_to_shape);
     vec![("std".to_string(), Box::new(module))]
 }
@@ -367,4 +400,254 @@ fn coroutine_status_fn(_vm: &mut VM, args: &[Value]) -> Result<Value, String> {
     } else {
         Err("Expected a coroutine".to_string())
     }
+}
+
+// ===== 列表操作函数实现 =====
+
+use crate::runtime::object::ObjList;
+
+/// len(list|string|json) -> int
+fn len_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("len() takes exactly 1 argument ({} given)", args.len()));
+    }
+
+    let len = if let Some(ptr) = args[0].as_string() {
+        unsafe { (*ptr).chars.len() as i64 }
+    } else if let Some(ptr) = args[0].as_list() {
+        unsafe { (*ptr).len() as i64 }
+    } else if let Some(ptr) = args[0].as_json() {
+        unsafe { (*ptr).len() as i64 }
+    } else {
+        return Err("len() expects string, list, or json".to_string());
+    };
+
+    Ok(Value::smi(len as i32))
+}
+
+/// push(list, value) -> list (返回新列表)
+fn push_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 2 {
+        return Err(format!("push() takes exactly 2 arguments ({} given)", args.len()));
+    }
+
+    if let Some(ptr) = args[0].as_list() {
+        let list = unsafe { &*ptr };
+        let mut new_elements = Vec::new();
+        
+        // 复制原列表元素
+        for i in 0..list.len() {
+            if let Some(val) = list.get(i) {
+                new_elements.push(val);
+            }
+        }
+        
+        // 添加新元素
+        new_elements.push(args[1]);
+        
+        // 创建新列表
+        let new_list = Box::new(ObjList::from_vec(new_elements));
+        Ok(Value::list(Box::into_raw(new_list)))
+    } else {
+        Err("push() first argument must be a list".to_string())
+    }
+}
+
+/// is_empty(list|string|json) -> bool
+fn is_empty_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("is_empty() takes exactly 1 argument ({} given)", args.len()));
+    }
+
+    let is_empty = if let Some(ptr) = args[0].as_string() {
+        unsafe { (*ptr).chars.is_empty() }
+    } else if let Some(ptr) = args[0].as_list() {
+        unsafe { (*ptr).len() == 0 }
+    } else if let Some(ptr) = args[0].as_json() {
+        unsafe { (*ptr).len() == 0 }
+    } else {
+        return Err("is_empty() expects string, list, or json".to_string());
+    };
+
+    Ok(Value::bool_from(is_empty))
+}
+
+/// range(end) or range(start, end) or range(start, end, step) -> list
+fn range_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() < 1 || args.len() > 3 {
+        return Err(format!("range() takes 1 to 3 arguments ({} given)", args.len()));
+    }
+
+    let (start, end, step) = match args.len() {
+        1 => {
+            let e = to_i64(&args[0])?;
+            (0i64, e, 1i64)
+        }
+        2 => {
+            let s = to_i64(&args[0])?;
+            let e = to_i64(&args[1])?;
+            (s, e, 1i64)
+        }
+        3 => {
+            let s = to_i64(&args[0])?;
+            let e = to_i64(&args[1])?;
+            let st = to_i64(&args[2])?;
+            if st == 0 {
+                return Err("range() step cannot be zero".to_string());
+            }
+            (s, e, st)
+        }
+        _ => unreachable!(),
+    };
+
+    let mut elements = Vec::new();
+    if step > 0 {
+        let mut i = start;
+        while i < end {
+            elements.push(Value::smi(i as i32));
+            i = i + step;
+        }
+    } else {
+        let mut i = start;
+        while i > end {
+            elements.push(Value::smi(i as i32));
+            i = i + step;
+        }
+    }
+
+    let list = Box::new(ObjList::from_vec(elements));
+    Ok(Value::list(Box::into_raw(list)))
+}
+
+/// clone(value) -> value (浅拷贝)
+fn clone_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("clone() takes exactly 1 argument ({} given)", args.len()));
+    }
+
+    // 对于基本类型直接返回，对于容器类型创建新对象
+    let cloned = if let Some(ptr) = args[0].as_list() {
+        let list = unsafe { &*ptr };
+        let mut new_elements = Vec::new();
+        for i in 0..list.len() {
+            if let Some(val) = list.get(i) {
+                new_elements.push(val);
+            }
+        }
+        let new_list = Box::new(ObjList::from_vec(new_elements));
+        Value::list(Box::into_raw(new_list))
+    } else if let Some(ptr) = args[0].as_string() {
+        let s = unsafe { &*ptr };
+        let new_str = Box::new(crate::runtime::object::ObjString::new(s.chars.clone()));
+        Value::string(Box::into_raw(new_str))
+    } else {
+        // 其他类型直接复制值
+        args[0]
+    };
+
+    Ok(cloned)
+}
+
+/// 辅助函数：将 Value 转为 i64
+fn to_i64(value: &Value) -> Result<i64, String> {
+    if let Some(n) = value.as_int() {
+        Ok(n as i64)
+    } else {
+        Err("Expected integer".to_string())
+    }
+}
+
+// ===== 文件系统函数实现 =====
+
+use std::fs;
+use std::path::Path;
+
+/// read_file(path) -> string
+fn read_file_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("read_file() takes exactly 1 argument ({} given)", args.len()));
+    }
+
+    let path = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("read_file() argument must be a string".to_string());
+    };
+
+    match fs::read_to_string(path) {
+        Ok(content) => {
+            let string_obj = Box::new(crate::runtime::object::ObjString::new(content));
+            Ok(Value::string(Box::into_raw(string_obj)))
+        }
+        Err(e) => Err(format!("read_file() failed: {}", e)),
+    }
+}
+
+/// write_file(path, content) -> null
+fn write_file_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 2 {
+        return Err(format!("write_file() takes exactly 2 arguments ({} given)", args.len()));
+    }
+
+    let path = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("write_file() first argument must be a string".to_string());
+    };
+
+    let content = if let Some(ptr) = args[1].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("write_file() second argument must be a string".to_string());
+    };
+
+    match fs::write(path, content) {
+        Ok(_) => Ok(Value::NULL),
+        Err(e) => Err(format!("write_file() failed: {}", e)),
+    }
+}
+
+/// exists(path) -> bool
+fn exists_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("exists() takes exactly 1 argument ({} given)", args.len()));
+    }
+
+    let path = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("exists() argument must be a string".to_string());
+    };
+
+    Ok(Value::bool_from(Path::new(path).exists()))
+}
+
+/// is_file(path) -> bool
+fn is_file_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("is_file() takes exactly 1 argument ({} given)", args.len()));
+    }
+
+    let path = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("is_file() argument must be a string".to_string());
+    };
+
+    Ok(Value::bool_from(Path::new(path).is_file()))
+}
+
+/// is_dir(path) -> bool
+fn is_dir_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("is_dir() takes exactly 1 argument ({} given)", args.len()));
+    }
+
+    let path = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("is_dir() argument must be a string".to_string());
+    };
+
+    Ok(Value::bool_from(Path::new(path).is_dir()))
 }

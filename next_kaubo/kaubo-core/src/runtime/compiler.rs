@@ -442,6 +442,7 @@ impl Compiler {
             KauboTokenKind::Minus => OpCode::Sub,
             KauboTokenKind::Asterisk => OpCode::Mul,
             KauboTokenKind::Slash => OpCode::Div,
+            KauboTokenKind::Percent => OpCode::Mod,
             KauboTokenKind::DoubleEqual => OpCode::Equal,
             KauboTokenKind::ExclamationEqual => OpCode::NotEqual,
             KauboTokenKind::GreaterThan => OpCode::Greater,

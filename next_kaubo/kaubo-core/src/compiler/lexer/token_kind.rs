@@ -50,13 +50,14 @@ pub enum KauboTokenKind {
     GreaterThanEqual,
     LessThanEqual,
 
-    // 单字符符号 (150-167)
+    // 单字符符号 (150-168)
     GreaterThan = 150,
     LessThan,
     Plus,
     Minus,
     Asterisk,
     Slash,
+    Percent,
     Colon,
     Equal,
     Comma,

@@ -68,6 +68,7 @@ pub enum OpCode {
     Sub,
     Mul,
     Div,
+    Mod,      // 取模/求余
 
     Neg = 0x68, // 一元取负
 
@@ -182,6 +183,7 @@ impl OpCode {
             OpCode::Sub => "SUB",
             OpCode::Mul => "MUL",
             OpCode::Div => "DIV",
+            OpCode::Mod => "MOD",
             OpCode::Neg => "NEG",
             OpCode::Equal => "EQUAL",
             OpCode::NotEqual => "NOT_EQUAL",
@@ -269,6 +271,7 @@ impl OpCode {
             | OpCode::Sub
             | OpCode::Mul
             | OpCode::Div
+            | OpCode::Mod
             | OpCode::Neg
             | OpCode::Equal
             | OpCode::NotEqual

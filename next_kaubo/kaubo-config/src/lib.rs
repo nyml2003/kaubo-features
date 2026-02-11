@@ -56,7 +56,7 @@ impl Default for CompilerConfig {
 impl Default for LimitConfig {
     fn default() -> Self {
         Self {
-            max_stack_size: 1024,
+            max_stack_size: 10240,
             max_recursion_depth: 256,
         }
     }
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn test_default_limit_config() {
         let cfg = LimitConfig::default();
-        assert_eq!(cfg.max_stack_size, 1024);
+        assert_eq!(cfg.max_stack_size, 10240);
         assert_eq!(cfg.max_recursion_depth, 256);
     }
 

@@ -13,7 +13,7 @@ pub fn get_precedence(op: KauboTokenKind) -> i32 {
         | KauboTokenKind::GreaterThanEqual
         | KauboTokenKind::LessThanEqual => 100,
         KauboTokenKind::Plus | KauboTokenKind::Minus => 200,
-        KauboTokenKind::Asterisk | KauboTokenKind::Slash => 300,
+        KauboTokenKind::Asterisk | KauboTokenKind::Slash | KauboTokenKind::Percent => 300,
         KauboTokenKind::Dot => 400,
         KauboTokenKind::Not => 450,
         _ => 0,

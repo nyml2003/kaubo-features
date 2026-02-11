@@ -158,6 +158,13 @@ pub enum IteratorSource {
         coroutine: *mut ObjCoroutine,
         done: bool,
     },
+    /// JSON 对象迭代器（遍历键）
+    Json {
+        json: *mut ObjJson,
+        keys: Vec<String>,
+        index: usize,
+        done: bool,
+    },
 }
 
 /// 迭代器对象
@@ -189,9 +196,27 @@ impl ObjIterator {
         }
     }
 
+    /// 从 JSON 对象创建迭代器（遍历所有键）
+    pub fn from_json(json: *mut ObjJson) -> Self {
+        // 收集所有键
+        let keys = unsafe {
+            let json_ref = &*json;
+            json_ref.entries.keys().cloned().collect()
+        };
+        Self {
+            source: IteratorSource::Json {
+                json,
+                keys,
+                index: 0,
+                done: false,
+            },
+        }
+    }
+
     /// 获取下一个元素
     /// 对于列表：返回元素或 None
     /// 对于协程：resume 协程，返回 yield 值；协程死亡时返回 None
+    /// 对于 JSON：返回键（字符串）或 None
     pub fn next(&mut self) -> Option<Value> {
         match &mut self.source {
             IteratorSource::List { list, index, done } => {
@@ -226,6 +251,21 @@ impl ObjIterator {
                     Some(Value::coroutine(*coroutine))
                 }
             }
+            IteratorSource::Json { keys, index, done, .. } => {
+                if *done {
+                    return None;
+                }
+                if *index < keys.len() {
+                    let key = keys[*index].clone();
+                    *index += 1;
+                    // 返回键名作为字符串
+                    let key_obj = Box::new(ObjString::new(key));
+                    Some(Value::string(Box::into_raw(key_obj)))
+                } else {
+                    *done = true;
+                    None
+                }
+            }
         }
     }
 
@@ -234,6 +274,7 @@ impl ObjIterator {
         match &self.source {
             IteratorSource::List { done, .. } => *done,
             IteratorSource::Coroutine { done, .. } => *done,
+            IteratorSource::Json { done, .. } => *done,
         }
     }
 

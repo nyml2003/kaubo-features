@@ -6,7 +6,7 @@ use crate::kit::lexer::Lexer;
 
 /// 创建新的 Lexer
 pub fn build_lexer() -> Lexer {
-    Lexer::new(1024)
+    Lexer::new(102400)  // 100KB 缓存，支持更大文件
 }
 
 #[cfg(test)]

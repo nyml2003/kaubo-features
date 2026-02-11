@@ -103,6 +103,7 @@ impl KauboScanner {
             '-' => self.make_single_char(stream, KauboTokenKind::Minus),
             '*' => self.make_single_char(stream, KauboTokenKind::Asterisk),
             '/' => self.scan_slash(stream), // 可能是注释开始
+            '%' => self.make_single_char(stream, KauboTokenKind::Percent),
             '(' => self.make_single_char(stream, KauboTokenKind::LeftParenthesis),
             ')' => self.make_single_char(stream, KauboTokenKind::RightParenthesis),
             '{' => self.make_single_char(stream, KauboTokenKind::LeftCurlyBrace),

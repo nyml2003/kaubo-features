@@ -608,7 +608,22 @@ impl std::fmt::Display for Value {
         } else if self.is_option() {
             write!(f, "<option>")
         } else if self.is_json() {
-            write!(f, "<json>, {:?}", self.as_json())
+            if let Some(ptr) = self.as_json() {
+                unsafe {
+                    write!(f, "{{")?;
+                    let json = &*ptr;
+                    let entries: Vec<_> = json.entries.iter().collect();
+                    for (i, (key, value)) in entries.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "\"{}\": {}", key, value)?;
+                    }
+                    write!(f, "}}")
+                }
+            } else {
+                write!(f, "{{}}")
+            }
         } else if self.is_module() {
             write!(f, "<module>")
         } else if self.is_native() {
