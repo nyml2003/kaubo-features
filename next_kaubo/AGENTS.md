@@ -368,5 +368,21 @@ cargo clippy --workspace --all-targets
 
 ---
 
-*最后更新: 2026-02-11*  
+## 相关文档
+
+| 文档 | 说明 |
+|------|------|
+| `docs/01-syntax.md` | 语法参考 |
+| `docs/02-architecture.md` | 项目架构 |
+| `docs/03-stdlib.md` | 标准库 API |
+| `docs/04-testing.md` | 测试指南 |
+| `docs/05-development.md` | 开发手册 |
+| `docs/06-workspace.md` | Workspace 架构 |
+| `docs/07-config-refactor.md` | 配置系统重构 |
+| `docs/08-coverage-plan.md` | 测试与开发计划 |
+| `docs/CHANGELOG.md` | 变更日志 |
+
+---
+
+*最后更新: 2026-02-12*  
 *版本: 4.0（Workspace + 配置分层架构已实施）*

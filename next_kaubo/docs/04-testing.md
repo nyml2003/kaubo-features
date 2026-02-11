@@ -17,20 +17,15 @@
 ### 1.1 测试分层
 
 ```
-tests/
-├── api_tests.rs           # 【新增】API 层集成测试
-├── lexer_tests.rs         # 【新增】Lexer 单元测试
-├── parser_tests.rs        # 【新增】Parser 单元测试
-├── compiler_tests.rs      # 【新增】Compiler 单元测试
+kaubo-core/tests/
+├── integration_tests.rs   # 解析集成测试 (100+ 测试)
 ├── vm_tests.rs            # VM 执行测试
 ├── stdlib_tests.rs        # 标准库测试
-├── integration/           # 场景测试
-│   ├── arithmetic/        # 算术运算
-│   ├── control_flow/      # 控制流
-│   ├── functions/         # 函数
-│   └── stdlib/            # 标准库使用
 └── common/
     └── mod.rs             # 共享工具
+
+kaubo-api/src/lib.rs       # API 单元测试
+kaubo-config/src/lib.rs    # 配置单元测试
 ```
 
 ### 1.2 测试策略
@@ -114,16 +109,24 @@ mod tests {
 ### 3.2 API 测试（独立阶段）
 
 ```rust
-// tests/lexer_tests.rs
+// kaubo-api/src/lib.rs 中的测试
 
-mod common;
-use kaubo::api::lex;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_lex_simple() {
-    let tokens = lex("var x = 5;").unwrap();
-    assert_eq!(tokens.len(), 5);
-    assert_eq!(tokens[0].kind, KauboTokenKind::Var);
+    #[test]
+    fn test_run_with_explicit_config() {
+        let config = RunConfig::default();
+        let result = run("return 42;", &config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_quick_run() {
+        let result = quick_run("return 42;");
+        assert!(result.is_ok());
+    }
 }
 ```
 
@@ -142,50 +145,48 @@ fn test_arithmetic() {
 }
 ```
 
-### 3.4 共享工具（common/mod.rs）
+### 3.4 共享工具（kaubo-core/tests/common/mod.rs）
 
 ```rust
 //! 测试共享工具
 
-use kaubo::{compile_and_run, init, Config, LogConfig, LogLevel};
+use kaubo_api::{quick_run, ExecuteOutput, KauboError};
 
-/// 标准测试配置（低日志级别）
+/// 标准测试配置（使用默认配置）
 pub fn run_code(source: &str) -> Result<ExecResult, KauboError> {
-    let config = Config {
-        log: LogConfig {
-            global: LogLevel::WARN,  // 测试时安静
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    
-    init(config);
-    compile_and_run(source)
-}
-
-/// 调试配置（详细日志）
-pub fn run_code_debug(source: &str) -> Result<ExecResult, KauboError> {
-    let config = Config {
-        log: LogConfig {
-            global: LogLevel::DEBUG,
-            lexer: Some(LogLevel::TRACE),
-            parser: Some(LogLevel::DEBUG),
-            vm: Some(LogLevel::DEBUG),
-        },
-        ..Default::default()
-    };
-    
-    init(config);
-    compile_and_run(source)
+    let result = quick_run(source)?;
+    Ok(ExecResult {
+        return_value: result.value,
+    })
 }
 
 /// 断言辅助函数
-pub fn assert_int(result: &ExecResult, expected: i32) {
-    let actual = result.return_value
-        .as_ref()
-        .and_then(|v| v.as_int())
-        .expect("Expected integer");
-    assert_eq!(actual, expected);
+pub fn get_int(result: &ExecResult) -> Option<i32> {
+    result.return_value.as_ref().and_then(|v| v.as_int())
+}
+
+pub fn get_float(result: &ExecResult) -> Option<f64> {
+    result.return_value.as_ref().map(|v| {
+        if v.is_float() {
+            v.as_float()
+        } else if let Some(n) = v.as_int() {
+            n as f64
+        } else {
+            f64::NAN
+        }
+    })
+}
+
+pub fn get_string(result: &ExecResult) -> Option<String> {
+    result.return_value.as_ref().and_then(|v| {
+        v.as_string().map(|ptr| unsafe {
+            (*ptr).chars.clone()
+        })
+    })
+}
+
+pub struct ExecResult {
+    pub return_value: Option<kaubo_api::Value>,
 }
 ```
 
@@ -352,5 +353,41 @@ fn test_gc_behavior() { }
 
 ---
 
-*最后更新: 2026-02-10*  
-*版本: 3.0 (架构重构)*
+## 附录：运行测试
+
+### 基础命令
+
+```bash
+# 运行所有测试
+cargo test --workspace
+
+# 运行特定 crate 的测试
+cargo test -p kaubo-core
+cargo test -p kaubo-api
+cargo test -p kaubo-config
+
+# 运行特定测试文件
+cargo test --test vm_tests
+cargo test --test stdlib_tests
+
+# 运行特定测试
+cargo test test_basic_arithmetic
+
+# 显示输出
+cargo test -- --nocapture
+```
+
+### 环境变量
+
+```bash
+# 启用详细日志
+RUST_LOG=kaubo::vm=trace cargo test
+
+# 保存日志到文件
+cargo test 2> test.log
+```
+
+---
+
+*最后更新: 2026-02-12*  
+*版本: 4.0 (Workspace 架构)*

@@ -2,6 +2,42 @@
 
 > 记录项目所有重大变更
 
+## [4.0] - 2026-02-12 (Workspace 架构)
+
+### 修复
+
+- **闭包 Upvalue 内存安全 Bug** - 修复 Y 组合子测试用例随机失败问题
+  - 问题：`close()` 后 `get()` 仍使用栈指针读取已释放内存
+  - 修复：`get()/set()` 优先使用 `closed` 字段
+  - 影响：`factorial(5)` 等递归闭包现在可稳定执行
+
+### 新增
+
+- **Workspace 架构** - 4 个 crate 分层
+  - `kaubo-config` - 纯配置数据结构
+  - `kaubo-core` - 核心编译器（纯逻辑，无全局状态）
+  - `kaubo-api` - 执行编排层（含全局单例）
+  - `kaubo-cli` - CLI 平台实现
+
+- **标准库扩展**
+  - 协程函数: `create_coroutine`, `resume`, `coroutine_status`
+  - 列表操作: `len`, `push`, `is_empty`, `range`, `clone`
+  - 文件系统: `read_file`, `write_file`, `exists`, `is_file`, `is_dir`
+
+- **AGENTS.md 开发指南** - 面向 AI 助手的开发文档
+
+### 重构
+
+- **配置分层** - 明确的配置分层架构
+  - CLI 层: LogConfig
+  - API 层: RunConfig + GLOBAL_CONFIG
+  - Core 层: 参数传递，无全局状态
+  - Config 层: 纯数据结构
+
+- **文档更新** - 所有文档与现状同步
+
+---
+
 ## [3.0] - 2026-02-10 (架构重构)
 
 ### 新增
@@ -102,4 +138,36 @@
 
 ---
 
-*最后更新: 2026-02-10*
+## 未来计划
+
+### 高优先级
+
+- [ ] 错误处理完善（调用堆栈追踪）
+- [ ] 字节码版本号（魔数 + 版本头）
+
+### 中优先级
+
+- [ ] 浮点数字面量支持
+- [ ] @ProgramStart 装饰器
+- [ ] 垃圾回收实现
+
+### 低优先级
+
+- [ ] LSP 支持
+- [ ] REPL 增强
+- [ ] 更多标准库函数
+
+---
+
+## 历史 Bug 修复
+
+### 闭包 Upvalue 内存安全 (4.0)
+
+**问题**: Y 组合子测试用例运行时随机失败  
+**根因**: `ObjUpvalue::close()` 后 `get()` 仍通过 `location` 指针访问栈内存  
+**修复**: 优先使用 `closed` 字段，关闭后将 `location` 设为 null  
+**验证**: `factorial(5)` 现在可稳定输出 120
+
+---
+
+*最后更新: 2026-02-12*

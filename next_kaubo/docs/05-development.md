@@ -49,26 +49,46 @@ cargo clippy
 
 ## 2. 项目结构
 
-### 2.1 新增文件说明
+### 2.1 Workspace 文件说明
 
-| 文件 | 用途 |
-|------|------|
-| `src/api.rs` | 高层 API：compile, run, compile_and_run |
-| `src/config.rs` | 全局配置：LogConfig, LimitConfig 等 |
-| `src/logger.rs` | 日志初始化：tracing subscriber 配置 |
-| `src/*/logging.rs` | 各阶段日志工具函数 |
+| Crate | 文件 | 用途 |
+|-------|------|------|
+| kaubo-config | `src/lib.rs` | 纯配置数据：CompilerConfig, LimitConfig, Phase |
+| kaubo-core | `src/lib.rs` | 核心编译器导出 |
+| kaubo-core | `src/kit/lexer/` | Lexer V2 实现 |
+| kaubo-core | `src/compiler/parser/` | Parser 实现 |
+| kaubo-core | `src/runtime/` | VM、Compiler、Stdlib |
+| kaubo-api | `src/lib.rs` | 编排层 API：run, compile, quick_run |
+| kaubo-api | `src/config.rs` | RunConfig + 全局单例 |
+| kaubo-api | `src/error.rs` | 统一错误处理 |
+| kaubo-cli | `src/main.rs` | CLI 入口 |
+| kaubo-cli | `src/logging.rs` | tracing-subscriber 初始化 |
+| kaubo-cli | `src/platform/cli.rs` | 错误格式化输出 |
 
 ### 2.2 关键路径
 
 ```
-src/
-├── main.rs          # CLI 入口（只负责参数解析和调度）
-├── lib.rs           # 库入口（导出 api, config, logger）
-├── api.rs           # 编排层（组合各阶段）
-├── config.rs        # 全局配置单例
-├── logger.rs        # 日志系统初始化
-├── compiler/        # 编译器前端
-└── runtime/         # 运行时与 VM
+kaubo-config/
+└── src/lib.rs       # 纯配置数据结构
+
+kaubo-core/
+├── src/lib.rs       # 库入口
+├── src/compiler/    # 编译器前端 (Lexer, Parser)
+├── src/runtime/     # 运行时 (VM, Bytecode, Stdlib)
+└── src/kit/         # 工具库 (Lexer V2)
+
+kaubo-api/
+├── src/lib.rs       # 编排层 API
+├── src/config.rs    # RunConfig + 全局单例
+├── src/error.rs     # 统一错误
+├── src/types.rs     # 输入输出类型
+└── src/runner.rs    # (保留)
+
+kaubo-cli/
+├── src/main.rs      # CLI 入口
+├── src/config.rs    # LogConfig
+├── src/logging.rs   # 日志初始化
+└── src/platform/    # 格式化输出
 ```
 
 ---
@@ -417,5 +437,27 @@ cat trace.json | jq 'select(.target == "kaubo::vm")'
 
 ---
 
-*最后更新: 2026-02-10*  
-*版本: 3.0 (架构重构)*
+## 7. 添加标准库函数
+
+在 `kaubo-core/src/runtime/stdlib/mod.rs` 中添加：
+
+```rust
+fn my_function(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("my_function() takes 1 argument ({} given)", args.len()));
+    }
+    // 实现...
+    Ok(Value::NULL)
+}
+
+// 在 create_stdlib_modules() 中注册
+exports.push(create_native_value(my_function, "my_function", 1));
+name_to_shape.insert("my_function".to_string(), shape_id);
+```
+
+然后在 `kaubo-core/src/runtime/compiler.rs` 的 `find_std_module_shape_id()` 中添加映射。
+
+---
+
+*最后更新: 2026-02-12*  
+*版本: 4.0 (Workspace 架构)*

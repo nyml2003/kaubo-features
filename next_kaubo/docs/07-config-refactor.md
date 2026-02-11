@@ -1,15 +1,17 @@
 # 配置系统重构方案
 
-## 问题分析
+> **状态**: ✅ 已实施（2026-02-12）
 
-当前配置系统存在以下问题：
+本文档记录配置系统重构的方案和结果。
+
+## 重构前的问题
 
 1. **全局单例在 core 层** - `kaubo-core/src/config.rs` 包含 `OnceCell<Config>`，但 core 应该是纯逻辑层
 2. **隐式依赖** - core 代码通过 `config::config()` 全局函数读取配置，增加了隐式状态依赖
 3. **平台耦合** - `LogConfig` 包含日志级别，但日志初始化在 CLI 层，配置却在 core 层
 4. **Web 不友好** - 全局单例模式不适合 Web/WASM 环境
 
-## 目标架构
+## 最终架构 (已实施)
 
 ```
 kaubo-config (新 crate)
@@ -91,45 +93,72 @@ init_logger(&cli_config.log);             // 初始化日志
 let result = run(source, &cli_config.run)?;  // 执行
 ```
 
-## 实施步骤
+## 实施结果
 
-### Phase 1: 创建 kaubo-config crate
-1. 创建 `kaubo-config/` 目录
-2. 移动 `Config`, `CompilerConfig`, `LimitConfig`, `Phase` 数据结构
-3. 移除 `LogConfig`（移到 kaubo-cli）
-4. 移除全局单例逻辑（`init()`, `config()`, `is_initialized()`）
+### 已完成的变更
 
-### Phase 2: 重构 kaubo-core
-1. 移除 `config.rs` 和 `logger.rs`
-2. 所有函数改为接受配置参数：
-   - `compile(source, &CompilerConfig)`
-   - `VM::new(&LimitConfig)`
-3. 更新所有内部调用
+| Phase | 状态 | 说明 |
+|-------|------|------|
+| Phase 1 | ✅ | `kaubo-config` crate 已创建，包含纯数据结构 |
+| Phase 2 | ✅ | `kaubo-core` 已移除全局状态，通过参数接收配置 |
+| Phase 3 | ✅ | `kaubo-api` 已实现 `RunConfig` 和全局单例 |
+| Phase 4 | ✅ | `kaubo-cli` 已实现 `LogConfig` 和日志初始化 |
+| Phase 5 | ✅ | 所有测试已更新，187+ 测试通过 |
 
-### Phase 3: 重构 kaubo-api
-1. 创建新的 `RunConfig` 结构体
-2. 提供全局单例（供 CLI 使用）：`static GLOBAL_CONFIG: OnceCell<RunConfig>`
-3. 新的 API 函数接受 `&RunConfig` 参数
-4. 保留向后兼容的 API（使用默认配置）
+### 代码示例
 
-### Phase 4: 重构 kaubo-cli
-1. 创建 `CliConfig` 结构体，包含 `LogConfig` 和 `RunConfig`
-2. 日志初始化移到 `logging.rs`
-3. 参数解析映射到 `CliConfig`
-4. 更新 main.rs 调用流程
+**重构前（单 crate）**:
+```rust
+// 隐式依赖全局配置
+use kaubo::config::{init, Config};
+init(Config::default());
+let result = kaubo::compile_and_run(source)?;
+```
 
-### Phase 5: 更新测试
-1. 测试不再依赖全局配置初始化
-2. 每个测试独立构造配置
+**重构后（Workspace）**:
+```rust
+// 显式传递配置
+use kaubo_api::{run, RunConfig};
+let config = RunConfig::default();
+let result = run(source, &config)?;
 
-## 兼容性考虑
+// 或使用全局单例（CLI 便利）
+use kaubo_api::{init_config, quick_run};
+init_config(RunConfig::default());
+let result = quick_run(source)?;
+```
 
-- **向后兼容**：kaubo-api 提供默认配置 API，旧代码仍能编译
-- **Web 友好**：Web 版本可以实现自己的配置源
-- **测试友好**：测试可以传入特定配置，无需修改全局状态
+## 架构验证
 
-## 时间表
+### 依赖关系
 
-预计工作量：2-3 小时
-影响范围：4 个 crate 的配置相关代码
-测试验证：确保所有 187 个测试仍通过
+```
+kaubo-config (无依赖)
+    ↑
+kaubo-core (依赖 kaubo-config)
+    ↑
+kaubo-api (依赖 kaubo-core, kaubo-config)
+    ↑
+kaubo-cli (依赖 kaubo-api, kaubo-core, kaubo-config)
+```
+
+### 配置分层
+
+```
+┌─────────────────────────────────────┐
+│  kaubo-cli - LogConfig              │
+├─────────────────────────────────────┤
+│  kaubo-api - RunConfig + 全局单例   │
+├─────────────────────────────────────┤
+│  kaubo-core - 纯逻辑，参数接收配置  │
+├─────────────────────────────────────┤
+│  kaubo-config - 纯数据结构          │
+└─────────────────────────────────────┘
+```
+
+### 测试验证
+
+```bash
+$ cargo test --workspace
+测试状态: 187 passed, 0 failed
+```

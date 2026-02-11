@@ -56,6 +56,19 @@ if (std.type(x) == "int") {
 | `ceil` | 8 | 函数 |
 | `PI` | 9 | 常量 |
 | `E` | 10 | 常量 |
+| `create_coroutine` | 11 | 函数 |
+| `resume` | 12 | 函数 |
+| `coroutine_status` | 13 | 函数 |
+| `len` | 14 | 函数 |
+| `push` | 15 | 函数 |
+| `is_empty` | 16 | 函数 |
+| `range` | 17 | 函数 |
+| `clone` | 18 | 函数 |
+| `read_file` | 19 | 函数 |
+| `write_file` | 20 | 函数 |
+| `exists` | 21 | 函数 |
+| `is_file` | 22 | 函数 |
+| `is_dir` | 23 | 函数 |
 
 ---
 
@@ -376,6 +389,211 @@ if native.arity != 255 && arg_count != native.arity {
 3. 在 `compiler.rs` 的 `find_std_module_shape_id()` 中添加映射
 4. 更新本文档
 
+## 7. 协程函数
+
+### 7.1 create_coroutine
+
+**签名**: `create_coroutine(closure)`
+
+**描述**: 从闭包创建协程
+
+**参数**:
+- `closure`: 一个无参数的闭包
+
+**返回值**: 协程对象
+
+**示例**:
+```kaubo
+import std;
+
+var producer = || {
+    yield 1;
+    yield 2;
+    yield 3;
+};
+
+var coro = std.create_coroutine(producer);
+std.resume(coro);  // 1
+std.resume(coro);  // 2
+```
+
 ---
 
-*最后更新: 2026-02-10*
+### 7.2 resume
+
+**签名**: `resume(coroutine, ...values)`
+
+**描述**: 恢复协程执行，传入值作为 yield 的结果
+
+**参数**:
+- `coroutine`: 协程对象
+- `values` (可选): 传递给协程的值
+
+**返回值**: 协程 yield 的值或最终返回值
+
+---
+
+### 7.3 coroutine_status
+
+**签名**: `coroutine_status(coroutine)`
+
+**描述**: 获取协程状态
+
+**返回值**: 
+- `0` - Suspended（可恢复）
+- `1` - Running（运行中）
+- `2` - Dead（已结束）
+
+---
+
+## 8. 列表操作函数
+
+### 8.1 len
+
+**签名**: `len(list|string|json)`
+
+**描述**: 获取长度
+
+**示例**:
+```kaubo
+import std;
+
+var list = [1, 2, 3];
+std.len(list);        // 3
+std.len("hello");     // 5
+```
+
+---
+
+### 8.2 push
+
+**签名**: `push(list, value)`
+
+**描述**: 将元素添加到列表末尾（返回新列表）
+
+**示例**:
+```kaubo
+import std;
+
+var list = [1, 2];
+var new_list = std.push(list, 3);  // [1, 2, 3]
+```
+
+---
+
+### 8.3 is_empty
+
+**签名**: `is_empty(list|string|json)`
+
+**描述**: 检查是否为空
+
+**返回值**: 布尔值
+
+---
+
+### 8.4 range
+
+**签名**: `range(end)` 或 `range(start, end)` 或 `range(start, end, step)`
+
+**描述**: 生成整数范围列表
+
+**示例**:
+```kaubo
+import std;
+
+std.range(5);           // [0, 1, 2, 3, 4]
+std.range(1, 5);        // [1, 2, 3, 4]
+std.range(0, 10, 2);    // [0, 2, 4, 6, 8]
+std.range(5, 0, -1);    // [5, 4, 3, 2, 1]
+```
+
+---
+
+### 8.5 clone
+
+**签名**: `clone(value)`
+
+**描述**: 创建值的浅拷贝
+
+**示例**:
+```kaubo
+import std;
+
+var list = [1, 2, 3];
+var copy = std.clone(list);
+```
+
+---
+
+## 9. 文件系统函数
+
+### 9.1 read_file
+
+**签名**: `read_file(path)`
+
+**描述**: 读取文件内容为字符串
+
+**参数**:
+- `path`: 文件路径（字符串）
+
+**返回值**: 文件内容字符串
+
+**错误**: 文件不存在或读取失败时抛出错误
+
+---
+
+### 9.2 write_file
+
+**签名**: `write_file(path, content)`
+
+**描述**: 将字符串写入文件
+
+**参数**:
+- `path`: 文件路径（字符串）
+- `content`: 文件内容（字符串）
+
+**返回值**: `null`
+
+---
+
+### 9.3 exists
+
+**签名**: `exists(path)`
+
+**描述**: 检查路径是否存在
+
+**返回值**: 布尔值
+
+---
+
+### 9.4 is_file
+
+**签名**: `is_file(path)`
+
+**描述**: 检查路径是否为文件
+
+**返回值**: 布尔值
+
+---
+
+### 9.5 is_dir
+
+**签名**: `is_dir(path)`
+
+**描述**: 检查路径是否为目录
+
+**返回值**: 布尔值
+
+---
+
+## 10. 已知限制
+
+| 限制 | 说明 | 替代方案 |
+|------|------|----------|
+| 浮点数字面量 | 暂不支持 `3.14` 直接书写 | 使用 `std.sqrt` 等函数获得 |
+| 字符串转义 | `\n` `\t` 等暂不支持 | 直接使用换行/制表符 |
+| 垃圾回收 | 暂未实现，内存只增不减 | 避免大量对象创建 |
+
+---
+
+*最后更新: 2026-02-12*
