@@ -12,7 +12,7 @@ use super::scanner::{
 };
 
 // 暂时复用现有的 TokenKind，后续可以独立定义
-use crate::compiler::lexer::token_kind::KauboTokenKind;
+use crate::core::compiler::lexer::token_kind::KauboTokenKind;
 
 use tracing::{trace, debug};
 

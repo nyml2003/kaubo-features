@@ -7,12 +7,14 @@
 //! - IDE友好：精准位置追踪，LSP协议兼容
 
 pub mod core;
+pub mod error;
 pub mod kaubo;
 pub mod lexer;
 pub mod scanner;
 pub mod types;
 
 pub use core::{CharStream, SourcePosition, SourceSpan, StreamError, StreamResult};
+pub use error::LexerError;
 pub use kaubo::{KauboScanner, KauboMode};
 pub use lexer::Lexer;
 pub use scanner::{Scanner, ScanResult, Token as ScannerToken, LexError, ErrorKind};

@@ -2,7 +2,7 @@
 //!
 //! 使用新的 Lexer V2 实现
 
-use crate::kit::lexer::Lexer;
+use crate::core::kit::lexer::Lexer;
 
 /// 创建新的 Lexer
 /// 
@@ -14,7 +14,7 @@ pub fn build_lexer() -> Lexer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::lexer::token_kind::KauboTokenKind;
+    use crate::core::compiler::lexer::token_kind::KauboTokenKind;
 
     fn lex_all(input: &str) -> Vec<(KauboTokenKind, Option<String>)> {
         let mut lexer = build_lexer();

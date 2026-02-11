@@ -1,4 +1,4 @@
-use crate::kit::lexer::types::Coordinate;
+use crate::core::kit::lexer::types::Coordinate;
 
 /// 语法错误，包含位置信息
 #[derive(Debug, Clone, PartialEq)]

@@ -14,18 +14,66 @@
 
 ## 核心架构
 
+### 目录结构（目标）
+
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Source    │ -> │    Lexer    │ -> │   Parser    │ -> │  Compiler   │
-│   (.kaubo)  │    │ (kaubo::lexer)│   │(kaubo::parser)│  │(kaubo::compiler)│
-│             │    │  src/kit/lexer/│   │              │  │              │
-└─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘
-                                                                  │
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐            │
-│   Output    │ <- │     VM      │ <- │    Chunk    │ <──────────┘
-│  (stdout)   │    │ (kaubo::vm) │    │  (bytecode) │
-└─────────────┘    └─────────────┘    └─────────────┘
+src/
+├── bin/                 # CLI 二进制入口（纯前端，无业务逻辑）
+│   └── kaubo.rs         # 参数解析 + 调用 lib
+├── lib.rs               # 库入口
+├── api/                 # API 层（对外接口）
+│   ├── mod.rs           # compile, compile_and_run
+│   ├── error.rs         # KauboError, ErrorReport（统一错误）
+│   └── types.rs         # CompileOutput, ExecuteOutput
+├── core/                # 核心编译器（纯逻辑，无 IO）
+│   ├── config.rs        # 配置定义（纯数据结构）
+│   ├── logger.rs        # 日志接口定义
+│   ├── kit/             # 通用工具（Lexer V2 等）
+│   ├── compiler/        # 编译器前端（Parser、AST）
+│   └── runtime/         # 运行时（VM、Bytecode）
+└── platform/            # 平台适配层（所有 IO 副作用）
+    ├── cli.rs           # CLI 格式化、错误打印、终端输出
+    ├── fs.rs            # 文件操作
+    └── log.rs           # tracing 初始化实现
 ```
+
+### 分层边界
+
+| 层级 | 职责 | 依赖规则 |
+|------|------|----------|
+| **bin** | 参数解析，调用 `kaubo::run_cli()` | 只依赖 lib |
+| **api** | 对外承诺的接口，输入 → 输出 | 依赖 core，不依赖 platform |
+| **core** | 纯编译逻辑，只操作内存数据结构 | 无 IO，不依赖 platform |
+| **platform** | 所有 IO 副作用（文件、日志、终端） | 可被 bin 使用，core 不能依赖 |
+
+### 数据流向
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────────────────────┐
+│   CLI 参数   │ --> │  bin/kaubo  │ --> │        platform/            │
+│  (clap 解析) │     │  (入口转发) │     │  - cli.rs: 格式化输出       │
+└─────────────┘     └─────────────┘     │  - fs.rs: 文件读写          │
+                                        │  - log.rs: 日志初始化       │
+                                        └─────────────┬───────────────┘
+                                                      │
+                              ┌───────────────────────┘
+                              v
+┌─────────────┐     ┌─────────────────┐     ┌─────────────────────────┐
+│   返回结果   │ <-- │    api/         │ <-- │        core/            │
+│  (格式化后)  │     │  - compile()    │     │  - kit/: Lexer          │
+└─────────────┘     │  - run_cli()    │     │  - compiler/: Parser    │
+                    │  - KauboError   │     │  - runtime/: VM         │
+                    └─────────────────┘     └─────────────────────────┘
+                            │
+                            └--> 纯内存操作，无 IO
+```
+
+### 设计原则
+
+1. **CLI 与编译器隔离**：`main.rs` 只解析参数，业务逻辑在 `api/` 或 `core/`
+2. **纯逻辑无 IO**：`core/` 只操作内存，所有副作用在 `platform/`
+3. **API 层呈现中立**：`api/` 返回结构化数据，不决定如何打印
+4. **平台适配可替换**：`platform/` 的实现可被替换（如 Web 版不需要文件 IO）
 
 ## 关键文件
 
@@ -107,6 +155,31 @@ exports.push(create_native_value(my_function, "my_function", 1));
 name_to_shape.insert("my_function".to_string(), shape_id);
 ```
 
+### 5. 先对齐再执行
+
+**任何非 trivial 的改动，必须先讨论方案，达成共识后再动手。**
+
+- ✅ 正确：先讨论设计，确认后再实现
+- ❌ 错误：直接开始编码，可能导致返工
+
+**什么情况下需要先对齐：**
+- 架构调整或重构
+- 新增公共 API
+- 修改核心数据结构
+- 破坏性变更（breaking changes）
+
+### 6. 长期优先，拒绝临时方案
+
+**以长期合理架构为优先，不为兼容老 API 而妥协设计。**
+
+- ✅ 正确：重构 API 使其更 Rust 化，即使要修改调用处
+- ❌ 错误：为兼容老代码而保留奇怪的设计
+
+**原则：**
+- 接受必要的破坏性变更
+- 不积累技术债务
+- 当下就做好，不指望"以后再重构"
+
 ## 常用命令
 
 ```bash
@@ -124,6 +197,12 @@ cargo run --release -- assets/hello.kaubo
 
 # 带日志运行
 cargo run --release -- assets/hello.kaubo -vv
+
+# 仅查看词法分析阶段日志
+cargo run --release -- assets/hello.kaubo --log-lexer=trace
+
+# 查看产生的 Token 列表
+cargo run --release -- assets/hello.kaubo --log-lexer=debug 2>&1 | grep "produced token"
 ```
 
 ## 已知限制
@@ -134,6 +213,69 @@ cargo run --release -- assets/hello.kaubo -vv
 4. **文档测试** - 6 个 doc test 失败（示例需要 config 初始化）
 
 ## 最近改进
+
+### 结构化错误处理 (2026-02-11)
+
+**分层错误设计** - 底层提供结构化数据，上层负责格式化呈现：
+
+```rust
+// 底层结构化错误
+pub struct LexerError {
+    pub kind: ErrorKind,           // InvalidChar, UnterminatedString, ...
+    pub position: SourcePosition,  // 精确位置
+    pub message: String,
+}
+
+// 统一错误枚举
+#[derive(Error, Debug, Clone)]
+pub enum KauboError {
+    #[error("{0}")]
+    Lexer(#[from] LexerError),
+    #[error("{0}")]
+    Parser(#[from] ParserError),
+    ...
+}
+
+// 错误报告（用于跨层传递）
+pub struct ErrorReport {
+    pub phase: &'static str,       // lexer, parser, compiler, runtime
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+    pub error_kind: String,        // 机器可读的错误类型
+    pub message: String,           // 人类可读的消息
+    pub details: Option<ErrorDetails>,
+}
+```
+
+**分层使用**:
+
+```rust
+// 底层 API 返回结构化错误
+let result = compile_and_run(source);
+
+match result {
+    Err(e) => {
+        // 1. 获取结构化报告
+        let report = e.to_report();
+        
+        // 2. CLI 场景 - 直接打印
+        println!("{}", report);  // [10:5] parser error: ...
+        
+        // 3. Web API 场景 - 输出 JSON
+        let json = report.to_json();
+        // {"phase":"parser","line":10,"column":5,...}
+        
+        // 4. 自定义格式
+        println!("{}: {}", report.phase, report.message);
+    }
+    Ok(_) => {}
+}
+```
+
+**设计原则**:
+- 底层（API）只提供数据，不做格式化
+- 上层（CLI/Web/LSP）决定如何呈现
+- 支持多种输出格式：`Display`（CLI）、`to_json()`（Web）、字段访问（自定义）
 
 ### 错误定位 (2026-02-10)
 
@@ -209,4 +351,4 @@ Lexer V2 改造后 Token 结构发生变化：
 
 ---
 
-*最后更新: 2026-02-10*
+*最后更新: 2026-02-11*

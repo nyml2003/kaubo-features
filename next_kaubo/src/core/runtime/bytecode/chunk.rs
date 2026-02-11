@@ -1,7 +1,7 @@
 //! 字节码块实现
 
 use super::OpCode;
-use crate::runtime::Value;
+use crate::core::runtime::Value;
 use tracing::debug;
 
 /// 字节码块

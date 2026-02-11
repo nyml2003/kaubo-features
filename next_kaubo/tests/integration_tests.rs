@@ -1,7 +1,7 @@
 //! 集成测试 - 端到端解析测试
 
-use next_kaubo::compiler::lexer::builder::build_lexer;
-use next_kaubo::compiler::parser::parser::Parser;
+use next_kaubo::core::compiler::lexer::builder::build_lexer;
+use next_kaubo::core::compiler::parser::parser::Parser;
 
 /// 辅助函数：解析代码字符串并返回 AST
 fn parse_code(code: &str) -> Result<String, String> {

@@ -1,8 +1,8 @@
 //! 虚拟机实现
 
-use crate::runtime::Value;
-use crate::runtime::bytecode::{OpCode, chunk::Chunk};
-use crate::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjUpvalue, CoroutineState};
+use crate::core::runtime::Value;
+use crate::core::runtime::bytecode::{OpCode, chunk::Chunk};
+use crate::core::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjUpvalue, CoroutineState};
 use std::collections::HashMap;
 
 
@@ -43,7 +43,7 @@ impl VM {
 
     /// 初始化标准库模块
     fn init_stdlib(&mut self) {
-        use crate::runtime::stdlib::create_stdlib_modules;
+        use crate::core::runtime::stdlib::create_stdlib_modules;
         
         let modules = create_stdlib_modules();
         for (name, module) in modules {
@@ -1370,7 +1370,7 @@ use std::cmp::Ordering;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::bytecode::OpCode::*;
+    use crate::core::runtime::bytecode::OpCode::*;
 
     /// 辅助函数：创建包含单个指令的 chunk
     fn simple_chunk(op: OpCode) -> Chunk {

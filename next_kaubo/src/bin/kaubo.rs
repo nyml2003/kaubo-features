@@ -1,12 +1,18 @@
 //! Kaubo CLI - 命令行入口
 //!
-//! 使用 clap 进行参数解析，调用 api 模块执行。
+//! 纯前端，无业务逻辑。只负责参数解析和调用 API。
 
 use clap::Parser;
-use next_kaubo::logger::{LogFormat, init_with_file};
-use next_kaubo::{Config, LogConfig, Value, compile, compile_and_run};
 use std::process;
-use tracing::{Level, info};
+use tracing::Level;
+
+use next_kaubo::{
+    compile, compile_and_run,
+    platform::print_error_with_source,
+    Config, LogConfig, LogFormat, Value,
+    init_config,
+    core::logger::init_with_file,
+};
 
 #[derive(Parser)]
 #[command(
@@ -94,7 +100,7 @@ fn main() {
 
     // 初始化配置和日志
     let config = build_config(&cli);
-    next_kaubo::config::init(config);
+    init_config(config);
 
     // 初始化日志（支持文件输出）
     let format = match cli.format {
@@ -120,9 +126,9 @@ fn main() {
 
     // 显示步骤信息
     if cli.show_steps {
-        info!(target: "kaubo::cli", "Kaubo VM - 字节码执行");
-        info!(target: "kaubo::cli", "======================");
-        info!(target: "kaubo::cli", "文件: {}", cli.file);
+        tracing::info!(target: "kaubo::cli", "Kaubo VM - 字节码执行");
+        tracing::info!(target: "kaubo::cli", "======================");
+        tracing::info!(target: "kaubo::cli", "文件: {}", cli.file);
     }
 
     // 执行
@@ -135,26 +141,26 @@ fn main() {
 
 fn handle_compile_only(source: &str, dump: bool, show_steps: bool) {
     if show_steps {
-        info!(target: "kaubo::cli", "[编译]");
+        tracing::info!(target: "kaubo::cli", "[编译]");
     }
 
     match compile(source) {
         Ok(output) => {
             if show_steps {
-                info!(target: "kaubo::cli", "常量池: {} 个", output.chunk.constants.len());
-                info!(target: "kaubo::cli", "字节码: {} bytes", output.chunk.code.len());
-                info!(target: "kaubo::cli", "局部变量: {} 个", output.local_count);
+                tracing::info!(target: "kaubo::cli", "常量池: {} 个", output.chunk.constants.len());
+                tracing::info!(target: "kaubo::cli", "字节码: {} bytes", output.chunk.code.len());
+                tracing::info!(target: "kaubo::cli", "局部变量: {} 个", output.local_count);
             }
 
             if dump {
                 if show_steps {
-                    info!(target: "kaubo::cli", "[字节码反汇编]");
+                    tracing::info!(target: "kaubo::cli", "[字节码反汇编]");
                 }
                 output.chunk.disassemble("main");
             }
 
             if show_steps {
-                info!(target: "kaubo::cli", "✅ 编译成功");
+                tracing::info!(target: "kaubo::cli", "✅ 编译成功");
             }
         }
         Err(e) => {
@@ -166,15 +172,15 @@ fn handle_compile_only(source: &str, dump: bool, show_steps: bool) {
 
 fn handle_run(source: &str, show_steps: bool) {
     if show_steps {
-        info!(target: "kaubo::cli", "[执行]");
+        tracing::info!(target: "kaubo::cli", "[执行]");
     }
 
     match compile_and_run(source) {
         Ok(output) => {
             if show_steps {
-                info!(target: "kaubo::cli", "✅ 执行成功!");
+                tracing::info!(target: "kaubo::cli", "✅ 执行成功!");
                 if let Some(value) = output.value {
-                    info!(target: "kaubo::cli", "返回值: {}", value);
+                    tracing::info!(target: "kaubo::cli", "返回值: {}", value);
                 }
             } else if let Some(value) = output.value {
                 // 非步骤模式下只打印返回值（这是程序的实际输出）
@@ -190,70 +196,6 @@ fn handle_run(source: &str, show_steps: bool) {
     }
 }
 
-/// 打印错误并显示源代码上下文
-fn print_error_with_source(e: &next_kaubo::KauboError, source: &str) {
-    eprintln!("❌ {}", e);
-
-    // 获取错误位置
-    let line_num = e.line();
-    let column = e.column();
-
-    if let (Some(error_line), Some(col)) = (line_num, column) {
-        print_source_context(source, error_line, col);
-    }
-}
-
-/// 打印源代码上下文（显示错误行前后几行）
-fn print_source_context(source: &str, error_line: usize, error_col: usize) {
-    const CONTEXT_LINES: usize = 5; // 错误行前后显示的上下文行数
-
-    let lines: Vec<&str> = source.lines().collect();
-    let total_lines = lines.len();
-
-    if error_line == 0 || error_line > total_lines {
-        return;
-    }
-
-    // 计算要显示的行范围
-    let start_line = error_line.saturating_sub(CONTEXT_LINES).max(1);
-    let end_line = (error_line + CONTEXT_LINES).min(total_lines);
-
-    // 计算行号的最大宽度用于对齐
-    let max_line_num_width = end_line.to_string().len();
-
-    // 打印分隔线
-    let separator: String = std::iter::repeat('-')
-        .take(max_line_num_width + 1)
-        .collect();
-    eprintln!("{}|--", separator);
-
-    // 打印上下文行
-    for line_idx in start_line..=end_line {
-        let line_content = lines[line_idx - 1];
-        let line_str = line_idx.to_string();
-        let padding_len = max_line_num_width.saturating_sub(line_str.len());
-        let padding: String = std::iter::repeat(' ').take(padding_len).collect();
-
-        if line_idx == error_line {
-            // 错误行：打印行号和源代码
-            eprintln!("{}{} | {}", padding, line_str, line_content);
-
-            // 打印指向错误位置的标记
-            let marker_offset = error_col.saturating_sub(1);
-            let marker: String = std::iter::repeat(' ').take(marker_offset).collect();
-            let separator_padding: String =
-                std::iter::repeat(' ').take(max_line_num_width).collect();
-            eprintln!("{} | {}^", separator_padding, marker);
-        } else {
-            // 普通上下文行
-            eprintln!("{}{} | {}", padding, line_str, line_content);
-        }
-    }
-
-    // 打印分隔线
-    eprintln!("{}|--", separator);
-}
-
 fn build_config(cli: &Cli) -> Config {
     // 根据 -v 次数确定全局级别
     let global_level = match cli.verbose {
@@ -261,13 +203,6 @@ fn build_config(cli: &Cli) -> Config {
         1 => Level::INFO,
         2 => Level::DEBUG,
         _ => Level::TRACE,
-    };
-
-    // 日志格式（当前未使用，保留给未来实现）
-    let _format = match cli.format {
-        LogFormatArg::Pretty => LogFormat::Pretty,
-        LogFormatArg::Compact => LogFormat::Compact,
-        LogFormatArg::Json => LogFormat::Json,
     };
 
     Config {
@@ -278,7 +213,6 @@ fn build_config(cli: &Cli) -> Config {
             compiler: cli.log_compiler.map(to_tracing_level),
             vm: cli.log_vm.map(to_tracing_level),
         },
-
         ..Default::default()
     }
 }

@@ -11,9 +11,9 @@ use super::stmt::{
     Stmt, StmtKind, VarDeclStmt, WhileStmt,
 };
 use super::utils::{get_associativity, get_precedence};
-use crate::kit::lexer::Lexer;
-use crate::kit::lexer::scanner::Token;
-use crate::kit::lexer::types::Coordinate;
+use crate::core::kit::lexer::Lexer;
+use crate::core::kit::lexer::scanner::Token;
+use crate::core::kit::lexer::types::Coordinate;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -716,7 +716,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::lexer::builder::build_lexer;
+    use crate::core::compiler::lexer::builder::build_lexer;
 
     fn parse_code(code: &str) -> ParseResult<Module> {
         let mut lexer = build_lexer();

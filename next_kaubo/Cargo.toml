@@ -6,6 +6,14 @@ edition = "2024"
 [features]
 trace_execution = []
 
+[[bin]]
+name = "kaubo"
+path = "src/bin/kaubo.rs"
+
+[lib]
+name = "next_kaubo"
+path = "src/lib.rs"
+
 [dependencies]
 # 日志系统
 tracing = "0.1"

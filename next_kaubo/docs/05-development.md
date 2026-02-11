@@ -170,10 +170,33 @@ kaubo script.kaubo -vvv
 
 ### 4.2 分阶段日志控制
 
+#### 词法分析阶段 (Lexer)
+
 ```bash
-# 只查看 Lexer 的详细日志
+# 只查看 Lexer 的详细日志（推荐方式）
 kaubo script.kaubo --log-lexer=trace
 
+# 或者使用全局 verbose + 单独设置 lexer
+cargo run --release -- script.kaubo -v --log-lexer trace
+
+# 仅查看产生的 Token（过滤 debug 级别）
+kaubo script.kaubo --log-lexer=debug 2>&1 | grep "produced token"
+
+# 查看逐字符扫描过程（最详细）
+kaubo script.kaubo --log-lexer=trace 2>&1 | grep -E "(feed|Processing|Produced)"
+```
+
+**Lexer 日志目标**: `kaubo::lexer`
+
+| 日志级别 | 输出内容 |
+|---------|---------|
+| `info` | Lexer 开始/完成，Token 总数 |
+| `debug` | 每个生成的 Token（kind, text, 位置） |
+| `trace` | 逐字符处理、状态转换、错误恢复 |
+
+#### 其他阶段
+
+```bash
 # Parser 关闭，其他 DEBUG
 kaubo script.kaubo --log-parser=off -vv
 
@@ -290,17 +313,38 @@ pub fn compile_only(source: &str) -> Result<Chunk> {
 
 ### 6.1 定位问题阶段
 
-```bash
-# 1. 确认 Lexer 输出是否正确
-kaubo script.kaubo --log-lexer=debug --compile-only
+#### 词法分析问题排查
 
-# 2. 确认 Parser AST 是否正确
+```bash
+# 1. 查看 Token 序列是否正常
+kaubo script.kaubo --log-lexer=debug --compile-only 2>&1 | grep "produced token"
+
+# 2. 查看未识别的字符（如果遇到词法错误）
+kaubo script.kaubo --log-lexer=trace --compile-only 2>&1 | grep -E "(Invalid|Error|recover)"
+
+# 3. 完整的词法分析日志（用于调试 Lexer 本身）
+kaubo script.kaubo --log-lexer=trace --compile-only 2> lexer.log
+```
+
+**示例输出解析**:
+```
+INFO kaubo::lexer: Starting lexer              # 词法分析开始
+DEBUG kaubo::lexer: produced token             # Token 生成
+  kind: Identifier, text: Some("x"),           # Token 类型和文本
+  line: 1, column: 5                           # 位置信息
+INFO kaubo::lexer: Lexer completed: 42 tokens  # 完成统计
+```
+
+#### 其他阶段
+
+```bash
+# 1. 确认 Parser AST 是否正确
 kaubo script.kaubo --log-parser=debug --compile-only
 
-# 3. 确认字节码生成
+# 2. 确认字节码生成
 kaubo script.kaubo --log-compiler=debug --dump-bytecode
 
-# 4. 追踪 VM 执行
+# 3. 追踪 VM 执行
 kaubo script.kaubo --log-vm=trace 2> vm.log
 ```
 

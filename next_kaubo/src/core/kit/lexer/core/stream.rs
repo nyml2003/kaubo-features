@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use super::position::SourcePosition;
-use crate::kit::ring_buffer::ring_buffer::{RingBuffer, RingBufferError};
+use crate::core::kit::ring_buffer::ring_buffer::{RingBuffer, RingBufferError};
 
 /// 字符流错误
 #[derive(Debug, thiserror::Error, PartialEq)]

@@ -2,15 +2,15 @@
 //!
 //! 使用新的 KauboScanner，直接返回 V2 Token
 
-use crate::kit::lexer::{
+use crate::core::kit::lexer::{
     CharStream, KauboScanner, KauboMode, Scanner, ScanResult,
 };
-use crate::kit::lexer::scanner::Token;
+use crate::core::kit::lexer::scanner::Token;
 
 use tracing::{debug, trace, warn};
 
 // 复用现有的 TokenKind
-use crate::compiler::lexer::token_kind::KauboTokenKind;
+use crate::core::compiler::lexer::token_kind::KauboTokenKind;
 
 /// 新的 Lexer 实现
 pub struct Lexer {

@@ -3,6 +3,15 @@
 //! Kaubo is a modern, concise scripting language designed for embedded scenarios
 //! and rapid prototyping.
 //!
+//! # Architecture
+//!
+//! ```text
+//! src/
+//! ├── api/       - Public API layer (input → output)
+//! ├── core/      - Pure compilation logic (no IO)
+//! └── platform/  - Platform-specific adapters (IO, CLI formatting)
+//! ```
+//!
 //! # Quick Start
 //!
 //! ```ignore
@@ -13,23 +22,29 @@
 //! println!("Result: {:?}", result.value);
 //! ```
 
-// 模块声明
-pub mod compiler;
-pub mod kit;
-pub mod runtime;
+// 核心层（纯逻辑，无 IO）
+pub mod core;
 
-// 新增模块
+// API 层（对外接口）
 pub mod api;
-pub mod config;
-pub mod logger;
+
+// 平台适配层（IO、CLI 格式化）
+pub mod platform;
 
 // 重导出常用类型
 pub use api::{compile, compile_and_run, execute, CompileOutput, ExecuteOutput, KauboError};
-pub use config::{Config, LogConfig, LimitConfig, CompilerConfig, Phase, init as init_config, config};
-pub use logger::{init_logger, init_with_file, LogFormat};
-pub use runtime::Value;
+pub use api::{ErrorDetails, ErrorReport, LexerError, ParserError};
+pub use core::{
+    Config, LogConfig, CompilerConfig, LimitConfig, Phase,
+    config::init as init_config, config::config,
+    logger::init_logger, logger::LogFormat,
+};
+pub use core::runtime::Value;
 
 /// 初始化（使用前先调用）
+///
+/// 只初始化配置，不初始化日志系统。
+/// 在 CLI/平台层需要额外调用日志初始化。
 ///
 /// # Example
 /// ```ignore
@@ -38,8 +53,22 @@ pub use runtime::Value;
 /// init(Config::default());
 /// ```
 pub fn init(config: Config) {
-    config::init(config);
-    logger::init_logger();
+    core::config::init(config);
+}
+
+/// 初始化配置和日志系统
+///
+/// 适用于简单的使用场景，CLI 建议使用 platform 层的初始化。
+///
+/// # Example
+/// ```ignore
+/// use kaubo::{init_with_logger, Config, LogFormat};
+///
+/// init_with_logger(Config::default(), LogFormat::Pretty);
+/// ```
+pub fn init_with_logger(config: Config, format: LogFormat) {
+    core::config::init(config);
+    core::logger::init_with_format(format);
 }
 
 /// 快速执行（使用默认配置）
@@ -51,7 +80,7 @@ pub fn init(config: Config) {
 /// let result = quick_run("return 42;").unwrap();
 /// ```
 pub fn quick_run(source: &str) -> Result<ExecuteOutput, KauboError> {
-    if !config::is_initialized() {
+    if !core::config::is_initialized() {
         init(Config::default());
     }
     compile_and_run(source)
@@ -63,14 +92,17 @@ mod tests {
 
     #[test]
     fn test_init() {
-        init(Config::default());
-        assert!(config::is_initialized());
+        // 注意：这个测试可能因为配置已初始化而失败
+        // 在实际测试中使用 quick_run 代替
+        if !core::config::is_initialized() {
+            init(Config::default());
+        }
+        assert!(core::config::is_initialized());
     }
 
     #[test]
     fn test_quick_run() {
         let result = quick_run("return 42;").unwrap();
-        // Value 比较使用 as_int()
         let value = result.value.as_ref().and_then(|v| v.as_int());
         assert_eq!(value, Some(42));
     }

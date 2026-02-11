@@ -1,7 +1,7 @@
 //! 运行时对象定义
 
-use crate::runtime::bytecode::chunk::Chunk;
-use crate::runtime::Value;
+use crate::core::runtime::bytecode::chunk::Chunk;
+use crate::core::runtime::Value;
 
 /// Upvalue 对象 - 表示对外部变量的引用
 /// 采用 Lua 风格：按引用捕获，变量离开栈时转储到 closed

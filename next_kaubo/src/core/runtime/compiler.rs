@@ -1,9 +1,9 @@
 //! AST → Bytecode 编译器
 
-use crate::compiler::parser::expr::{FunctionCall, Lambda, VarRef};
-use crate::compiler::parser::stmt::{ForStmt, IfStmt, ModuleStmt, WhileStmt};
-use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind};
-use crate::runtime::{
+use crate::core::compiler::parser::expr::{FunctionCall, Lambda, VarRef};
+use crate::core::compiler::parser::stmt::{ForStmt, IfStmt, ModuleStmt, WhileStmt};
+use crate::core::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind};
+use crate::core::runtime::{
     Value,
     bytecode::{OpCode, chunk::Chunk},
     object::{ObjFunction, ObjString},
@@ -275,8 +275,8 @@ impl Compiler {
             ExprKind::Unary(un) => {
                 self.compile_expr(&un.operand)?;
                 let op = match un.op {
-                    crate::compiler::lexer::token_kind::KauboTokenKind::Minus => OpCode::Neg,
-                    crate::compiler::lexer::token_kind::KauboTokenKind::Not => OpCode::Not,
+                    crate::core::compiler::lexer::token_kind::KauboTokenKind::Minus => OpCode::Neg,
+                    crate::core::compiler::lexer::token_kind::KauboTokenKind::Not => OpCode::Not,
                     _ => return Err(CompileError::InvalidOperator),
                 };
                 self.chunk.write_op(op, 0);
@@ -398,7 +398,7 @@ impl Compiler {
     /// 编译二元运算
     fn compile_binary(&mut self, bin: &Binary) -> Result<(), CompileError> {
         // 特殊处理赋值运算符：=
-        if bin.op == crate::compiler::lexer::token_kind::KauboTokenKind::Equal {
+        if bin.op == crate::core::compiler::lexer::token_kind::KauboTokenKind::Equal {
             return self.compile_assignment(&bin.left, &bin.right);
         }
 
@@ -410,20 +410,20 @@ impl Compiler {
 
         // 生成运算指令
         let op = match bin.op {
-            crate::compiler::lexer::token_kind::KauboTokenKind::Plus => OpCode::Add,
-            crate::compiler::lexer::token_kind::KauboTokenKind::Minus => OpCode::Sub,
-            crate::compiler::lexer::token_kind::KauboTokenKind::Asterisk => OpCode::Mul,
-            crate::compiler::lexer::token_kind::KauboTokenKind::Slash => OpCode::Div,
-            crate::compiler::lexer::token_kind::KauboTokenKind::DoubleEqual => OpCode::Equal,
-            crate::compiler::lexer::token_kind::KauboTokenKind::ExclamationEqual => {
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::Plus => OpCode::Add,
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::Minus => OpCode::Sub,
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::Asterisk => OpCode::Mul,
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::Slash => OpCode::Div,
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::DoubleEqual => OpCode::Equal,
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::ExclamationEqual => {
                 OpCode::NotEqual
             }
-            crate::compiler::lexer::token_kind::KauboTokenKind::GreaterThan => OpCode::Greater,
-            crate::compiler::lexer::token_kind::KauboTokenKind::GreaterThanEqual => {
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::GreaterThan => OpCode::Greater,
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::GreaterThanEqual => {
                 OpCode::GreaterEqual
             }
-            crate::compiler::lexer::token_kind::KauboTokenKind::LessThan => OpCode::Less,
-            crate::compiler::lexer::token_kind::KauboTokenKind::LessThanEqual => OpCode::LessEqual,
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::LessThan => OpCode::Less,
+            crate::core::compiler::lexer::token_kind::KauboTokenKind::LessThanEqual => OpCode::LessEqual,
             _ => return Err(CompileError::InvalidOperator),
         };
 
@@ -989,7 +989,7 @@ impl Compiler {
     
     /// 编译导入语句
     /// import module; 或 from module import item;
-    fn compile_import(&mut self, import_stmt: &crate::compiler::parser::stmt::ImportStmt) -> Result<(), CompileError> {
+    fn compile_import(&mut self, import_stmt: &crate::core::compiler::parser::stmt::ImportStmt) -> Result<(), CompileError> {
         // 检查模块是否存在（同文件内模块或标准库模块）
         let module_name = &import_stmt.module_path;
         
@@ -1148,9 +1148,9 @@ pub fn compile(module: &Module) -> Result<(Chunk, usize), CompileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::lexer::builder::build_lexer;
-    use crate::compiler::parser::parser::Parser;
-    use crate::runtime::{InterpretResult, VM};
+    use crate::core::compiler::lexer::builder::build_lexer;
+    use crate::core::compiler::parser::parser::Parser;
+    use crate::core::runtime::{InterpretResult, VM};
 
     fn compile_code(code: &str) -> Result<(Chunk, usize), CompileError> {
         let mut lexer = build_lexer();

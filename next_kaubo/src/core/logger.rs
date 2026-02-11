@@ -16,7 +16,7 @@ use tracing_subscriber::{
     filter::Targets, fmt, layer::SubscriberExt, util::SubscriberInitExt, Layer,
 };
 
-use crate::config::{self, Phase};
+use crate::core::config::{self, Phase};
 
 /// 日志输出格式
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,18 +153,18 @@ pub fn is_enabled(phase: Phase) -> bool {
 macro_rules! phase_span {
     ($phase:expr, $name:expr) => {
         match $phase {
-            $crate::config::Phase::Lexer => tracing::span!(target: "kaubo::lexer", tracing::Level::DEBUG, $name),
-            $crate::config::Phase::Parser => tracing::span!(target: "kaubo::parser", tracing::Level::DEBUG, $name),
-            $crate::config::Phase::Compiler => tracing::span!(target: "kaubo::compiler", tracing::Level::DEBUG, $name),
-            $crate::config::Phase::Vm => tracing::span!(target: "kaubo::vm", tracing::Level::DEBUG, $name),
+            $crate::core::config::Phase::Lexer => tracing::span!(target: "kaubo::lexer", tracing::Level::DEBUG, $name),
+            $crate::core::config::Phase::Parser => tracing::span!(target: "kaubo::parser", tracing::Level::DEBUG, $name),
+            $crate::core::config::Phase::Compiler => tracing::span!(target: "kaubo::compiler", tracing::Level::DEBUG, $name),
+            $crate::core::config::Phase::Vm => tracing::span!(target: "kaubo::vm", tracing::Level::DEBUG, $name),
         }
     };
     ($phase:expr, $name:expr, $($field:tt)*) => {
         match $phase {
-            $crate::config::Phase::Lexer => tracing::span!(target: "kaubo::lexer", tracing::Level::DEBUG, $name, $($field)*),
-            $crate::config::Phase::Parser => tracing::span!(target: "kaubo::parser", tracing::Level::DEBUG, $name, $($field)*),
-            $crate::config::Phase::Compiler => tracing::span!(target: "kaubo::compiler", tracing::Level::DEBUG, $name, $($field)*),
-            $crate::config::Phase::Vm => tracing::span!(target: "kaubo::vm", tracing::Level::DEBUG, $name, $($field)*),
+            $crate::core::config::Phase::Lexer => tracing::span!(target: "kaubo::lexer", tracing::Level::DEBUG, $name, $($field)*),
+            $crate::core::config::Phase::Parser => tracing::span!(target: "kaubo::parser", tracing::Level::DEBUG, $name, $($field)*),
+            $crate::core::config::Phase::Compiler => tracing::span!(target: "kaubo::compiler", tracing::Level::DEBUG, $name, $($field)*),
+            $crate::core::config::Phase::Vm => tracing::span!(target: "kaubo::vm", tracing::Level::DEBUG, $name, $($field)*),
         }
     };
 }

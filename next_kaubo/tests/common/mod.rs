@@ -2,9 +2,9 @@
 //!
 //! 提供端到端测试的辅助函数
 
-use next_kaubo::compiler::lexer::builder::build_lexer;
-use next_kaubo::compiler::parser::parser::Parser;
-use next_kaubo::runtime::{compile, InterpretResult, VM};
+use next_kaubo::core::compiler::lexer::builder::build_lexer;
+use next_kaubo::core::compiler::parser::parser::Parser;
+use next_kaubo::core::runtime::{compile, InterpretResult, VM};
 
 /// 执行 Kaubo 代码并返回结果
 ///

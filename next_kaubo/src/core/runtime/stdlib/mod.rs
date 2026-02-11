@@ -6,8 +6,8 @@
 //! - 扁平化设计：所有函数直接放在 std 下，不嵌套
 //! - 启动时自动注册到 globals
 
-use crate::runtime::Value;
-use crate::runtime::object::ObjModule;
+use crate::core::runtime::Value;
+use crate::core::runtime::object::ObjModule;
 use std::collections::HashMap;
 
 /// 原生函数指针类型
@@ -60,7 +60,7 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
 
 /// 辅助函数：创建原生函数 Value
 fn create_native_value(func: NativeFn, name: &str, arity: u8) -> Value {
-    use crate::runtime::object::ObjNative;
+    use crate::core::runtime::object::ObjNative;
     let native = Box::new(ObjNative::new(func, name.to_string(), arity));
     Value::native_fn(Box::into_raw(native))
 }
@@ -126,7 +126,7 @@ fn type_fn(args: &[Value]) -> Result<Value, String> {
         "unknown"
     };
 
-    let string_obj = Box::new(crate::runtime::object::ObjString::new(type_name.to_string()));
+    let string_obj = Box::new(crate::core::runtime::object::ObjString::new(type_name.to_string()));
     let string_ptr = Box::into_raw(string_obj);
     Ok(Value::string(string_ptr))
 }
@@ -137,7 +137,7 @@ fn to_string_fn(args: &[Value]) -> Result<Value, String> {
     }
 
     let s = format!("{}", args[0]);
-    let string_obj = Box::new(crate::runtime::object::ObjString::new(s));
+    let string_obj = Box::new(crate::core::runtime::object::ObjString::new(s));
     let string_ptr = Box::into_raw(string_obj);
     Ok(Value::string(string_ptr))
 }
