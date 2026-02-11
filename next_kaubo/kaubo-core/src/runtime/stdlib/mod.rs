@@ -413,7 +413,7 @@ fn len_fn(args: &[Value]) -> Result<Value, String> {
     }
 
     let len = if let Some(ptr) = args[0].as_string() {
-        unsafe { (*ptr).chars.len() as i64 }
+        unsafe { (&(*ptr).chars).len() as i64 }
     } else if let Some(ptr) = args[0].as_list() {
         unsafe { (*ptr).len() as i64 }
     } else if let Some(ptr) = args[0].as_json() {
@@ -460,7 +460,7 @@ fn is_empty_fn(args: &[Value]) -> Result<Value, String> {
     }
 
     let is_empty = if let Some(ptr) = args[0].as_string() {
-        unsafe { (*ptr).chars.is_empty() }
+        unsafe { (&(*ptr).chars).is_empty() }
     } else if let Some(ptr) = args[0].as_list() {
         unsafe { (*ptr).len() == 0 }
     } else if let Some(ptr) = args[0].as_json() {
