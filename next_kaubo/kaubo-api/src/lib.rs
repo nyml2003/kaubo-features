@@ -13,6 +13,7 @@ use tracing::{Level, debug, error, info, instrument, span};
 use kaubo_core::runtime::bytecode::chunk::Chunk;
 use kaubo_core::runtime::compiler::compile as compile_to_chunk;
 use kaubo_core::runtime::{InterpretResult, VM};
+use kaubo_core::kit::lexer::SourcePosition;
 
 // Re-export config
 pub mod config;
@@ -63,8 +64,9 @@ fn compile_with_config(
     let mut lexer = build_lexer();
     lexer
         .feed(&source.as_bytes().to_vec())
-        .map_err(LexerError::from_feed_error)?;
-    lexer.terminate().map_err(LexerError::from_feed_error)?;
+        .map_err(|e| LexerError::from_stream_error(e, kaubo_core::kit::lexer::SourcePosition::start()))?;
+    lexer.terminate()
+        .map_err(|e| LexerError::from_stream_error(e, kaubo_core::kit::lexer::SourcePosition::start()))?;
 
     let mut parser = Parser::new(lexer);
     let ast = parser.parse().map_err(KauboError::Parser)?;

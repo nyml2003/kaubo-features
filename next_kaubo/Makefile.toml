@@ -9,44 +9,69 @@ default_to_workspace = false
 [tasks.default]
 alias = "test"
 
-# 运行测试
+# 运行所有测试
 [tasks.test]
 command = "cargo"
-args = ["test"]
+args = ["test", "--workspace"]
+
+# 运行核心测试
+[tasks.test-core]
+command = "cargo"
+args = ["test", "-p", "kaubo-core"]
+
+# 运行 API 测试
+[tasks.test-api]
+command = "cargo"
+args = ["test", "-p", "kaubo-api"]
 
 # 生成覆盖率报告 - 终端输出 (cargo-llvm-cov + nightly, 支持分支覆盖率)
 [tasks.cov]
-script = "rustup run nightly cargo llvm-cov --branch --all-features"
+script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features"
 
 # 生成 HTML 覆盖率报告
 [tasks.cov-html]
-script = "rustup run nightly cargo llvm-cov --branch --all-features --html --output-dir target/llvm-cov"
+script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features --html --output-dir target/llvm-cov"
 
 # 生成并打开 HTML 覆盖率报告
 [tasks.cov-open]
-script = "rustup run nightly cargo llvm-cov --branch --all-features --html --output-dir target/llvm-cov --open"
+script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features --html --output-dir target/llvm-cov --open"
 
 # 清理生成的文件
 [tasks.clean]
 command = "cargo"
 args = ["clean"]
 
-# 运行程序
+# 运行 CLI (开发模式)
 [tasks.run]
 command = "cargo"
-args = ["run", "--", "assets/a.txt"]
+args = ["run", "-p", "kaubo-cli", "--", "assets/test_simple.kaubo"]
 
-# 检查代码
+# 运行 CLI (release 模式)
+[tasks.run-release]
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--release", "--", "assets/test_simple.kaubo"]
+
+# 检查整个 workspace
 [tasks.check]
 command = "cargo"
-args = ["check"]
+args = ["check", "--workspace"]
 
 # 格式化代码
 [tasks.fmt]
 command = "cargo"
-args = ["fmt"]
+args = ["fmt", "--all"]
 
 # 运行 clippy
 [tasks.lint]
 command = "cargo"
-args = ["clippy", "--", "-D", "warnings"]
+args = ["clippy", "--workspace", "--", "-D", "warnings"]
+
+# 构建 release
+[tasks.build]
+command = "cargo"
+args = ["build", "-p", "kaubo-cli", "--release"]
+
+# 检查所有 crate
+[tasks.check-all]
+command = "cargo"
+args = ["check", "--workspace", "--all-targets"]

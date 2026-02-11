@@ -1349,7 +1349,7 @@ impl VM {
 
         // 反汇编当前指令
         let frame = self.frames.last().unwrap();
-        let offset = unsafe { frame.ip.offset_from(frame.chunk.code.as_ptr()) } as usize;
+        let offset = unsafe { frame.ip.offset_from(frame.chunk().code.as_ptr()) } as usize;
         // 只读取查看，不修改 ip
         let instruction = unsafe { *frame.ip };
         let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };

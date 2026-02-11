@@ -5,6 +5,7 @@
 use crate::kit::lexer::{
     CharStream, KauboScanner, KauboMode, Scanner, ScanResult,
 };
+use crate::kit::lexer::core::StreamError;
 use crate::kit::lexer::scanner::Token;
 
 use tracing::{debug, trace, warn};
@@ -31,16 +32,16 @@ impl Lexer {
     }
 
     /// 向 Lexer 输入数据
-    pub fn feed(&mut self, data: &[u8]) -> Result<(), String> {
+    pub fn feed(&mut self, data: &[u8]) -> Result<(), StreamError> {
         trace!(target: "kaubo::lexer", "Feeding {} bytes", data.len());
-        self.stream.feed(data).map_err(|e| e.to_string())
+        self.stream.feed(data)
     }
 
     /// 标记输入结束
-    pub fn terminate(&mut self) -> Result<(), String> {
+    pub fn terminate(&mut self) -> Result<(), StreamError> {
         trace!(target: "kaubo::lexer", "Terminating input");
         self.eof = true;
-        self.stream.close().map_err(|e| e.to_string())
+        self.stream.close()
     }
 
     /// 获取下一个 Token

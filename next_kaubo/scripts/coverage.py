@@ -38,6 +38,7 @@ def run_coverage(html=False, open_browser=False):
     """运行覆盖率测试 (使用 nightly + 分支覆盖率)"""
     cmd = [
         'cargo', '+nightly', 'llvm-cov',
+        '--workspace',        # 测试所有 workspace 成员
         '--branch',           # 启用分支覆盖率 (需要 nightly)
         '--all-features',     # 测试所有特性
     ]

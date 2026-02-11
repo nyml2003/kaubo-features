@@ -2,7 +2,7 @@
 //!
 //! 提供结构化的词法错误信息，包含错误类型、位置和详细消息。
 
-use super::core::SourcePosition;
+use super::core::{SourcePosition, StreamError};
 use super::scanner::ErrorKind;
 
 /// 词法错误，包含结构化信息
@@ -27,24 +27,22 @@ impl LexerError {
         }
     }
 
-    /// 从 feed/terminate 错误转换（用于兼容现有 API）
+    /// 从 StreamError 转换
     ///
-    /// 当 Lexer::feed 或 Lexer::terminate 返回 String 错误时使用此方法转换。
-    /// 注意：这会丢失精确的位置信息，仅作为临时兼容方案。
-    pub fn from_feed_error<E: std::fmt::Display>(error: E) -> Self {
-        let msg = error.to_string();
-        let kind = if msg.contains("UTF-8") || msg.contains("Utf8") {
-            ErrorKind::Utf8Error
-        } else if msg.contains("Closed") || msg.contains("closed") {
-            ErrorKind::Custom("Stream closed".to_string())
-        } else {
-            ErrorKind::Custom(msg.clone())
+    /// 用于将底层流错误转换为 LexerError。
+    /// 注意：由于 StreamError 不包含 SourcePosition，位置信息会使用 start()。
+    /// 建议在实际发生错误的位置调用此方法。
+    pub fn from_stream_error(error: StreamError, position: SourcePosition) -> Self {
+        let kind = match &error {
+            StreamError::Utf8Error(_) => ErrorKind::Utf8Error,
+            StreamError::Closed => ErrorKind::Custom("Stream closed".to_string()),
+            StreamError::Buffer(_) => ErrorKind::Custom(error.to_string()),
         };
 
         Self {
             kind,
-            position: SourcePosition::start(),
-            message: msg,
+            position,
+            message: error.to_string(),
         }
     }
 
