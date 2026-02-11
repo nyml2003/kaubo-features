@@ -132,6 +132,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
+name = "kaubo-api"
+version = "0.1.0"
+dependencies = [
+ "kaubo-config",
+ "kaubo-core",
+ "once_cell",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "kaubo-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "kaubo-api",
+ "kaubo-config",
+ "kaubo-core",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "kaubo-config"
+version = "0.1.0"
+
+[[package]]
+name = "kaubo-core"
+version = "0.1.0"
+dependencies = [
+ "kaubo-config",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "kaubo-workspace"
+version = "0.1.0"
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -157,17 +197,6 @@ name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
-
-[[package]]
-name = "next_kaubo"
-version = "0.1.0"
-dependencies = [
- "clap",
- "once_cell",
- "thiserror",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "nu-ansi-term"

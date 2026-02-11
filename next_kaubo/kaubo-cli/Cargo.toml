@@ -1,0 +1,19 @@
+[package]
+name = "kaubo-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Kaubo language CLI - command line interface"
+
+[[bin]]
+name = "kaubo"
+path = "src/main.rs"
+
+[dependencies]
+kaubo-config = { workspace = true }
+kaubo-core = { workspace = true }
+kaubo-api = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

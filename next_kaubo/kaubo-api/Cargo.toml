@@ -1,0 +1,14 @@
+[package]
+name = "kaubo-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Kaubo language API - execution orchestration and unified interfaces"
+
+[dependencies]
+kaubo-config = { workspace = true }
+kaubo-core = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+once_cell = { workspace = true }
