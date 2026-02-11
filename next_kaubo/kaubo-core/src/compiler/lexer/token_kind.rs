@@ -37,9 +37,10 @@ pub enum KauboTokenKind {
     Pub,
     Json,
 
-    // 字面量 (100-101)
+    // 字面量 (100-102)
     LiteralInteger = 100,
     LiteralString,
+    LiteralFloat,
 
     // 标识符 (120)
     Identifier = 120,

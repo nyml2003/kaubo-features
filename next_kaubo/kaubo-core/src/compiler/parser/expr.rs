@@ -10,6 +10,8 @@ pub type Expr = Box<ExprKind>;
 pub enum ExprKind {
     // 整数字面量表达式
     LiteralInt(LiteralInt),
+    // 浮点数字面量表达式
+    LiteralFloat(LiteralFloat),
     // 字符串字面量表达式
     LiteralString(LiteralString),
     // 布尔true字面量
@@ -46,6 +48,12 @@ pub enum ExprKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiteralInt {
     pub value: i64,
+}
+
+// 浮点数字面量结构体
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiteralFloat {
+    pub value: f64,
 }
 
 // 字符串字面量结构体
@@ -144,6 +152,7 @@ impl fmt::Display for ExprKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ExprKind::LiteralInt(int) => write!(f, "{}", int.value),
+            ExprKind::LiteralFloat(float) => write!(f, "{}", float.value),
             ExprKind::LiteralString(s) => write!(f, "\"{}\"", s.value),
             ExprKind::LiteralTrue(_) => write!(f, "true"),
             ExprKind::LiteralFalse(_) => write!(f, "false"),

@@ -1,7 +1,7 @@
 //! VM 端到端测试
 
 mod common;
-use common::{run_code, get_int, ExecResult};
+use common::{run_code, get_int, get_float, ExecResult};
 
 #[test]
 fn test_basic_arithmetic() {
@@ -634,6 +634,43 @@ fn test_float_arithmetic() {
     let result = run_code(code);
     // 除法返回浮点数
     assert!(result.is_ok());
+}
+
+#[test]
+fn test_float_literal() {
+    // 测试浮点数字面量
+    let code = r#"
+        var pi = 3.14;
+        return pi;
+    "#;
+    let result = run_code(code).unwrap();
+    let value = get_float(&result).unwrap();
+    assert!((value - 3.14).abs() < 0.001);
+}
+
+#[test]
+fn test_float_literal_negative() {
+    // 测试负浮点数字面量
+    let code = r#"
+        var x = -2.5;
+        return x;
+    "#;
+    let result = run_code(code).unwrap();
+    let value = get_float(&result).unwrap();
+    assert!((value - (-2.5)).abs() < 0.001);
+}
+
+#[test]
+fn test_float_literal_operations() {
+    // 测试浮点数字面量运算
+    let code = r#"
+        var a = 1.5;
+        var b = 2.5;
+        return a + b;
+    "#;
+    let result = run_code(code).unwrap();
+    let value = get_float(&result).unwrap();
+    assert!((value - 4.0).abs() < 0.001);
 }
 
 #[test]

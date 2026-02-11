@@ -233,6 +233,12 @@ impl Compiler {
                 self.emit_constant(idx);
             }
 
+            ExprKind::LiteralFloat(lit) => {
+                let value = Value::float(lit.value);
+                let idx = self.chunk.add_constant(value);
+                self.emit_constant(idx);
+            }
+
             ExprKind::LiteralString(lit) => {
                 // 创建字符串对象
                 let string_obj = Box::new(ObjString::new(lit.value.clone()));
@@ -487,28 +493,22 @@ impl Compiler {
         // 编译左操作数
         self.compile_expr(left)?;
 
-        // 如果左操作数为真，跳过右操作数（短路）
-        // JumpIfFalse 会弹出栈顶值，所以我们需要额外处理
-        // 先复制一份左操作数用于判断
+        // 复制左操作数用于条件判断
         self.chunk.write_op(OpCode::Dup, 0);
         
         // 如果为假，跳转到右操作数计算
-        let jump_offset = self.chunk.write_jump(OpCode::JumpIfFalse, 0);
+        let jump_if_false = self.chunk.write_jump(OpCode::JumpIfFalse, 0);
 
-        // 左操作数为真，不需要右操作数
-        // 弹出复制的值，保留原始左操作数作为结果
-        self.chunk.write_op(OpCode::Pop, 0);
-        
-        // 跳过右操作数的代码
+        // 左操作数为真：直接短路，保留左操作数
+        // 不需要 Pop，因为 JumpIfFalse 已经弹出了复制的值
+        // 原始左操作数仍在栈上作为结果
         let end_jump = self.chunk.write_jump(OpCode::Jump, 0);
 
-        // 修补第一个跳转（跳到右操作数计算）
-        self.chunk.patch_jump(jump_offset);
+        // 修补跳转到右操作数计算的位置
+        self.chunk.patch_jump(jump_if_false);
 
-        // 弹出为假的左操作数值
+        // 左操作数为假：弹出 falsy 的左操作数，计算右操作数
         self.chunk.write_op(OpCode::Pop, 0);
-        
-        // 编译右操作数
         self.compile_expr(right)?;
 
         // 修补结束跳转

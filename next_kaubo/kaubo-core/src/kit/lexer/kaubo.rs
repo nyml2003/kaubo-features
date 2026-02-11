@@ -403,10 +403,12 @@ impl KauboScanner {
         }
     }
 
-    /// 扫描数字（整数）
+    /// 扫描数字（整数或浮点数）
     fn scan_number(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
         let mut value = String::new();
+        let mut is_float = false;
 
+        // 整数部分
         while let StreamResult::Ok(c) = stream.try_peek(0) {
             if c.is_ascii_digit() {
                 value.push(c);
@@ -416,9 +418,36 @@ impl KauboScanner {
             }
         }
 
+        // 小数部分
+        if let StreamResult::Ok('.') = stream.try_peek(0) {
+            if let StreamResult::Ok(c) = stream.try_peek(1) {
+                if c.is_ascii_digit() {
+                    // 消费小数点
+                    let _ = stream.try_advance();
+                    value.push('.');
+                    is_float = true;
+
+                    // 小数部分数字
+                    while let StreamResult::Ok(c) = stream.try_peek(0) {
+                        if c.is_ascii_digit() {
+                            value.push(c);
+                            let _ = stream.try_advance();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         let end = stream.position();
+        let kind = if is_float {
+            KauboTokenKind::LiteralFloat
+        } else {
+            KauboTokenKind::LiteralInteger
+        };
         ScanResult::Token(Token::with_text(
-            KauboTokenKind::LiteralInteger,
+            kind,
             SourceSpan::range(self.token_start, end),
             value,
         ))
@@ -588,6 +617,30 @@ mod tests {
         assert_eq!(tokens[0].kind, KauboTokenKind::LiteralInteger);
         assert_eq!(tokens[0].text, Some("0".to_string()));
         assert_eq!(tokens[1].text, Some("123".to_string()));
+    }
+
+    #[test]
+    fn test_float_numbers() {
+        let tokens = collect_tokens("3.14 0.5 10.0");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0].kind, KauboTokenKind::LiteralFloat);
+        assert_eq!(tokens[0].text, Some("3.14".to_string()));
+        assert_eq!(tokens[1].kind, KauboTokenKind::LiteralFloat);
+        assert_eq!(tokens[1].text, Some("0.5".to_string()));
+        assert_eq!(tokens[2].kind, KauboTokenKind::LiteralFloat);
+        assert_eq!(tokens[2].text, Some("10.0".to_string()));
+    }
+
+    #[test]
+    fn test_float_vs_int() {
+        // 3.14 是浮点数
+        let tokens = collect_tokens("3.14");
+        assert_eq!(tokens[0].kind, KauboTokenKind::LiteralFloat);
+        
+        // 3. 是整数 3 后跟点号（成员访问）
+        let tokens = collect_tokens("3.;");
+        assert_eq!(tokens[0].kind, KauboTokenKind::LiteralInteger);
+        assert_eq!(tokens[1].kind, KauboTokenKind::Dot);
     }
 
     #[test]

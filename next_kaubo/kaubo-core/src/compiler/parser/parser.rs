@@ -303,6 +303,7 @@ impl Parser {
 
         match token.kind {
             KauboTokenKind::LiteralInteger => self.parse_int(),
+            KauboTokenKind::LiteralFloat => self.parse_float(),
             KauboTokenKind::LiteralString => self.parse_string(),
             KauboTokenKind::True => {
                 self.consume();
@@ -435,6 +436,23 @@ impl Parser {
         })?;
         self.consume();
         Ok(Box::new(ExprKind::LiteralInt(LiteralInt { value: num })))
+    }
+
+    /// 解析浮点数字面量
+    fn parse_float(&mut self) -> ParseResult<Expr> {
+        let token = self.current_token.as_ref().unwrap();
+        let text = token.text.clone().unwrap_or_default();
+        let num = text.parse().map_err(|_| {
+            ParserError::here(
+                ParserErrorKind::InvalidNumberFormat(text.clone()),
+                Coordinate {
+                    line: token.span.start.line,
+                    column: token.span.start.column,
+                },
+            )
+        })?;
+        self.consume();
+        Ok(Box::new(ExprKind::LiteralFloat(super::expr::LiteralFloat { value: num })))
     }
 
     /// 解析字符串字面量
