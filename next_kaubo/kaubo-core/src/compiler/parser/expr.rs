@@ -1,5 +1,6 @@
 use super::super::lexer::token_kind::KauboTokenKind;
 use super::stmt::Stmt;
+use super::type_expr::TypeExpr;
 use std::fmt;
 
 // 表达式类型别名（对应C++的ExprPtr）
@@ -114,10 +115,14 @@ pub struct FunctionCall {
     pub arguments: Vec<Expr>,
 }
 
+// Lambda 参数（带可选类型标注）
+pub type LambdaParam = (String, Option<TypeExpr>);
+
 // 匿名函数表达式结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lambda {
-    pub params: Vec<String>,
+    pub params: Vec<LambdaParam>,  // 参数名 + 可选类型标注
+    pub return_type: Option<TypeExpr>, // 返回类型，可选
     pub body: Stmt,
 }
 
@@ -180,8 +185,16 @@ impl fmt::Display for ExprKind {
                 write!(f, "{}({})", call.function_expr, args)
             }
             ExprKind::Lambda(l) => {
-                let params = l.params.join(", ");
-                write!(f, "({}) => {:?}", params, l.body)
+                let params: Vec<String> = l.params.iter()
+                    .map(|(name, ty)| match ty {
+                        Some(t) => format!("{}: {}", name, t),
+                        None => name.clone(),
+                    })
+                    .collect();
+                match &l.return_type {
+                    Some(ret) => write!(f, "|{}| -> {} {{ ... }}", params.join(", "), ret),
+                    None => write!(f, "|{}| {{ ... }}", params.join(", ")),
+                }
             }
             ExprKind::MemberAccess(m) => write!(f, "{}.{}", m.object, m.member),
             ExprKind::IndexAccess(i) => write!(f, "{}[{}]", i.object, i.index),

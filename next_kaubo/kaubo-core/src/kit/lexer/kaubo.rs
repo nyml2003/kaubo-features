@@ -100,7 +100,7 @@ impl KauboScanner {
         match c {
             // 单字符运算符/分隔符
             '+' => self.make_single_char(stream, KauboTokenKind::Plus),
-            '-' => self.make_single_char(stream, KauboTokenKind::Minus),
+            '-' => self.scan_minus(stream),  // - 或 ->
             '*' => self.make_single_char(stream, KauboTokenKind::Asterisk),
             '/' => self.scan_slash(stream), // 可能是注释开始
             '%' => self.make_single_char(stream, KauboTokenKind::Percent),
@@ -242,6 +242,26 @@ impl KauboScanner {
             let end = stream.position();
             ScanResult::Token(Token::new(
                 KauboTokenKind::GreaterThan,
+                SourceSpan::range(self.token_start, end),
+            ))
+        }
+    }
+
+    /// 扫描 '-' 系列（-, ->）
+    fn scan_minus(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
+        let _ = stream.try_advance(); // 消费 '-'
+        
+        if stream.check('>') {
+            let _ = stream.try_advance();
+            let end = stream.position();
+            ScanResult::Token(Token::new(
+                KauboTokenKind::FatArrow,
+                SourceSpan::range(self.token_start, end),
+            ))
+        } else {
+            let end = stream.position();
+            ScanResult::Token(Token::new(
+                KauboTokenKind::Minus,
                 SourceSpan::range(self.token_start, end),
             ))
         }
@@ -706,6 +726,26 @@ mod tests {
         let tokens = collect_tokens("json { }");
         assert_eq!(tokens[0].kind, KauboTokenKind::Json);
         assert_eq!(tokens[1].kind, KauboTokenKind::LeftCurlyBrace);
+    }
+
+    #[test]
+    fn test_fat_arrow() {
+        let tokens = collect_tokens("|x| -> int");
+        assert_eq!(tokens[0].kind, KauboTokenKind::Pipe);
+        assert_eq!(tokens[1].kind, KauboTokenKind::Identifier);
+        assert_eq!(tokens[2].kind, KauboTokenKind::Pipe);
+        assert_eq!(tokens[3].kind, KauboTokenKind::FatArrow);
+        assert_eq!(tokens[4].kind, KauboTokenKind::Identifier); // int
+    }
+
+    #[test]
+    fn test_minus_vs_fat_arrow() {
+        // 测试 - 和 -> 的区别
+        let tokens = collect_tokens("x - y");
+        assert_eq!(tokens[1].kind, KauboTokenKind::Minus);
+        
+        let tokens2 = collect_tokens("x -> y");
+        assert_eq!(tokens2[1].kind, KauboTokenKind::FatArrow);
     }
 
     #[test]

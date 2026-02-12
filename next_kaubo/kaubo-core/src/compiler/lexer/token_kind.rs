@@ -45,11 +45,12 @@ pub enum KauboTokenKind {
     // 标识符 (120)
     Identifier = 120,
 
-    // 双字符符号 (130-133)
+    // 双字符符号 (130-134)
     DoubleEqual = 130,
     ExclamationEqual,
     GreaterThanEqual,
     LessThanEqual,
+    FatArrow,
 
     // 单字符符号 (150-168)
     GreaterThan = 150,

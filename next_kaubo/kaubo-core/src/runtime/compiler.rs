@@ -1182,8 +1182,8 @@ impl Compiler {
         let mut function_compiler = Compiler::new_child(self);
 
         // 为每个参数添加局部变量
-        for param in &lambda.params {
-            function_compiler.add_local(param)?;
+        for (param_name, _param_type) in &lambda.params {
+            function_compiler.add_local(param_name)?;
             function_compiler.mark_initialized();
         }
 

@@ -10,6 +10,7 @@ use super::stmt::{
     BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, ImportStmt, ModuleStmt, ReturnStmt, Stmt,
     StmtKind, VarDeclStmt, WhileStmt,
 };
+use super::type_expr::TypeExpr;
 use super::utils::{get_associativity, get_precedence};
 use crate::kit::lexer::scanner::Token;
 use crate::kit::lexer::types::Coordinate;
@@ -506,35 +507,54 @@ impl Parser {
     }
 
     /// 解析匿名函数（lambda）
+    /// 
+    /// 语法: |param1: Type1, param2: Type2| -> ReturnType { body }
     fn parse_lambda(&mut self) -> ParseResult<Expr> {
         self.expect(KauboTokenKind::Pipe)?; // 消费 '|'
 
-        let mut params = Vec::new();
+        let mut params: Vec<(String, Option<TypeExpr>)> = Vec::new();
 
         // 解析参数列表
         if !self.check(KauboTokenKind::Pipe) {
-            while let Some(token) = &self.current_token {
-                if token.kind == KauboTokenKind::Identifier {
-                    params.push(token.text.clone().unwrap_or_default());
-                    self.consume();
-
-                    if self.match_token(KauboTokenKind::Comma) {
-                        continue;
-                    } else if self.check(KauboTokenKind::Pipe) {
-                        break;
-                    } else {
-                        return Err(self.error_here(ParserErrorKind::ExpectedCommaOrPipeInLambda));
-                    }
+            loop {
+                // 解析参数名
+                let param_name = self.expect_identifier()?;
+                
+                // 解析可选的参数类型标注
+                let param_type = if self.match_token(KauboTokenKind::Colon) {
+                    Some(self.parse_type_expression()?)
                 } else {
+                    None
+                };
+                
+                params.push((param_name, param_type));
+
+                if self.match_token(KauboTokenKind::Comma) {
+                    continue;
+                } else if self.check(KauboTokenKind::Pipe) {
                     break;
+                } else {
+                    return Err(self.error_here(ParserErrorKind::ExpectedCommaOrPipeInLambda));
                 }
             }
         }
 
         self.expect(KauboTokenKind::Pipe)?; // 消费 '|'
 
+        // 解析可选的返回类型标注 ("-> Type")
+        let return_type = if self.match_token(KauboTokenKind::FatArrow) {
+            Some(self.parse_type_expression()?)
+        } else {
+            None
+        };
+
         let body = self.parse_block()?;
-        Ok(Box::new(ExprKind::Lambda(Lambda { params, body })))
+        
+        Ok(Box::new(ExprKind::Lambda(Lambda { 
+            params, 
+            return_type,
+            body 
+        })))
     }
 
     /// 解析函数调用
@@ -587,12 +607,20 @@ impl Parser {
         let name = token.text.clone().unwrap_or_default();
         self.consume();
 
+        // 解析可选的类型标注 (": Type")
+        let type_annotation = if self.match_token(KauboTokenKind::Colon) {
+            Some(self.parse_type_expression()?)
+        } else {
+            None
+        };
+
         self.expect(KauboTokenKind::Equal)?;
         let initializer = self.parse_expression(0)?;
         self.expect(KauboTokenKind::Semicolon)?;
 
         Ok(Box::new(StmtKind::VarDecl(VarDeclStmt {
             name,
+            type_annotation,
             initializer,
             is_public,
         })))
@@ -734,6 +762,107 @@ impl Parser {
             iterable,
             body,
         })))
+    }
+
+    // ==================== 类型表达式解析 ====================
+
+    /// 解析类型表达式
+    /// 
+    /// 支持的类型:
+    /// - 命名类型: int, string, bool, float, 自定义类型
+    /// - List 类型: List<T>
+    /// - Tuple 类型: Tuple<T1, T2, ...>
+    /// - 函数类型: |T1, T2| -> R
+    fn parse_type_expression(&mut self) -> ParseResult<TypeExpr> {
+        // 检查是否是函数类型（以 | 开头）
+        if self.check(KauboTokenKind::Pipe) {
+            return self.parse_function_type();
+        }
+
+        // 解析基础类型名
+        let token = self
+            .current_token
+            .as_ref()
+            .ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
+
+        if token.kind != KauboTokenKind::Identifier {
+            return Err(self.error_here(ParserErrorKind::ExpectedIdentifier {
+                found: self.current_token_text(),
+            }));
+        }
+
+        let type_name = token.text.clone().unwrap_or_default();
+        self.consume();
+
+        // 检查是否是泛型类型 (List<T> 或 Tuple<T1, T2>)
+        if self.check(KauboTokenKind::LessThan) {
+            match type_name.as_str() {
+                "List" => self.parse_list_type(),
+                "Tuple" => self.parse_tuple_type(),
+                _ => Err(self.error_here(ParserErrorKind::UnexpectedToken {
+                    found: type_name,
+                    expected: vec!["int".to_string(), "string".to_string(), "bool".to_string(), "float".to_string(), "List".to_string(), "Tuple".to_string()],
+                })),
+            }
+        } else {
+            // 普通命名类型
+            Ok(TypeExpr::named(type_name))
+        }
+    }
+
+    /// 解析 List<T> 类型
+    fn parse_list_type(&mut self) -> ParseResult<TypeExpr> {
+        self.expect(KauboTokenKind::LessThan)?; // 消费 '<'
+        let elem_type = self.parse_type_expression()?;
+        self.expect(KauboTokenKind::GreaterThan)?; // 消费 '>'
+        Ok(TypeExpr::list(elem_type))
+    }
+
+    /// 解析 Tuple<T1, T2, ...> 类型
+    fn parse_tuple_type(&mut self) -> ParseResult<TypeExpr> {
+        self.expect(KauboTokenKind::LessThan)?; // 消费 '<'
+        
+        let mut types = Vec::new();
+        
+        // 解析第一个类型（如果有）
+        if !self.check(KauboTokenKind::GreaterThan) {
+            types.push(self.parse_type_expression()?);
+            
+            // 解析后续类型
+            while self.match_token(KauboTokenKind::Comma) {
+                types.push(self.parse_type_expression()?);
+            }
+        }
+        
+        self.expect(KauboTokenKind::GreaterThan)?; // 消费 '>'
+        Ok(TypeExpr::tuple(types))
+    }
+
+    /// 解析函数类型: |T1, T2| -> R
+    fn parse_function_type(&mut self) -> ParseResult<TypeExpr> {
+        self.expect(KauboTokenKind::Pipe)?; // 消费 '|'
+        
+        let mut params = Vec::new();
+        
+        // 解析参数类型列表
+        if !self.check(KauboTokenKind::Pipe) {
+            params.push(self.parse_type_expression()?);
+            
+            while self.match_token(KauboTokenKind::Comma) {
+                params.push(self.parse_type_expression()?);
+            }
+        }
+        
+        self.expect(KauboTokenKind::Pipe)?; // 消费 '|'
+        
+        // 解析返回类型 (-> Type)
+        let return_type = if self.match_token(KauboTokenKind::FatArrow) {
+            Some(self.parse_type_expression()?)
+        } else {
+            None
+        };
+        
+        Ok(TypeExpr::function(params, return_type))
     }
 }
 
@@ -1363,5 +1492,122 @@ mod tests {
         "#;
         let result = parse_code(code);
         assert!(result.is_ok(), "Failed to parse while with complex condition: {:?}", result.err());
+    }
+
+    // ===== 类型表达式解析测试 =====
+
+    #[test]
+    fn test_parse_var_decl_with_simple_type() {
+        let code = "var x: int = 42;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse var with int type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_var_decl_with_string_type() {
+        let code = r#"var x: string = "hello";"#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse var with string type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_var_decl_with_bool_type() {
+        let code = "var x: bool = true;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse var with bool type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_var_decl_with_float_type() {
+        let code = "var x: float = 3.14;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse var with float type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_var_decl_with_list_type() {
+        let code = "var x: List<int> = [1, 2, 3];";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse var with List<int> type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_var_decl_with_nested_list_type() {
+        let code = "var x: List<List<int>> = [[1], [2]];";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse var with nested list type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_var_decl_with_tuple_type() {
+        // 注意：Tuple 字面量语法还未实现，使用 json 作为替代
+        let code = r#"var x: Tuple<int, string> = json { "0": 1, "1": "hello" };"#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse var with Tuple type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_var_decl_with_function_type() {
+        let code = "var f: |int| -> int = |x: int| -> int { return x; };";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse var with function type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_var_decl_with_complex_function_type() {
+        let code = "var f: |int, int| -> bool = |x: int, y: int| -> bool { return x == y; };";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse var with complex function type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_lambda_with_param_types() {
+        let code = "var f = |x: int, y: int| { return x + y; };";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse lambda with param types: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_lambda_with_return_type() {
+        let code = "var f = |x: int| -> int { return x * 2; };";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse lambda with return type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_lambda_with_full_types() {
+        let code = "var f = |x: int, y: float| -> string { return \"result\"; };";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse lambda with full types: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_lambda_no_params_with_return_type() {
+        let code = "var f = || -> int { return 42; };";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse lambda no params with return type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_tuple_type_empty() {
+        // 空 Tuple 类型
+        let code = "var x: Tuple<> = json {};";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse empty Tuple type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_tuple_type_single() {
+        // 单元素 Tuple 类型
+        let code = "var x: Tuple<int> = json { \"0\": 1 };";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse single Tuple type: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_pub_var_with_type() {
+        let code = "pub var x: int = 42;";
+        let result = parse_code(code);
+        assert!(result.is_ok(), "Failed to parse pub var with type: {:?}", result.err());
     }
 }

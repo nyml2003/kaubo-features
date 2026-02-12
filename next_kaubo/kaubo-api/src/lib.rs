@@ -56,10 +56,11 @@ pub fn run(source: &str, config: &RunConfig) -> Result<ExecuteOutput, KauboError
 /// Compile with explicit configuration
 fn compile_with_config(
     source: &str,
-    _config: &CompilerConfig,
+    config: &CompilerConfig,
 ) -> Result<CompileOutput, KauboError> {
     use kaubo_core::compiler::lexer::builder::build_lexer;
     use kaubo_core::compiler::parser::parser::Parser;
+    use kaubo_core::compiler::parser::TypeChecker;
 
     let mut lexer = build_lexer();
     lexer
@@ -70,6 +71,19 @@ fn compile_with_config(
 
     let mut parser = Parser::new(lexer);
     let ast = parser.parse().map_err(KauboError::Parser)?;
+
+    // 类型检查（如果启用了 emit_debug_info 则启用严格模式）
+    let mut type_checker = TypeChecker::new();
+    if config.emit_debug_info {
+        type_checker.set_strict_mode(true);
+    }
+    
+    // 对模块中的每个语句进行类型检查
+    for stmt in &ast.statements {
+        if let Err(type_error) = type_checker.check_statement(stmt) {
+            return Err(KauboError::Compiler(format!("Type error: {}", type_error)));
+        }
+    }
 
     let output = compile_ast(&ast)?;
     Ok(output)

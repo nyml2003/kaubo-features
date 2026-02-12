@@ -1,4 +1,5 @@
 use super::expr::{Expr}; // 引用之前定义的Expr类型
+use super::type_expr::TypeExpr;
 use std::fmt;
 
 // 语句类型别名（对应C++的StmtPtr）
@@ -50,9 +51,10 @@ pub struct BlockStmt {
 // 变量声明语句结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct VarDeclStmt {
-    pub name: String,       // 变量名
-    pub initializer: Expr,  // 初始化表达式（对应C++的ExprPtr）
-    pub is_public: bool,    // 是否 pub 导出
+    pub name: String,                    // 变量名
+    pub type_annotation: Option<TypeExpr>, // 类型标注（如 `int`），可选
+    pub initializer: Expr,               // 初始化表达式（必须有）
+    pub is_public: bool,                 // 是否 pub 导出
 }
 
 // If语句结构体
@@ -123,7 +125,10 @@ impl fmt::Display for StmtKind {
                 write!(f, "{{\n{}\n}}", stmts)
             }
             StmtKind::VarDecl(var_decl) => {
-                write!(f, "var {} = {};", var_decl.name, var_decl.initializer)
+                match &var_decl.type_annotation {
+                    Some(ty) => write!(f, "var {}: {} = {};", var_decl.name, ty, var_decl.initializer),
+                    None => write!(f, "var {} = {};", var_decl.name, var_decl.initializer),
+                }
             }
             StmtKind::If(if_stmt) => {
                 let mut s = format!("if ({}) {}", if_stmt.if_condition, if_stmt.then_body);
@@ -207,6 +212,7 @@ mod tests {
     fn test_var_decl_stmt_display() {
         let stmt = StmtKind::VarDecl(VarDeclStmt {
             name: "x".to_string(),
+            type_annotation: None,
             initializer: make_expr(ExprKind::LiteralInt(LiteralInt { value: 5 })),
             is_public: false,
         });
