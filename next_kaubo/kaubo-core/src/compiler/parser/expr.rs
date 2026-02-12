@@ -41,6 +41,8 @@ pub enum ExprKind {
     IndexAccess(IndexAccess),
     // JSON 字面量表达式
     JsonLiteral(JsonLiteral),
+    // Struct 实例化表达式（如 Point { x: 1.0, y: 2.0 }）
+    StructLiteral(StructLiteral),
     // Yield 表达式 (用于协程)
     Yield(YieldExpr),
 }
@@ -146,6 +148,13 @@ pub struct JsonLiteral {
     pub entries: Vec<(String, Expr)>,  // 键值对列表
 }
 
+// Struct 实例化结构体
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructLiteral {
+    pub name: String,                  // Struct 类型名
+    pub fields: Vec<(String, Expr)>,   // 字段赋值列表
+}
+
 // Yield 表达式结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct YieldExpr {
@@ -209,6 +218,13 @@ impl fmt::Display for ExprKind {
                 Some(v) => write!(f, "yield {}", v),
                 None => write!(f, "yield"),
             },
+            ExprKind::StructLiteral(s) => {
+                let fields = s.fields.iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "{} {{ {} }}", s.name, fields)
+            }
         }
     }
 }

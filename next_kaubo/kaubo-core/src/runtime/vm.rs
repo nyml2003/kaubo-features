@@ -2,7 +2,7 @@
 
 use crate::runtime::Value;
 use crate::runtime::bytecode::{OpCode, chunk::Chunk};
-use crate::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjUpvalue, CoroutineState};
+use crate::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjShape, ObjStruct, ObjUpvalue, CoroutineState};
 use std::collections::HashMap;
 
 
@@ -26,6 +26,8 @@ pub struct VM {
     open_upvalues: Vec<*mut ObjUpvalue>,
     /// 全局变量表
     globals: HashMap<String, Value>,
+    /// Shape 表（编译期生成，运行时注册）
+    shapes: HashMap<u16, *const ObjShape>,
 }
 
 impl VM {
@@ -36,6 +38,7 @@ impl VM {
             frames: Vec::with_capacity(64),
             open_upvalues: Vec::new(),
             globals: HashMap::new(),
+            shapes: HashMap::new(),
         };
         vm.init_stdlib();
         vm
@@ -909,6 +912,131 @@ impl VM {
                     }
                 }
 
+                // ===== Struct 相关指令 =====
+                BuildStruct => {
+                    // 操作数: u16 shape_id + u8 field_count
+                    let shape_id = self.read_u16();
+                    let field_count = self.read_byte() as usize;
+                    
+                    // 从栈顶弹出字段值
+                    // 编译器按 shape 字段顺序的逆序入栈，所以弹出后直接是正确顺序
+                    let mut fields = Vec::with_capacity(field_count);
+                    for _ in 0..field_count {
+                        fields.push(self.pop());
+                    }
+                    // 不需要 reverse，编译器已经处理好顺序
+                    
+                    // 创建 struct 实例
+                    let shape_ptr = self.get_shape(shape_id);
+                    if shape_ptr.is_null() {
+                        return InterpretResult::RuntimeError(
+                            format!("Shape ID {} not found", shape_id)
+                        );
+                    }
+                    
+                    let struct_obj = Box::new(ObjStruct::new(shape_ptr, fields));
+                    self.push(Value::struct_instance(Box::into_raw(struct_obj)));
+                }
+
+                GetField => {
+                    // 操作数: u8 字段索引
+                    let field_idx = self.read_byte() as usize;
+                    
+                    let struct_val = self.pop();
+                    if let Some(struct_ptr) = struct_val.as_struct() {
+                        let struct_obj = unsafe { &*struct_ptr };
+                        if let Some(value) = struct_obj.get_field(field_idx) {
+                            self.push(value);
+                        } else {
+                            return InterpretResult::RuntimeError(
+                                format!("Field index {} out of bounds", field_idx)
+                            );
+                        }
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "GetField requires a struct instance".to_string()
+                        );
+                    }
+                }
+
+                SetField => {
+                    // 操作数: u8 字段索引
+                    let field_idx = self.read_byte() as usize;
+                    
+                    // 栈布局: [value, struct]
+                    let struct_val = self.pop();
+                    let value = self.pop();
+                    
+                    if let Some(struct_ptr) = struct_val.as_struct() {
+                        let struct_obj = unsafe { &mut *struct_ptr };
+                        struct_obj.set_field(field_idx, value);
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "SetField requires a struct instance".to_string()
+                        );
+                    }
+                }
+
+                LoadMethod => {
+                    // 操作数: u8 方法索引
+                    let method_idx = self.read_byte();
+                    
+                    // 栈顶是 receiver
+                    let receiver = self.peek(0);
+                    if let Some(struct_ptr) = receiver.as_struct() {
+                        let shape = unsafe { (*struct_ptr).shape };
+                        if let Some(method) = unsafe { (*shape).get_method(method_idx) } {
+                            self.push(Value::closure(method));
+                        } else {
+                            return InterpretResult::RuntimeError(
+                                format!("Method index {} not found in shape", method_idx)
+                            );
+                        }
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "LoadMethod requires a struct instance".to_string()
+                        );
+                    }
+                }
+
+                CallMethod => {
+                    // 操作数: u8 参数个数（包含 receiver）
+                    let arg_count = self.read_byte();
+                    
+                    // 栈布局: [receiver, arg1, ..., argN, method]
+                    // 先弹出方法闭包
+                    let method = self.pop();
+                    
+                    // 验证是闭包
+                    let closure_ptr = if let Some(ptr) = method.as_closure() {
+                        ptr
+                    } else {
+                        return InterpretResult::RuntimeError(
+                            "CallMethod requires a closure".to_string()
+                        );
+                    };
+                    
+                    // 收集参数（包括 receiver）
+                    let mut locals = Vec::with_capacity(arg_count as usize);
+                    for _ in 0..arg_count {
+                        locals.push(self.pop());
+                    }
+                    locals.reverse(); // 恢复顺序
+                    
+                    // 获取函数 chunk
+                    let func = unsafe { &*(*closure_ptr).function };
+                    
+                    // 创建新的调用帧
+                    let stack_base = self.stack.len();
+                    let new_frame = CallFrame {
+                        closure: closure_ptr,
+                        ip: func.chunk.code.as_ptr(),
+                        locals,
+                        stack_base,
+                    };
+                    self.frames.push(new_frame);
+                }
+
                 IndexGet => {
                     // 栈顶: [index, object]
                     let index_val = self.pop();
@@ -928,8 +1056,22 @@ impl VM {
                             }
                             let value = list.get(i).unwrap_or(Value::NULL);
                             self.push(value);
+                        } 
+                        // Struct 字段索引（整数）
+                        else if let Some(struct_ptr) = obj_val.as_struct() {
+                            let struct_obj = unsafe { &*struct_ptr };
+                            let i = idx as usize;
+                            if i >= struct_obj.field_count() {
+                                return InterpretResult::RuntimeError(format!(
+                                    "Field index out of bounds: {} (struct has {} fields)",
+                                    i,
+                                    struct_obj.field_count()
+                                ));
+                            }
+                            let value = struct_obj.get_field(i).unwrap_or(Value::NULL);
+                            self.push(value);
                         } else {
-                            return InterpretResult::RuntimeError("Can only index lists with integers".to_string());
+                            return InterpretResult::RuntimeError("Can only index lists or structs with integers".to_string());
                         }
                     }
                     // JSON 对象索引（字符串键）
@@ -939,11 +1081,28 @@ impl VM {
                             let key = unsafe { &(*key_ptr).chars };
                             let value = json.get(key).unwrap_or(Value::NULL);
                             self.push(value);
+                        } 
+                        // Struct 字段访问（字符串键）
+                        else if let Some(struct_ptr) = obj_val.as_struct() {
+                            let struct_obj = unsafe { &*struct_ptr };
+                            let shape = unsafe { &*struct_obj.shape };
+                            let key = unsafe { &(*key_ptr).chars };
+                            
+                            if let Some(field_idx) = shape.get_field_index(key) {
+                                let value = struct_obj.get_field(field_idx as usize).unwrap_or(Value::NULL);
+                                self.push(value);
+                            } else {
+                                return InterpretResult::RuntimeError(format!(
+                                    "Field '{}' not found in struct '{}'",
+                                    key,
+                                    shape.name
+                                ));
+                            }
                         } else {
-                            return InterpretResult::RuntimeError("Can only index JSON objects with strings".to_string());
+                            return InterpretResult::RuntimeError("Can only index JSON objects or structs with strings".to_string());
                         }
                     } else {
-                        return InterpretResult::RuntimeError("Index must be an integer (for list) or string (for JSON)".to_string());
+                        return InterpretResult::RuntimeError("Index must be an integer (for list/struct) or string (for JSON/struct)".to_string());
                     }
                 }
 
@@ -1117,6 +1276,21 @@ impl VM {
                 }
             }
         }
+    }
+
+    // ==================== Shape 管理 ====================
+
+    /// 注册 Shape 到 VM
+    pub fn register_shape(&mut self, shape: *const ObjShape) {
+        unsafe {
+            let shape_id = (*shape).shape_id;
+            self.shapes.insert(shape_id, shape);
+        }
+    }
+
+    /// 通过 ID 获取 Shape
+    fn get_shape(&self, shape_id: u16) -> *const ObjShape {
+        self.shapes.get(&shape_id).copied().unwrap_or(std::ptr::null())
     }
 
     // ==================== 辅助方法 ====================
@@ -1514,6 +1688,14 @@ impl VM {
 impl Default for VM {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// 公开 VM 的 shapes 访问（用于测试和外部注册）
+impl VM {
+    /// 获取 shape 数量（用于测试）
+    pub fn shape_count(&self) -> usize {
+        self.shapes.len()
     }
 }
 

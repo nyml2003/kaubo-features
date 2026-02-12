@@ -116,12 +116,19 @@ pub enum OpCode {
     JsonSet,              // JSON 字符串键设置: 栈顶[value, key, json] → null
 
 
-    // ===== 模块 (0xD0-0xDF) =====
+    // ===== 模块 (0xD0-0xD7) =====
     BuildModule = 0xD0,   // + u8 导出项个数，值从栈弹出，创建模块对象
     ModuleGet,            // + u16 ShapeID，从模块获取字段（编译期确定）
     GetModuleExport,      // 从模块动态获取导出项：栈顶[module, name] -> value
     GetModule,            // 根据模块名获取模块对象：栈顶[name] -> module
     // ModuleSet 预留（未来支持模块字段可变性）
+
+    // ===== Struct (0xD8-0xDF) =====
+    BuildStruct = 0xD8,   // + u16 shape_id + u8 field_count，从栈弹出字段值，创建 struct
+    GetField,             // + u8 字段索引，栈顶[struct] -> field_value
+    SetField,             // + u8 字段索引，栈顶[value, struct] -> null
+    LoadMethod,           // + u8 方法索引，栈顶[struct] -> [struct, method]
+    CallMethod,           // + u8 参数个数，栈顶[receiver, arg1, ..., argN, method] -> result
 
     // ===== 调试 (0xF0-0xFF) =====
     Print = 0xF0,         // 调试用
@@ -218,6 +225,11 @@ impl OpCode {
             OpCode::IndexSet => "INDEX_SET",
             OpCode::GetIter => "GET_ITER",
             OpCode::IterNext => "ITER_NEXT",
+            OpCode::BuildStruct => "BUILD_STRUCT",
+            OpCode::GetField => "GET_FIELD",
+            OpCode::SetField => "SET_FIELD",
+            OpCode::LoadMethod => "LOAD_METHOD",
+            OpCode::CallMethod => "CALL_METHOD",
             OpCode::Print => "PRINT",
             OpCode::Invalid => "INVALID",
         }
@@ -313,6 +325,12 @@ impl OpCode {
             
             // u8 操作数（常量池索引）
             OpCode::GetModuleExport => 1,
+            
+            // u8 操作数（Struct 相关）
+            OpCode::GetField | OpCode::SetField | OpCode::LoadMethod | OpCode::CallMethod => 1,
+            
+            // u16 + u8 操作数（BuildStruct）
+            OpCode::BuildStruct => 3,
             
             // 无操作数（运行时从栈获取参数）
             OpCode::GetModule => 0,

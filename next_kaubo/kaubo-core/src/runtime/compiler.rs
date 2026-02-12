@@ -81,6 +81,13 @@ enum Variable {
     Upvalue(u8),  // upvalue 索引
 }
 
+/// Struct 编译期信息
+#[derive(Debug, Clone)]
+struct StructInfo {
+    shape_id: u16,
+    field_names: Vec<String>,  // 字段名列表（索引即字段位置）
+}
+
 /// AST 编译器
 pub struct Compiler {
     chunk: Chunk,
@@ -93,10 +100,23 @@ pub struct Compiler {
     modules: Vec<ModuleInfo>, // 文件内所有模块
     imported_modules: Vec<String>, // 当前导入的模块名列表
     module_aliases: HashMap<String, String>, // 局部变量名 -> 模块名（用于 import x as y）
+    struct_infos: HashMap<String, StructInfo>, // struct 名称 -> 编译期信息
 }
 
 impl Compiler {
     pub fn new() -> Self {
+        Self::new_with_shapes(HashMap::new())
+    }
+    
+    pub fn new_with_shapes(shape_ids: HashMap<String, u16>) -> Self {
+        // 转换 shape_ids 为 struct_infos（字段信息暂时为空，需要额外传递）
+        let struct_infos: HashMap<String, StructInfo> = shape_ids
+            .into_iter()
+            .map(|(name, shape_id)| {
+                (name, StructInfo { shape_id, field_names: Vec::new() })
+            })
+            .collect();
+        
         Self {
             chunk: Chunk::new(),
             locals: Vec::new(),
@@ -108,11 +128,45 @@ impl Compiler {
             modules: Vec::new(),
             imported_modules: Vec::new(),
             module_aliases: HashMap::new(),
+            struct_infos,
+        }
+    }
+    
+    /// 使用完整的 struct 信息创建编译器（支持字段索引优化）
+    pub fn new_with_struct_infos(infos: HashMap<String, (u16, Vec<String>)>) -> Self {
+        let struct_infos: HashMap<String, StructInfo> = infos
+            .into_iter()
+            .map(|(name, (shape_id, field_names))| {
+                (name, StructInfo { shape_id, field_names })
+            })
+            .collect();
+        
+        Self {
+            chunk: Chunk::new(),
+            locals: Vec::new(),
+            upvalues: Vec::new(),
+            scope_depth: 0,
+            max_locals: 0,
+            enclosing: std::ptr::null_mut(),
+            current_module: None,
+            modules: Vec::new(),
+            imported_modules: Vec::new(),
+            module_aliases: HashMap::new(),
+            struct_infos,
         }
     }
 
     /// 创建子编译器（用于编译嵌套函数）
     fn new_child(enclosing: *mut Compiler) -> Self {
+        // 从父编译器继承 struct_infos
+        let struct_infos = unsafe {
+            if enclosing.is_null() {
+                HashMap::new()
+            } else {
+                (*enclosing).struct_infos.clone()
+            }
+        };
+        
         Self {
             chunk: Chunk::new(),
             locals: Vec::new(),
@@ -124,6 +178,7 @@ impl Compiler {
             modules: Vec::new(),
             imported_modules: Vec::new(),
             module_aliases: HashMap::new(),
+            struct_infos, // 继承父编译器的 struct_infos
         }
     }
 
@@ -220,8 +275,33 @@ impl Compiler {
             StmtKind::Import(import_stmt) => {
                 self.compile_import(import_stmt)?;
             }
+
+            StmtKind::Struct(_) => {
+                // Struct 定义是编译期类型信息，不生成运行时代码
+                // TODO: 将 shape 信息传递给 VM
+            }
         }
         Ok(())
+    }
+
+    /// 尝试获取字段索引（用于编译期优化）
+    /// 如果 object 是 struct 类型且 field_name 存在，返回字段索引
+    fn try_get_field_index(&self, object: &Expr, field_name: &str) -> Option<usize> {
+        // 检查对象是否是变量引用（可能是 struct 实例）
+        if let ExprKind::VarRef(var_ref) = object.as_ref() {
+            // 尝试从局部变量类型推断（简化：暂时不实现）
+            // 未来可以通过变量类型表查找
+        }
+        
+        // 检查所有已知的 struct 类型，看哪个有该字段
+        // 注意：这可能导致歧义，但用于演示编译期优化
+        for (struct_name, info) in &self.struct_infos {
+            if let Some(idx) = info.field_names.iter().position(|f| f == field_name) {
+                return Some(idx);
+            }
+        }
+        
+        None
     }
 
     /// 编译表达式
@@ -372,7 +452,8 @@ impl Compiler {
             }
 
             ExprKind::IndexAccess(index) => {
-                // 编译索引访问: list[index]
+                // 普通索引访问: list[index]
+                // 注意：字符串字面量索引已在类型检查阶段报错
                 self.compile_expr(&index.object)?;  // list
                 self.compile_expr(&index.index)?;   // index
                 self.chunk.write_op(OpCode::IndexGet, 0);
@@ -412,6 +493,48 @@ impl Compiler {
                     self.chunk.write_op(OpCode::LoadNull, 0);
                 }
                 self.chunk.write_op(OpCode::Yield, 0);
+            }
+
+            ExprKind::StructLiteral(struct_lit) => {
+                // 编译 struct 字面量
+                let struct_info = self.struct_infos.get(&struct_lit.name)
+                    .ok_or_else(|| CompileError::Unimplemented(
+                        format!("Struct '{}' not found in shape table", struct_lit.name)
+                    ))?;
+                
+                let shape_id = struct_info.shape_id;
+                let field_count = struct_lit.fields.len();
+                
+                // 将 Vec 转换为 HashMap 便于查找
+                let field_map: std::collections::HashMap<String, Expr> = struct_lit.fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                
+                // 按 struct 定义的顺序编译字段
+                // 如果 struct_info 有字段信息，按那个顺序；否则按字母排序
+                let field_order: Vec<String> = if struct_info.field_names.is_empty() {
+                    //  fallback：按字母排序
+                    let mut names: Vec<_> = field_map.keys().cloned().collect();
+                    names.sort();
+                    names
+                } else {
+                    struct_info.field_names.clone()
+                };
+                
+                // 按字段定义顺序逆序入栈
+                for field_name in field_order.iter().rev() {
+                    if let Some(value_expr) = field_map.get(field_name) {
+                        self.compile_expr(value_expr)?;
+                    } else {
+                        return Err(CompileError::Unimplemented(
+                            format!("Missing field '{}' in struct '{}'", field_name, struct_lit.name)
+                        ));
+                    }
+                }
+                
+                // 生成 BuildStruct 指令
+                self.chunk.write_op_u16_u8(OpCode::BuildStruct, shape_id, field_count as u8, 0);
             }
         }
         Ok(())
@@ -1255,7 +1378,20 @@ impl Default for Compiler {
 /// 编译模块的便捷函数
 /// 返回 (Chunk, 局部变量数量)
 pub fn compile(module: &Module) -> Result<(Chunk, usize), CompileError> {
-    let mut compiler = Compiler::new();
+    compile_with_shapes(module, HashMap::new())
+}
+
+pub fn compile_with_shapes(module: &Module, shape_ids: HashMap<String, u16>) -> Result<(Chunk, usize), CompileError> {
+    let mut compiler = Compiler::new_with_shapes(shape_ids);
+    compiler.compile(module)
+}
+
+/// 带完整字段信息的编译（支持编译期字段索引优化）
+pub fn compile_with_struct_info(
+    module: &Module, 
+    struct_infos: HashMap<String, (u16, Vec<String>)>  // name -> (shape_id, field_names)
+) -> Result<(Chunk, usize), CompileError> {
+    let mut compiler = Compiler::new_with_struct_infos(struct_infos);
     compiler.compile(module)
 }
 

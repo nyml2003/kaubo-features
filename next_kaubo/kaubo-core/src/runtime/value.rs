@@ -6,7 +6,7 @@
 
 use super::object::{
     ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjNative, ObjOption,
-    ObjResult, ObjString,
+    ObjResult, ObjShape, ObjString, ObjStruct,
 };
 
 /// NaN-boxed 值 (64-bit)
@@ -64,7 +64,9 @@ const TAG_JSON: u64 = 41 << 44; // JSON 对象
 const TAG_MODULE: u64 = 42 << 44; // 模块对象
 const TAG_NATIVE: u64 = 43 << 44; // 原生函数对象
 const TAG_NATIVE_VM: u64 = 44 << 44; // VM-aware 原生函数对象
-// 44-127: 预留其他堆类型
+const TAG_STRUCT: u64 = 45 << 44; // Struct 实例对象
+const TAG_SHAPE: u64 = 46 << 44; // Shape 描述符对象
+// 47-127: 预留其他堆类型
 
 /// SMI 最大值 (2^30 - 1)
 const SMI_MAX: i32 = (1 << 30) - 1;
@@ -202,6 +204,18 @@ impl Value {
     #[inline]
     pub fn native_vm_fn(ptr: *mut crate::runtime::object::ObjNativeVm) -> Self {
         Self::encode_heap_ptr(ptr, TAG_NATIVE_VM)
+    }
+
+    /// 创建 Struct 实例对象
+    #[inline]
+    pub fn struct_instance(ptr: *mut ObjStruct) -> Self {
+        Self::encode_heap_ptr(ptr, TAG_STRUCT)
+    }
+
+    /// 创建 Shape 描述符对象
+    #[inline]
+    pub fn shape(ptr: *mut ObjShape) -> Self {
+        Self::encode_heap_ptr(ptr, TAG_SHAPE)
     }
 
     // ==================== 类型判断 ====================
@@ -357,6 +371,18 @@ impl Value {
         self.is_boxed() && self.raw_tag() == 44
     }
 
+    /// 是否为 Struct 实例对象
+    #[inline]
+    pub fn is_struct(&self) -> bool {
+        self.is_boxed() && self.raw_tag() == 45
+    }
+
+    /// 是否为 Shape 描述符对象
+    #[inline]
+    pub fn is_shape(&self) -> bool {
+        self.is_boxed() && self.raw_tag() == 46
+    }
+
     // ==================== 解包方法 ====================
 
     /// 解包为 SMI (i32)
@@ -492,6 +518,18 @@ impl Value {
         self.decode_heap_ptr(TAG_NATIVE_VM)
     }
 
+    /// 解包为 Struct 实例对象
+    #[inline]
+    pub fn as_struct(&self) -> Option<*mut ObjStruct> {
+        self.decode_heap_ptr(TAG_STRUCT)
+    }
+
+    /// 解包为 Shape 描述符对象
+    #[inline]
+    pub fn as_shape(&self) -> Option<*mut ObjShape> {
+        self.decode_heap_ptr(TAG_SHAPE)
+    }
+
     /// 解包为布尔值
     #[inline]
     pub fn as_bool(&self) -> Option<bool> {
@@ -553,6 +591,10 @@ impl std::fmt::Debug for Value {
             write!(f, "Native")
         } else if self.is_native_vm() {
             write!(f, "NativeVm")
+        } else if self.is_struct() {
+            write!(f, "Struct({:p})", self.as_struct().unwrap())
+        } else if self.is_shape() {
+            write!(f, "Shape({:p})", self.as_shape().unwrap())
         } else {
             write!(f, "Value({:016x})", self.0)
         }
@@ -630,6 +672,28 @@ impl std::fmt::Display for Value {
             write!(f, "<native>")
         } else if self.is_native_vm() {
             write!(f, "<native_vm>")
+        } else if self.is_struct() {
+            if let Some(ptr) = self.as_struct() {
+                unsafe {
+                    let shape = &*(*ptr).shape;
+                    write!(f, "{} {{ ", shape.name)?;
+                    for (i, field) in (*ptr).fields.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        if let Some(name) = shape.field_names.get(i) {
+                            write!(f, "{}: {}", name, field)?;
+                        } else {
+                            write!(f, "{}", field)?;
+                        }
+                    }
+                    write!(f, " }}")
+                }
+            } else {
+                write!(f, "<struct>")
+            }
+        } else if self.is_shape() {
+            write!(f, "<shape>")
         } else if self.is_heap() {
             write!(f, "<object>")
         } else {

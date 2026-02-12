@@ -11,7 +11,7 @@
 use tracing::{Level, debug, error, info, instrument, span};
 
 use kaubo_core::runtime::bytecode::chunk::Chunk;
-use kaubo_core::runtime::compiler::compile as compile_to_chunk;
+// compile_to_chunk 不再使用，compile_ast 直接使用 compile_with_shapes
 use kaubo_core::runtime::{InterpretResult, VM};
 use kaubo_core::kit::lexer::SourcePosition;
 
@@ -22,7 +22,7 @@ pub use config::{RunConfig, init as init_config, config as get_config, is_initia
 // Re-export error and types
 pub mod error;
 pub mod types;
-pub use error::{ErrorDetails, ErrorReport, KauboError, LexerError, ParserError};
+pub use error::{ErrorDetails, ErrorReport, KauboError, LexerError, ParserError, TypeError};
 pub use types::{CompileOutput, ExecuteOutput};
 
 // Re-export core types
@@ -47,7 +47,7 @@ pub fn run(source: &str, config: &RunConfig) -> Result<ExecuteOutput, KauboError
     }
     
     // Execute
-    let result = execute_with_config(&compiled.chunk, compiled.local_count, &config.limits)?;
+    let result = execute_with_config(&compiled.chunk, compiled.local_count, &compiled.shapes, &config.limits)?;
     
     info!("Execution completed");
     Ok(result)
@@ -81,11 +81,14 @@ fn compile_with_config(
     // 对模块中的每个语句进行类型检查
     for stmt in &ast.statements {
         if let Err(type_error) = type_checker.check_statement(stmt) {
-            return Err(KauboError::Compiler(format!("Type error: {}", type_error)));
+            return Err(KauboError::Type(type_error));
         }
     }
+    
+    // 获取生成的 shapes
+    let shapes = type_checker.take_shapes();
 
-    let output = compile_ast(&ast)?;
+    let output = compile_ast(&ast, shapes)?;
     Ok(output)
 }
 
@@ -93,9 +96,16 @@ fn compile_with_config(
 fn execute_with_config(
     chunk: &Chunk,
     local_count: usize,
+    shapes: &[kaubo_core::runtime::object::ObjShape],
     _limits: &LimitConfig,
 ) -> Result<ExecuteOutput, KauboError> {
     let mut vm = VM::new();
+    
+    // 注册所有 shapes 到 VM
+    for shape in shapes {
+        vm.register_shape(shape as *const _);
+    }
+    
     let result = vm.interpret_with_locals(chunk, local_count);
 
     match result {
@@ -112,22 +122,34 @@ fn execute_with_config(
 }
 
 /// Compile AST to bytecode
-#[instrument(target = "kaubo::compiler", skip(ast))]
-pub fn compile_ast(ast: &kaubo_core::compiler::parser::Module) -> Result<CompileOutput, KauboError> {
+#[instrument(target = "kaubo::compiler", skip(ast, shapes))]
+pub fn compile_ast(
+    ast: &kaubo_core::compiler::parser::Module,
+    shapes: Vec<kaubo_core::runtime::object::ObjShape>,
+) -> Result<CompileOutput, KauboError> {
+    use kaubo_core::runtime::compiler::compile_with_struct_info;
+    use std::collections::HashMap;
+    
     info!("Starting compiler");
+    
+    // 创建 struct name -> (shape_id, field_names) 映射
+    let struct_infos: HashMap<String, (u16, Vec<String>)> = shapes.iter()
+        .map(|s| (s.name.clone(), (s.shape_id, s.field_names.clone())))
+        .collect();
 
-    let (chunk, local_count) = compile_to_chunk(ast)
+    let (chunk, local_count) = compile_with_struct_info(ast, struct_infos)
         .map_err(|e| KauboError::Compiler(format!("{:?}", e)))?;
 
     debug!(
         constants = chunk.constants.len(),
         code_bytes = chunk.code.len(),
+        shapes = shapes.len(),
         "compilation completed"
     );
 
     info!("Compiler completed");
 
-    Ok(CompileOutput { chunk, local_count })
+    Ok(CompileOutput { chunk, local_count, shapes })
 }
 
 // ==================== Legacy API (using global config) ====================
@@ -145,9 +167,9 @@ pub fn compile(source: &str) -> Result<CompileOutput, KauboError> {
 ///
 /// # Panics
 /// If global config is not initialized
-pub fn execute(chunk: &Chunk, local_count: usize) -> Result<ExecuteOutput, KauboError> {
+pub fn execute(chunk: &Chunk, local_count: usize, shapes: &[kaubo_core::runtime::object::ObjShape]) -> Result<ExecuteOutput, KauboError> {
     let config = get_config();
-    execute_with_config(chunk, local_count, &config.limits)
+    execute_with_config(chunk, local_count, shapes, &config.limits)
 }
 
 /// Compile and run (uses global config)

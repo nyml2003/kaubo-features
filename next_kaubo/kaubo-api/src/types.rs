@@ -3,6 +3,7 @@
 //! 编译和执行的输入输出类型。
 
 use kaubo_core::runtime::bytecode::chunk::Chunk;
+use kaubo_core::runtime::object::ObjShape;
 use kaubo_core::runtime::value::Value;
 
 /// 编译输出
@@ -12,6 +13,8 @@ pub struct CompileOutput {
     pub chunk: Chunk,
     /// 局部变量数量
     pub local_count: usize,
+    /// 生成的 struct shapes（需要注册到 VM）
+    pub shapes: Vec<ObjShape>,
 }
 
 /// 执行输出

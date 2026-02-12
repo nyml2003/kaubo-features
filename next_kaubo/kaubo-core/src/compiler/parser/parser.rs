@@ -2,18 +2,18 @@ use super::super::lexer::token_kind::KauboTokenKind;
 use super::error::{ErrorLocation, ParseResult, ParserError, ParserErrorKind};
 use super::expr::{
     Binary, Expr, ExprKind, FunctionCall, Grouping, IndexAccess, JsonLiteral, Lambda, LiteralFalse,
-    LiteralInt, LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, Unary, VarRef,
-    YieldExpr,
+    LiteralInt, LiteralList, LiteralNull, LiteralString, LiteralTrue, MemberAccess, StructLiteral,
+    Unary, VarRef, YieldExpr,
 };
 use super::module::{Module, ModuleKind};
 use super::stmt::{
-    BlockStmt, EmptyStmt, ExprStmt, ForStmt, IfStmt, ImportStmt, ModuleStmt, ReturnStmt, Stmt,
-    StmtKind, VarDeclStmt, WhileStmt,
+    BlockStmt, EmptyStmt, ExprStmt, FieldDef, ForStmt, IfStmt, ImportStmt, ModuleStmt, ReturnStmt,
+    Stmt, StmtKind, StructStmt, VarDeclStmt, WhileStmt,
 };
 use super::type_expr::TypeExpr;
 use super::utils::{get_associativity, get_precedence};
 use crate::kit::lexer::scanner::Token;
-use crate::kit::lexer::types::Coordinate;
+use crate::kit::lexer::types::{Coordinate, Span};
 use crate::kit::lexer::Lexer;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -184,6 +184,8 @@ impl Parser {
         } else if self.check(KauboTokenKind::From) {
             // from...import 也是导入语句
             self.parse_import_statement()
+        } else if self.check(KauboTokenKind::Struct) {
+            self.parse_struct_statement()
         } else if self.check(KauboTokenKind::Pub) {
             // pub 关键字：标记为 public 导出
             self.consume(); // 消费 'pub'
@@ -499,11 +501,49 @@ impl Parser {
     }
 
     /// 解析标识符引用
+    /// 可能是变量引用或 struct 实例化（如 Point { x: 1.0 }）
     fn parse_identifier_expression(&mut self) -> ParseResult<Expr> {
         let token = self.current_token.as_ref().unwrap();
         let name = token.text.clone().unwrap_or_default();
         self.consume();
+        
+        // 检查是否是 struct 实例化（大写开头的标识符后面跟着 {）
+        if self.check(KauboTokenKind::LeftCurlyBrace) {
+            // 只有大写开头的标识符才可能是 struct 类型名
+            if name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                return self.parse_struct_literal(name);
+            }
+        }
+        
         Ok(Box::new(ExprKind::VarRef(VarRef { name })))
+    }
+    
+    /// 解析 struct 实例化表达式
+    /// 语法: StructName { field1: value1, field2: value2 }
+    fn parse_struct_literal(&mut self, name: String) -> ParseResult<Expr> {
+        self.expect(KauboTokenKind::LeftCurlyBrace)?;
+        
+        let mut fields = Vec::new();
+        while !self.check(KauboTokenKind::RightCurlyBrace) {
+            // 解析字段名
+            let field_name = self.expect_identifier()?;
+            self.expect(KauboTokenKind::Colon)?;
+            // 解析字段值
+            let value = self.parse_expression(0)?;
+            fields.push((field_name, value));
+            
+            // 可选的逗号
+            if !self.match_token(KauboTokenKind::Comma) {
+                break;
+            }
+        }
+        
+        self.expect(KauboTokenKind::RightCurlyBrace)?;
+        
+        Ok(Box::new(ExprKind::StructLiteral(StructLiteral {
+            name,
+            fields,
+        })))
     }
 
     /// 解析匿名函数（lambda）
@@ -573,9 +613,10 @@ impl Parser {
         self.expect(KauboTokenKind::RightParenthesis)
             .map_err(|_| self.error_here(ParserErrorKind::MissingRightParen))?;
 
+        // 方法调用保持原样：obj.method(args) 在运行时解析
         Ok(Box::new(ExprKind::FunctionCall(FunctionCall {
-            function_expr,
-            arguments,
+            function_expr: function_expr,
+            arguments: arguments,
         })))
     }
 
@@ -591,6 +632,7 @@ impl Parser {
 
     /// 解析变量声明内部实现
     fn parse_var_declaration_inner(&mut self, is_public: bool) -> ParseResult<Stmt> {
+        let start_coord = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'var'
 
         let token = self.current_token.as_ref().ok_or_else(|| {
@@ -618,16 +660,21 @@ impl Parser {
         let initializer = self.parse_expression(0)?;
         self.expect(KauboTokenKind::Semicolon)?;
 
+        let end_coord = self.current_coordinate().unwrap_or(start_coord);
+        let span = Span::new(start_coord, end_coord);
+
         Ok(Box::new(StmtKind::VarDecl(VarDeclStmt {
             name,
             type_annotation,
             initializer,
             is_public,
+            span,
         })))
     }
 
     /// 解析return语句
     fn parse_return_statement(&mut self) -> ParseResult<Stmt> {
+        let start_coord = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'return'
 
         let value = if !self.check(KauboTokenKind::Semicolon) {
@@ -637,7 +684,9 @@ impl Parser {
         };
 
         self.expect(KauboTokenKind::Semicolon)?;
-        Ok(Box::new(StmtKind::Return(ReturnStmt { value })))
+        let end_coord = self.current_coordinate().unwrap_or(start_coord);
+        let span = Span::new(start_coord, end_coord);
+        Ok(Box::new(StmtKind::Return(ReturnStmt { value, span })))
     }
 
     /// 解析模块定义语句
@@ -704,6 +753,49 @@ impl Parser {
                 alias,
             })))
         }
+    }
+
+    /// 解析 struct 定义语句
+    /// struct Point { x: float, y: float }
+    fn parse_struct_statement(&mut self) -> ParseResult<Stmt> {
+        let start_coord = self.current_coordinate().unwrap_or_default();
+        self.consume(); // 消费 'struct'
+
+        // 解析 struct 名
+        let name = self.expect_identifier()?;
+
+        // 解析字段列表 { field1: Type1, field2: Type2 }
+        self.expect(KauboTokenKind::LeftCurlyBrace)?;
+
+        let mut fields = Vec::new();
+        while !self.check(KauboTokenKind::RightCurlyBrace) {
+            // 解析字段名
+            let field_name = self.expect_identifier()?;
+            // 解析类型标注
+            self.expect(KauboTokenKind::Colon)?;
+            let field_type = self.parse_type_expression()?;
+
+            fields.push(FieldDef {
+                name: field_name,
+                type_annotation: field_type,
+            });
+
+            // 可选的逗号
+            if !self.match_token(KauboTokenKind::Comma) {
+                break;
+            }
+        }
+
+        self.expect(KauboTokenKind::RightCurlyBrace)?;
+
+        let end_coord = self.current_coordinate().unwrap_or(start_coord);
+        let span = Span::new(start_coord, end_coord);
+
+        Ok(Box::new(StmtKind::Struct(StructStmt {
+            name,
+            fields,
+            span,
+        })))
     }
 
     /// 解析if语句

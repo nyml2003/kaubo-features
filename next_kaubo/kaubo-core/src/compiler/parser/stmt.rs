@@ -1,5 +1,6 @@
 use super::expr::{Expr}; // 引用之前定义的Expr类型
 use super::type_expr::TypeExpr;
+use crate::kit::lexer::types::Span;
 use std::fmt;
 
 // 语句类型别名（对应C++的StmtPtr）
@@ -30,6 +31,8 @@ pub enum StmtKind {
     Module(ModuleStmt),
     // 导入语句（如 `import foo;` 或 `from foo import bar;`）
     Import(ImportStmt),
+    // Struct 定义语句（如 `struct Point { x: float, y: float }`）
+    Struct(StructStmt),
 }
 
 // 表达式语句结构体（包装一个表达式）
@@ -55,6 +58,7 @@ pub struct VarDeclStmt {
     pub type_annotation: Option<TypeExpr>, // 类型标注（如 `int`），可选
     pub initializer: Expr,               // 初始化表达式（必须有）
     pub is_public: bool,                 // 是否 pub 导出
+    pub span: Span,                      // 源代码位置
 }
 
 // If语句结构体
@@ -86,6 +90,7 @@ pub struct ForStmt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStmt {
     pub value: Option<Expr>, // 返回值表达式（可能为空，如return;，用Option表示）
+    pub span: Span,          // 源代码位置
 }
 
 // Print语句结构体（临时调试用）
@@ -107,6 +112,21 @@ pub struct ImportStmt {
     pub module_path: String,           // 模块路径
     pub items: Vec<String>,            // 导入的项（空表示导入整个模块）
     pub alias: Option<String>,         // 别名（如 `import foo as bar`）
+}
+
+// 字段定义（用于 struct）
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldDef {
+    pub name: String,
+    pub type_annotation: TypeExpr,
+}
+
+// Struct 定义语句
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructStmt {
+    pub name: String,
+    pub fields: Vec<FieldDef>,
+    pub span: Span,
 }
 
 // 实现Display trait（可选，用于调试输出）
@@ -183,6 +203,13 @@ impl fmt::Display for StmtKind {
                     write!(f, "from {} import {};", import_stmt.module_path, items)
                 }
             }
+            StmtKind::Struct(struct_stmt) => {
+                let fields = struct_stmt.fields.iter()
+                    .map(|f| format!("{}: {}", f.name, f.type_annotation))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "struct {} {{ {} }}", struct_stmt.name, fields)
+            }
         }
     }
 }
@@ -215,6 +242,7 @@ mod tests {
             type_annotation: None,
             initializer: make_expr(ExprKind::LiteralInt(LiteralInt { value: 5 })),
             is_public: false,
+            span: Span::default(),
         });
         assert!(format!("{}", stmt).contains("var x = 5"));
     }
@@ -242,8 +270,12 @@ mod tests {
     fn test_return_stmt_display() {
         let stmt_with_value = StmtKind::Return(ReturnStmt {
             value: Some(make_expr(ExprKind::LiteralInt(LiteralInt { value: 42 }))),
+            span: Span::default(),
         });
-        let stmt_without_value = StmtKind::Return(ReturnStmt { value: None });
+        let stmt_without_value = StmtKind::Return(ReturnStmt { 
+            value: None,
+            span: Span::default(),
+        });
         
         assert!(format!("{}", stmt_with_value).contains("return 42"));
         assert_eq!(format!("{}", stmt_without_value), "return;");

@@ -645,3 +645,109 @@ impl ObjNativeVm {
         (self.function)(vm, args)
     }
 }
+
+// ==================== Struct 系统 ====================
+
+/// Shape 描述符 - 描述一个 Struct 类型的布局（全局唯一，编译期生成）
+#[derive(Debug, Clone)]
+pub struct ObjShape {
+    /// Shape ID（全局唯一）
+    pub shape_id: u16,
+    /// 结构体名称
+    pub name: String,
+    /// 字段名称列表（索引即字段位置）
+    pub field_names: Vec<String>,
+    /// 固有方法表（编译期填充）
+    pub methods: Vec<*mut ObjClosure>,
+    /// 方法名到索引的映射
+    pub method_names: std::collections::HashMap<String, u8>,
+}
+
+impl ObjShape {
+    /// 创建新的 Shape
+    pub fn new(shape_id: u16, name: String, field_names: Vec<String>) -> Self {
+        Self {
+            shape_id,
+            name,
+            field_names,
+            methods: Vec::new(),
+            method_names: std::collections::HashMap::new(),
+        }
+    }
+
+    /// 注册固有方法
+    pub fn register_method(&mut self, name: String, method: *mut ObjClosure) -> u8 {
+        let idx = self.methods.len() as u8;
+        self.methods.push(method);
+        self.method_names.insert(name, idx);
+        idx
+    }
+
+    /// 通过索引获取方法
+    pub fn get_method(&self, idx: u8) -> Option<*mut ObjClosure> {
+        self.methods.get(idx as usize).copied()
+    }
+
+    /// 通过名称获取方法索引
+    pub fn get_method_index(&self, name: &str) -> Option<u8> {
+        self.method_names.get(name).copied()
+    }
+
+    /// 获取字段索引
+    pub fn get_field_index(&self, name: &str) -> Option<u8> {
+        self.field_names
+            .iter()
+            .position(|n| n == name)
+            .map(|i| i as u8)
+    }
+
+    /// 获取字段数量
+    pub fn field_count(&self) -> usize {
+        self.field_names.len()
+    }
+}
+
+/// Struct 实例 - 堆分配的对象
+#[derive(Debug)]
+pub struct ObjStruct {
+    /// 指向 Shape 描述符（类型标识）
+    pub shape: *const ObjShape,
+    /// 字段值（按 Shape 定义的顺序）
+    pub fields: Vec<Value>,
+}
+
+impl ObjStruct {
+    /// 创建新的 Struct 实例
+    pub fn new(shape: *const ObjShape, fields: Vec<Value>) -> Self {
+        Self { shape, fields }
+    }
+
+    /// 从栈上的字段值创建实例（字段在栈上从后往前排列，已正确排序）
+    pub fn from_stack(shape: *const ObjShape, fields: Vec<Value>) -> Self {
+        // 编译器已经按正确顺序入栈，这里直接使用
+        // fields 顺序：从栈顶弹出的值（即最后入栈的字段在前）
+        Self { shape, fields }
+    }
+
+    /// 获取字段
+    pub fn get_field(&self, idx: usize) -> Option<Value> {
+        self.fields.get(idx).copied()
+    }
+
+    /// 设置字段
+    pub fn set_field(&mut self, idx: usize, value: Value) {
+        if idx < self.fields.len() {
+            self.fields[idx] = value;
+        }
+    }
+
+    /// 获取 Shape ID
+    pub fn shape_id(&self) -> u16 {
+        unsafe { (*self.shape).shape_id }
+    }
+
+    /// 获取字段数量
+    pub fn field_count(&self) -> usize {
+        self.fields.len()
+    }
+}

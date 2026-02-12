@@ -57,6 +57,19 @@ impl Chunk {
         self.lines.push(line);
     }
 
+    /// 写入带 u16 + u8 操作数的指令 (BuildStruct 用)
+    pub fn write_op_u16_u8(&mut self, op: OpCode, u16_val: u16, u8_val: u8, line: usize) {
+        self.code.push(op as u8);
+        let bytes = u16_val.to_le_bytes();
+        self.code.push(bytes[0]);
+        self.code.push(bytes[1]);
+        self.code.push(u8_val);
+        self.lines.push(line);
+        self.lines.push(line);
+        self.lines.push(line);
+        self.lines.push(line);
+    }
+
     /// 写入跳转指令 (占位，稍后 patch)
     pub fn write_jump(&mut self, op: OpCode, line: usize) -> usize {
         self.write_op(op, line);

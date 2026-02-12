@@ -10,6 +10,9 @@ pub use kaubo_core::kit::lexer::LexerError;
 /// 语法错误（结构化）
 pub use kaubo_core::compiler::parser::error::ParserError;
 
+/// 类型错误（结构化）
+pub use kaubo_core::compiler::parser::type_checker::TypeError;
+
 /// Kaubo 错误类型
 #[derive(Error, Debug, Clone)]
 pub enum KauboError {
@@ -21,6 +24,10 @@ pub enum KauboError {
     #[error("{0}")]
     Parser(#[from] ParserError),
 
+    /// 类型错误（结构化）
+    #[error("Type error: {0}")]
+    Type(#[from] TypeError),
+
     /// 编译错误
     #[error("Compiler error: {0}")]
     Compiler(String),
@@ -28,6 +35,17 @@ pub enum KauboError {
     /// 运行时错误
     #[error("Runtime error: {0}")]
     Runtime(String),
+}
+
+/// 辅助函数：将 ErrorLocation 转换为元组
+fn location_to_tuple(loc: &kaubo_core::compiler::parser::error::ErrorLocation) -> (&'static str, Option<usize>, Option<usize>) {
+    use kaubo_core::compiler::parser::error::ErrorLocation;
+    match loc {
+        ErrorLocation::At(coord) => ("at", Some(coord.line), Some(coord.column)),
+        ErrorLocation::After(coord) => ("after", Some(coord.line), Some(coord.column)),
+        ErrorLocation::Eof => ("eof", None, None),
+        ErrorLocation::Unknown => ("unknown", None, None),
+    }
 }
 
 impl KauboError {
@@ -38,18 +56,40 @@ impl KauboError {
 
     /// 获取错误行号（如果有）
     pub fn line(&self) -> Option<usize> {
+        use kaubo_core::compiler::parser::error::ErrorLocation;
         match self {
             KauboError::Lexer(e) => Some(e.line()),
             KauboError::Parser(e) => e.line(),
+            KauboError::Type(e) => match &e {
+                TypeError::Mismatch { location, .. }
+                | TypeError::ReturnTypeMismatch { location, .. }
+                | TypeError::UndefinedVar { location, .. }
+                | TypeError::UnsupportedOp { location, .. }
+                | TypeError::CannotInfer { location, .. } => match location {
+                    ErrorLocation::At(coord) | ErrorLocation::After(coord) => Some(coord.line),
+                    _ => None,
+                },
+            },
             _ => None,
         }
     }
 
     /// 获取错误列号（如果有）
     pub fn column(&self) -> Option<usize> {
+        use kaubo_core::compiler::parser::error::ErrorLocation;
         match self {
             KauboError::Lexer(e) => Some(e.column()),
             KauboError::Parser(e) => e.column(),
+            KauboError::Type(e) => match &e {
+                TypeError::Mismatch { location, .. }
+                | TypeError::ReturnTypeMismatch { location, .. }
+                | TypeError::UndefinedVar { location, .. }
+                | TypeError::UnsupportedOp { location, .. }
+                | TypeError::CannotInfer { location, .. } => match location {
+                    ErrorLocation::At(coord) | ErrorLocation::After(coord) => Some(coord.column),
+                    _ => None,
+                },
+            },
             _ => None,
         }
     }
@@ -59,6 +99,7 @@ impl KauboError {
         match self {
             KauboError::Lexer(_) => "lexer",
             KauboError::Parser(_) => "parser",
+            KauboError::Type(_) => "type",
             KauboError::Compiler(_) => "compiler",
             KauboError::Runtime(_) => "runtime",
         }
@@ -109,6 +150,41 @@ impl KauboError {
                     line,
                     column: col,
                     error_kind: format!("{:?}", e.kind),
+                    message: e.to_string(),
+                    details: Some(ErrorDetails::Location {
+                        location_type: loc_type,
+                    }),
+                }
+            }
+            KauboError::Type(e) => {
+                use kaubo_core::compiler::parser::error::ErrorLocation;
+                let (loc_type, line, col, error_kind) = match &e {
+                    TypeError::Mismatch { location, .. } => {
+                        let (t, l, c) = location_to_tuple(location);
+                        (t, l, c, "TypeMismatch")
+                    }
+                    TypeError::ReturnTypeMismatch { location, .. } => {
+                        let (t, l, c) = location_to_tuple(location);
+                        (t, l, c, "ReturnTypeMismatch")
+                    }
+                    TypeError::UndefinedVar { location, .. } => {
+                        let (t, l, c) = location_to_tuple(location);
+                        (t, l, c, "UndefinedVar")
+                    }
+                    TypeError::UnsupportedOp { location, .. } => {
+                        let (t, l, c) = location_to_tuple(location);
+                        (t, l, c, "UnsupportedOp")
+                    }
+                    TypeError::CannotInfer { location, .. } => {
+                        let (t, l, c) = location_to_tuple(location);
+                        (t, l, c, "CannotInfer")
+                    }
+                };
+                ErrorReport {
+                    phase: "type",
+                    line,
+                    column: col,
+                    error_kind: error_kind.to_string(),
                     message: e.to_string(),
                     details: Some(ErrorDetails::Location {
                         location_type: loc_type,
