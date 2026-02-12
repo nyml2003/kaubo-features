@@ -128,7 +128,6 @@ pub enum OpCode {
     GetField,             // + u8 字段索引，栈顶[struct] -> field_value
     SetField,             // + u8 字段索引，栈顶[value, struct] -> null
     LoadMethod,           // + u8 方法索引，栈顶[struct] -> [struct, method]
-    CallMethod,           // + u8 参数个数，栈顶[receiver, arg1, ..., argN, method] -> result
 
     // ===== 调试 (0xF0-0xFF) =====
     Print = 0xF0,         // 调试用
@@ -229,7 +228,7 @@ impl OpCode {
             OpCode::GetField => "GET_FIELD",
             OpCode::SetField => "SET_FIELD",
             OpCode::LoadMethod => "LOAD_METHOD",
-            OpCode::CallMethod => "CALL_METHOD",
+
             OpCode::Print => "PRINT",
             OpCode::Invalid => "INVALID",
         }
@@ -327,7 +326,7 @@ impl OpCode {
             OpCode::GetModuleExport => 1,
             
             // u8 操作数（Struct 相关）
-            OpCode::GetField | OpCode::SetField | OpCode::LoadMethod | OpCode::CallMethod => 1,
+            OpCode::GetField | OpCode::SetField | OpCode::LoadMethod => 1,
             
             // u16 + u8 操作数（BuildStruct）
             OpCode::BuildStruct => 3,

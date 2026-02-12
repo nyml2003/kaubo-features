@@ -86,6 +86,14 @@ enum Variable {
 struct StructInfo {
     shape_id: u16,
     field_names: Vec<String>,  // 字段名列表（索引即字段位置）
+    method_names: Vec<String>, // 方法名列表（来自 impl 块）
+}
+
+/// 变量类型信息
+#[derive(Debug, Clone)]
+enum VarType {
+    Struct(String),  // struct 类型名
+    Other,           // 其他类型
 }
 
 /// AST 编译器
@@ -101,6 +109,7 @@ pub struct Compiler {
     imported_modules: Vec<String>, // 当前导入的模块名列表
     module_aliases: HashMap<String, String>, // 局部变量名 -> 模块名（用于 import x as y）
     struct_infos: HashMap<String, StructInfo>, // struct 名称 -> 编译期信息
+    var_types: HashMap<String, VarType>,      // 变量名 -> 类型信息
 }
 
 impl Compiler {
@@ -113,7 +122,7 @@ impl Compiler {
         let struct_infos: HashMap<String, StructInfo> = shape_ids
             .into_iter()
             .map(|(name, shape_id)| {
-                (name, StructInfo { shape_id, field_names: Vec::new() })
+                (name, StructInfo { shape_id, field_names: Vec::new(), method_names: Vec::new() })
             })
             .collect();
         
@@ -129,6 +138,7 @@ impl Compiler {
             imported_modules: Vec::new(),
             module_aliases: HashMap::new(),
             struct_infos,
+            var_types: HashMap::new(),
         }
     }
     
@@ -137,7 +147,7 @@ impl Compiler {
         let struct_infos: HashMap<String, StructInfo> = infos
             .into_iter()
             .map(|(name, (shape_id, field_names))| {
-                (name, StructInfo { shape_id, field_names })
+                (name, StructInfo { shape_id, field_names, method_names: Vec::new() })
             })
             .collect();
         
@@ -153,6 +163,7 @@ impl Compiler {
             imported_modules: Vec::new(),
             module_aliases: HashMap::new(),
             struct_infos,
+            var_types: HashMap::new(),
         }
     }
 
@@ -179,6 +190,7 @@ impl Compiler {
             imported_modules: Vec::new(),
             module_aliases: HashMap::new(),
             struct_infos, // 继承父编译器的 struct_infos
+            var_types: HashMap::new(), // 子编译器创建新的类型环境
         }
     }
 
@@ -215,6 +227,14 @@ impl Compiler {
                 // 标记为已初始化并存储
                 self.mark_initialized();
                 self.emit_store_local(idx);
+                
+                // 记录变量类型（如果是 struct 实例）
+                if let ExprKind::StructLiteral(struct_lit) = decl.initializer.as_ref() {
+                    self.var_types.insert(
+                        decl.name.clone(),
+                        VarType::Struct(struct_lit.name.clone())
+                    );
+                }
                 
                 // 如果是 pub 且在当前模块中，记录导出
                 if decl.is_public {
@@ -278,9 +298,90 @@ impl Compiler {
 
             StmtKind::Struct(_) => {
                 // Struct 定义是编译期类型信息，不生成运行时代码
-                // TODO: 将 shape 信息传递给 VM
+                // shape 信息已在 type checker 中生成
+            }
+
+            StmtKind::Impl(impl_stmt) => {
+                // 编译 impl 块中的方法
+                eprintln!("DEBUG: Compiling impl block for {}", impl_stmt.struct_name);
+                self.compile_impl_block(impl_stmt)?;
             }
         }
+        Ok(())
+    }
+
+    /// 编译 impl 块
+    /// 将每个方法编译为函数，并记录到 Chunk.method_table 供 VM 初始化时使用
+    fn compile_impl_block(&mut self, impl_stmt: &crate::compiler::parser::stmt::ImplStmt) -> Result<(), CompileError> {
+        use crate::compiler::parser::expr::ExprKind;
+        use crate::runtime::bytecode::chunk::MethodTableEntry;
+        
+        // 获取 shape_id（必须在 struct_infos 中存在）
+        let shape_id = self.struct_infos.get(&impl_stmt.struct_name)
+            .map(|info| info.shape_id)
+            .unwrap_or(0);
+        
+        // 确保 struct_info 存在
+        let struct_info = self.struct_infos.entry(impl_stmt.struct_name.clone())
+            .or_insert_with(|| StructInfo {
+                shape_id: 0,
+                field_names: Vec::new(),
+                method_names: Vec::new(),
+            });
+        
+        // 先记录所有方法名，确定 method_idx
+        let start_idx = struct_info.method_names.len();
+        for method in &impl_stmt.methods {
+            struct_info.method_names.push(method.name.clone());
+        }
+        
+        // 编译每个方法
+        for (i, method) in impl_stmt.methods.iter().enumerate() {
+            let method_idx = (start_idx + i) as u8;
+            let function_name = format!("{}_{}", impl_stmt.struct_name, method.name);
+            
+            if let ExprKind::Lambda(lambda) = method.lambda.as_ref() {
+                // 创建独立编译器编译方法体（方法不捕获 upvalues）
+                let mut method_compiler = Compiler::new();
+                // 复制 struct_infos 用于类型推断
+                method_compiler.struct_infos = self.struct_infos.clone();
+                // 继承模块信息（用于访问 std 等模块）
+                method_compiler.module_aliases = self.module_aliases.clone();
+                method_compiler.imported_modules = self.imported_modules.clone();
+                
+                // 添加参数作为局部变量（self 已经在 lambda.params 中）
+                for (param_name, _param_type) in &lambda.params {
+                    let _idx = method_compiler.add_local(param_name)?;
+                    method_compiler.mark_initialized();
+                }
+                
+                // 编译方法体
+                method_compiler.compile_stmt(&lambda.body)?;
+                method_compiler.chunk.write_op(OpCode::LoadNull, 0);
+                method_compiler.chunk.write_op(OpCode::Return, 0);
+                
+                // 创建函数对象
+                let arity = lambda.params.len() as u8;
+                let function = Box::new(crate::runtime::object::ObjFunction::new(
+                    method_compiler.chunk.clone(),
+                    arity,
+                    Some(function_name)
+                ));
+                let function_ptr = Box::into_raw(function);
+                let function_value = Value::function(function_ptr);
+                
+                // 添加到常量池，获取索引
+                let const_idx = self.chunk.add_constant(function_value);
+                
+                // 添加到方法表（VM 初始化时会注册到 Shape）
+                self.chunk.method_table.push(MethodTableEntry {
+                    shape_id,
+                    method_idx,
+                    const_idx,
+                });
+            }
+        }
+        
         Ok(())
     }
 
@@ -380,7 +481,7 @@ impl Compiler {
                     Some(Variable::Local(idx)) => self.emit_load_local(idx),
                     Some(Variable::Upvalue(idx)) => self.emit_load_upvalue(idx),
                     None => {
-                        // 检查是否是模块名（全局变量）
+                        // 检查是否是模块名
                         if self.is_module_name(&var_ref.name) {
                             // 模块作为全局变量访问
                             let name_obj = Box::new(ObjString::new(var_ref.name.clone()));
@@ -390,10 +491,12 @@ impl Compiler {
                             self.emit_constant(name_idx);
                             self.chunk.write_op(OpCode::LoadGlobal, 0);
                         } else {
-                            return Err(CompileError::Unimplemented(format!(
-                                "Undefined variable: {}",
-                                var_ref.name
-                            )));
+                            // 作为全局变量访问（如 std 函数）
+                            let name_obj = Box::new(ObjString::new(var_ref.name.clone()));
+                            let name_ptr = Box::into_raw(name_obj) as *mut ObjString;
+                            let name_val = Value::string(name_ptr);
+                            let name_idx = self.chunk.add_constant(name_val);
+                            self.chunk.write_op_u8(OpCode::LoadGlobal, name_idx, 0);
                         }
                     }
                 }
@@ -1352,6 +1455,36 @@ impl Compiler {
 
     /// 编译函数调用
     fn compile_function_call(&mut self, call: &FunctionCall) -> Result<(), CompileError> {
+        // 检测是否是方法调用：obj.method(args)
+        if let ExprKind::MemberAccess(member) = call.function_expr.as_ref() {
+            // 尝试编译为方法调用
+            if let Some(struct_name) = self.try_infer_struct_type(&member.object) {
+                // 获取方法索引
+                let method_idx = self.struct_infos.get(&struct_name)
+                    .and_then(|info| {
+                        info.method_names.iter()
+                            .position(|name| name == &member.member)
+                            .map(|idx| idx as u8)
+                    });
+                
+                if let Some(idx) = method_idx {
+                    // 编译参数（先编译 self）
+                    self.compile_expr(&member.object)?;  // self
+                    for arg in call.arguments.iter() {
+                        self.compile_expr(arg)?;
+                    }
+                    
+                    // 从 Shape 加载方法函数
+                    self.chunk.write_op_u8(OpCode::LoadMethod, idx, 0);
+                    
+                    // 调用方法（参数数包含 self）
+                    let arg_count = (call.arguments.len() + 1) as u8;
+                    self.chunk.write_op_u8(OpCode::Call, arg_count, 0);
+                    return Ok(());
+                }
+            }
+        }
+        
         // 普通函数调用
         // 先编译参数（参数从左到右压栈）
         for arg in call.arguments.iter() {
@@ -1366,6 +1499,19 @@ impl Compiler {
         self.chunk.write_op_u8(OpCode::Call, arg_count, 0);
 
         Ok(())
+    }
+    
+    /// 尝试推断表达式的 struct 类型
+    fn try_infer_struct_type(&self, expr: &Expr) -> Option<String> {
+        // 从变量类型表中查找
+        if let ExprKind::VarRef(var_ref) = expr.as_ref() {
+            if let Some(var_type) = self.var_types.get(&var_ref.name) {
+                if let VarType::Struct(struct_name) = var_type {
+                    return Some(struct_name.clone());
+                }
+            }
+        }
+        None
     }
 }
 

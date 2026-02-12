@@ -106,6 +106,15 @@ fn execute_with_config(
         vm.register_shape(shape as *const _);
     }
     
+    // 根据 Chunk.method_table 初始化 Shape 的方法表
+    // 方法函数存储在常量池中，需要在执行前注册到 Shape
+    for entry in &chunk.method_table {
+        let func_value = chunk.constants[entry.const_idx as usize];
+        if let Some(func_ptr) = func_value.as_function() {
+            vm.register_method_to_shape(entry.shape_id, entry.method_idx, func_ptr);
+        }
+    }
+    
     let result = vm.interpret_with_locals(chunk, local_count);
 
     match result {

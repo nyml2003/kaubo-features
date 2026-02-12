@@ -657,8 +657,8 @@ pub struct ObjShape {
     pub name: String,
     /// 字段名称列表（索引即字段位置）
     pub field_names: Vec<String>,
-    /// 固有方法表（编译期填充）
-    pub methods: Vec<*mut ObjClosure>,
+    /// 固有方法表（运行时注册）- 存储函数对象，不是闭包
+    pub methods: Vec<*mut ObjFunction>,
     /// 方法名到索引的映射
     pub method_names: std::collections::HashMap<String, u8>,
 }
@@ -676,7 +676,7 @@ impl ObjShape {
     }
 
     /// 注册固有方法
-    pub fn register_method(&mut self, name: String, method: *mut ObjClosure) -> u8 {
+    pub fn register_method(&mut self, name: String, method: *mut ObjFunction) -> u8 {
         let idx = self.methods.len() as u8;
         self.methods.push(method);
         self.method_names.insert(name, idx);
@@ -684,7 +684,7 @@ impl ObjShape {
     }
 
     /// 通过索引获取方法
-    pub fn get_method(&self, idx: u8) -> Option<*mut ObjClosure> {
+    pub fn get_method(&self, idx: u8) -> Option<*mut ObjFunction> {
         self.methods.get(idx as usize).copied()
     }
 

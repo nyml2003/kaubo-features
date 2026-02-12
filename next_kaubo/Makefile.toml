@@ -49,7 +49,7 @@ args = ["run", "-p", "kaubo-cli", "--", "assets/test_simple.kaubo"]
 # 运行 CLI (release 模式)
 [tasks.run-release]
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--release", "--", "assets/test_simple.kaubo"]
+args = ["run", "-p", "kaubo-cli", "--release", "--", "assets/b.kaubo"]
 
 # 检查整个 workspace
 [tasks.check]

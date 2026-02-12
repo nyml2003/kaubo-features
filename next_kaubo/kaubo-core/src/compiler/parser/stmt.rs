@@ -33,6 +33,8 @@ pub enum StmtKind {
     Import(ImportStmt),
     // Struct 定义语句（如 `struct Point { x: float, y: float }`）
     Struct(StructStmt),
+    // Impl 定义语句（如 `impl Point { ... }`）
+    Impl(ImplStmt),
 }
 
 // 表达式语句结构体（包装一个表达式）
@@ -129,6 +131,23 @@ pub struct StructStmt {
     pub span: Span,
 }
 
+// 方法定义（用于 impl 块）
+// 语法: method_name: |params| -> ReturnType { body }
+#[derive(Debug, Clone, PartialEq)]
+pub struct MethodDef {
+    pub name: String,
+    pub lambda: Expr,  // Lambda 表达式
+    pub span: Span,
+}
+
+// Impl 定义语句
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImplStmt {
+    pub struct_name: String,   // 被实现的 struct 名称
+    pub methods: Vec<MethodDef>,  // 方法列表
+    pub span: Span,
+}
+
 // 实现Display trait（可选，用于调试输出）
 impl fmt::Display for StmtKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -209,6 +228,13 @@ impl fmt::Display for StmtKind {
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "struct {} {{ {} }}", struct_stmt.name, fields)
+            }
+            StmtKind::Impl(impl_stmt) => {
+                let methods = impl_stmt.methods.iter()
+                    .map(|m| format!("  {}: {}", m.name, m.lambda))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                write!(f, "impl {} {{\n{}\n}}", impl_stmt.struct_name, methods)
             }
         }
     }

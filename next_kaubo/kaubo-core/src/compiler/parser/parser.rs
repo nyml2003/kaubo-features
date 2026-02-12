@@ -7,8 +7,8 @@ use super::expr::{
 };
 use super::module::{Module, ModuleKind};
 use super::stmt::{
-    BlockStmt, EmptyStmt, ExprStmt, FieldDef, ForStmt, IfStmt, ImportStmt, ModuleStmt, ReturnStmt,
-    Stmt, StmtKind, StructStmt, VarDeclStmt, WhileStmt,
+    BlockStmt, EmptyStmt, ExprStmt, FieldDef, ForStmt, IfStmt, ImplStmt, ImportStmt, MethodDef, 
+    ModuleStmt, ReturnStmt, Stmt, StmtKind, StructStmt, VarDeclStmt, WhileStmt,
 };
 use super::type_expr::TypeExpr;
 use super::utils::{get_associativity, get_precedence};
@@ -186,6 +186,8 @@ impl Parser {
             self.parse_import_statement()
         } else if self.check(KauboTokenKind::Struct) {
             self.parse_struct_statement()
+        } else if self.check(KauboTokenKind::Impl) {
+            self.parse_impl_statement()
         } else if self.check(KauboTokenKind::Pub) {
             // pub 关键字：标记为 public 导出
             self.consume(); // 消费 'pub'
@@ -794,6 +796,60 @@ impl Parser {
         Ok(Box::new(StmtKind::Struct(StructStmt {
             name,
             fields,
+            span,
+        })))
+    }
+
+    /// 解析 impl 语句
+    /// 语法: impl StructName { method1: |params| -> ReturnType { body }, method2: ... }
+    fn parse_impl_statement(&mut self) -> ParseResult<Stmt> {
+        let start_coord = self.current_coordinate().unwrap_or_default();
+        self.consume(); // 消费 'impl'
+
+        // 解析 struct 名
+        let struct_name = self.expect_identifier()?;
+
+        // 解析方法列表 { method1: lambda1, method2: lambda2 }
+        self.expect(KauboTokenKind::LeftCurlyBrace)?;
+
+        let mut methods = Vec::new();
+        while !self.check(KauboTokenKind::RightCurlyBrace) {
+            // 解析方法名
+            let method_name = self.expect_identifier()?;
+            
+            // 解析冒号
+            self.expect(KauboTokenKind::Colon)?;
+            
+            // 解析 lambda 表达式
+            let lambda_expr = self.parse_lambda()?;
+            
+            methods.push(MethodDef {
+                name: method_name,
+                lambda: lambda_expr,
+                span: Span::new(
+                    self.current_coordinate().unwrap_or(start_coord),
+                    self.current_coordinate().unwrap_or(start_coord)
+                ),
+            });
+
+            // 可选的逗号
+            if !self.match_token(KauboTokenKind::Comma) {
+                // 如果没有逗号，检查是否是右大括号
+                if self.check(KauboTokenKind::RightCurlyBrace) {
+                    break;
+                }
+                // 否则继续解析下一个方法
+            }
+        }
+
+        self.expect(KauboTokenKind::RightCurlyBrace)?;
+
+        let end_coord = self.current_coordinate().unwrap_or(start_coord);
+        let span = Span::new(start_coord, end_coord);
+
+        Ok(Box::new(StmtKind::Impl(ImplStmt {
+            struct_name,
+            methods,
             span,
         })))
     }

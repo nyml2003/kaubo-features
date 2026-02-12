@@ -986,7 +986,8 @@ impl VM {
                     if let Some(struct_ptr) = receiver.as_struct() {
                         let shape = unsafe { (*struct_ptr).shape };
                         if let Some(method) = unsafe { (*shape).get_method(method_idx) } {
-                            self.push(Value::closure(method));
+                            // 压入函数对象（不是闭包）
+                            self.push(Value::function(method));
                         } else {
                             return InterpretResult::RuntimeError(
                                 format!("Method index {} not found in shape", method_idx)
@@ -997,44 +998,6 @@ impl VM {
                             "LoadMethod requires a struct instance".to_string()
                         );
                     }
-                }
-
-                CallMethod => {
-                    // 操作数: u8 参数个数（包含 receiver）
-                    let arg_count = self.read_byte();
-                    
-                    // 栈布局: [receiver, arg1, ..., argN, method]
-                    // 先弹出方法闭包
-                    let method = self.pop();
-                    
-                    // 验证是闭包
-                    let closure_ptr = if let Some(ptr) = method.as_closure() {
-                        ptr
-                    } else {
-                        return InterpretResult::RuntimeError(
-                            "CallMethod requires a closure".to_string()
-                        );
-                    };
-                    
-                    // 收集参数（包括 receiver）
-                    let mut locals = Vec::with_capacity(arg_count as usize);
-                    for _ in 0..arg_count {
-                        locals.push(self.pop());
-                    }
-                    locals.reverse(); // 恢复顺序
-                    
-                    // 获取函数 chunk
-                    let func = unsafe { &*(*closure_ptr).function };
-                    
-                    // 创建新的调用帧
-                    let stack_base = self.stack.len();
-                    let new_frame = CallFrame {
-                        closure: closure_ptr,
-                        ip: func.chunk.code.as_ptr(),
-                        locals,
-                        stack_base,
-                    };
-                    self.frames.push(new_frame);
                 }
 
                 IndexGet => {
@@ -1291,6 +1254,20 @@ impl VM {
     /// 通过 ID 获取 Shape
     fn get_shape(&self, shape_id: u16) -> *const ObjShape {
         self.shapes.get(&shape_id).copied().unwrap_or(std::ptr::null())
+    }
+
+    /// 注册方法到 Shape 的方法表
+    pub fn register_method_to_shape(&mut self, shape_id: u16, method_idx: u8, func: *mut ObjFunction) {
+        if let Some(&shape) = self.shapes.get(&shape_id) {
+            unsafe {
+                let shape_mut = shape as *mut ObjShape;
+                let methods = &mut (*shape_mut).methods;
+                if method_idx as usize >= methods.len() {
+                    methods.resize(method_idx as usize + 1, std::ptr::null_mut());
+                }
+                methods[method_idx as usize] = func;
+            }
+        }
     }
 
     // ==================== 辅助方法 ====================

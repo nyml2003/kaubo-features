@@ -4,9 +4,12 @@
 
 use kaubo_core::compiler::lexer::builder::build_lexer;
 use kaubo_core::compiler::parser::parser::Parser;
-use kaubo_core::runtime::{compile, InterpretResult, VM};
+use kaubo_core::compiler::parser::type_checker::TypeChecker;
+use kaubo_core::runtime::{InterpretResult, VM};
+use kaubo_core::runtime::compiler::compile_with_struct_info;
+use std::collections::HashMap;
 
-/// 执行 Kaubo 代码并返回结果
+/// 执行 Kaubo 代码并返回结果（完整流程：类型检查 + 编译 + 执行）
 ///
 /// # Example
 /// ```
@@ -25,11 +28,39 @@ pub fn run_code(code: &str) -> Result<ExecResult, ExecError> {
         .parse()
         .map_err(|e| ExecError::Parser(format!("{:?}", e)))?;
 
+    // 类型检查（生成 shapes）
+    let mut type_checker = TypeChecker::new();
+    for stmt in &ast.statements {
+        type_checker.check_statement(stmt)
+            .map_err(|e| ExecError::Compiler(format!("{:?}", e)))?;
+    }
+    let shapes = type_checker.take_shapes();
+    
+    // 创建 struct_infos
+    let struct_infos: HashMap<String, (u16, Vec<String>)> = shapes.iter()
+        .map(|s| (s.name.clone(), (s.shape_id, s.field_names.clone())))
+        .collect();
+
     // 编译
-    let (chunk, local_count) = compile(&ast).map_err(|e| ExecError::Compiler(format!("{:?}", e)))?;
+    let (chunk, local_count) = compile_with_struct_info(&ast, struct_infos)
+        .map_err(|e| ExecError::Compiler(format!("{:?}", e)))?;
 
     // 执行
     let mut vm = VM::new();
+    
+    // 注册 shapes
+    for shape in &shapes {
+        vm.register_shape(shape as *const _);
+    }
+    
+    // 根据 Chunk.method_table 初始化 Shape 的方法表
+    for entry in &chunk.method_table {
+        let func_value = chunk.constants[entry.const_idx as usize];
+        if let Some(func_ptr) = func_value.as_function() {
+            vm.register_method_to_shape(entry.shape_id, entry.method_idx, func_ptr);
+        }
+    }
+    
     let result = vm.interpret_with_locals(&chunk, local_count);
 
     match result {

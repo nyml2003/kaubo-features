@@ -537,6 +537,7 @@ static KEYWORD_TABLE: &[(&str, KauboTokenKind)] = &[
     ("continue", KauboTokenKind::Continue),
     ("struct", KauboTokenKind::Struct),
     ("interface", KauboTokenKind::Interface),
+    ("impl", KauboTokenKind::Impl),
     ("import", KauboTokenKind::Import),
     ("as", KauboTokenKind::As),
     ("from", KauboTokenKind::From),

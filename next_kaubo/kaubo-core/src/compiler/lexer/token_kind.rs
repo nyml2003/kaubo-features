@@ -24,6 +24,7 @@ pub enum KauboTokenKind {
     Continue,
     Struct,
     Interface,
+    Impl,
     Import,
     As,
     From,

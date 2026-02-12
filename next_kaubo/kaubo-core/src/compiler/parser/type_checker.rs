@@ -4,7 +4,7 @@
 
 use super::error::{ErrorLocation, ParseResult, ParserError, ParserErrorKind};
 use super::expr::{Expr, ExprKind, Lambda, LiteralInt, LiteralFloat, LiteralString, LiteralTrue, LiteralFalse, LiteralNull, LiteralList, Binary, Unary, VarRef, FunctionCall, MemberAccess, IndexAccess, JsonLiteral, YieldExpr, StructLiteral};
-use super::stmt::{Stmt, StmtKind, VarDeclStmt, BlockStmt, ExprStmt, IfStmt, WhileStmt, ForStmt, ReturnStmt, ImportStmt, ModuleStmt, EmptyStmt, StructStmt};
+use super::stmt::{Stmt, StmtKind, VarDeclStmt, BlockStmt, ExprStmt, IfStmt, WhileStmt, ForStmt, ReturnStmt, ImportStmt, ImplStmt, ModuleStmt, EmptyStmt, StructStmt};
 use super::type_expr::{TypeExpr, NamedType, FunctionType};
 use crate::runtime::object::ObjShape;
 use std::collections::HashMap;
@@ -268,6 +268,7 @@ impl TypeChecker {
             StmtKind::For(for_stmt) => self.check_for(for_stmt),
             StmtKind::Return(return_stmt) => self.check_return(return_stmt),
             StmtKind::Struct(struct_stmt) => self.check_struct_def(struct_stmt),
+            StmtKind::Impl(impl_stmt) => self.check_impl_def(impl_stmt),
             StmtKind::Empty(_) => Ok(None),
             _ => {
                 // 其他语句类型暂不支持类型检查
@@ -296,6 +297,36 @@ impl TypeChecker {
         
         // 存储字段信息用于类型检查
         self.struct_types.insert(struct_stmt.name.clone(), fields);
+        Ok(None)
+    }
+
+    /// 检查 impl 定义
+    fn check_impl_def(&mut self, impl_stmt: &ImplStmt) -> TypeCheckResult<Option<TypeExpr>> {
+        // 验证 struct 类型存在
+        if !self.struct_types.contains_key(&impl_stmt.struct_name) {
+            return Err(TypeError::UndefinedVar {
+                name: impl_stmt.struct_name.clone(),
+                location: ErrorLocation::Unknown,
+            });
+        }
+        
+        // 找到对应的 shape，注册方法名
+        let shape_id = self.get_shape_id(&impl_stmt.struct_name);
+        for method in &impl_stmt.methods {
+            // 检查方法 lambda
+            self.check_expression(&method.lambda)?;
+            
+            // 注册方法名到 shape
+            if let Some(sid) = shape_id {
+                if let Some(shape) = self.shapes.iter_mut().find(|s| s.shape_id == sid) {
+                    let idx = shape.method_names.len() as u8;
+                    shape.method_names.insert(method.name.clone(), idx);
+                    // methods 向量预留位置，实际函数指针在运行时填充
+                    shape.methods.push(std::ptr::null_mut());
+                }
+            }
+        }
+        
         Ok(None)
     }
 

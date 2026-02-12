@@ -1236,3 +1236,37 @@ fn test_module_basic() {
         assert_eq!(get_int(&result.unwrap()), Some(42));
     }
 }
+
+
+#[test]
+fn test_impl_method_call() {
+    // 测试 impl 方法调用
+    let code = r#"
+        struct Point {
+            x: float,
+            y: float
+        };
+        
+        impl Point {
+            distance: |self, other: Point| -> float {
+                var dx = self.x - other.x;
+                var dy = self.y - other.y;
+                return std.sqrt(dx * dx + dy * dy);
+            }
+        };
+        
+        var p1 = Point { x: 0.0, y: 0.0 };
+        var p2 = Point { x: 3.0, y: 4.0 };
+        return p1.distance(p2);
+    "#;
+    
+    let result = run_code(code);
+    assert!(result.is_ok(), "Impl method call failed: {:?}", result);
+    
+    // 3-4-5 直角三角形，距离应该是 5.0
+    if let Ok(ref val) = result {
+        let dist = get_float(val);
+        assert!(dist.is_some(), "Expected float result");
+        assert!((dist.unwrap() - 5.0).abs() < 0.001, "Expected distance ~5.0, got {:?}", dist);
+    }
+}

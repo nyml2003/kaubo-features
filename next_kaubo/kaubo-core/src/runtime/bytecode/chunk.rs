@@ -4,6 +4,14 @@ use super::OpCode;
 use crate::runtime::Value;
 use tracing::debug;
 
+/// 方法表条目：需要在运行时注册到 Shape 的方法
+#[derive(Debug, Clone)]
+pub struct MethodTableEntry {
+    pub shape_id: u16,
+    pub method_idx: u8,
+    pub const_idx: u8,  // 函数在常量池中的索引
+}
+
 /// 字节码块
 #[derive(Debug, Clone)]
 pub struct Chunk {
@@ -13,6 +21,8 @@ pub struct Chunk {
     pub constants: Vec<Value>,
     /// 行号信息 (与 code 一一对应)
     pub lines: Vec<usize>,
+    /// 方法表：需要在 VM 初始化时注册到 Shape 的方法
+    pub method_table: Vec<MethodTableEntry>,
 }
 
 impl Chunk {
@@ -22,6 +32,7 @@ impl Chunk {
             code: Vec::new(),
             constants: Vec::new(),
             lines: Vec::new(),
+            method_table: Vec::new(),
         }
     }
 
