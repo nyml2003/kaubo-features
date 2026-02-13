@@ -1267,6 +1267,49 @@ impl VM {
                     }
                 }
 
+                // ===== 类型转换 =====
+                CastToInt => {
+                    let v = self.pop();
+                    let result = if let Some(n) = v.as_int() {
+                        Value::smi(n)
+                    } else if v.is_float() {
+                        Value::smi(v.as_float() as i32)
+                    } else if let Some(s) = v.as_string() {
+                        let s_ref = unsafe { &(*s).chars };
+                        s_ref.parse::<i32>().map(Value::smi).unwrap_or(Value::NULL)
+                    } else {
+                        Value::NULL
+                    };
+                    self.push(result);
+                }
+
+                CastToFloat => {
+                    let v = self.pop();
+                    let result = if let Some(n) = v.as_int() {
+                        Value::float(n as f64)
+                    } else if v.is_float() {
+                        v
+                    } else if let Some(s) = v.as_string() {
+                        let s_ref = unsafe { &(*s).chars };
+                        s_ref.parse::<f64>().map(Value::float).unwrap_or(Value::NULL)
+                    } else {
+                        Value::NULL
+                    };
+                    self.push(result);
+                }
+
+                CastToString => {
+                    let v = self.pop();
+                    let s = v.to_string();
+                    let string_obj = Box::new(crate::runtime::object::ObjString::new(s));
+                    self.push(Value::string(Box::into_raw(string_obj)));
+                }
+
+                CastToBool => {
+                    let v = self.pop();
+                    self.push(Value::bool_from(v.is_truthy()));
+                }
+
                 // ===== 调试 =====
                 Print => {
                     let v = self.pop();

@@ -128,6 +128,12 @@ pub enum OpCode {
     SetField,           // + u8 字段索引，栈顶[value, struct] -> null
     LoadMethod,         // + u8 方法索引，栈顶[struct] -> [struct, method]
 
+    // ===== 类型转换 (0xE0-0xE3) =====
+    CastToInt = 0xE0,    // 栈顶[value] -> int
+    CastToFloat,         // 栈顶[value] -> float
+    CastToString,        // 栈顶[value] -> string
+    CastToBool,          // 栈顶[value] -> bool
+
     // ===== 调试 (0xF0-0xFF) =====
     Print = 0xF0, // 调试用
     Invalid = 0xFF,
@@ -228,6 +234,11 @@ impl OpCode {
             OpCode::SetField => "SET_FIELD",
             OpCode::LoadMethod => "LOAD_METHOD",
 
+            OpCode::CastToInt => "CAST_TO_INT",
+            OpCode::CastToFloat => "CAST_TO_FLOAT",
+            OpCode::CastToString => "CAST_TO_STRING",
+            OpCode::CastToBool => "CAST_TO_BOOL",
+
             OpCode::Print => "PRINT",
             OpCode::Invalid => "INVALID",
         }
@@ -300,6 +311,10 @@ impl OpCode {
             | OpCode::IterNext
             | OpCode::Yield
             | OpCode::Print
+            | OpCode::CastToInt
+            | OpCode::CastToFloat
+            | OpCode::CastToString
+            | OpCode::CastToBool
             | OpCode::Invalid => 0,
 
             // u8 操作数

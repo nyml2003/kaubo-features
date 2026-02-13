@@ -740,6 +740,20 @@ impl TypeChecker {
                 return Ok(self.get_stdlib_function_type(&member_access.member));
             }
         }
+
+        // 检查对象类型（用于 struct 字段访问）
+        let obj_type = self.check_expression(&member_access.object)?;
+
+        if let Some(TypeExpr::Named(named_type)) = obj_type {
+            // 查找 struct 类型定义
+            if let Some(fields) = self.struct_types.get(&named_type.name) {
+                // 查找字段类型
+                if let Some((_, field_type)) = fields.iter().find(|(name, _)| name == &member_access.member) {
+                    return Ok(Some(field_type.clone()));
+                }
+            }
+        }
+
         // 其他成员访问暂不支持类型检查
         Ok(None)
     }

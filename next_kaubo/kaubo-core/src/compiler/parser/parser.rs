@@ -462,6 +462,14 @@ impl Parser {
                     object: expr,
                     index,
                 }));
+            } else if self.check(KauboTokenKind::As) {
+                // 类型转换：expr as Type
+                self.consume(); // 消费 'as'
+                let target_type = self.parse_type_expression()?;
+                expr = Box::new(ExprKind::As(super::expr::AsExpr {
+                    expr,
+                    target_type,
+                }));
             } else {
                 break;
             }

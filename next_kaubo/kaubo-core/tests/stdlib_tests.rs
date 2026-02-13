@@ -69,7 +69,7 @@ fn test_std_sqrt() {
     let result = run_code(
         r#"
         import std;
-        return std.sqrt(16);
+        return std.sqrt(16.0);
     "#,
     )
     .unwrap();
@@ -78,7 +78,7 @@ fn test_std_sqrt() {
     let result = run_code(
         r#"
         import std;
-        return std.sqrt(2);
+        return std.sqrt(2.0);
     "#,
     )
     .unwrap();
@@ -92,7 +92,7 @@ fn test_std_sin_cos() {
     let result = run_code(
         r#"
         import std;
-        return std.sin(0);
+        return std.sin(0.0);
     "#,
     )
     .unwrap();
@@ -103,7 +103,7 @@ fn test_std_sin_cos() {
     let result = run_code(
         r#"
         import std;
-        return std.cos(0);
+        return std.cos(0.0);
     "#,
     )
     .unwrap();
@@ -113,15 +113,10 @@ fn test_std_sin_cos() {
 
 #[test]
 fn test_std_floor_ceil() {
-    // floor/ceil 测试 - 由于 lexer 不支持浮点数字面量，
-    // 传入整数 3 时，floor/ceil 返回 3.0（浮点数）
-    let result = run_code("import std; return std.floor(3);").unwrap();
-    // 检查返回值存在且是数值类型
+    let result = run_code("import std; return std.floor(3.1);").unwrap();
     assert!(result.return_value.is_some(), "Should have return value");
-    // 简单检查：floor(3) 应该返回一个合理的值
-    // 由于类型转换复杂，这里只验证不崩溃
 
-    let result = run_code("import std; return std.ceil(3);").unwrap();
+    let result = run_code("import std; return std.ceil(2.9);").unwrap();
     assert!(result.return_value.is_some(), "Should have return value");
 }
 
@@ -164,7 +159,7 @@ fn test_std_combined() {
         var circle_area = |r| {
             return std.PI * r * r;
         };
-        return circle_area(5);
+        return circle_area(5.0);
     "#,
     )
     .unwrap();
@@ -179,7 +174,7 @@ fn test_std_pythagorean() {
         r#"
         import std;
         var hypotenuse = |a, b| {
-            return std.sqrt(a * a + b * b);
+            return std.sqrt((a * a + b * b) as float);
         };
         return hypotenuse(3, 4);
     "#,

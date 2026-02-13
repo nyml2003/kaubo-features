@@ -1,8 +1,8 @@
 //! AST → Bytecode 编译器
 
-use crate::compiler::parser::expr::{FunctionCall, Lambda, VarRef};
+use crate::compiler::parser::expr::{AsExpr, FunctionCall, Lambda, VarRef};
 use crate::compiler::parser::stmt::{ForStmt, IfStmt, ModuleStmt, WhileStmt};
-use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind};
+use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind, TypeExpr};
 use crate::runtime::{
     bytecode::{chunk::Chunk, OpCode},
     object::{ObjFunction, ObjString},
@@ -675,6 +675,40 @@ impl Compiler {
                 // 生成 BuildStruct 指令
                 self.chunk
                     .write_op_u16_u8(OpCode::BuildStruct, shape_id, field_count as u8, 0);
+            }
+
+            ExprKind::As(as_expr) => {
+                // 编译源表达式
+                self.compile_expr(&as_expr.expr)?;
+                // 生成类型转换指令
+                self.compile_cast(&as_expr.target_type)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 编译类型转换指令
+    fn compile_cast(&mut self, target_type: &TypeExpr) -> Result<(), CompileError> {
+        // 根据目标类型生成相应的转换指令
+        match target_type {
+            TypeExpr::Named(named) => {
+                match named.name.as_str() {
+                    "int" => self.chunk.write_op(OpCode::CastToInt, 0),
+                    "float" => self.chunk.write_op(OpCode::CastToFloat, 0),
+                    "string" => self.chunk.write_op(OpCode::CastToString, 0),
+                    "bool" => self.chunk.write_op(OpCode::CastToBool, 0),
+                    _ => {
+                        return Err(CompileError::Unimplemented(format!(
+                            "Cast to type '{}' not supported",
+                            named.name
+                        )))
+                    }
+                }
+            }
+            _ => {
+                return Err(CompileError::Unimplemented(
+                    "Cast to complex types not supported".to_string(),
+                ))
             }
         }
         Ok(())

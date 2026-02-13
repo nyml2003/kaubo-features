@@ -45,6 +45,8 @@ pub enum ExprKind {
     StructLiteral(StructLiteral),
     // Yield 表达式 (用于协程)
     Yield(YieldExpr),
+    // 类型转换表达式: expr as Type
+    As(AsExpr),
 }
 
 // 整数字面量结构体
@@ -161,6 +163,13 @@ pub struct YieldExpr {
     pub value: Option<Expr>, // yield 的值，None 表示 yield;
 }
 
+// 类型转换表达式结构体: expr as Type
+#[derive(Debug, Clone, PartialEq)]
+pub struct AsExpr {
+    pub expr: Expr,
+    pub target_type: TypeExpr,
+}
+
 // 实现Display trait（可选，用于调试输出）
 impl fmt::Display for ExprKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -231,6 +240,7 @@ impl fmt::Display for ExprKind {
                     .join(", ");
                 write!(f, "{} {{ {} }}", s.name, fields)
             }
+            ExprKind::As(a) => write!(f, "({} as {})", a.expr, a.target_type),
         }
     }
 }

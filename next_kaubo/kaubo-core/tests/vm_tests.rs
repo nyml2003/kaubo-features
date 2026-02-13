@@ -1256,8 +1256,8 @@ fn test_impl_method_call() {
         
         impl Point {
             distance: |self, other: Point| -> float {
-                var dx = self.x - other.x;
-                var dy = self.y - other.y;
+                var dx: float = self.x - other.x;
+                var dy: float = self.y - other.y;
                 return std.sqrt(dx * dx + dy * dy);
             }
         };
