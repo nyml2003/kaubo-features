@@ -14,7 +14,8 @@ use super::scanner::{
 // 暂时复用现有的 TokenKind，后续可以独立定义
 use crate::compiler::lexer::token_kind::KauboTokenKind;
 
-use tracing::{trace, debug};
+use kaubo_log::{debug, trace, Logger};
+use std::sync::Arc;
 
 /// Kaubo 扫描器
 pub struct KauboScanner {
@@ -23,6 +24,8 @@ pub struct KauboScanner {
     token_start: SourcePosition,
     /// 关键字查找表（可优化为完美哈希）
     keywords: &'static [( &'static str, KauboTokenKind)],
+    /// Logger for tracing
+    logger: Arc<Logger>,
 }
 
 /// 扫描模式
@@ -41,16 +44,28 @@ impl Scanner for KauboScanner {
     type Mode = KauboMode;
 
     fn new() -> Self {
-        trace!(target: "kaubo::lexer::scanner", "Creating new KauboScanner");
+        let logger = Logger::noop();
+        trace!(logger, "Creating new KauboScanner");
         Self {
             mode: KauboMode::Default,
             token_start: SourcePosition::start(),
             keywords: &KEYWORD_TABLE,
+            logger,
+        }
+    }
+
+    fn with_logger(logger: Arc<Logger>) -> Self {
+        trace!(logger, "Creating new KauboScanner with logger");
+        Self {
+            mode: KauboMode::Default,
+            token_start: SourcePosition::start(),
+            keywords: &KEYWORD_TABLE,
+            logger,
         }
     }
 
     fn set_mode(&mut self, mode: Self::Mode) {
-        debug!(target: "kaubo::lexer::scanner", ?mode, "Setting scanner mode");
+        debug!(self.logger, "Setting scanner mode to {:?}", mode);
         self.mode = mode;
     }
 
@@ -59,7 +74,7 @@ impl Scanner for KauboScanner {
     }
 
     fn next_token(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
-        trace!(target: "kaubo::lexer::scanner", mode = ?self.mode, "Scanning next token");
+        trace!(self.logger, "Scanning next token in mode {:?}", self.mode);
         
         let result = match self.mode {
             KauboMode::Default => self.scan_default(stream),
@@ -67,9 +82,9 @@ impl Scanner for KauboScanner {
             KauboMode::Interpolation => self.scan_interpolation(stream),
         };
 
-        trace!(target: "kaubo::lexer::scanner", 
-            is_token = matches!(result, ScanResult::Token(_)),
-            "Scan result"
+        trace!(self.logger, 
+            "Scan result: is_token = {}",
+            matches!(result, ScanResult::Token(_)),
         );
         result
     }
@@ -83,10 +98,10 @@ impl KauboScanner {
 
         // 记录 token 起始位置
         self.token_start = stream.position();
-        trace!(target: "kaubo::lexer::scanner", 
-            line = self.token_start.line,
-            column = self.token_start.column,
-            "Starting token scan"
+        trace!(self.logger, 
+            "Starting token scan at line {}, column {}",
+            self.token_start.line,
+            self.token_start.column,
         );
 
         // 预读第一个字符
@@ -511,7 +526,7 @@ impl KauboScanner {
     fn lookup_keyword(&self, word: &str) -> KauboTokenKind {
         for (kw, kind) in self.keywords {
             if *kw == word {
-                debug!(target: "kaubo::lexer::scanner", keyword = word, "Matched keyword");
+                debug!(self.logger, "Matched keyword: {}", word);
                 return kind.clone();
             }
         }

@@ -5,6 +5,8 @@
 //!
 //! Configuration is passed explicitly via parameters, not via global state.
 
+extern crate alloc;
+
 pub mod compiler;
 pub mod kit;
 pub mod runtime;

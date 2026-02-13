@@ -3,6 +3,8 @@
 //! 所有 DSL 的词法分析器都需实现此 trait
 
 use super::core::{SourcePosition, SourceSpan, StreamResult};
+use kaubo_log::Logger;
+use std::sync::Arc;
 
 /// 词法扫描器 trait
 ///
@@ -15,6 +17,14 @@ pub trait Scanner {
 
     /// 创建新扫描器
     fn new() -> Self;
+
+    /// 创建带 logger 的扫描器（默认实现调用 new）
+    fn with_logger(_logger: Arc<Logger>) -> Self
+    where
+        Self: Sized,
+    {
+        Self::new()
+    }
 
     /// 设置扫描模式
     fn set_mode(&mut self, mode: Self::Mode);
