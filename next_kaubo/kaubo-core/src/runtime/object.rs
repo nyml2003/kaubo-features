@@ -201,9 +201,13 @@ impl ObjIterator {
     }
 
     /// 从 JSON 对象创建迭代器（遍历所有键）
-    pub fn from_json(json: *mut ObjJson) -> Self {
+    ///
+    /// # Safety
+    ///
+    /// `json` 必须是有效的、非空的指向 ObjJson 的指针
+    pub unsafe fn from_json(json: *mut ObjJson) -> Self {
         // 收集所有键
-        let keys = unsafe {
+        let keys = {
             let json_ref = &*json;
             json_ref.entries.keys().cloned().collect()
         };

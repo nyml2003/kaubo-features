@@ -106,7 +106,7 @@ impl Record {
     /// 格式化记录为字符串
     pub fn format(&self) -> alloc::string::String {
         let span_info = match self.span_id {
-            Some(id) => alloc::format!(" [span={}]", id),
+            Some(id) => alloc::format!(" [span={id}]"),
             None => alloc::string::String::new(),
         };
 
@@ -189,7 +189,7 @@ fn format_timestamp(timestamp_ms: u64) -> alloc::string::String {
     let minutes = (secs / 60) % 60;
     let seconds = secs % 60;
 
-    alloc::format!("{:02}:{:02}:{:02}.{:03}", hours, minutes, seconds, millis)
+    alloc::format!("{hours:02}:{minutes:02}:{seconds:02}.{millis:03}")
 }
 
 #[cfg(test)]

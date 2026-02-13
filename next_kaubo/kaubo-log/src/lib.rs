@@ -158,8 +158,8 @@ impl core::fmt::Display for Error {
         match self {
             Error::BufferFull => write!(f, "Ring buffer full"),
             #[cfg(feature = "std")]
-            Error::Io(e) => write!(f, "IO error: {}", e),
-            Error::Serialize(msg) => write!(f, "Serialize error: {}", msg),
+            Error::Io(e) => write!(f, "IO error: {e}"),
+            Error::Serialize(msg) => write!(f, "Serialize error: {msg}"),
             Error::Unsupported => write!(f, "Operation not supported on this platform"),
         }
     }

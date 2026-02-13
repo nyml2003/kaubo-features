@@ -1165,7 +1165,7 @@ impl VM {
                         self.push(Value::iterator(iter_ptr));
                     } else if let Some(json_ptr) = val.as_json() {
                         // JSON 对象 -> JSON 迭代器（遍历键）
-                        let iter = Box::new(ObjIterator::from_json(json_ptr));
+                        let iter = Box::new(unsafe { ObjIterator::from_json(json_ptr) });
                         let iter_ptr = Box::into_raw(iter);
                         self.push(Value::iterator(iter_ptr));
                     } else {

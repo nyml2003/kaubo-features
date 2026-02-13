@@ -1,8 +1,10 @@
 // 计算器示例
-let a = 10;
-let b = 20;
-let sum = a + b;
-let product = a * b;
+from std import print, to_string;
 
-print("Sum: " + std.to_string(sum));
-print("Product: " + std.to_string(product));
+var a = 10;
+var b = 20;
+var sum = a + b;
+var product = a * b;
+
+print("Sum: " + to_string(sum));
+print("Product: " + to_string(product));

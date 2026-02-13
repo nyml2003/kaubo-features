@@ -1,2 +1,3 @@
 // Hello World 示例
+from std import print;
 print("Hello, Kaubo!");
