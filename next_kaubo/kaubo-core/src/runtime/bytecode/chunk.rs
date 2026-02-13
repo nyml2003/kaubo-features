@@ -10,7 +10,7 @@ use std::sync::Arc;
 pub struct MethodTableEntry {
     pub shape_id: u16,
     pub method_idx: u8,
-    pub const_idx: u8,  // 函数在常量池中的索引
+    pub const_idx: u8, // 函数在常量池中的索引
 }
 
 /// 字节码块
@@ -196,7 +196,9 @@ impl Chunk {
                 debug!(
                     self.logger,
                     "{:04} {}{} {:3} {:?}",
-                    offset, line_info, opcode.name(),
+                    offset,
+                    line_info,
+                    opcode.name(),
                     idx,
                     self.constants[idx as usize]
                 );
@@ -206,7 +208,15 @@ impl Chunk {
             OpCode::Closure => {
                 let idx = self.code[offset + 1];
                 let constant = &self.constants[idx as usize];
-                debug!(self.logger, "{:04} {}{} {:3} {:?}", offset, line_info, opcode.name(), idx, constant);
+                debug!(
+                    self.logger,
+                    "{:04} {}{} {:3} {:?}",
+                    offset,
+                    line_info,
+                    opcode.name(),
+                    idx,
+                    constant
+                );
                 // 如果是函数对象，反汇编函数体
                 if let Some(func_ptr) = constant.as_function() {
                     let func = unsafe { &*func_ptr };
@@ -237,24 +247,45 @@ impl Chunk {
             | OpCode::Resume
             | OpCode::CoroutineStatus => {
                 let operand = self.code[offset + 1];
-                debug!(self.logger, "{:04} {}{} {}", offset, line_info, opcode.name(), operand);
+                debug!(
+                    self.logger,
+                    "{:04} {}{} {}",
+                    offset,
+                    line_info,
+                    opcode.name(),
+                    operand
+                );
                 offset + 2
             }
-            
+
             OpCode::CreateCoroutine | OpCode::Yield | OpCode::IndexGet | OpCode::IndexSet => {
                 debug!(self.logger, "{:04} {}{}", offset, line_info, opcode.name());
                 offset + 1
             }
-            
+
             OpCode::BuildJson => {
                 let operand = self.code[offset + 1];
-                debug!(self.logger, "{:04} {}{} {}", offset, line_info, opcode.name(), operand);
+                debug!(
+                    self.logger,
+                    "{:04} {}{} {}",
+                    offset,
+                    line_info,
+                    opcode.name(),
+                    operand
+                );
                 offset + 2
             }
 
             OpCode::ModuleGet => {
                 let shape_id = u16::from_le_bytes([self.code[offset + 1], self.code[offset + 2]]);
-                debug!(self.logger, "{:04} {}{} {}", offset, line_info, opcode.name(), shape_id);
+                debug!(
+                    self.logger,
+                    "{:04} {}{} {}",
+                    offset,
+                    line_info,
+                    opcode.name(),
+                    shape_id
+                );
                 offset + 3
             }
 
@@ -266,7 +297,15 @@ impl Chunk {
                 } else {
                     offset + 3 - (-jump) as usize
                 };
-                debug!(self.logger, "{:04} {}{} {} (to {})", offset, line_info, opcode.name(), jump, target);
+                debug!(
+                    self.logger,
+                    "{:04} {}{} {} (to {})",
+                    offset,
+                    line_info,
+                    opcode.name(),
+                    jump,
+                    target
+                );
                 offset + 3
             }
 
@@ -275,7 +314,9 @@ impl Chunk {
                 debug!(
                     self.logger,
                     "{:04} {}{} {:3} {:?}",
-                    offset, line_info, opcode.name(),
+                    offset,
+                    line_info,
+                    opcode.name(),
                     idx,
                     self.constants[idx as usize]
                 );
@@ -283,7 +324,10 @@ impl Chunk {
             }
 
             _ => {
-                debug!(self.logger, "{:04} {}Unknown opcode {}", offset, line_info, instruction);
+                debug!(
+                    self.logger,
+                    "{:04} {}Unknown opcode {}", offset, line_info, instruction
+                );
                 offset + 1
             }
         }

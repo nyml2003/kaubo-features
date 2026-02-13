@@ -5,8 +5,8 @@
 //!          S         E(0x7FF)   Tag      Payload
 
 use super::object::{
-    ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjNative, ObjOption,
-    ObjResult, ObjShape, ObjString, ObjStruct,
+    ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjNative,
+    ObjOption, ObjResult, ObjShape, ObjString, ObjStruct,
 };
 
 /// NaN-boxed 值 (64-bit)
@@ -40,7 +40,7 @@ const TAG_NULL: u64 = 1 << 44; // 1: null
 const TAG_TRUE: u64 = 2 << 44; // 2: true
 const TAG_FALSE: u64 = 3 << 44; // 3: false
 const TAG_SMI: u64 = 4 << 44; // 4: 小整数 (SMI，31位有符号)
-// 5-7: 预留
+                              // 5-7: 预留
 
 // 8-23: 内联整数 (-8 ~ +7)
 #[allow(dead_code)]
@@ -66,7 +66,7 @@ const TAG_NATIVE: u64 = 43 << 44; // 原生函数对象
 const TAG_NATIVE_VM: u64 = 44 << 44; // VM-aware 原生函数对象
 const TAG_STRUCT: u64 = 45 << 44; // Struct 实例对象
 const TAG_SHAPE: u64 = 46 << 44; // Shape 描述符对象
-// 47-127: 预留其他堆类型
+                                 // 47-127: 预留其他堆类型
 
 /// SMI 最大值 (2^30 - 1)
 const SMI_MAX: i32 = (1 << 30) - 1;
@@ -114,7 +114,11 @@ impl Value {
     /// 创建布尔值
     #[inline]
     pub fn bool_from(b: bool) -> Self {
-        if b { Self::TRUE } else { Self::FALSE }
+        if b {
+            Self::TRUE
+        } else {
+            Self::FALSE
+        }
     }
 
     /// 内部: 编码堆指针

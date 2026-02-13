@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 /// 创建新的 Lexer
 pub fn build_lexer() -> Lexer {
-    Lexer::new(102400)  // 100KB 缓存，支持更大文件
+    Lexer::new(102400) // 100KB 缓存，支持更大文件
 }
 
 /// 创建新的 Lexer（带 logger）

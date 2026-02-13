@@ -12,9 +12,9 @@ pub mod kit;
 pub mod runtime;
 
 // Re-export common types
-pub use runtime::value::Value;
 pub use runtime::bytecode::chunk::Chunk;
-pub use runtime::vm::{VM, InterpretResult};
+pub use runtime::value::Value;
+pub use runtime::vm::{InterpretResult, VM};
 
 // Re-export config types from kaubo-config
 pub use kaubo_config::{CompilerConfig, LimitConfig, Phase};

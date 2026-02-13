@@ -6,9 +6,13 @@ use kaubo_core::compiler::parser::parser::Parser;
 /// 辅助函数：解析代码字符串并返回 AST
 fn parse_code(code: &str) -> Result<String, String> {
     let mut lexer = build_lexer();
-    lexer.feed(&code.as_bytes().to_vec()).map_err(|e| format!("Lexer error: {:?}", e))?;
-    lexer.terminate().map_err(|e| format!("Lexer terminate error: {:?}", e))?;
-    
+    lexer
+        .feed(&code.as_bytes().to_vec())
+        .map_err(|e| format!("Lexer error: {:?}", e))?;
+    lexer
+        .terminate()
+        .map_err(|e| format!("Lexer terminate error: {:?}", e))?;
+
     let mut parser = Parser::new(lexer);
     match parser.parse() {
         Ok(ast) => Ok(format!("{:?}", ast)),
@@ -20,14 +24,22 @@ fn parse_code(code: &str) -> Result<String, String> {
 fn test_parse_variable_declaration() {
     let code = "var x = 5;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse variable declaration: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse variable declaration: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_hello_world() {
     let code = r#"var message = "hello";"#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse hello world: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse hello world: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -38,7 +50,11 @@ var add = |x, y| {
 };
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse function: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse function: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -53,7 +69,11 @@ if (a > b) {
 }
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse if statement: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse if statement: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -64,7 +84,11 @@ while (i < 10) {
 }
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse while loop: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse while loop: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -75,7 +99,11 @@ for var item in list {
 }
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse for loop: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse for loop: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -96,21 +124,33 @@ fn test_parse_lambda() {
 fn test_parse_member_access() {
     let code = "var len = list.length();";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse member access: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse member access: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_complex_expression() {
     let code = "var result = (a + b) * c - d / e;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse complex expression: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse complex expression: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_empty_statement() {
     let code = ";";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse empty statement: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse empty statement: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -139,10 +179,15 @@ fn test_parse_arithmetic_expressions() {
         ("var a = -5;", "unary minus"),
         ("var a = --5;", "double unary minus"),
     ];
-    
+
     for (code, desc) in cases {
         let result = parse_code(code);
-        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse {}: {:?}",
+            desc,
+            result.err()
+        );
     }
 }
 
@@ -156,10 +201,15 @@ fn test_parse_comparison_operators() {
         ("var a = x >= y;", "greater than or equal"),
         ("var a = x <= y;", "less than or equal"),
     ];
-    
+
     for (code, desc) in cases {
         let result = parse_code(code);
-        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse {}: {:?}",
+            desc,
+            result.err()
+        );
     }
 }
 
@@ -173,10 +223,15 @@ fn test_parse_logical_operators() {
         ("var a = x and not y;", "and not"),
         ("var a = x or y and z;", "or and precedence"),
     ];
-    
+
     for (code, desc) in cases {
         let result = parse_code(code);
-        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse {}: {:?}",
+            desc,
+            result.err()
+        );
     }
 }
 
@@ -187,10 +242,15 @@ fn test_parse_boolean_literals() {
         ("var a = false;", "false"),
         ("var a = null;", "null"),
     ];
-    
+
     for (code, desc) in cases {
         let result = parse_code(code);
-        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse {}: {:?}",
+            desc,
+            result.err()
+        );
     }
 }
 
@@ -201,10 +261,15 @@ fn test_parse_assignment() {
         ("x = y = 5;", "chained assignment"),
         ("x = a + b;", "assignment with expression"),
     ];
-    
+
     for (code, desc) in cases {
         let result = parse_code(code);
-        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse {}: {:?}",
+            desc,
+            result.err()
+        );
     }
 }
 
@@ -214,7 +279,11 @@ fn test_parse_nested_function_calls() {
 var result = outer(inner(x), y);
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse nested function calls: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse nested function calls: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -224,7 +293,11 @@ var x = obj.a.b.c;
 var y = obj.method1().method2();
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse chained member access: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse chained member access: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -236,21 +309,33 @@ var calc = |a, b, c| {
 };
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse complex lambda: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse complex lambda: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_empty_list() {
     let code = "var empty = [];";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse empty list: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse empty list: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_nested_list() {
     let code = "var nested = [[1, 2], [3, 4]];";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse nested list: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse nested list: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -267,7 +352,11 @@ if (a > b) {
 }
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse if-elif-else chain: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse if-elif-else chain: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -281,7 +370,11 @@ var f = |x| {
 };
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse return without value: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse return without value: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -304,7 +397,11 @@ for var i in items {
 }
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse complex program: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse complex program: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -315,10 +412,15 @@ fn test_parse_whitespace_variations() {
         ("var  x  =  1  ;", "extra spaces"),
         ("var\tx\t=\t1;", "tabs"),
     ];
-    
+
     for (code, desc) in cases {
         let result = parse_code(code);
-        assert!(result.is_ok(), "Failed to parse {}: {:?}", desc, result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse {}: {:?}",
+            desc,
+            result.err()
+        );
     }
 }
 
@@ -326,14 +428,22 @@ fn test_parse_whitespace_variations() {
 fn test_parse_pipe_operator() {
     let code = "var result = x | f | g;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse pipe operator: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse pipe operator: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_lambda_no_params() {
     let code = "var f = || { return 42; };";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse lambda with no params: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse lambda with no params: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -343,14 +453,22 @@ var a = 1;
 var b = 2;
 "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse single char identifiers: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse single char identifiers: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_underscore_identifier() {
     let code = "var _private = 1;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse underscore identifier: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse underscore identifier: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -364,7 +482,7 @@ fn test_parse_error_cases() {
         ("x.", "dot without identifier"),
         ("|x y| { return x; };", "lambda missing comma"),
     ];
-    
+
     for (code, desc) in error_cases {
         let result = parse_code(code);
         assert!(result.is_err(), "Expected error for {} but got Ok", desc);
@@ -386,15 +504,15 @@ fn test_parse_only_whitespace() {
 #[test]
 fn test_parse_unexpected_end() {
     // 触发 UnexpectedEndOfInput
-    let cases = vec![
-        "var x =",
-        "if (x > y) {",
-        "while (x) {",
-    ];
-    
+    let cases = vec!["var x =", "if (x > y) {", "while (x) {"];
+
     for code in cases {
         let result = parse_code(code);
-        assert!(result.is_err(), "Should error for incomplete code: {}", code);
+        assert!(
+            result.is_err(),
+            "Should error for incomplete code: {}",
+            code
+        );
     }
 }
 
@@ -411,28 +529,44 @@ fn test_parse_invalid_number() {
 fn test_parse_json_empty() {
     let code = "json {};";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse empty JSON: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse empty JSON: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_json_simple() {
     let code = r#"var obj = json { "x": 1, "y": 2 };"#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse simple JSON: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse simple JSON: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_json_identifier_keys() {
     let code = r#"var obj = json { name: "test", value: 123 };"#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse JSON with identifier keys: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse JSON with identifier keys: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_json_nested() {
     let code = r#"var obj = json { "outer": json { "inner": 42 } };"#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse nested JSON: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse nested JSON: {:?}",
+        result.err()
+    );
 }
 
 // ===== 索引访问测试 =====
@@ -441,28 +575,44 @@ fn test_parse_json_nested() {
 fn test_parse_index_access_simple() {
     let code = "var x = list[0];";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse simple index: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse simple index: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_index_access_expression() {
     let code = "var x = list[i + 1];";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse index with expression: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse index with expression: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_nested_index() {
     let code = "var x = matrix[i][j];";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse nested index: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse nested index: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_index_assignment() {
     let code = "list[0] = 42;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse index assignment: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse index assignment: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -472,7 +622,11 @@ fn test_parse_chained_member_and_index() {
         var y = obj.list[1][2];
     "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse chained member and index: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse chained member and index: {:?}",
+        result.err()
+    );
 }
 
 // ===== 模块和导入测试 =====
@@ -485,7 +639,11 @@ fn test_parse_module_definition() {
         }
     "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse module definition: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse module definition: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -496,49 +654,77 @@ fn test_parse_module_with_pub() {
         }
     "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse module with pub: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse module with pub: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_import_simple() {
     let code = "import std;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse simple import: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse simple import: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_import_with_alias() {
     let code = "import std as standard;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse import with alias: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse import with alias: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_import_module_path() {
     let code = "import std.math.geometry;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse module path import: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse module path import: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_from_import() {
     let code = "from std import print;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse from import: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse from import: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_from_import_multiple() {
     let code = "from std import print, assert, type;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse from import multiple: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse from import multiple: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_from_import_with_path() {
     let code = "from std.math import sqrt, sin;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse from import with path: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse from import with path: {:?}",
+        result.err()
+    );
 }
 
 // ===== Yield 表达式测试 =====
@@ -547,14 +733,22 @@ fn test_parse_from_import_with_path() {
 fn test_parse_yield_without_value() {
     let code = "yield;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse yield without value: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse yield without value: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_yield_with_value() {
     let code = "yield 42;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse yield with value: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse yield with value: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -569,7 +763,11 @@ fn test_parse_yield_in_generator() {
         };
     "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse yield in generator: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse yield in generator: {:?}",
+        result.err()
+    );
 }
 
 // ===== 更复杂的组合测试 =====
@@ -580,7 +778,11 @@ fn test_parse_complex_function_call() {
         var result = foo(a + b, obj.field, list[0], || { return 1; });
     "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse complex function call: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse complex function call: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -595,7 +797,11 @@ fn test_parse_deeply_nested_blocks() {
         }
     "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse deeply nested blocks: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse deeply nested blocks: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -615,7 +821,11 @@ fn test_parse_complex_program_with_modules() {
         var result = circle_area(5);
     "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse complex program with modules: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse complex program with modules: {:?}",
+        result.err()
+    );
 }
 
 // ===== 边界情况和错误测试 =====
@@ -624,7 +834,11 @@ fn test_parse_complex_program_with_modules() {
 fn test_parse_multiple_consecutive_semicolons() {
     let code = "var x = 1;;;";
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse multiple semicolons: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse multiple semicolons: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -635,7 +849,11 @@ fn test_parse_only_comments() {
            block comment */
     "#;
     let result = parse_code(code);
-    assert!(result.is_ok(), "Failed to parse only comments: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse only comments: {:?}",
+        result.err()
+    );
 }
 
 #[test]

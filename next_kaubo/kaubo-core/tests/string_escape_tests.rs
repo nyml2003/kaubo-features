@@ -1,7 +1,7 @@
 //! 字符串转义序列测试
 
 mod common;
-use common::{run_code, get_string};
+use common::{get_string, run_code};
 
 #[test]
 fn test_string_escape_newline() {

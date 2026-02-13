@@ -34,7 +34,9 @@ impl ObjUpvalue {
     pub fn set(&mut self, value: Value) {
         match self.closed {
             Some(_) => self.closed = Some(value),
-            None => unsafe { *self.location = value; }
+            None => unsafe {
+                *self.location = value;
+            },
         }
     }
 
@@ -119,7 +121,9 @@ pub struct ObjList {
 impl ObjList {
     /// 创建新的空列表
     pub fn new() -> Self {
-        Self { elements: Vec::new() }
+        Self {
+            elements: Vec::new(),
+        }
     }
 
     /// 从 Vec 创建列表
@@ -251,7 +255,9 @@ impl ObjIterator {
                     Some(Value::coroutine(*coroutine))
                 }
             }
-            IteratorSource::Json { keys, index, done, .. } => {
+            IteratorSource::Json {
+                keys, index, done, ..
+            } => {
                 if *done {
                     return None;
                 }
@@ -545,7 +551,11 @@ pub struct ObjModule {
 
 impl ObjModule {
     /// 创建模块对象（编译期构建）
-    pub fn new(name: String, exports: Vec<Value>, name_to_index: std::collections::HashMap<String, u16>) -> Self {
+    pub fn new(
+        name: String,
+        exports: Vec<Value>,
+        name_to_index: std::collections::HashMap<String, u16>,
+    ) -> Self {
         Self {
             name,
             exports: exports.into_boxed_slice(),

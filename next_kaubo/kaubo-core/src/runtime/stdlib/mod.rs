@@ -6,8 +6,8 @@
 //! - 扁平化设计：所有函数直接放在 std 下，不嵌套
 //! - 启动时自动注册到 globals
 
-use crate::runtime::Value;
 use crate::runtime::object::{ObjModule, ObjNativeVm};
+use crate::runtime::Value;
 use crate::runtime::VM;
 use std::collections::HashMap;
 
@@ -26,7 +26,7 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
     exports.push(create_native_value(print_fn, "print", 1));
     name_to_shape.insert("print".to_string(), 0u16);
 
-    exports.push(create_native_value(assert_fn, "assert", 255));  // 255 = 变参
+    exports.push(create_native_value(assert_fn, "assert", 255)); // 255 = 变参
     name_to_shape.insert("assert".to_string(), 1u16);
 
     exports.push(create_native_value(type_fn, "type", 1));
@@ -59,13 +59,21 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
     name_to_shape.insert("E".to_string(), 10u16);
 
     // ===== 协程函数 (11-13) - VM-aware 原生函数 =====
-    exports.push(create_native_vm_value(create_coroutine_fn, "create_coroutine", 1));
+    exports.push(create_native_vm_value(
+        create_coroutine_fn,
+        "create_coroutine",
+        1,
+    ));
     name_to_shape.insert("create_coroutine".to_string(), 11u16);
 
     exports.push(create_native_vm_value(resume_fn, "resume", 255)); // 变参
     name_to_shape.insert("resume".to_string(), 12u16);
 
-    exports.push(create_native_vm_value(coroutine_status_fn, "coroutine_status", 1));
+    exports.push(create_native_vm_value(
+        coroutine_status_fn,
+        "coroutine_status",
+        1,
+    ));
     name_to_shape.insert("coroutine_status".to_string(), 13u16);
 
     // ===== 列表操作函数 (14-18) =====
@@ -122,7 +130,10 @@ fn create_native_vm_value(func: NativeVmFn, name: &str, arity: u8) -> Value {
 
 fn print_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("print() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "print() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
     println!("{}", args[0]);
     Ok(Value::NULL)
@@ -145,14 +156,22 @@ fn assert_fn(args: &[Value]) -> Result<Value, String> {
                 return Err(msg.to_string());
             }
         }
-        _ => return Err(format!("assert() takes 1 or 2 arguments ({} given)", args.len())),
+        _ => {
+            return Err(format!(
+                "assert() takes 1 or 2 arguments ({} given)",
+                args.len()
+            ))
+        }
     }
     Ok(Value::NULL)
 }
 
 fn type_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("type() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "type() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let type_name = if args[0].is_int() {
@@ -179,14 +198,19 @@ fn type_fn(args: &[Value]) -> Result<Value, String> {
         "unknown"
     };
 
-    let string_obj = Box::new(crate::runtime::object::ObjString::new(type_name.to_string()));
+    let string_obj = Box::new(crate::runtime::object::ObjString::new(
+        type_name.to_string(),
+    ));
     let string_ptr = Box::into_raw(string_obj);
     Ok(Value::string(string_ptr))
 }
 
 fn to_string_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("to_string() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "to_string() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let s = format!("{}", args[0]);
@@ -199,7 +223,10 @@ fn to_string_fn(args: &[Value]) -> Result<Value, String> {
 
 fn sqrt_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("sqrt() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "sqrt() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let x = to_f64(&args[0])?;
@@ -211,7 +238,10 @@ fn sqrt_fn(args: &[Value]) -> Result<Value, String> {
 
 fn sin_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("sin() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "sin() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let x = to_f64(&args[0])?;
@@ -220,7 +250,10 @@ fn sin_fn(args: &[Value]) -> Result<Value, String> {
 
 fn cos_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("cos() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "cos() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let x = to_f64(&args[0])?;
@@ -229,7 +262,10 @@ fn cos_fn(args: &[Value]) -> Result<Value, String> {
 
 fn floor_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("floor() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "floor() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let x = to_f64(&args[0])?;
@@ -243,7 +279,10 @@ fn floor_fn(args: &[Value]) -> Result<Value, String> {
 
 fn ceil_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("ceil() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "ceil() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let x = to_f64(&args[0])?;
@@ -268,12 +307,15 @@ fn to_f64(value: &Value) -> Result<f64, String> {
 
 // ===== VM-aware 协程函数实现 =====
 
-use crate::runtime::object::{ObjCoroutine, CoroutineState};
+use crate::runtime::object::{CoroutineState, ObjCoroutine};
 
 /// create_coroutine(closure) -> coroutine
 fn create_coroutine_fn(_vm: &mut VM, args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("create_coroutine() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "create_coroutine() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     if let Some(closure_ptr) = args[0].as_closure() {
@@ -386,7 +428,10 @@ fn resume_fn(vm: &mut VM, args: &[Value]) -> Result<Value, String> {
 /// coroutine_status(coroutine) -> int (0=Suspended, 1=Running, 2=Dead)
 fn coroutine_status_fn(_vm: &mut VM, args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("coroutine_status() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "coroutine_status() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     if let Some(coro_ptr) = args[0].as_coroutine() {
@@ -409,7 +454,10 @@ use crate::runtime::object::ObjList;
 /// len(list|string|json) -> int
 fn len_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("len() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "len() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let len = if let Some(ptr) = args[0].as_string() {
@@ -428,23 +476,26 @@ fn len_fn(args: &[Value]) -> Result<Value, String> {
 /// push(list, value) -> list (返回新列表)
 fn push_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 2 {
-        return Err(format!("push() takes exactly 2 arguments ({} given)", args.len()));
+        return Err(format!(
+            "push() takes exactly 2 arguments ({} given)",
+            args.len()
+        ));
     }
 
     if let Some(ptr) = args[0].as_list() {
         let list = unsafe { &*ptr };
         let mut new_elements = Vec::new();
-        
+
         // 复制原列表元素
         for i in 0..list.len() {
             if let Some(val) = list.get(i) {
                 new_elements.push(val);
             }
         }
-        
+
         // 添加新元素
         new_elements.push(args[1]);
-        
+
         // 创建新列表
         let new_list = Box::new(ObjList::from_vec(new_elements));
         Ok(Value::list(Box::into_raw(new_list)))
@@ -456,7 +507,10 @@ fn push_fn(args: &[Value]) -> Result<Value, String> {
 /// is_empty(list|string|json) -> bool
 fn is_empty_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("is_empty() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "is_empty() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let is_empty = if let Some(ptr) = args[0].as_string() {
@@ -475,7 +529,10 @@ fn is_empty_fn(args: &[Value]) -> Result<Value, String> {
 /// range(end) or range(start, end) or range(start, end, step) -> list
 fn range_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() < 1 || args.len() > 3 {
-        return Err(format!("range() takes 1 to 3 arguments ({} given)", args.len()));
+        return Err(format!(
+            "range() takes 1 to 3 arguments ({} given)",
+            args.len()
+        ));
     }
 
     let (start, end, step) = match args.len() {
@@ -522,7 +579,10 @@ fn range_fn(args: &[Value]) -> Result<Value, String> {
 /// clone(value) -> value (浅拷贝)
 fn clone_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("clone() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "clone() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     // 对于基本类型直接返回，对于容器类型创建新对象
@@ -565,7 +625,10 @@ use std::path::Path;
 /// read_file(path) -> string
 fn read_file_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("read_file() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "read_file() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let path = if let Some(ptr) = args[0].as_string() {
@@ -586,7 +649,10 @@ fn read_file_fn(args: &[Value]) -> Result<Value, String> {
 /// write_file(path, content) -> null
 fn write_file_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 2 {
-        return Err(format!("write_file() takes exactly 2 arguments ({} given)", args.len()));
+        return Err(format!(
+            "write_file() takes exactly 2 arguments ({} given)",
+            args.len()
+        ));
     }
 
     let path = if let Some(ptr) = args[0].as_string() {
@@ -610,7 +676,10 @@ fn write_file_fn(args: &[Value]) -> Result<Value, String> {
 /// exists(path) -> bool
 fn exists_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("exists() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "exists() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let path = if let Some(ptr) = args[0].as_string() {
@@ -625,7 +694,10 @@ fn exists_fn(args: &[Value]) -> Result<Value, String> {
 /// is_file(path) -> bool
 fn is_file_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("is_file() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "is_file() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let path = if let Some(ptr) = args[0].as_string() {
@@ -640,7 +712,10 @@ fn is_file_fn(args: &[Value]) -> Result<Value, String> {
 /// is_dir(path) -> bool
 fn is_dir_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("is_dir() takes exactly 1 argument ({} given)", args.len()));
+        return Err(format!(
+            "is_dir() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
     }
 
     let path = if let Some(ptr) = args[0].as_string() {

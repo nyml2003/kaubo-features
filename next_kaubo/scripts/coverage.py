@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """
-覆盖率报告生成脚本 (使用 cargo-llvm-cov + nightly)
-支持行覆盖率和分支覆盖率
-使用标准库，兼容 Python 3.6+
+Kaubo Language - 覆盖率报告生成脚本
+使用 cargo-llvm-cov + nightly，支持行覆盖率和分支覆盖率
+
+用法:
+    python scripts/coverage.py           # 终端输出
+    python scripts/coverage.py --html    # 生成 HTML 报告
+    python scripts/coverage.py --open    # 生成并打开报告
+
+依赖:
+    - rustup nightly
+    - cargo install cargo-llvm-cov
 """
 
 import subprocess

@@ -14,10 +14,10 @@ use kaubo_log::{warn, Logger};
 pub enum StreamError {
     #[error("UTF-8 decode error at byte offset {0}")]
     Utf8Error(usize),
-    
+
     #[error("Buffer error: {0}")]
     Buffer(#[from] RingBufferError),
-    
+
     #[error("Stream closed")]
     Closed,
 }
@@ -91,7 +91,11 @@ impl CharStream {
     /// 向流中写入数据（生产者接口）
     pub fn feed(&mut self, data: &[u8]) -> Result<(), StreamError> {
         if self.is_closed {
-            warn!(self.logger, "Attempt to feed {} bytes into closed stream", data.len());
+            warn!(
+                self.logger,
+                "Attempt to feed {} bytes into closed stream",
+                data.len()
+            );
             return Err(StreamError::Closed);
         }
         for &byte in data {
@@ -147,7 +151,10 @@ impl CharStream {
         let seq_len = match utf8_sequence_length(lead_byte) {
             Some(len) => len,
             None => {
-                warn!(self.logger, "Invalid UTF-8 lead byte: 0x{:02X} at position {:?}", lead_byte, self.position);
+                warn!(
+                    self.logger,
+                    "Invalid UTF-8 lead byte: 0x{:02X} at position {:?}", lead_byte, self.position
+                );
                 return StreamResult::Ok(replacement_char());
             }
         };
@@ -162,8 +169,13 @@ impl CharStream {
         if required_size > current_size {
             if self.is_closed {
                 // 已关闭但字节不完整，返回替换字符
-                warn!(self.logger, "Incomplete UTF-8 sequence at EOF: expected {} bytes, got {}. Position: {:?}", 
-                    seq_len, current_size - offset, self.position);
+                warn!(
+                    self.logger,
+                    "Incomplete UTF-8 sequence at EOF: expected {} bytes, got {}. Position: {:?}",
+                    seq_len,
+                    current_size - offset,
+                    self.position
+                );
                 return StreamResult::Ok(replacement_char());
             } else {
                 return StreamResult::Incomplete;
@@ -176,8 +188,13 @@ impl CharStream {
             match self.buffer.try_peek_k(offset + i) {
                 Some(Ok(byte)) => bytes.push(byte),
                 _ => {
-                    warn!(self.logger, "Failed to read UTF-8 byte {} of {} at position {:?}", 
-                        i, seq_len, self.position);
+                    warn!(
+                        self.logger,
+                        "Failed to read UTF-8 byte {} of {} at position {:?}",
+                        i,
+                        seq_len,
+                        self.position
+                    );
                     return StreamResult::Ok(replacement_char());
                 }
             }
@@ -187,8 +204,13 @@ impl CharStream {
         match std::str::from_utf8(&bytes) {
             Ok(s) => StreamResult::Ok(s.chars().next().unwrap_or(replacement_char())),
             Err(e) => {
-                warn!(self.logger, "UTF-8 decode error for bytes {:02X?}: {}. Position: {:?}", 
-                    bytes, e, self.position);
+                warn!(
+                    self.logger,
+                    "UTF-8 decode error for bytes {:02X?}: {}. Position: {:?}",
+                    bytes,
+                    e,
+                    self.position
+                );
                 StreamResult::Ok(replacement_char())
             }
         }
@@ -242,11 +264,11 @@ impl CharStream {
 /// 获取UTF-8序列长度
 fn utf8_sequence_length(lead_byte: u8) -> Option<usize> {
     match lead_byte {
-        0x00..=0x7F => Some(1),   // ASCII
-        0xC0..=0xDF => Some(2),   // 2字节序列
-        0xE0..=0xEF => Some(3),   // 3字节序列
-        0xF0..=0xF7 => Some(4),   // 4字节序列
-        _ => None,                // 非法首字节（续字节或超出范围）
+        0x00..=0x7F => Some(1), // ASCII
+        0xC0..=0xDF => Some(2), // 2字节序列
+        0xE0..=0xEF => Some(3), // 3字节序列
+        0xF0..=0xF7 => Some(4), // 4字节序列
+        _ => None,              // 非法首字节（续字节或超出范围）
     }
 }
 
@@ -319,7 +341,7 @@ mod tests {
         let mut stream = CharStream::new(1024);
         // 只写入UTF-8多字节序列的第一部分
         stream.feed(&[0xF0]).unwrap(); // 4字节序列的首字节
-        // 不关闭，模拟流式等待
+                                       // 不关闭，模拟流式等待
 
         assert_eq!(stream.try_peek(0), StreamResult::Incomplete);
         assert_eq!(stream.try_advance(), StreamResult::Incomplete);
@@ -359,10 +381,12 @@ mod tests {
         ring.clear();
         let result = stream.feed(b"more");
         assert!(result.is_err());
-        
+
         let records = ring.dump_records();
         assert!(
-            records.iter().any(|r| r.level == Level::Warn && r.message.contains("closed stream")),
+            records
+                .iter()
+                .any(|r| r.level == Level::Warn && r.message.contains("closed stream")),
             "Should log warning when feeding closed stream"
         );
     }
@@ -387,7 +411,9 @@ mod tests {
 
         let records = ring.dump_records();
         assert!(
-            records.iter().any(|r| r.level == Level::Warn && r.message.contains("Invalid UTF-8")),
+            records
+                .iter()
+                .any(|r| r.level == Level::Warn && r.message.contains("Invalid UTF-8")),
             "Should log warning for invalid UTF-8 lead byte, got: {:?}",
             records.iter().map(|r| &r.message).collect::<Vec<_>>()
         );
@@ -413,7 +439,9 @@ mod tests {
 
         let records = ring.dump_records();
         assert!(
-            records.iter().any(|r| r.level == Level::Warn && r.message.contains("Incomplete UTF-8")),
+            records
+                .iter()
+                .any(|r| r.level == Level::Warn && r.message.contains("Incomplete UTF-8")),
             "Should log warning for incomplete UTF-8 at EOF, got: {:?}",
             records.iter().map(|r| &r.message).collect::<Vec<_>>()
         );

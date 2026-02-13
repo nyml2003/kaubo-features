@@ -23,7 +23,7 @@ pub struct KauboScanner {
     /// 当前 token 的起始位置（用于构建 span）
     token_start: SourcePosition,
     /// 关键字查找表（可优化为完美哈希）
-    keywords: &'static [( &'static str, KauboTokenKind)],
+    keywords: &'static [(&'static str, KauboTokenKind)],
     /// Logger for tracing
     logger: Arc<Logger>,
 }
@@ -75,14 +75,15 @@ impl Scanner for KauboScanner {
 
     fn next_token(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
         trace!(self.logger, "Scanning next token in mode {:?}", self.mode);
-        
+
         let result = match self.mode {
             KauboMode::Default => self.scan_default(stream),
             KauboMode::TemplateString => self.scan_template_string(stream),
             KauboMode::Interpolation => self.scan_interpolation(stream),
         };
 
-        trace!(self.logger, 
+        trace!(
+            self.logger,
             "Scan result: is_token = {}",
             matches!(result, ScanResult::Token(_)),
         );
@@ -98,7 +99,8 @@ impl KauboScanner {
 
         // 记录 token 起始位置
         self.token_start = stream.position();
-        trace!(self.logger, 
+        trace!(
+            self.logger,
             "Starting token scan at line {}, column {}",
             self.token_start.line,
             self.token_start.column,
@@ -115,7 +117,7 @@ impl KauboScanner {
         match c {
             // 单字符运算符/分隔符
             '+' => self.make_single_char(stream, KauboTokenKind::Plus),
-            '-' => self.scan_minus(stream),  // - 或 ->
+            '-' => self.scan_minus(stream), // - 或 ->
             '*' => self.make_single_char(stream, KauboTokenKind::Asterisk),
             '/' => self.scan_slash(stream), // 可能是注释开始
             '%' => self.make_single_char(stream, KauboTokenKind::Percent),
@@ -159,13 +161,19 @@ impl KauboScanner {
     }
 
     /// 模板字符串模式（预留）
-    fn scan_template_string(&mut self, _stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
+    fn scan_template_string(
+        &mut self,
+        _stream: &mut CharStream,
+    ) -> ScanResult<Token<KauboTokenKind>> {
         // TODO: 实现模板字符串扫描
         unimplemented!("Template string mode not yet implemented")
     }
 
     /// 插值表达式模式（预留）
-    fn scan_interpolation(&mut self, _stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
+    fn scan_interpolation(
+        &mut self,
+        _stream: &mut CharStream,
+    ) -> ScanResult<Token<KauboTokenKind>> {
         // TODO: 实现插值表达式扫描
         unimplemented!("Interpolation mode not yet implemented")
     }
@@ -184,7 +192,7 @@ impl KauboScanner {
     /// 扫描 '=' 系列（=, ==）
     fn scan_eq(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
         let _ = stream.try_advance(); // 消费 '='
-        
+
         if stream.check('=') {
             let _ = stream.try_advance(); // 消费第二个 '='
             let end = stream.position();
@@ -204,7 +212,7 @@ impl KauboScanner {
     /// 扫描 '!' 系列（!=）
     fn scan_bang(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
         let _ = stream.try_advance(); // 消费 '!'
-        
+
         if stream.check('=') {
             let _ = stream.try_advance();
             let end = stream.position();
@@ -225,7 +233,7 @@ impl KauboScanner {
     /// 扫描 '<' 系列（<, <=）
     fn scan_lt(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
         let _ = stream.try_advance(); // 消费 '<'
-        
+
         if stream.check('=') {
             let _ = stream.try_advance();
             let end = stream.position();
@@ -245,7 +253,7 @@ impl KauboScanner {
     /// 扫描 '>' 系列（>, >=）
     fn scan_gt(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
         let _ = stream.try_advance(); // 消费 '>'
-        
+
         if stream.check('=') {
             let _ = stream.try_advance();
             let end = stream.position();
@@ -265,7 +273,7 @@ impl KauboScanner {
     /// 扫描 '-' 系列（-, ->）
     fn scan_minus(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
         let _ = stream.try_advance(); // 消费 '-'
-        
+
         if stream.check('>') {
             let _ = stream.try_advance();
             let end = stream.position();
@@ -285,7 +293,7 @@ impl KauboScanner {
     /// 扫描 '/'（除法或注释）
     fn scan_slash(&mut self, stream: &mut CharStream) -> ScanResult<Token<KauboTokenKind>> {
         let _ = stream.try_advance(); // 消费 '/'
-        
+
         // 检查是否是注释
         if stream.check('/') {
             // 单行注释
@@ -335,7 +343,7 @@ impl KauboScanner {
         // 消费 '//'
         let _ = stream.try_advance(); // '/'
         let _ = stream.try_advance(); // '/'
-        
+
         // 跳过到行尾
         while let StreamResult::Ok(c) = stream.try_peek(0) {
             if c == '\n' {
@@ -350,7 +358,7 @@ impl KauboScanner {
         // 消费 '/*'
         let _ = stream.try_advance(); // '/'
         let _ = stream.try_advance(); // '*'
-        
+
         // 跳过到 '*/'
         while let StreamResult::Ok(c) = stream.try_peek(0) {
             if c == '*' {
@@ -514,7 +522,7 @@ impl KauboScanner {
         // 查找关键字
         let kind = self.lookup_keyword(&value);
         let end = stream.position();
-        
+
         ScanResult::Token(Token::with_text(
             kind,
             SourceSpan::range(self.token_start, end),
@@ -672,7 +680,7 @@ mod tests {
         // 3.14 是浮点数
         let tokens = collect_tokens("3.14");
         assert_eq!(tokens[0].kind, KauboTokenKind::LiteralFloat);
-        
+
         // 3. 是整数 3 后跟点号（成员访问）
         let tokens = collect_tokens("3.;");
         assert_eq!(tokens[0].kind, KauboTokenKind::LiteralInteger);
@@ -727,7 +735,7 @@ mod tests {
     fn test_complete_statement() {
         let code = r#"var x = "hello" + 123;"#;
         let tokens = collect_tokens(code);
-        
+
         assert_eq!(tokens[0].kind, KauboTokenKind::Var);
         assert_eq!(tokens[1].kind, KauboTokenKind::Identifier);
         assert_eq!(tokens[2].kind, KauboTokenKind::Equal);
@@ -759,7 +767,7 @@ mod tests {
         // 测试 - 和 -> 的区别
         let tokens = collect_tokens("x - y");
         assert_eq!(tokens[1].kind, KauboTokenKind::Minus);
-        
+
         let tokens2 = collect_tokens("x -> y");
         assert_eq!(tokens2[1].kind, KauboTokenKind::FatArrow);
     }

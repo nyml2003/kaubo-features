@@ -1,12 +1,12 @@
 //! 源代码位置追踪
-//! 
+//!
 //! 支持多坐标系统，满足不同场景需求：
 //! - line/column: 人类可读的错误显示（1-based）
 //! - byte_offset: 文件跳转和I/O操作（0-based）
 //! - utf16_column: LSP协议通信（0-based，UTF-16单元）
 
 /// 源代码位置
-/// 
+///
 /// 所有字段都是按需计算，不增加运行时开销
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SourcePosition {
@@ -42,7 +42,7 @@ impl SourcePosition {
     }
 
     /// 前进一个字符
-    /// 
+    ///
     /// # Arguments
     /// * `c` - 当前字符
     /// * `char_len` - UTF-8字节长度（1-4）
@@ -63,7 +63,7 @@ impl SourcePosition {
     }
 
     /// 前进指定字节数（不更新行列号）
-    /// 
+    ///
     /// 用于跳过已知长度的内容
     pub fn advance_bytes(&mut self, bytes: usize) {
         self.byte_offset += bytes;
@@ -80,7 +80,10 @@ pub struct SourceSpan {
 impl SourceSpan {
     /// 从起始位置创建区间（结束位置相同）
     pub fn at(pos: SourcePosition) -> Self {
-        Self { start: pos, end: pos }
+        Self {
+            start: pos,
+            end: pos,
+        }
     }
 
     /// 合并两个位置为区间
@@ -105,12 +108,12 @@ mod tests {
     #[test]
     fn test_position_advance_ascii() {
         let mut pos = SourcePosition::start();
-        
-        pos.advance('a');  // 1 byte, 1 UTF-16
+
+        pos.advance('a'); // 1 byte, 1 UTF-16
         assert_eq!(pos.column, 2);
         assert_eq!(pos.byte_offset, 1);
         assert_eq!(pos.utf16_column, 1);
-        
+
         pos.advance('b');
         assert_eq!(pos.column, 3);
         assert_eq!(pos.byte_offset, 2);
@@ -120,10 +123,10 @@ mod tests {
     #[test]
     fn test_position_advance_newline() {
         let mut pos = SourcePosition::start();
-        
+
         pos.advance('a');
         pos.advance('\n');
-        
+
         assert_eq!(pos.line, 2);
         assert_eq!(pos.column, 1);
         assert_eq!(pos.utf16_column, 0);
@@ -133,7 +136,7 @@ mod tests {
     #[test]
     fn test_position_advance_cjk() {
         let mut pos = SourcePosition::start();
-        
+
         // CJK字符：3字节UTF-8，1个UTF-16单元
         pos.advance('中');
         assert_eq!(pos.column, 2);
@@ -144,7 +147,7 @@ mod tests {
     #[test]
     fn test_position_advance_emoji() {
         let mut pos = SourcePosition::start();
-        
+
         // Emoji：4字节UTF-8，2个UTF-16单元（代理对）
         pos.advance('🎉');
         assert_eq!(pos.column, 2);

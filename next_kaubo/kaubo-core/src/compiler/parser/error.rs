@@ -26,7 +26,10 @@ pub enum ErrorLocation {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserErrorKind {
     /// 意外的token
-    UnexpectedToken { found: String, expected: Vec<String> },
+    UnexpectedToken {
+        found: String,
+        expected: Vec<String>,
+    },
     /// 无效的数字格式
     InvalidNumberFormat(String),
     /// 缺少右括号
@@ -105,7 +108,11 @@ impl std::fmt::Display for ParserError {
                 if expected.is_empty() {
                     format!("Unexpected token '{}'", found)
                 } else {
-                    format!("Unexpected token '{}', expected: {}", found, expected.join(", "))
+                    format!(
+                        "Unexpected token '{}', expected: {}",
+                        found,
+                        expected.join(", ")
+                    )
                 }
             }
             ParserErrorKind::InvalidNumberFormat(s) => {
@@ -137,7 +144,10 @@ impl std::error::Error for ParserError {}
 pub type ParseResult<T> = Result<T, ParserError>;
 
 /// 辅助函数：创建意外token错误
-pub fn unexpected_token(found: impl Into<String>, expected: Vec<impl Into<String>>) -> ParserErrorKind {
+pub fn unexpected_token(
+    found: impl Into<String>,
+    expected: Vec<impl Into<String>>,
+) -> ParserErrorKind {
     ParserErrorKind::UnexpectedToken {
         found: found.into(),
         expected: expected.into_iter().map(Into::into).collect(),
@@ -146,7 +156,9 @@ pub fn unexpected_token(found: impl Into<String>, expected: Vec<impl Into<String
 
 /// 辅助函数：创建期望标识符错误
 pub fn expected_identifier(found: impl Into<String>) -> ParserErrorKind {
-    ParserErrorKind::ExpectedIdentifier { found: found.into() }
+    ParserErrorKind::ExpectedIdentifier {
+        found: found.into(),
+    }
 }
 
 #[cfg(test)]

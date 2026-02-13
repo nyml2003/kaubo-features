@@ -178,7 +178,7 @@ mod tests {
     }
 
     /// 验证日志内容的具体测试
-    /// 
+    ///
     /// 这个测试验证：
     /// 1. Lexer 创建时记录日志
     /// 2. feed() 时记录日志  
@@ -196,7 +196,9 @@ mod tests {
         let mut lexer = Lexer::with_logger(1024, logger.clone());
         let records = ring.dump_records();
         assert!(
-            records.iter().any(|r| r.message.contains("Creating new Lexer")),
+            records
+                .iter()
+                .any(|r| r.message.contains("Creating new Lexer")),
             "Should log Lexer creation"
         );
 
@@ -223,7 +225,9 @@ mod tests {
         let _ = lexer.next_token(); // var
         let records = ring.dump_records();
         assert!(
-            records.iter().any(|r| r.message.contains("Requesting next token")),
+            records
+                .iter()
+                .any(|r| r.message.contains("Requesting next token")),
             "Should log token request"
         );
         assert!(
@@ -238,7 +242,9 @@ mod tests {
         let records = ring.dump_records();
         // Scanner 应该记录 "Scanning next token"
         assert!(
-            records.iter().any(|r| r.message.contains("Scanning next token")),
+            records
+                .iter()
+                .any(|r| r.message.contains("Scanning next token")),
             "Scanner should log scanning operations (logger was passed to KauboScanner)"
         );
     }
@@ -255,18 +261,18 @@ mod tests {
         let mut lexer = Lexer::with_logger(1024, logger);
         lexer.feed(b"var x;").unwrap();
         lexer.terminate().unwrap();
-        
+
         // 消费所有 token
         while lexer.next_token().is_some() {}
 
         let records = ring.dump_records();
-        
+
         // Info 级别下不应该有 Trace 日志
         assert!(
             !records.iter().any(|r| r.level == kaubo_log::Level::Trace),
             "Trace logs should be filtered at Info level"
         );
-        
+
         // Info 级别下不应该有 Debug 日志
         assert!(
             !records.iter().any(|r| r.level == kaubo_log::Level::Debug),

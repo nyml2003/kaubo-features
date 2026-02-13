@@ -123,7 +123,7 @@ pub type LambdaParam = (String, Option<TypeExpr>);
 // 匿名函数表达式结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lambda {
-    pub params: Vec<LambdaParam>,  // 参数名 + 可选类型标注
+    pub params: Vec<LambdaParam>,      // 参数名 + 可选类型标注
     pub return_type: Option<TypeExpr>, // 返回类型，可选
     pub body: Stmt,
 }
@@ -145,20 +145,20 @@ pub struct IndexAccess {
 // JSON 字面量结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsonLiteral {
-    pub entries: Vec<(String, Expr)>,  // 键值对列表
+    pub entries: Vec<(String, Expr)>, // 键值对列表
 }
 
 // Struct 实例化结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructLiteral {
-    pub name: String,                  // Struct 类型名
-    pub fields: Vec<(String, Expr)>,   // 字段赋值列表
+    pub name: String,                // Struct 类型名
+    pub fields: Vec<(String, Expr)>, // 字段赋值列表
 }
 
 // Yield 表达式结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct YieldExpr {
-    pub value: Option<Expr>,  // yield 的值，None 表示 yield;
+    pub value: Option<Expr>, // yield 的值，None 表示 yield;
 }
 
 // 实现Display trait（可选，用于调试输出）
@@ -194,7 +194,9 @@ impl fmt::Display for ExprKind {
                 write!(f, "{}({})", call.function_expr, args)
             }
             ExprKind::Lambda(l) => {
-                let params: Vec<String> = l.params.iter()
+                let params: Vec<String> = l
+                    .params
+                    .iter()
                     .map(|(name, ty)| match ty {
                         Some(t) => format!("{}: {}", name, t),
                         None => name.clone(),
@@ -208,7 +210,9 @@ impl fmt::Display for ExprKind {
             ExprKind::MemberAccess(m) => write!(f, "{}.{}", m.object, m.member),
             ExprKind::IndexAccess(i) => write!(f, "{}[{}]", i.object, i.index),
             ExprKind::JsonLiteral(json) => {
-                let entries = json.entries.iter()
+                let entries = json
+                    .entries
+                    .iter()
                     .map(|(k, v)| format!("\"{}\": {}", k, v))
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -219,7 +223,9 @@ impl fmt::Display for ExprKind {
                 None => write!(f, "yield"),
             },
             ExprKind::StructLiteral(s) => {
-                let fields = s.fields.iter()
+                let fields = s
+                    .fields
+                    .iter()
                     .map(|(k, v)| format!("{}: {}", k, v))
                     .collect::<Vec<_>>()
                     .join(", ");

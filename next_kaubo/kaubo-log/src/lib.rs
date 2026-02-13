@@ -83,8 +83,8 @@
 extern crate alloc;
 
 // 核心模块（所有平台通用）
-mod record;
 mod macros;
+mod record;
 mod span;
 
 // 条件编译模块
@@ -112,10 +112,10 @@ pub use record::{Level, Record};
 pub use ring_buffer::{LogRingBuffer, RingBufferStats};
 
 #[cfg(any(feature = "std", feature = "alloc"))]
-pub use logger::{Logger, LogSink};
+pub use logger::{LogSink, Logger};
 
 #[cfg(feature = "std")]
-pub use logger::{FileSink, StdoutSink, StderrSink};
+pub use logger::{FileSink, StderrSink, StdoutSink};
 
 #[cfg(feature = "std")]
 pub use config::{LogConfig, OutputConfig};
@@ -181,10 +181,7 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        assert_eq!(
-            format!("{}", Error::BufferFull),
-            "Ring buffer full"
-        );
+        assert_eq!(format!("{}", Error::BufferFull), "Ring buffer full");
         assert_eq!(
             format!("{}", Error::Serialize("test error")),
             "Serialize error: test error"

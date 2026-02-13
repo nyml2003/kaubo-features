@@ -80,5 +80,53 @@ mod tests {
         let cfg = RunConfig::default();
         assert!(!cfg.show_steps);
         assert!(!cfg.dump_bytecode);
+        assert!(cfg.compiler.emit_debug_info);
+        assert_eq!(cfg.limits.max_stack_size, 10240);
+        assert_eq!(cfg.limits.max_recursion_depth, 256);
+    }
+
+    #[test]
+    fn test_run_config_clone() {
+        let cfg = RunConfig::default();
+        let cloned = cfg.clone();
+        assert_eq!(cfg.show_steps, cloned.show_steps);
+        assert_eq!(cfg.dump_bytecode, cloned.dump_bytecode);
+    }
+
+    #[test]
+    fn test_run_config_debug() {
+        let cfg = RunConfig::default();
+        let debug_str = format!("{:?}", cfg);
+        assert!(debug_str.contains("show_steps"));
+        assert!(debug_str.contains("dump_bytecode"));
+        assert!(debug_str.contains("compiler"));
+        assert!(debug_str.contains("limits"));
+    }
+
+    #[test]
+    fn test_global_config_init_and_get() {
+        // 确保测试开始前配置是未初始化的
+        // 注意：由于全局状态，这个测试需要在独立进程中运行
+        // 或者使用 cargo test -- --test-threads=1
+        if !is_initialized() {
+            let cfg = RunConfig::default();
+            let show_steps = cfg.show_steps;
+            let dump_bytecode = cfg.dump_bytecode;
+            init(cfg);
+            assert!(is_initialized());
+
+            let retrieved = config();
+            assert_eq!(retrieved.show_steps, show_steps);
+            assert_eq!(retrieved.dump_bytecode, dump_bytecode);
+        }
+        // 如果已经初始化，跳过测试（全局状态限制）
+    }
+
+    #[test]
+    fn test_is_initialized() {
+        // 这个测试依赖于测试执行顺序
+        // 在独立测试中，应该是 false
+        // 但在 full test suite 中可能是 true
+        let _ = is_initialized(); // 只是确保函数可调用
     }
 }

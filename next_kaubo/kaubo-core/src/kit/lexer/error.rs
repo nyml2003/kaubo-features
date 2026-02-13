@@ -60,7 +60,10 @@ impl LexerError {
     fn format_message(kind: &ErrorKind, position: SourcePosition) -> String {
         match kind {
             ErrorKind::InvalidChar(ch) => {
-                format!("Invalid character '{}' at {}:{}", ch, position.line, position.column)
+                format!(
+                    "Invalid character '{}' at {}:{}",
+                    ch, position.line, position.column
+                )
             }
             ErrorKind::UnterminatedString => {
                 format!(

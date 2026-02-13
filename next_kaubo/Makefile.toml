@@ -1,95 +1,290 @@
-# cargo-make 配置文件
+# Kaubo Language - cargo-make 配置文件
 # 安装: cargo install cargo-make
 # 使用: cargo make <task>
+#
+# 常用任务:
+#   cargo make test          # 运行所有测试
+#   cargo make run           # 运行示例
+#   cargo make build         # 构建 release 版本
+#   cargo make check         # 检查代码
+#   cargo make cov           # 生成覆盖率报告
 
 [config]
 default_to_workspace = false
 
-# 默认任务
+# ============== 默认任务 ==============
+
+# 默认运行测试
 [tasks.default]
 alias = "test"
 
+# ============== 构建任务 ==============
+
+# 构建 CLI (debug 模式)
+[tasks.build-dev]
+description = "构建 CLI (debug 模式)"
+command = "cargo"
+args = ["build", "-p", "kaubo-cli"]
+
+# 构建 CLI (release 模式)
+[tasks.build]
+description = "构建 CLI release 版本"
+command = "cargo"
+args = ["build", "-p", "kaubo-cli", "--release"]
+
+# 构建所有 workspace 成员
+[tasks.build-all]
+description = "构建所有 workspace 成员"
+command = "cargo"
+args = ["build", "--workspace"]
+
+# ============== 测试任务 ==============
+
 # 运行所有测试
 [tasks.test]
+description = "运行所有测试"
 command = "cargo"
 args = ["test", "--workspace"]
 
 # 运行核心测试
 [tasks.test-core]
+description = "运行 kaubo-core 测试"
 command = "cargo"
 args = ["test", "-p", "kaubo-core"]
 
 # 运行 API 测试
 [tasks.test-api]
+description = "运行 kaubo-api 测试"
 command = "cargo"
 args = ["test", "-p", "kaubo-api"]
 
-# 生成覆盖率报告 - 终端输出 (cargo-llvm-cov + nightly, 支持分支覆盖率)
+# 运行日志系统测试
+[tasks.test-log]
+description = "运行 kaubo-log 测试"
+command = "cargo"
+args = ["test", "-p", "kaubo-log", "--all-features"]
+
+# 运行 CLI 测试
+[tasks.test-cli]
+description = "运行 kaubo-cli 测试"
+command = "cargo"
+args = ["test", "-p", "kaubo-cli"]
+
+# 持续测试 (文件变更时自动运行)
+[tasks.test-watch]
+description = "持续测试 (需 cargo-watch)"
+command = "cargo"
+args = ["watch", "-x", "test"]
+
+# ============== 代码质量任务 ==============
+
+# 检查代码
+[tasks.check]
+description = "检查代码"
+command = "cargo"
+args = ["check", "--workspace"]
+
+# 检查所有目标
+[tasks.check-all]
+description = "检查所有目标 (包括测试)"
+command = "cargo"
+args = ["check", "--workspace", "--all-targets"]
+
+# 格式化代码
+[tasks.fmt]
+description = "格式化代码"
+command = "cargo"
+args = ["fmt", "--all"]
+
+# 检查格式
+[tasks.fmt-check]
+description = "检查代码格式"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+# 运行 clippy
+[tasks.lint]
+description = "运行 clippy 检查"
+command = "cargo"
+args = ["clippy", "--workspace", "--", "-D", "warnings"]
+
+# 运行 clippy (允许警告)
+[tasks.clippy]
+description = "运行 clippy (允许警告)"
+command = "cargo"
+args = ["clippy", "--workspace"]
+
+# 代码质量检查全套
+[tasks.quality]
+description = "运行全套代码质量检查"
+dependencies = ["fmt-check", "check-all", "lint", "test"]
+
+# ============== 覆盖率任务 ==============
+
+# 生成覆盖率报告 (终端输出)
 [tasks.cov]
+description = "生成覆盖率报告 (终端输出，需 nightly)"
 script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features"
 
 # 生成 HTML 覆盖率报告
 [tasks.cov-html]
+description = "生成 HTML 覆盖率报告"
 script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features --html --output-dir target/llvm-cov"
 
 # 生成并打开 HTML 覆盖率报告
 [tasks.cov-open]
+description = "生成并打开 HTML 覆盖率报告"
 script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features --html --output-dir target/llvm-cov --open"
 
-# ========== kaubo-log 专用覆盖率任务 ==========
-# 使用方式: cargo make cov-log
-
-# kaubo-log 覆盖率 - 终端输出 (llvm-cov, 需 nightly)
+# kaubo-log 覆盖率 - 终端输出
 [tasks.cov-log]
-description = "kaubo-log 覆盖率报告 (终端输出，需 nightly)"
+description = "kaubo-log 覆盖率报告 (终端)"
 script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features"
 
-# kaubo-log 覆盖率 - HTML 报告 (llvm-cov)
+# kaubo-log 覆盖率 - HTML
 [tasks.cov-log-html]
-description = "kaubo-log 覆盖率 HTML 报告 (llvm-cov，需 nightly)"
+description = "kaubo-log 覆盖率 HTML 报告"
 script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features --html --output-dir target/llvm-cov/kaubo-log"
 
-# kaubo-log 覆盖率 - 打开 HTML 报告 (llvm-cov)
+# kaubo-log 覆盖率 - 打开
 [tasks.cov-log-open]
-description = "生成并打开 kaubo-log 覆盖率 HTML 报告 (llvm-cov，需 nightly)"
+description = "打开 kaubo-log 覆盖率报告"
 script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features --html --output-dir target/llvm-cov/kaubo-log --open"
 
-# 清理生成的文件
+# 使用 Python 脚本生成覆盖率
+[tasks.cov-py]
+description = "使用 Python 脚本生成覆盖率报告"
+script = "python scripts/coverage.py --html"
+
+# ============== CLI 运行任务 ==============
+
+# 运行 Hello World 示例
+[tasks.run]
+description = "运行 Hello World 示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/hello.kaubo"]
+
+# 运行斐波那契示例
+[tasks.run-fib]
+description = "运行斐波那契示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/fib.kaubo"]
+
+# 运行计算器示例
+[tasks.run-calc]
+description = "运行计算器示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/calc.kaubo"]
+
+# 运行示例 (带详细输出)
+[tasks.run-verbose]
+description = "运行示例 (verbose 模式)"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "-v", "--show-steps", "examples/hello.kaubo"]
+
+# 运行并显示源码
+[tasks.run-source]
+description = "运行并显示源码"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--show-source", "examples/hello.kaubo"]
+
+# 编译示例 (不执行)
+[tasks.compile]
+description = "编译示例 (不执行)"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--compile-only", "--dump-bytecode", "examples/hello.kaubo"]
+
+# 运行任意文件
+[tasks.run-file]
+description = "运行指定文件: cargo make run-file FILE=examples/test.kaubo"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "${FILE}"]
+
+# release 模式运行
+[tasks.run-release]
+description = "Release 模式运行"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--release", "--", "examples/hello.kaubo"]
+
+# ============== 文档任务 ==============
+
+# 生成文档
+[tasks.doc]
+description = "生成文档"
+command = "cargo"
+args = ["doc", "--workspace", "--no-deps"]
+
+# 生成并打开文档
+[tasks.doc-open]
+description = "生成并打开文档"
+command = "cargo"
+args = ["doc", "--workspace", "--no-deps", "--open"]
+
+# ============== 清理任务 ==============
+
+# 清理构建文件
 [tasks.clean]
+description = "清理构建文件"
 command = "cargo"
 args = ["clean"]
 
-# 运行 CLI (开发模式)
-[tasks.run]
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "assets/test_simple.kaubo"]
+# 深度清理 (包括覆盖率数据)
+[tasks.clean-all]
+description = "深度清理 (包括覆盖率数据)"
+script = """
+cargo clean
+if (Test-Path target/llvm-cov) {
+    Remove-Item -Recurse -Force target/llvm-cov
+}
+"""
 
-# 运行 CLI (release 模式)
-[tasks.run-release]
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--release", "--", "assets/b.kaubo"]
+# ============== 安装/设置任务 ==============
 
-# 检查整个 workspace
-[tasks.check]
-command = "cargo"
-args = ["check", "--workspace"]
+# 安装必要工具
+[tasks.install-tools]
+description = "安装必要工具"
+script = """
+echo "安装 cargo-make..."
+cargo install cargo-make
 
-# 格式化代码
-[tasks.fmt]
-command = "cargo"
-args = ["fmt", "--all"]
+echo "安装 cargo-llvm-cov..."
+cargo install cargo-llvm-cov
 
-# 运行 clippy
-[tasks.lint]
-command = "cargo"
-args = ["clippy", "--workspace", "--", "-D", "warnings"]
+echo "安装 nightly 工具链..."
+rustup install nightly
 
-# 构建 release
-[tasks.build]
-command = "cargo"
-args = ["build", "-p", "kaubo-cli", "--release"]
+echo "安装 cargo-watch (可选)..."
+cargo install cargo-watch
+"""
 
-# 检查所有 crate
-[tasks.check-all]
-command = "cargo"
-args = ["check", "--workspace", "--all-targets"]
+# 检查环境
+[tasks.check-env]
+description = "检查开发环境"
+script.prefer_local = true
+script = '''
+#!/bin/bash
+echo "=== Rust 工具链 ==="
+rustc --version
+cargo --version
+
+echo ""
+echo "=== Nightly 工具链 ==="
+rustup show | grep nightly || echo "未安装"
+
+echo ""
+echo "=== 安装的工具 ==="
+cargo make --version 2>/dev/null || echo "cargo-make: 未安装"
+cargo llvm-cov --version 2>/dev/null || echo "cargo-llvm-cov: 未安装"
+cargo watch --version 2>/dev/null || echo "cargo-watch: 未安装 (可选)"
+
+echo ""
+echo "=== Python (用于 coverage.py) ==="
+python --version 2>/dev/null || echo "Python: 未安装"
+'''
+
+# ============== CI/自动化任务 ==============
+
+# CI 检查全套
+[tasks.ci]
+description = "CI 全套检查"
+dependencies = ["fmt-check", "check-all", "lint", "test", "build"]

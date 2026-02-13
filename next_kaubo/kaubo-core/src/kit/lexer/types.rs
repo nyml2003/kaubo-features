@@ -28,7 +28,10 @@ impl Span {
 
     /// 从单个坐标创建 span（用于单 token）
     pub fn at(coord: Coordinate) -> Self {
-        Self { start: coord, end: coord }
+        Self {
+            start: coord,
+            end: coord,
+        }
     }
 
     /// 合并两个 span

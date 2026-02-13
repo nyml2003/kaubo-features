@@ -23,7 +23,7 @@ pub enum OpCode {
     LoadConst13,
     LoadConst14,
     LoadConst15,
-    LoadConst,    // 0x10 + u8 索引
+    LoadConst,     // 0x10 + u8 索引
     LoadConstWide, // 0x11 + u16 索引
 
     LoadNull = 0x18,
@@ -68,7 +68,7 @@ pub enum OpCode {
     Sub,
     Mul,
     Div,
-    Mod,      // 取模/求余
+    Mod, // 取模/求余
 
     Neg = 0x68, // 一元取负
 
@@ -84,16 +84,16 @@ pub enum OpCode {
     Not = 0x78,
 
     // ===== 控制流 (0x80-0x8F) =====
-    Jump = 0x80,          // + i16 偏移
-    JumpIfFalse,          // + i16 偏移
-    JumpBack,             // + i16 偏移 (负向跳转)
+    Jump = 0x80, // + i16 偏移
+    JumpIfFalse, // + i16 偏移
+    JumpBack,    // + i16 偏移 (负向跳转)
 
     // ===== 函数 (0x90-0x9F) =====
     Call = 0x90,          // + u8 参数个数
-    Closure = 0x91,        // 创建闭包对象
-    GetUpvalue = 0x92,     // + u8 读取 upvalue
-    SetUpvalue = 0x93,     // + u8 设置 upvalue
-    CloseUpvalues = 0x94,  // + u8 关闭指定槽位以上的所有 upvalue
+    Closure = 0x91,       // 创建闭包对象
+    GetUpvalue = 0x92,    // + u8 读取 upvalue
+    SetUpvalue = 0x93,    // + u8 设置 upvalue
+    CloseUpvalues = 0x94, // + u8 关闭指定槽位以上的所有 upvalue
     Return,
     ReturnValue,
 
@@ -104,33 +104,32 @@ pub enum OpCode {
     CoroutineStatus = 0x9B, // 获取协程状态 (0=Suspended, 1=Running, 2=Dead)
 
     // ===== 列表 (0xB0-0xBF) =====
-    BuildList = 0xB0,     // + u8 元素个数
-    IndexGet,             // 列表索引读取
-    IndexSet,             // 列表索引赋值
-    GetIter,              // 获取迭代器
-    IterNext,             // 获取迭代器下一个值，null 表示结束
-    
-    // ===== JSON (0xC0-0xCF) =====
-    BuildJson = 0xC0,     // + u8 键值对个数，键和值从栈弹出
-    JsonGet,              // JSON 字符串键获取: 栈顶[key, json] → value
-    JsonSet,              // JSON 字符串键设置: 栈顶[value, key, json] → null
+    BuildList = 0xB0, // + u8 元素个数
+    IndexGet,         // 列表索引读取
+    IndexSet,         // 列表索引赋值
+    GetIter,          // 获取迭代器
+    IterNext,         // 获取迭代器下一个值，null 表示结束
 
+    // ===== JSON (0xC0-0xCF) =====
+    BuildJson = 0xC0, // + u8 键值对个数，键和值从栈弹出
+    JsonGet,          // JSON 字符串键获取: 栈顶[key, json] → value
+    JsonSet,          // JSON 字符串键设置: 栈顶[value, key, json] → null
 
     // ===== 模块 (0xD0-0xD7) =====
-    BuildModule = 0xD0,   // + u8 导出项个数，值从栈弹出，创建模块对象
-    ModuleGet,            // + u16 ShapeID，从模块获取字段（编译期确定）
-    GetModuleExport,      // 从模块动态获取导出项：栈顶[module, name] -> value
-    GetModule,            // 根据模块名获取模块对象：栈顶[name] -> module
+    BuildModule = 0xD0, // + u8 导出项个数，值从栈弹出，创建模块对象
+    ModuleGet,          // + u16 ShapeID，从模块获取字段（编译期确定）
+    GetModuleExport,    // 从模块动态获取导出项：栈顶[module, name] -> value
+    GetModule,          // 根据模块名获取模块对象：栈顶[name] -> module
     // ModuleSet 预留（未来支持模块字段可变性）
 
     // ===== Struct (0xD8-0xDF) =====
-    BuildStruct = 0xD8,   // + u16 shape_id + u8 field_count，从栈弹出字段值，创建 struct
-    GetField,             // + u8 字段索引，栈顶[struct] -> field_value
-    SetField,             // + u8 字段索引，栈顶[value, struct] -> null
-    LoadMethod,           // + u8 方法索引，栈顶[struct] -> [struct, method]
+    BuildStruct = 0xD8, // + u16 shape_id + u8 field_count，从栈弹出字段值，创建 struct
+    GetField,           // + u8 字段索引，栈顶[struct] -> field_value
+    SetField,           // + u8 字段索引，栈顶[value, struct] -> null
+    LoadMethod,         // + u8 方法索引，栈顶[struct] -> [struct, method]
 
     // ===== 调试 (0xF0-0xFF) =====
-    Print = 0xF0,         // 调试用
+    Print = 0xF0, // 调试用
     Invalid = 0xFF,
 }
 
@@ -321,16 +320,16 @@ impl OpCode {
             | OpCode::BuildList
             | OpCode::BuildJson
             | OpCode::BuildModule => 1,
-            
+
             // u8 操作数（常量池索引）
             OpCode::GetModuleExport => 1,
-            
+
             // u8 操作数（Struct 相关）
             OpCode::GetField | OpCode::SetField | OpCode::LoadMethod => 1,
-            
+
             // u16 + u8 操作数（BuildStruct）
             OpCode::BuildStruct => 3,
-            
+
             // 无操作数（运行时从栈获取参数）
             OpCode::GetModule => 0,
 

@@ -1,4 +1,4 @@
-use super::expr::{Expr}; // 引用之前定义的Expr类型
+use super::expr::Expr; // 引用之前定义的Expr类型
 use super::type_expr::TypeExpr;
 use crate::kit::lexer::types::Span;
 use std::fmt;
@@ -56,11 +56,11 @@ pub struct BlockStmt {
 // 变量声明语句结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct VarDeclStmt {
-    pub name: String,                    // 变量名
+    pub name: String,                      // 变量名
     pub type_annotation: Option<TypeExpr>, // 类型标注（如 `int`），可选
-    pub initializer: Expr,               // 初始化表达式（必须有）
-    pub is_public: bool,                 // 是否 pub 导出
-    pub span: Span,                      // 源代码位置
+    pub initializer: Expr,                 // 初始化表达式（必须有）
+    pub is_public: bool,                   // 是否 pub 导出
+    pub span: Span,                        // 源代码位置
 }
 
 // If语句结构体
@@ -104,16 +104,16 @@ pub struct PrintStmt {
 // 模块定义语句结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleStmt {
-    pub name: String,         // 模块名
-    pub body: Stmt,           // 模块体（代码块）
+    pub name: String, // 模块名
+    pub body: Stmt,   // 模块体（代码块）
 }
 
 // 导入语句结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportStmt {
-    pub module_path: String,           // 模块路径
-    pub items: Vec<String>,            // 导入的项（空表示导入整个模块）
-    pub alias: Option<String>,         // 别名（如 `import foo as bar`）
+    pub module_path: String,   // 模块路径
+    pub items: Vec<String>,    // 导入的项（空表示导入整个模块）
+    pub alias: Option<String>, // 别名（如 `import foo as bar`）
 }
 
 // 字段定义（用于 struct）
@@ -136,15 +136,15 @@ pub struct StructStmt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MethodDef {
     pub name: String,
-    pub lambda: Expr,  // Lambda 表达式
+    pub lambda: Expr, // Lambda 表达式
     pub span: Span,
 }
 
 // Impl 定义语句
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImplStmt {
-    pub struct_name: String,   // 被实现的 struct 名称
-    pub methods: Vec<MethodDef>,  // 方法列表
+    pub struct_name: String,     // 被实现的 struct 名称
+    pub methods: Vec<MethodDef>, // 方法列表
     pub span: Span,
 }
 
@@ -163,12 +163,14 @@ impl fmt::Display for StmtKind {
                     .join("\n");
                 write!(f, "{{\n{}\n}}", stmts)
             }
-            StmtKind::VarDecl(var_decl) => {
-                match &var_decl.type_annotation {
-                    Some(ty) => write!(f, "var {}: {} = {};", var_decl.name, ty, var_decl.initializer),
-                    None => write!(f, "var {} = {};", var_decl.name, var_decl.initializer),
-                }
-            }
+            StmtKind::VarDecl(var_decl) => match &var_decl.type_annotation {
+                Some(ty) => write!(
+                    f,
+                    "var {}: {} = {};",
+                    var_decl.name, ty, var_decl.initializer
+                ),
+                None => write!(f, "var {} = {};", var_decl.name, var_decl.initializer),
+            },
             StmtKind::If(if_stmt) => {
                 let mut s = format!("if ({}) {}", if_stmt.if_condition, if_stmt.then_body);
                 // 拼接elif
@@ -223,14 +225,18 @@ impl fmt::Display for StmtKind {
                 }
             }
             StmtKind::Struct(struct_stmt) => {
-                let fields = struct_stmt.fields.iter()
+                let fields = struct_stmt
+                    .fields
+                    .iter()
                     .map(|f| format!("{}: {}", f.name, f.type_annotation))
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "struct {} {{ {} }}", struct_stmt.name, fields)
             }
             StmtKind::Impl(impl_stmt) => {
-                let methods = impl_stmt.methods.iter()
+                let methods = impl_stmt
+                    .methods
+                    .iter()
                     .map(|m| format!("  {}: {}", m.name, m.lambda))
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -242,8 +248,8 @@ impl fmt::Display for StmtKind {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::expr::*;
+    use super::*;
 
     fn make_expr(kind: ExprKind) -> Expr {
         Box::new(kind)
@@ -285,8 +291,12 @@ mod tests {
     #[test]
     fn test_for_stmt_display() {
         let stmt = StmtKind::For(ForStmt {
-            iterator: make_expr(ExprKind::VarRef(VarRef { name: "i".to_string() })),
-            iterable: make_expr(ExprKind::VarRef(VarRef { name: "list".to_string() })),
+            iterator: make_expr(ExprKind::VarRef(VarRef {
+                name: "i".to_string(),
+            })),
+            iterable: make_expr(ExprKind::VarRef(VarRef {
+                name: "list".to_string(),
+            })),
             body: make_stmt(StmtKind::Empty(EmptyStmt)),
         });
         assert!(format!("{}", stmt).contains("for"));
@@ -298,11 +308,11 @@ mod tests {
             value: Some(make_expr(ExprKind::LiteralInt(LiteralInt { value: 42 }))),
             span: Span::default(),
         });
-        let stmt_without_value = StmtKind::Return(ReturnStmt { 
+        let stmt_without_value = StmtKind::Return(ReturnStmt {
             value: None,
             span: Span::default(),
         });
-        
+
         assert!(format!("{}", stmt_with_value).contains("return 42"));
         assert_eq!(format!("{}", stmt_without_value), "return;");
     }

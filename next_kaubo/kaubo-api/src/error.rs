@@ -287,3 +287,345 @@ fn escape_json(s: &str) -> String {
         .replace('\r', "\\r")
         .replace('\t', "\\t")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kaubo_core::compiler::parser::error::ErrorLocation;
+    use kaubo_core::compiler::parser::{ParserError, ParserErrorKind};
+    use kaubo_core::kit::lexer::types::Coordinate;
+    use kaubo_core::kit::lexer::{ErrorKind, SourcePosition};
+
+    #[test]
+    fn test_lexer_error_line_column() {
+        // 创建一个 lexer error
+        let pos = SourcePosition::new(10, 5, 100, 5);
+        let lexer_err = LexerError::at(ErrorKind::Utf8Error, pos);
+        let err = KauboError::Lexer(lexer_err);
+
+        assert_eq!(err.line(), Some(10));
+        assert_eq!(err.column(), Some(5));
+        assert_eq!(err.phase(), "lexer");
+    }
+
+    #[test]
+    fn test_parser_error_line_column() {
+        let parser_err = ParserError::at(ParserErrorKind::MissingRightParen, 3, 7);
+        let err = KauboError::Parser(parser_err);
+
+        assert_eq!(err.line(), Some(3));
+        assert_eq!(err.column(), Some(7));
+        assert_eq!(err.phase(), "parser");
+    }
+
+    #[test]
+    fn test_type_error_line_column() {
+        let type_err = TypeError::UndefinedVar {
+            name: "x".to_string(),
+            location: ErrorLocation::At(Coordinate {
+                line: 5,
+                column: 10,
+            }),
+        };
+        let err = KauboError::Type(type_err);
+
+        assert_eq!(err.line(), Some(5));
+        assert_eq!(err.column(), Some(10));
+        assert_eq!(err.phase(), "type");
+    }
+
+    #[test]
+    fn test_compiler_error() {
+        let err = KauboError::Compiler("unknown error".to_string());
+        assert_eq!(err.line(), None);
+        assert_eq!(err.column(), None);
+        assert_eq!(err.phase(), "compiler");
+    }
+
+    #[test]
+    fn test_runtime_error() {
+        let err = KauboError::Runtime("division by zero".to_string());
+        assert_eq!(err.line(), None);
+        assert_eq!(err.column(), None);
+        assert_eq!(err.phase(), "runtime");
+    }
+
+    #[test]
+    fn test_error_report_display_with_location() {
+        let report = ErrorReport {
+            phase: "parser",
+            line: Some(10),
+            column: Some(5),
+            error_kind: "UnexpectedToken".to_string(),
+            message: "expected ';'".to_string(),
+            details: Some(ErrorDetails::Location {
+                location_type: "at",
+            }),
+        };
+
+        let display = format!("{}", report);
+        assert!(display.contains("[10:5]"));
+        assert!(display.contains("parser"));
+        assert!(display.contains("expected ';'"));
+    }
+
+    #[test]
+    fn test_error_report_display_without_location() {
+        let report = ErrorReport {
+            phase: "compiler",
+            line: None,
+            column: None,
+            error_kind: "CompileError".to_string(),
+            message: "out of memory".to_string(),
+            details: None,
+        };
+
+        let display = format!("{}", report);
+        assert!(display.contains("[compiler]"));
+        assert!(display.contains("compiler error"));
+    }
+
+    #[test]
+    fn test_error_report_to_json() {
+        let report = ErrorReport {
+            phase: "lexer",
+            line: Some(1),
+            column: Some(2),
+            error_kind: "InvalidChar".to_string(),
+            message: "invalid character '@'".to_string(),
+            details: None,
+        };
+
+        let json = report.to_json();
+        assert!(json.contains("\"phase\":\"lexer\""));
+        assert!(json.contains("\"line\":1"));
+        assert!(json.contains("\"column\":2"));
+        assert!(json.contains("\"error_kind\":\"InvalidChar\""));
+        assert!(json.contains("\"message\":\"invalid character '@'\""));
+    }
+
+    #[test]
+    fn test_error_report_to_json_null_values() {
+        let report = ErrorReport {
+            phase: "runtime",
+            line: None,
+            column: None,
+            error_kind: "RuntimeError".to_string(),
+            message: "panic".to_string(),
+            details: None,
+        };
+
+        let json = report.to_json();
+        assert!(json.contains("\"line\":null"));
+        assert!(json.contains("\"column\":null"));
+    }
+
+    #[test]
+    fn test_error_report_to_short() {
+        let report = ErrorReport {
+            phase: "type",
+            line: Some(5),
+            column: Some(10),
+            error_kind: "TypeMismatch".to_string(),
+            message: "expected int, found string".to_string(),
+            details: None,
+        };
+
+        assert_eq!(report.to_short(), "type: expected int, found string");
+    }
+
+    #[test]
+    fn test_lexer_error_to_report() {
+        let pos = SourcePosition::new(3, 8, 50, 8);
+        let lexer_err = LexerError::at(ErrorKind::Utf8Error, pos);
+        let err = KauboError::Lexer(lexer_err);
+        let report = err.to_report();
+
+        assert_eq!(report.phase, "lexer");
+        assert_eq!(report.line, Some(3));
+        assert_eq!(report.column, Some(8));
+    }
+
+    #[test]
+    fn test_compiler_error_to_report() {
+        let err = KauboError::Compiler("stack overflow".to_string());
+        let report = err.to_report();
+
+        assert_eq!(report.phase, "compiler");
+        assert_eq!(report.line, None);
+        assert_eq!(report.column, None);
+        assert_eq!(report.error_kind, "CompileError");
+        assert_eq!(report.message, "stack overflow");
+        assert_eq!(report.details, None);
+    }
+
+    #[test]
+    fn test_runtime_error_to_report() {
+        let err = KauboError::Runtime("index out of bounds".to_string());
+        let report = err.to_report();
+
+        assert_eq!(report.phase, "runtime");
+        assert_eq!(report.error_kind, "RuntimeError");
+        assert_eq!(report.message, "index out of bounds");
+    }
+
+    #[test]
+    fn test_type_error_mismatch_to_report() {
+        let type_err = TypeError::Mismatch {
+            expected: "int".to_string(),
+            found: "string".to_string(),
+            location: ErrorLocation::At(Coordinate {
+                line: 10,
+                column: 5,
+            }),
+        };
+        let err = KauboError::Type(type_err);
+        let report = err.to_report();
+
+        assert_eq!(report.phase, "type");
+        assert_eq!(report.line, Some(10));
+        assert_eq!(report.column, Some(5));
+        assert_eq!(report.error_kind, "TypeMismatch");
+    }
+
+    #[test]
+    fn test_type_error_return_type_mismatch_to_report() {
+        let type_err = TypeError::ReturnTypeMismatch {
+            expected: "void".to_string(),
+            found: "int".to_string(),
+            location: ErrorLocation::After(Coordinate {
+                line: 20,
+                column: 1,
+            }),
+        };
+        let err = KauboError::Type(type_err);
+        let report = err.to_report();
+
+        assert_eq!(report.line, Some(20));
+        assert_eq!(report.column, Some(1));
+        match report.details {
+            Some(ErrorDetails::Location { location_type }) => assert_eq!(location_type, "after"),
+            _ => panic!("Expected Location details with 'after' type"),
+        }
+    }
+
+    #[test]
+    fn test_type_error_eof_location() {
+        let type_err = TypeError::UndefinedVar {
+            name: "foo".to_string(),
+            location: ErrorLocation::Eof,
+        };
+        let err = KauboError::Type(type_err);
+        let report = err.to_report();
+
+        assert_eq!(report.line, None);
+        assert_eq!(report.column, None);
+        match report.details {
+            Some(ErrorDetails::Location { location_type }) => assert_eq!(location_type, "eof"),
+            _ => panic!("Expected Location details with 'eof' type"),
+        }
+    }
+
+    #[test]
+    fn test_type_error_unknown_location() {
+        let type_err = TypeError::UnsupportedOp {
+            op: "+".to_string(),
+            location: ErrorLocation::Unknown,
+        };
+        let err = KauboError::Type(type_err);
+        let report = err.to_report();
+
+        assert_eq!(report.line, None);
+        assert_eq!(report.column, None);
+        match report.details {
+            Some(ErrorDetails::Location { location_type }) => assert_eq!(location_type, "unknown"),
+            _ => panic!("Expected Location details with 'unknown' type"),
+        }
+    }
+
+    #[test]
+    fn test_escape_json() {
+        assert_eq!(escape_json("hello"), "hello");
+        assert_eq!(escape_json("hello\"world"), "hello\\\"world");
+        assert_eq!(escape_json("hello\\world"), "hello\\\\world");
+        assert_eq!(escape_json("hello\nworld"), "hello\\nworld");
+        assert_eq!(escape_json("hello\tworld"), "hello\\tworld");
+        assert_eq!(escape_json("hello\rworld"), "hello\\rworld");
+    }
+
+    #[test]
+    fn test_error_report_to_json_with_special_chars() {
+        let report = ErrorReport {
+            phase: "parser",
+            line: Some(1),
+            column: Some(1),
+            error_kind: "Error\"Type".to_string(),
+            message: "line1\nline2\ttab".to_string(),
+            details: None,
+        };
+
+        let json = report.to_json();
+        assert!(json.contains("\\\"")); // 引号被转义
+        assert!(json.contains("\\n")); // 换行被转义
+        assert!(json.contains("\\t")); // tab被转义
+    }
+
+    #[test]
+    fn test_error_details_clone() {
+        let details = ErrorDetails::Location {
+            location_type: "at",
+        };
+        let cloned = details.clone();
+        match cloned {
+            ErrorDetails::Location { location_type } => assert_eq!(location_type, "at"),
+        }
+    }
+
+    #[test]
+    fn test_error_report_clone() {
+        let report = ErrorReport {
+            phase: "lexer",
+            line: Some(1),
+            column: Some(2),
+            error_kind: "Test".to_string(),
+            message: "test".to_string(),
+            details: Some(ErrorDetails::Location {
+                location_type: "at",
+            }),
+        };
+        let cloned = report.clone();
+        assert_eq!(cloned.phase, "lexer");
+        assert_eq!(cloned.line, Some(1));
+        assert_eq!(cloned.column, Some(2));
+    }
+
+    #[test]
+    fn test_error_report_equality() {
+        let report1 = ErrorReport {
+            phase: "lexer",
+            line: Some(1),
+            column: Some(2),
+            error_kind: "Test".to_string(),
+            message: "test".to_string(),
+            details: None,
+        };
+        let report2 = ErrorReport {
+            phase: "lexer",
+            line: Some(1),
+            column: Some(2),
+            error_kind: "Test".to_string(),
+            message: "test".to_string(),
+            details: None,
+        };
+        let report3 = ErrorReport {
+            phase: "parser",
+            line: Some(1),
+            column: Some(2),
+            error_kind: "Test".to_string(),
+            message: "test".to_string(),
+            details: None,
+        };
+        assert_eq!(report1, report2);
+        assert_ne!(report1, report3);
+    }
+}

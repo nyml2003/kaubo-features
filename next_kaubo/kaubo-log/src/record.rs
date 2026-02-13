@@ -83,7 +83,11 @@ pub struct Record {
 #[cfg(feature = "alloc")]
 impl Record {
     /// 创建新记录
-    pub fn new(level: Level, target: &'static str, message: impl Into<alloc::string::String>) -> Self {
+    pub fn new(
+        level: Level,
+        target: &'static str,
+        message: impl Into<alloc::string::String>,
+    ) -> Self {
         Self {
             timestamp_ms: current_timestamp_ms(),
             level,
@@ -105,7 +109,7 @@ impl Record {
             Some(id) => alloc::format!(" [span={}]", id),
             None => alloc::string::String::new(),
         };
-        
+
         alloc::format!(
             "[{}] {} {}{}: {}",
             format_timestamp(self.timestamp_ms),
@@ -155,7 +159,7 @@ impl PartialEq for Record {
 }
 
 /// 获取当前时间戳（毫秒）
-/// 
+///
 /// 在 std 平台使用系统时间，在 no_std 平台使用单调计数器
 #[cfg(feature = "std")]
 fn current_timestamp_ms() -> u64 {
@@ -167,27 +171,24 @@ fn current_timestamp_ms() -> u64 {
 }
 
 #[cfg(not(feature = "std"))]
-static mut MONOTONIC_COUNTER: core::sync::atomic::AtomicU64 = 
-    core::sync::atomic::AtomicU64::new(0);
+static mut MONOTONIC_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 #[cfg(not(feature = "std"))]
 fn current_timestamp_ms() -> u64 {
     // no_std 环境下使用单调递增计数器作为时间戳
     // 实际项目应该接入硬件时钟
-    unsafe {
-        MONOTONIC_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed)
-    }
+    unsafe { MONOTONIC_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed) }
 }
 
 /// 格式化时间戳为可读字符串
 fn format_timestamp(timestamp_ms: u64) -> alloc::string::String {
     let secs = timestamp_ms / 1000;
     let millis = timestamp_ms % 1000;
-    
+
     let hours = (secs / 3600) % 24;
     let minutes = (secs / 60) % 60;
     let seconds = secs % 60;
-    
+
     alloc::format!("{:02}:{:02}:{:02}.{:03}", hours, minutes, seconds, millis)
 }
 
@@ -231,7 +232,7 @@ mod tests {
     fn test_record_debug() {
         let record = Record::new(Level::Info, "test::module", "debug test");
         let debug_str = format!("{:?}", record);
-        
+
         // 验证 Debug 输出包含关键字段
         assert!(debug_str.contains("Record"));
         assert!(debug_str.contains("timestamp_ms"));
@@ -254,7 +255,7 @@ mod tests {
             message: alloc::string::String::from("test message"),
             span_id: Some(1),
         };
-        
+
         // 完全相同的记录
         let record2 = Record {
             timestamp_ms: 1000,
@@ -263,9 +264,9 @@ mod tests {
             message: alloc::string::String::from("test message"),
             span_id: Some(1),
         };
-        
+
         assert_eq!(record1, record2);
-        
+
         // 不同的 timestamp
         let record3 = Record {
             timestamp_ms: 2000,
@@ -275,7 +276,7 @@ mod tests {
             span_id: Some(1),
         };
         assert_ne!(record1, record3);
-        
+
         // 不同的 level
         let record4 = Record {
             timestamp_ms: 1000,
@@ -285,7 +286,7 @@ mod tests {
             span_id: Some(1),
         };
         assert_ne!(record1, record4);
-        
+
         // 不同的 target
         let record5 = Record {
             timestamp_ms: 1000,
@@ -295,7 +296,7 @@ mod tests {
             span_id: Some(1),
         };
         assert_ne!(record1, record5);
-        
+
         // 不同的 message
         let record6 = Record {
             timestamp_ms: 1000,
@@ -305,7 +306,7 @@ mod tests {
             span_id: Some(1),
         };
         assert_ne!(record1, record6);
-        
+
         // 不同的 span_id
         let record7 = Record {
             timestamp_ms: 1000,
@@ -327,7 +328,7 @@ mod tests {
             message: alloc::string::String::from("token found"),
             span_id: Some(7),
         };
-        
+
         let formatted = record.format();
         assert!(formatted.contains("INFO"));
         assert!(formatted.contains("kaubo::lexer"));

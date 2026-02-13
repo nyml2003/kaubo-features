@@ -54,7 +54,7 @@ macro_rules! log {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Logger, Level, LogRingBuffer};
+    use crate::{Level, LogRingBuffer, Logger};
 
     #[test]
     fn test_trace_macro() {

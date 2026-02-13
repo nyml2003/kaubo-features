@@ -93,7 +93,8 @@ impl WasmLogger {
 
     /// 设置日志级别
     pub fn set_level(&self, level: Level) {
-        self.level.store(level as u8, core::sync::atomic::Ordering::Relaxed);
+        self.level
+            .store(level as u8, core::sync::atomic::Ordering::Relaxed);
     }
 
     /// 获取日志级别
@@ -210,10 +211,10 @@ mod tests {
     fn test_wasm_logger_level_change() {
         let config = WasmConfig::new(Level::Debug);
         let logger = WasmLogger::new(config);
-        
+
         assert!(logger.is_enabled(Level::Debug));
         assert!(!logger.is_enabled(Level::Trace));
-        
+
         logger.set_level(Level::Trace);
         assert!(logger.is_enabled(Level::Trace));
     }
