@@ -115,6 +115,9 @@ pub use ring_buffer::{LogRingBuffer, RingBufferStats};
 pub use logger::{Logger, LogSink};
 
 #[cfg(feature = "std")]
+pub use logger::{FileSink, StdoutSink, StderrSink};
+
+#[cfg(feature = "std")]
 pub use config::{LogConfig, OutputConfig};
 
 #[cfg(feature = "wasm")]

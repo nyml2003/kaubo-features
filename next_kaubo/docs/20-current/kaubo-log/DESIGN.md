@@ -206,6 +206,18 @@ cargo make cov-log-html
 - 日志级别映射到 console.debug/info/warn/error
 - 不支持崩溃转储文件（可用 IndexedDB 替代）
 
+## 项目集成
+
+### 与 tracing 的关系
+
+本项目替换了原有的 `tracing` 日志系统。迁移原因：
+
+1. **显式传递**：`tracing` 依赖全局 subscriber，`kaubo-log` 显式传递 Logger
+2. **平台无关**：`tracing` 不支持 no_std，`kaubo-log` 原生支持
+3. **测试友好**：`tracing` 难以断言日志，`kaubo-log` 的 RingBuffer 可直接读取
+
+完整迁移记录：[tracing-to-kaubo-log-migration.md](../../30-lessons/tracing-to-kaubo-log-migration.md)
+
 ## 命名规范
 
 ⚠️ **重要**：代码中禁止使用 `_` 开头的变量名。

@@ -82,6 +82,11 @@ kaubo-core/
 ## 实验记录
 
 - 2025-02-14: 初始架构设计，基于Kaubo现有代码分析
+- 2026-02-14: **日志系统迁移** - 从 `tracing` 迁移到 `kaubo-log`
+  - 原因：遵循设计原则 #6（结构化接口优于环境依赖）
+  - 范围：全仓库（kaubo-core, kaubo-api, kaubo-cli）
+  - 影响：所有核心组件新增 `with_logger()` API
+  - 文档：[迁移记录](../30-lessons/tracing-to-kaubo-log-migration.md)
 
 ---
 
