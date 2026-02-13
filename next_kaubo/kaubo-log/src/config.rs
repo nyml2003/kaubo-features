@@ -2,6 +2,7 @@
 //!
 //! 提供便捷的日志初始化配置。
 
+#![cfg(feature = "alloc")]
 use crate::logger::LogSink;
 use crate::record::Record;
 use crate::{Level, LogRingBuffer, Logger};
@@ -23,7 +24,7 @@ impl FileSink {
             .create(true)
             .append(true)
             .open(path)?;
-        
+
         Ok(FileSink {
             file: std::sync::Mutex::new(file),
         })
@@ -98,10 +99,7 @@ impl LogConfig {
     pub fn dev() -> Self {
         LogConfig {
             level: Level::Debug,
-            outputs: alloc::vec![
-                OutputConfig::Stdout,
-                OutputConfig::RingBuffer(10000),
-            ],
+            outputs: alloc::vec![OutputConfig::Stdout, OutputConfig::RingBuffer(10000),],
             enable_span: true,
         }
     }
@@ -115,10 +113,7 @@ impl LogConfig {
     pub fn production() -> Self {
         LogConfig {
             level: Level::Warn,
-            outputs: alloc::vec![
-                OutputConfig::Stderr,
-                OutputConfig::RingBuffer(1000),
-            ],
+            outputs: alloc::vec![OutputConfig::Stderr, OutputConfig::RingBuffer(1000),],
             enable_span: false,
         }
     }
@@ -247,7 +242,10 @@ mod tests {
         let config = LogConfig::dev();
         assert_eq!(config.level, Level::Debug);
         assert!(config.outputs.contains(&OutputConfig::Stdout));
-        assert!(config.outputs.iter().any(|o| matches!(o, OutputConfig::RingBuffer(10000))));
+        assert!(config
+            .outputs
+            .iter()
+            .any(|o| matches!(o, OutputConfig::RingBuffer(10000))));
     }
 
     #[cfg(all(feature = "stderr", feature = "alloc"))]
@@ -273,13 +271,15 @@ mod tests {
             .with_ring_buffer(5000);
 
         assert!(config.outputs.contains(&OutputConfig::Stdout));
-        assert!(config.outputs.iter().any(|o| matches!(o, OutputConfig::RingBuffer(5000))));
+        assert!(config
+            .outputs
+            .iter()
+            .any(|o| matches!(o, OutputConfig::RingBuffer(5000))));
     }
 
     #[test]
     fn test_config_init() {
-        let config = LogConfig::new(Level::Debug)
-            .with_ring_buffer(100);
+        let config = LogConfig::new(Level::Debug).with_ring_buffer(100);
 
         let (logger, ring) = config.init();
 
@@ -297,10 +297,14 @@ mod tests {
     fn test_with_stdout() {
         let config = LogConfig::new(Level::Info).with_stdout();
         assert!(config.outputs.contains(&OutputConfig::Stdout));
-        
+
         // 重复添加应该只保留一个
         let config2 = config.clone().with_stdout();
-        let stdout_count = config2.outputs.iter().filter(|o| matches!(o, OutputConfig::Stdout)).count();
+        let stdout_count = config2
+            .outputs
+            .iter()
+            .filter(|o| matches!(o, OutputConfig::Stdout))
+            .count();
         assert_eq!(stdout_count, 1);
     }
 
@@ -309,10 +313,14 @@ mod tests {
     fn test_with_stderr() {
         let config = LogConfig::new(Level::Warn).with_stderr();
         assert!(config.outputs.contains(&OutputConfig::Stderr));
-        
+
         // 重复添加应该只保留一个
         let config2 = config.clone().with_stderr();
-        let stderr_count = config2.outputs.iter().filter(|o| matches!(o, OutputConfig::Stderr)).count();
+        let stderr_count = config2
+            .outputs
+            .iter()
+            .filter(|o| matches!(o, OutputConfig::Stderr))
+            .count();
         assert_eq!(stderr_count, 1);
     }
 
@@ -320,7 +328,10 @@ mod tests {
     #[test]
     fn test_with_file() {
         let config = LogConfig::new(Level::Debug).with_file("/tmp/test.log");
-        assert!(config.outputs.iter().any(|o| matches!(o, OutputConfig::File(_))));
+        assert!(config
+            .outputs
+            .iter()
+            .any(|o| matches!(o, OutputConfig::File(_))));
     }
 
     #[test]
@@ -328,8 +339,12 @@ mod tests {
         let config = LogConfig::new(Level::Debug)
             .with_ring_buffer(1000)
             .with_ring_buffer(2000);
-        
-        let ring_count = config.outputs.iter().filter(|o| matches!(o, OutputConfig::RingBuffer(_))).count();
+
+        let ring_count = config
+            .outputs
+            .iter()
+            .filter(|o| matches!(o, OutputConfig::RingBuffer(_)))
+            .count();
         assert_eq!(ring_count, 2); // 允许多个 ring buffer
     }
 
@@ -356,12 +371,12 @@ mod tests {
 
         // 测试日志能写入
         crate::info!(logger, "test all outputs");
-        
+
         // 验证 ring buffer 收到
         let records = ring.unwrap().dump_records();
         assert_eq!(records.len(), 1);
         assert!(records[0].message.contains("test all outputs"));
-        
+
         // 清理
         std::fs::remove_file(temp_path).ok();
     }
@@ -381,11 +396,11 @@ mod tests {
         let config1 = OutputConfig::RingBuffer(100);
         let config2 = config1.clone();
         assert_eq!(config1, config2);
-        
+
         let config3 = OutputConfig::RingBuffer(200);
         let config4 = config3.clone();
         assert_eq!(config3, config4);
-        
+
         // 验证克隆后的值独立
         assert_ne!(config1, config3);
     }
@@ -404,28 +419,28 @@ mod tests {
     fn test_config_init_file_error() {
         // 使用无效路径应该静默失败（不 panic）- 覆盖 if let Ok(sink) 的 Err 分支
         // 尝试多种无效路径确保触发 Err 分支
-        
+
         // 创建一个无法创建文件的目录路径（使用已存在的文件作为目录）
         let temp_file = "test_config_temp_file.tmp";
-        
+
         // 先创建一个临时文件
         std::fs::write(temp_file, "temp").unwrap();
-        
+
         // 尝试在该文件"内部"创建文件（这会失败，因为 temp_file 是文件不是目录）
         let invalid_path = format!("{}/inner.log", temp_file);
         let config = LogConfig::new(Level::Debug).with_file(&invalid_path);
         let (logger, _ring) = config.init();
         crate::debug!(logger, "test with file as directory");
-        
+
         // 清理
         std::fs::remove_file(temp_file).ok();
-        
+
         // 同时测试其他明显无效的路径
         let other_invalid_paths = [
             "<>:\"/\\|?*",                         // Windows 非法字符
             "/dev/null/nonexistent/path/file.log", // Unix 不存在的目录
         ];
-        
+
         for path in &other_invalid_paths {
             let config = LogConfig::new(Level::Debug).with_file(*path);
             let (logger, _ring) = config.init();
@@ -439,7 +454,7 @@ mod tests {
         // 测试首次添加 stdout（覆盖 if !contains 的 true 分支）
         let config = LogConfig::new(Level::Debug);
         assert!(!config.outputs.contains(&OutputConfig::Stdout));
-        
+
         let config = config.with_stdout();
         assert!(config.outputs.contains(&OutputConfig::Stdout));
         assert_eq!(config.outputs.len(), 1);
@@ -451,7 +466,7 @@ mod tests {
         // 测试首次添加 stderr（覆盖 if !contains 的 true 分支）
         let config = LogConfig::new(Level::Debug);
         assert!(!config.outputs.contains(&OutputConfig::Stderr));
-        
+
         let config = config.with_stderr();
         assert!(config.outputs.contains(&OutputConfig::Stderr));
         assert_eq!(config.outputs.len(), 1);

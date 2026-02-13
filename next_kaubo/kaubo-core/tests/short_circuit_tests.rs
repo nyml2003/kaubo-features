@@ -1,14 +1,7 @@
 //! 短路求值测试
 
 mod common;
-use common::{run_code, get_int, ExecResult, ExecError};
-
-/// 辅助函数：运行代码并检查是否产生输出
-fn run_code_with_output(code: &str) -> Result<(Option<i32>, String), ExecError> {
-    // 注意：当前测试框架不捕获输出，这里只检查返回值
-    let result = run_code(code)?;
-    Ok((get_int(&result), String::new()))
-}
+use common::{get_int, run_code};
 
 #[test]
 fn test_and_short_circuit_false() {

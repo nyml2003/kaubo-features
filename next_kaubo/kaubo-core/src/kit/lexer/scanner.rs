@@ -215,7 +215,6 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     enum TestToken {
         Plus,
-        Minus,
         Number(i64),
     }
 

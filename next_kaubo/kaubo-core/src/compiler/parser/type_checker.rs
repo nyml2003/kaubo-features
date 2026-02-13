@@ -2,12 +2,20 @@
 //!
 //! 负责编译时的类型检查和类型推导
 
-use super::error::{ErrorLocation, ParseResult, ParserError, ParserErrorKind};
-use super::expr::{Expr, ExprKind, Lambda, LiteralInt, LiteralFloat, LiteralString, LiteralTrue, LiteralFalse, LiteralNull, LiteralList, Binary, Unary, VarRef, FunctionCall, MemberAccess, IndexAccess, JsonLiteral, YieldExpr, StructLiteral};
-use super::stmt::{Stmt, StmtKind, VarDeclStmt, BlockStmt, ExprStmt, IfStmt, WhileStmt, ForStmt, ReturnStmt, ImportStmt, ImplStmt, ModuleStmt, EmptyStmt, StructStmt};
-use super::type_expr::{TypeExpr, NamedType, FunctionType};
+use super::error::ErrorLocation;
+use super::expr::{
+    Binary, Expr, ExprKind, FunctionCall, IndexAccess, Lambda, MemberAccess, StructLiteral, Unary,
+    VarRef,
+};
+use super::stmt::{
+    BlockStmt, ForStmt, IfStmt, ImplStmt, ReturnStmt, Stmt, StmtKind, StructStmt, VarDeclStmt,
+    WhileStmt,
+};
+use super::type_expr::TypeExpr;
 use crate::runtime::object::ObjShape;
+use kaubo_log::{trace, Logger};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// 类型环境（作用域）
 #[derive(Debug, Clone)]
@@ -61,7 +69,6 @@ impl Default for TypeEnv {
 }
 
 /// 类型检查器
-#[derive(Debug)]
 pub struct TypeChecker {
     /// 当前类型环境
     env: TypeEnv,
@@ -75,31 +82,73 @@ pub struct TypeChecker {
     shapes: Vec<ObjShape>,
     /// 下一个 shape ID
     next_shape_id: u16,
+    /// Logger
+    logger: Arc<Logger>,
+}
+
+impl std::fmt::Debug for TypeChecker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TypeChecker")
+            .field("env", &self.env)
+            .field("strict_mode", &self.strict_mode)
+            .field("return_type_stack", &self.return_type_stack)
+            .field("struct_types", &self.struct_types)
+            .field("shapes", &self.shapes)
+            .field("next_shape_id", &self.next_shape_id)
+            .field("logger", &"...")
+            .finish()
+    }
 }
 
 /// 类型检查错误
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeError {
     /// 类型不匹配
-    Mismatch { expected: String, found: String, location: ErrorLocation },
+    Mismatch {
+        expected: String,
+        found: String,
+        location: ErrorLocation,
+    },
     /// 返回类型不匹配
-    ReturnTypeMismatch { expected: String, found: String, location: ErrorLocation },
+    ReturnTypeMismatch {
+        expected: String,
+        found: String,
+        location: ErrorLocation,
+    },
     /// 未定义的变量
-    UndefinedVar { name: String, location: ErrorLocation },
+    UndefinedVar {
+        name: String,
+        location: ErrorLocation,
+    },
     /// 不支持的操作
     UnsupportedOp { op: String, location: ErrorLocation },
     /// 无法推导类型
-    CannotInfer { message: String, location: ErrorLocation },
+    CannotInfer {
+        message: String,
+        location: ErrorLocation,
+    },
 }
 
 impl std::fmt::Display for TypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeError::Mismatch { expected, found, .. } => {
-                write!(f, "Type mismatch: expected '{}', found '{}'", expected, found)
+            TypeError::Mismatch {
+                expected, found, ..
+            } => {
+                write!(
+                    f,
+                    "Type mismatch: expected '{}', found '{}'",
+                    expected, found
+                )
             }
-            TypeError::ReturnTypeMismatch { expected, found, .. } => {
-                write!(f, "Return type mismatch: expected '{}', found '{}'", expected, found)
+            TypeError::ReturnTypeMismatch {
+                expected, found, ..
+            } => {
+                write!(
+                    f,
+                    "Return type mismatch: expected '{}', found '{}'",
+                    expected, found
+                )
             }
             TypeError::UndefinedVar { name, .. } => {
                 write!(f, "Undefined variable: '{}'", name)
@@ -122,6 +171,11 @@ pub type TypeCheckResult<T> = Result<T, TypeError>;
 impl TypeChecker {
     /// 创建新的类型检查器
     pub fn new() -> Self {
+        Self::with_logger(Logger::noop())
+    }
+
+    /// 创建新的类型检查器（带 logger）
+    pub fn with_logger(logger: Arc<Logger>) -> Self {
         let mut checker = Self {
             env: TypeEnv::new(),
             strict_mode: false,
@@ -129,8 +183,10 @@ impl TypeChecker {
             struct_types: HashMap::new(),
             shapes: Vec::new(),
             next_shape_id: 1, // 从 1 开始，0 保留
+            logger,
         };
         checker.init_stdlib_types();
+        trace!(checker.logger, "TypeChecker created");
         checker
     }
 
@@ -141,7 +197,8 @@ impl TypeChecker {
 
     /// 获取 struct 的 shape_id
     pub fn get_shape_id(&self, name: &str) -> Option<u16> {
-        self.shapes.iter()
+        self.shapes
+            .iter()
             .find(|s| s.name == name)
             .map(|s| s.shape_id)
     }
@@ -153,25 +210,31 @@ impl TypeChecker {
             "print".to_string(),
             TypeExpr::function_void(vec![TypeExpr::named("any")]),
         );
-        
+
         // assert: |bool, string?| -> void
         self.env.define(
             "assert".to_string(),
             TypeExpr::function_void(vec![TypeExpr::named("bool"), TypeExpr::named("string")]),
         );
-        
+
         // type: |any| -> string
         self.env.define(
             "type".to_string(),
-            TypeExpr::function(vec![TypeExpr::named("any")], Some(TypeExpr::named("string"))),
+            TypeExpr::function(
+                vec![TypeExpr::named("any")],
+                Some(TypeExpr::named("string")),
+            ),
         );
-        
+
         // to_string: |any| -> string
         self.env.define(
             "to_string".to_string(),
-            TypeExpr::function(vec![TypeExpr::named("any")], Some(TypeExpr::named("string"))),
+            TypeExpr::function(
+                vec![TypeExpr::named("any")],
+                Some(TypeExpr::named("string")),
+            ),
         );
-        
+
         // 数学函数: |float| -> float
         let math_fn_type = TypeExpr::function(
             vec![TypeExpr::named("float")],
@@ -203,12 +266,19 @@ impl TypeChecker {
         // 字符串方法
         self.env.define(
             "string_len".to_string(),
-            TypeExpr::function(vec![TypeExpr::named("string")], Some(TypeExpr::named("int"))),
+            TypeExpr::function(
+                vec![TypeExpr::named("string")],
+                Some(TypeExpr::named("int")),
+            ),
         );
         self.env.define(
             "string_substring".to_string(),
             TypeExpr::function(
-                vec![TypeExpr::named("string"), TypeExpr::named("int"), TypeExpr::named("int")],
+                vec![
+                    TypeExpr::named("string"),
+                    TypeExpr::named("int"),
+                    TypeExpr::named("int"),
+                ],
                 Some(TypeExpr::named("string")),
             ),
         );
@@ -259,6 +329,7 @@ impl TypeChecker {
 
     /// 对语句进行类型检查
     pub fn check_statement(&mut self, stmt: &Stmt) -> TypeCheckResult<Option<TypeExpr>> {
+        trace!(self.logger, "Checking statement: {:?}", stmt.as_ref());
         match stmt.as_ref() {
             StmtKind::VarDecl(var_decl) => self.check_var_decl(var_decl),
             StmtKind::Expr(expr_stmt) => self.check_expression(&expr_stmt.expression),
@@ -276,25 +347,25 @@ impl TypeChecker {
             }
         }
     }
-    
+
     /// 检查 struct 定义
     fn check_struct_def(&mut self, struct_stmt: &StructStmt) -> TypeCheckResult<Option<TypeExpr>> {
         // 注册 struct 类型
-        let fields: Vec<(String, TypeExpr)> = struct_stmt.fields.iter()
+        let fields: Vec<(String, TypeExpr)> = struct_stmt
+            .fields
+            .iter()
             .map(|f| (f.name.clone(), f.type_annotation.clone()))
             .collect();
-        
+
         // 创建 ObjShape
         let shape_id = self.next_shape_id;
         self.next_shape_id += 1;
-        
-        let field_names: Vec<String> = struct_stmt.fields.iter()
-            .map(|f| f.name.clone())
-            .collect();
-        
+
+        let field_names: Vec<String> = struct_stmt.fields.iter().map(|f| f.name.clone()).collect();
+
         let shape = ObjShape::new(shape_id, struct_stmt.name.clone(), field_names);
         self.shapes.push(shape);
-        
+
         // 存储字段信息用于类型检查
         self.struct_types.insert(struct_stmt.name.clone(), fields);
         Ok(None)
@@ -309,13 +380,13 @@ impl TypeChecker {
                 location: ErrorLocation::Unknown,
             });
         }
-        
+
         // 找到对应的 shape，注册方法名
         let shape_id = self.get_shape_id(&impl_stmt.struct_name);
         for method in &impl_stmt.methods {
             // 检查方法 lambda
             self.check_expression(&method.lambda)?;
-            
+
             // 注册方法名到 shape
             if let Some(sid) = shape_id {
                 if let Some(shape) = self.shapes.iter_mut().find(|s| s.shape_id == sid) {
@@ -326,7 +397,7 @@ impl TypeChecker {
                 }
             }
         }
-        
+
         Ok(None)
     }
 
@@ -448,6 +519,7 @@ impl TypeChecker {
 
     /// 对表达式进行类型检查
     pub fn check_expression(&mut self, expr: &Expr) -> TypeCheckResult<Option<TypeExpr>> {
+        trace!(self.logger, "Checking expression: {:?}", expr.as_ref());
         match expr.as_ref() {
             ExprKind::LiteralInt(_) => Ok(Some(TypeExpr::named("int"))),
             ExprKind::LiteralFloat(_) => Ok(Some(TypeExpr::named("float"))),
@@ -470,7 +542,10 @@ impl TypeChecker {
     }
 
     /// 检查列表字面量
-    fn check_list_literal(&mut self, list: &super::expr::LiteralList) -> TypeCheckResult<Option<TypeExpr>> {
+    fn check_list_literal(
+        &mut self,
+        list: &super::expr::LiteralList,
+    ) -> TypeCheckResult<Option<TypeExpr>> {
         if list.elements.is_empty() {
             // 空列表类型无法推导
             return Ok(Some(TypeExpr::list(TypeExpr::named("any"))));
@@ -523,11 +598,13 @@ impl TypeChecker {
             // 加法：支持数值和字符串
             KauboTokenKind::Plus => {
                 // 字符串拼接
-                if left_type == Some(TypeExpr::named("string")) || 
-                   right_type == Some(TypeExpr::named("string")) {
+                if left_type == Some(TypeExpr::named("string"))
+                    || right_type == Some(TypeExpr::named("string"))
+                {
                     Ok(Some(TypeExpr::named("string")))
-                } else if left_type == Some(TypeExpr::named("float")) || 
-                          right_type == Some(TypeExpr::named("float")) {
+                } else if left_type == Some(TypeExpr::named("float"))
+                    || right_type == Some(TypeExpr::named("float"))
+                {
                     Ok(Some(TypeExpr::named("float")))
                 } else {
                     Ok(Some(TypeExpr::named("int")))
@@ -535,23 +612,23 @@ impl TypeChecker {
             }
             // 其他算术运算
             KauboTokenKind::Minus | KauboTokenKind::Asterisk | KauboTokenKind::Slash => {
-                if left_type == Some(TypeExpr::named("float")) || 
-                   right_type == Some(TypeExpr::named("float")) {
+                if left_type == Some(TypeExpr::named("float"))
+                    || right_type == Some(TypeExpr::named("float"))
+                {
                     Ok(Some(TypeExpr::named("float")))
                 } else {
                     Ok(Some(TypeExpr::named("int")))
                 }
             }
             // 比较运算
-            KauboTokenKind::Equal | KauboTokenKind::ExclamationEqual |
-            KauboTokenKind::LessThan | KauboTokenKind::GreaterThan |
-            KauboTokenKind::LessThanEqual | KauboTokenKind::GreaterThanEqual => {
-                Ok(Some(TypeExpr::named("bool")))
-            }
+            KauboTokenKind::Equal
+            | KauboTokenKind::ExclamationEqual
+            | KauboTokenKind::LessThan
+            | KauboTokenKind::GreaterThan
+            | KauboTokenKind::LessThanEqual
+            | KauboTokenKind::GreaterThanEqual => Ok(Some(TypeExpr::named("bool"))),
             // 逻辑运算
-            KauboTokenKind::And | KauboTokenKind::Or => {
-                Ok(Some(TypeExpr::named("bool")))
-            }
+            KauboTokenKind::And | KauboTokenKind::Or => Ok(Some(TypeExpr::named("bool"))),
             _ => Ok(None),
         }
     }
@@ -652,7 +729,10 @@ impl TypeChecker {
 
     /// 检查成员访问
     /// 特殊处理 std.xxx 的方法调用
-    fn check_member_access(&mut self, member_access: &MemberAccess) -> TypeCheckResult<Option<TypeExpr>> {
+    fn check_member_access(
+        &mut self,
+        member_access: &MemberAccess,
+    ) -> TypeCheckResult<Option<TypeExpr>> {
         // 检查是否是 std.xxx
         if let ExprKind::VarRef(obj_var) = member_access.object.as_ref() {
             if obj_var.name == "std" {
@@ -665,7 +745,10 @@ impl TypeChecker {
     }
 
     /// 检查索引访问表达式
-    fn check_index_access(&mut self, index_access: &IndexAccess) -> TypeCheckResult<Option<TypeExpr>> {
+    fn check_index_access(
+        &mut self,
+        index_access: &IndexAccess,
+    ) -> TypeCheckResult<Option<TypeExpr>> {
         // 禁止字符串字面量索引，推荐使用成员访问语法
         if let ExprKind::LiteralString(lit) = index_access.index.as_ref() {
             return Err(TypeError::UnsupportedOp {
@@ -673,12 +756,12 @@ impl TypeChecker {
                 location: ErrorLocation::Unknown,
             });
         }
-        
+
         // 检查对象类型
         let obj_type = self.check_expression(&index_access.object)?;
         // 检查索引类型
         let _index_type = self.check_expression(&index_access.index)?;
-        
+
         // 根据对象类型推断返回值类型
         match obj_type {
             Some(TypeExpr::Named(named_type)) if named_type.name == "string" => {
@@ -720,7 +803,7 @@ impl TypeChecker {
             "clear" => "list_clear",
             _ => name,
         };
-        
+
         match mapped_name {
             // 列表操作
             "len" => Some(TypeExpr::function(
@@ -759,7 +842,11 @@ impl TypeChecker {
                 Some(TypeExpr::named("int")),
             )),
             "string_substring" => Some(TypeExpr::function(
-                vec![TypeExpr::named("string"), TypeExpr::named("int"), TypeExpr::named("int")],
+                vec![
+                    TypeExpr::named("string"),
+                    TypeExpr::named("int"),
+                    TypeExpr::named("int"),
+                ],
                 Some(TypeExpr::named("string")),
             )),
             "string_contains" => Some(TypeExpr::function(
@@ -787,9 +874,12 @@ impl TypeChecker {
             _ => None,
         }
     }
-    
+
     /// 检查 struct 实例化表达式
-    fn check_struct_literal(&mut self, struct_lit: &StructLiteral) -> TypeCheckResult<Option<TypeExpr>> {
+    fn check_struct_literal(
+        &mut self,
+        struct_lit: &StructLiteral,
+    ) -> TypeCheckResult<Option<TypeExpr>> {
         // 查找 struct 类型定义
         let field_defs = match self.struct_types.get(&struct_lit.name) {
             Some(fields) => fields,
@@ -804,13 +894,13 @@ impl TypeChecker {
                 return Ok(Some(TypeExpr::named(&struct_lit.name)));
             }
         };
-        
+
         // 检查字段（简化版：只检查字段值表达式）
         for (field_name, value_expr) in &struct_lit.fields {
             let _value_type = self.check_expression(value_expr)?;
             // TODO: 检查字段名是否存在，类型是否匹配
         }
-        
+
         // 返回 struct 类型
         Ok(Some(TypeExpr::named(&struct_lit.name)))
     }
@@ -853,9 +943,9 @@ mod tests {
         let _ = lexer.terminate();
         let mut parser = Parser::new(lexer);
         let module = parser.parse().expect("Parse failed");
-        
+
         let mut checker = TypeChecker::new();
-        
+
         // 检查模块中的第一条语句
         if let Some(first_stmt) = module.statements.first() {
             checker.check_statement(first_stmt)
@@ -909,13 +999,13 @@ mod tests {
         let code = r#"var x: int = "hello";"#;
         let mut checker = TypeChecker::new();
         checker.set_strict_mode(true);
-        
+
         let mut lexer = build_lexer();
         let _ = lexer.feed(&code.as_bytes().to_vec());
         let _ = lexer.terminate();
         let mut parser = Parser::new(lexer);
         let module = parser.parse().expect("Parse failed");
-        
+
         let result = checker.check_statement(&module.statements[0]);
         // 目前类型检查器只是基础框架，严格类型检查稍后完善
         // assert!(result.is_err());
@@ -942,10 +1032,8 @@ mod tests {
         let code = "|x: int| -> int { return x; };";
         let result = parse_and_check(code);
         assert!(result.is_ok());
-        let expected = TypeExpr::function(
-            vec![TypeExpr::named("int")],
-            Some(TypeExpr::named("int")),
-        );
+        let expected =
+            TypeExpr::function(vec![TypeExpr::named("int")], Some(TypeExpr::named("int")));
         assert_eq!(result.unwrap(), Some(expected));
     }
 }

@@ -38,7 +38,9 @@ pub enum KauboError {
 }
 
 /// 辅助函数：将 ErrorLocation 转换为元组
-fn location_to_tuple(loc: &kaubo_core::compiler::parser::error::ErrorLocation) -> (&'static str, Option<usize>, Option<usize>) {
+fn location_to_tuple(
+    loc: &kaubo_core::compiler::parser::error::ErrorLocation,
+) -> (&'static str, Option<usize>, Option<usize>) {
     use kaubo_core::compiler::parser::error::ErrorLocation;
     match loc {
         ErrorLocation::At(coord) => ("at", Some(coord.line), Some(coord.column)),
@@ -49,11 +51,6 @@ fn location_to_tuple(loc: &kaubo_core::compiler::parser::error::ErrorLocation) -
 }
 
 impl KauboError {
-    /// 从 Compiler 错误转换
-    fn from_compiler_error(e: kaubo_core::runtime::CompileError) -> Self {
-        KauboError::Compiler(format!("{:?}", e))
-    }
-
     /// 获取错误行号（如果有）
     pub fn line(&self) -> Option<usize> {
         use kaubo_core::compiler::parser::error::ErrorLocation;
@@ -157,7 +154,6 @@ impl KauboError {
                 }
             }
             KauboError::Type(e) => {
-                use kaubo_core::compiler::parser::error::ErrorLocation;
                 let (loc_type, line, col, error_kind) = match &e {
                     TypeError::Mismatch { location, .. } => {
                         let (t, l, c) = location_to_tuple(location);
@@ -242,7 +238,11 @@ impl std::fmt::Display for ErrorReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match (self.line, self.column) {
             (Some(line), Some(col)) => {
-                write!(f, "[{}:{}] {} error: {}", line, col, self.phase, self.message)
+                write!(
+                    f,
+                    "[{}:{}] {} error: {}",
+                    line, col, self.phase, self.message
+                )
             }
             _ => write!(f, "[{}] {} error: {}", self.phase, self.phase, self.message),
         }

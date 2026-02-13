@@ -8,7 +8,9 @@ use crate::runtime::{
     object::{ObjFunction, ObjString},
     Value,
 };
+use kaubo_log::{trace, Logger};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// 编译错误
 #[derive(Debug, Clone)]
@@ -93,7 +95,6 @@ struct StructInfo {
 #[derive(Debug, Clone)]
 enum VarType {
     Struct(String), // struct 类型名
-    Other,          // 其他类型
 }
 
 /// AST 编译器
@@ -110,6 +111,7 @@ pub struct Compiler {
     module_aliases: HashMap<String, String>,   // 局部变量名 -> 模块名（用于 import x as y）
     struct_infos: HashMap<String, StructInfo>, // struct 名称 -> 编译期信息
     var_types: HashMap<String, VarType>,       // 变量名 -> 类型信息
+    logger: Arc<Logger>,                       // Logger
 }
 
 impl Compiler {
@@ -118,6 +120,17 @@ impl Compiler {
     }
 
     pub fn new_with_shapes(shape_ids: HashMap<String, u16>) -> Self {
+        Self::new_with_shapes_and_logger(shape_ids, Logger::noop())
+    }
+
+    pub fn new_with_logger(logger: Arc<Logger>) -> Self {
+        Self::new_with_shapes_and_logger(HashMap::new(), logger)
+    }
+
+    pub fn new_with_shapes_and_logger(
+        shape_ids: HashMap<String, u16>,
+        logger: Arc<Logger>,
+    ) -> Self {
         // 转换 shape_ids 为 struct_infos（字段信息暂时为空，需要额外传递）
         let struct_infos: HashMap<String, StructInfo> = shape_ids
             .into_iter()
@@ -134,7 +147,7 @@ impl Compiler {
             .collect();
 
         Self {
-            chunk: Chunk::new(),
+            chunk: Chunk::with_logger(logger.clone()),
             locals: Vec::new(),
             upvalues: Vec::new(),
             scope_depth: 0,
@@ -146,11 +159,19 @@ impl Compiler {
             module_aliases: HashMap::new(),
             struct_infos,
             var_types: HashMap::new(),
+            logger,
         }
     }
 
     /// 使用完整的 struct 信息创建编译器（支持字段索引优化）
     pub fn new_with_struct_infos(infos: HashMap<String, (u16, Vec<String>)>) -> Self {
+        Self::new_with_struct_infos_and_logger(infos, Logger::noop())
+    }
+
+    pub fn new_with_struct_infos_and_logger(
+        infos: HashMap<String, (u16, Vec<String>)>,
+        logger: Arc<Logger>,
+    ) -> Self {
         let struct_infos: HashMap<String, StructInfo> = infos
             .into_iter()
             .map(|(name, (shape_id, field_names))| {
@@ -166,7 +187,7 @@ impl Compiler {
             .collect();
 
         Self {
-            chunk: Chunk::new(),
+            chunk: Chunk::with_logger(logger.clone()),
             locals: Vec::new(),
             upvalues: Vec::new(),
             scope_depth: 0,
@@ -178,22 +199,26 @@ impl Compiler {
             module_aliases: HashMap::new(),
             struct_infos,
             var_types: HashMap::new(),
+            logger,
         }
     }
 
     /// 创建子编译器（用于编译嵌套函数）
     fn new_child(enclosing: *mut Compiler) -> Self {
-        // 从父编译器继承 struct_infos
-        let struct_infos = unsafe {
+        // 从父编译器继承 struct_infos 和 logger
+        let (struct_infos, logger) = unsafe {
             if enclosing.is_null() {
-                HashMap::new()
+                (HashMap::new(), Logger::noop())
             } else {
-                (*enclosing).struct_infos.clone()
+                (
+                    (*enclosing).struct_infos.clone(),
+                    (*enclosing).logger.clone(),
+                )
             }
         };
 
         Self {
-            chunk: Chunk::new(),
+            chunk: Chunk::with_logger(logger.clone()),
             locals: Vec::new(),
             upvalues: Vec::new(),
             scope_depth: 0,
@@ -205,12 +230,18 @@ impl Compiler {
             module_aliases: HashMap::new(),
             struct_infos,              // 继承父编译器的 struct_infos
             var_types: HashMap::new(), // 子编译器创建新的类型环境
+            logger,
         }
     }
 
     /// 编译整个模块（视为匿名函数体）
     /// 返回 (Chunk, 最大局部变量数量)
     pub fn compile(&mut self, module: &Module) -> Result<(Chunk, usize), CompileError> {
+        trace!(
+            self.logger,
+            "compile: starting with {} statements",
+            module.statements.len()
+        );
         for stmt in &module.statements {
             self.compile_stmt(stmt)?;
         }
@@ -224,6 +255,7 @@ impl Compiler {
 
     /// 编译语句
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<(), CompileError> {
+        trace!(self.logger, "compile_stmt: {:?}", stmt.as_ref());
         match stmt.as_ref() {
             StmtKind::Expr(expr) => {
                 self.compile_expr(&expr.expression)?;
@@ -402,26 +434,6 @@ impl Compiler {
         }
 
         Ok(())
-    }
-
-    /// 尝试获取字段索引（用于编译期优化）
-    /// 如果 object 是 struct 类型且 field_name 存在，返回字段索引
-    fn try_get_field_index(&self, object: &Expr, field_name: &str) -> Option<usize> {
-        // 检查对象是否是变量引用（可能是 struct 实例）
-        if let ExprKind::VarRef(var_ref) = object.as_ref() {
-            // 尝试从局部变量类型推断（简化：暂时不实现）
-            // 未来可以通过变量类型表查找
-        }
-
-        // 检查所有已知的 struct 类型，看哪个有该字段
-        // 注意：这可能导致歧义，但用于演示编译期优化
-        for (struct_name, info) in &self.struct_infos {
-            if let Some(idx) = info.field_names.iter().position(|f| f == field_name) {
-                return Some(idx);
-            }
-        }
-
-        None
     }
 
     /// 编译表达式
@@ -1383,7 +1395,7 @@ impl Compiler {
                 let item_name_val = Value::string(item_str_ptr);
                 let item_name_constant = self.chunk.add_constant(item_name_val);
 
-                if item_name_constant > 255 {
+                if item_name_constant > 254 {
                     return Err(CompileError::TooManyConstants);
                 }
 
@@ -1540,9 +1552,8 @@ impl Compiler {
         // 从变量类型表中查找
         if let ExprKind::VarRef(var_ref) = expr.as_ref() {
             if let Some(var_type) = self.var_types.get(&var_ref.name) {
-                if let VarType::Struct(struct_name) = var_type {
-                    return Some(struct_name.clone());
-                }
+                let VarType::Struct(struct_name) = var_type;
+                return Some(struct_name.clone());
             }
         }
         None

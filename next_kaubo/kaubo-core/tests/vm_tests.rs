@@ -1,20 +1,20 @@
 //! VM 端到端测试
 
 mod common;
-use common::{run_code, get_int, get_float, ExecResult};
+use common::{get_float, get_int, run_code};
 
 #[test]
 fn test_basic_arithmetic() {
     // 测试基本算术运算
     let result = run_code("return 1 + 2;").unwrap();
     assert_eq!(get_int(&result), Some(3));
-    
+
     let result = run_code("return 10 - 3;").unwrap();
     assert_eq!(get_int(&result), Some(7));
-    
+
     let result = run_code("return 4 * 5;").unwrap();
     assert_eq!(get_int(&result), Some(20));
-    
+
     // 除法返回浮点数，不测试整数值
     let result = run_code("return 20 / 4;");
     assert!(result.is_ok());
@@ -98,7 +98,7 @@ fn test_unary_operators() {
     // 测试一元运算符
     let result = run_code("return -5;").unwrap();
     assert_eq!(get_int(&result), Some(-5));
-    
+
     let result = run_code("return --5;").unwrap();
     assert_eq!(get_int(&result), Some(5));
 }
@@ -216,10 +216,10 @@ fn test_special_values() {
     // 测试特殊值
     let result = run_code("return true;").unwrap();
     assert!(result.return_value.unwrap().is_true());
-    
+
     let result = run_code("return false;").unwrap();
     assert!(result.return_value.unwrap().is_false());
-    
+
     let result = run_code("return null;").unwrap();
     assert!(result.return_value.unwrap().is_null());
 }
@@ -263,7 +263,7 @@ fn test_operator_precedence() {
     // 测试运算符优先级
     let result = run_code("return 2 + 3 * 4;").unwrap();
     assert_eq!(get_int(&result), Some(14)); // 2 + (3 * 4)
-    
+
     let result = run_code("return (2 + 3) * 4;").unwrap();
     assert_eq!(get_int(&result), Some(20));
 }
@@ -331,7 +331,7 @@ fn test_list_operations() {
     // 测试空列表
     let result = run_code("return [];").unwrap();
     assert!(result.return_value.unwrap().is_list());
-    
+
     // 测试索引赋值
     let code = r#"
         var list = [1, 2, 3];
@@ -398,14 +398,14 @@ fn test_truthy_values() {
     "#;
     let result = run_code(code).unwrap();
     assert_eq!(get_int(&result), Some(1)); // 0 是真值
-    
+
     // Note: Empty string "" causes parser overflow, skip for now
     // let code = r#"
     //     if ("") { return 1; } else { return 0; }
     // "#;
     // let result = run_code(code).unwrap();
     // assert_eq!(get_int(&result), Some(1)); // 空字符串是真值
-    
+
     let code = r#"
         if (null) { return 1; } else { return 0; }
     "#;
@@ -421,19 +421,19 @@ fn test_not_operator() {
     "#;
     let result = run_code(code).unwrap();
     assert!(result.return_value.unwrap().is_false());
-    
+
     let code = r#"
         return not false;
     "#;
     let result = run_code(code).unwrap();
     assert!(result.return_value.unwrap().is_true());
-    
+
     let code = r#"
         return not 0;
     "#;
     let result = run_code(code).unwrap();
     assert!(result.return_value.unwrap().is_false());
-    
+
     let code = r#"
         return not null;
     "#;
@@ -449,23 +449,23 @@ fn test_comparison_all_operators() {
     assert!(result.return_value.unwrap().is_true());
     let result = run_code("return 5 == 3;").unwrap();
     assert!(result.return_value.unwrap().is_false());
-    
+
     // !=
     let result = run_code("return 5 != 3;").unwrap();
     assert!(result.return_value.unwrap().is_true());
-    
+
     // >
     let result = run_code("return 5 > 3;").unwrap();
     assert!(result.return_value.unwrap().is_true());
     let result = run_code("return 3 > 5;").unwrap();
     assert!(result.return_value.unwrap().is_false());
-    
+
     // <
     let result = run_code("return 3 < 5;").unwrap();
     assert!(result.return_value.unwrap().is_true());
     let result = run_code("return 5 < 3;").unwrap();
     assert!(result.return_value.unwrap().is_false());
-    
+
     // Note: >= and <= opcodes are not yet implemented
     // Uncomment when implemented:
     // >=
@@ -473,7 +473,7 @@ fn test_comparison_all_operators() {
     // assert!(result.return_value.unwrap().is_true());
     // let result = run_code("return 5 >= 3;").unwrap();
     // assert!(result.return_value.unwrap().is_true());
-    
+
     // <=
     // let result = run_code("return 3 <= 3;").unwrap();
     // assert!(result.return_value.unwrap().is_true());
@@ -858,7 +858,11 @@ fn test_member_access_simple() {
         return std.PI;
     "#;
     let result = run_code(code);
-    assert!(result.is_ok(), "Member access should work: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Member access should work: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -869,7 +873,11 @@ fn test_chained_member_access() {
         return x;
     "#;
     let result = run_code(code);
-    assert!(result.is_ok(), "Chained member access should work: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Chained member access should work: {:?}",
+        result.err()
+    );
 }
 
 // ===== 复杂条件测试 =====
@@ -1237,7 +1245,6 @@ fn test_module_basic() {
     }
 }
 
-
 #[test]
 fn test_impl_method_call() {
     // 测试 impl 方法调用
@@ -1259,14 +1266,18 @@ fn test_impl_method_call() {
         var p2 = Point { x: 3.0, y: 4.0 };
         return p1.distance(p2);
     "#;
-    
+
     let result = run_code(code);
     assert!(result.is_ok(), "Impl method call failed: {:?}", result);
-    
+
     // 3-4-5 直角三角形，距离应该是 5.0
     if let Ok(ref val) = result {
         let dist = get_float(val);
         assert!(dist.is_some(), "Expected float result");
-        assert!((dist.unwrap() - 5.0).abs() < 0.001, "Expected distance ~5.0, got {:?}", dist);
+        assert!(
+            (dist.unwrap() - 5.0).abs() < 0.001,
+            "Expected distance ~5.0, got {:?}",
+            dist
+        );
     }
 }

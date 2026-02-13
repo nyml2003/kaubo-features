@@ -1,10 +1,14 @@
 //! 虚拟机实现
 
+use crate::runtime::bytecode::{chunk::Chunk, OpCode};
+use crate::runtime::object::{
+    CallFrame, CoroutineState, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson,
+    ObjList, ObjModule, ObjShape, ObjStruct, ObjUpvalue,
+};
 use crate::runtime::Value;
-use crate::runtime::bytecode::{OpCode, chunk::Chunk};
-use crate::runtime::object::{CallFrame, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjShape, ObjStruct, ObjUpvalue, CoroutineState};
+use kaubo_log::{trace, Logger};
 use std::collections::HashMap;
-
+use std::sync::Arc;
 
 /// 解释执行结果
 #[derive(Debug, Clone, PartialEq)]
@@ -28,17 +32,25 @@ pub struct VM {
     globals: HashMap<String, Value>,
     /// Shape 表（编译期生成，运行时注册）
     shapes: HashMap<u16, *const ObjShape>,
+    /// Logger
+    logger: Arc<Logger>,
 }
 
 impl VM {
     /// 创建新的虚拟机，并初始化标准库
     pub fn new() -> Self {
+        Self::with_logger(Logger::noop())
+    }
+
+    /// 创建新的虚拟机（带 logger）
+    pub fn with_logger(logger: Arc<Logger>) -> Self {
         let mut vm = Self {
             stack: Vec::with_capacity(256),
             frames: Vec::with_capacity(64),
             open_upvalues: Vec::new(),
             globals: HashMap::new(),
             shapes: HashMap::new(),
+            logger,
         };
         vm.init_stdlib();
         vm
@@ -47,7 +59,7 @@ impl VM {
     /// 初始化标准库模块
     fn init_stdlib(&mut self) {
         use crate::runtime::stdlib::create_stdlib_modules;
-        
+
         let modules = create_stdlib_modules();
         for (name, module) in modules {
             // 将模块对象转为 Value 并注册到 globals
@@ -79,11 +91,15 @@ impl VM {
     /// 解释执行一个 Chunk，并预分配局部变量空间
     pub fn interpret_with_locals(&mut self, chunk: &Chunk, local_count: usize) -> InterpretResult {
         // 创建函数对象
-        let function = Box::into_raw(Box::new(ObjFunction::new(chunk.clone(), 0, Some("<main>".to_string()))));
-        
+        let function = Box::into_raw(Box::new(ObjFunction::new(
+            chunk.clone(),
+            0,
+            Some("<main>".to_string()),
+        )));
+
         // 创建闭包（虽然主函数没有 upvalues，但统一用闭包包装）
         let closure = Box::into_raw(Box::new(ObjClosure::new(function)));
-        
+
         // 预分配局部变量空间（初始化为 null）
         let mut locals = Vec::with_capacity(local_count);
         for _ in 0..local_count {
@@ -103,7 +119,7 @@ impl VM {
 
         // 清理调用栈
         self.frames.pop();
-        
+
         // 关闭所有 upvalues
         self.close_upvalues(0);
 
@@ -111,7 +127,7 @@ impl VM {
     }
 
     /// 执行字节码的主循环
-    /// 
+    ///
     /// 注意：此方法为 crate 内部可见，用于 VM-aware 原生函数
     pub(crate) fn run(&mut self) -> InterpretResult {
         use OpCode::*;
@@ -125,10 +141,9 @@ impl VM {
             let instruction = unsafe { *self.current_ip() };
             self.advance_ip(1);
             let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
-            
-            // VM 执行追踪（使用条件编译或日志级别控制）
-            #[cfg(feature = "trace_execution")]
-            tracing::trace!(target: "kaubo::vm", ?op, stack = ?self.stack, "execute");
+
+            // VM 执行追踪
+            trace!(self.logger, "execute: {:?}, stack: {:?}", op, self.stack);
             match op {
                 // ===== 常量加载 =====
                 LoadConst0 => self.push_const(0),
@@ -367,17 +382,20 @@ impl VM {
                     if let Some(value) = self.globals.get(&name) {
                         self.push(*value);
                     } else {
-                        return InterpretResult::RuntimeError(format!("Undefined global variable: {}", name));
+                        return InterpretResult::RuntimeError(format!(
+                            "Undefined global variable: {}",
+                            name
+                        ));
                     }
                 }
-                
+
                 StoreGlobal => {
                     let idx = self.read_byte() as usize;
                     let name = self.get_constant_string(idx);
                     let value = self.pop();
                     self.globals.insert(name, value);
                 }
-                
+
                 DefineGlobal => {
                     let idx = self.read_byte() as usize;
                     let name = self.get_constant_string(idx);
@@ -414,7 +432,7 @@ impl VM {
                     if let Some(closure_ptr) = callee.as_closure() {
                         let closure = unsafe { &*closure_ptr };
                         let func = unsafe { &*closure.function };
-                        
+
                         if func.arity != arg_count {
                             return InterpretResult::RuntimeError(format!(
                                 "Expected {} arguments but got {}",
@@ -467,7 +485,7 @@ impl VM {
                     } else if let Some(native_ptr) = callee.as_native() {
                         // 调用原生函数
                         let native = unsafe { &*native_ptr };
-                        
+
                         // 变参函数：arity=255 表示可变参数
                         // 否则参数数量必须等于 arity（或支持变参的函数内部处理）
                         if native.arity != 255 && arg_count != native.arity {
@@ -492,7 +510,7 @@ impl VM {
                     } else if let Some(native_vm_ptr) = callee.as_native_vm() {
                         // 调用 VM-aware 原生函数
                         let native_vm = unsafe { &*native_vm_ptr };
-                        
+
                         // 参数校验
                         if native_vm.arity != 255 && arg_count != native_vm.arity {
                             return InterpretResult::RuntimeError(format!(
@@ -529,12 +547,12 @@ impl VM {
                     if let Some(func_ptr) = constant.as_function() {
                         // 创建闭包对象
                         let mut closure = Box::new(ObjClosure::new(func_ptr));
-                        
+
                         // 捕获 upvalues
                         for _ in 0..upvalue_count {
                             let is_local = self.read_byte() != 0;
                             let index = self.read_byte();
-                            
+
                             if is_local {
                                 // 捕获当前帧的局部变量
                                 let location = self.current_local_ptr(index as usize);
@@ -543,11 +561,13 @@ impl VM {
                             } else {
                                 // 继承当前闭包的 upvalue
                                 let current_closure = self.current_closure();
-                                let upvalue = unsafe { (*current_closure).get_upvalue(index as usize).unwrap() };
+                                let upvalue = unsafe {
+                                    (*current_closure).get_upvalue(index as usize).unwrap()
+                                };
                                 closure.add_upvalue(upvalue);
                             }
                         }
-                        
+
                         self.push(Value::closure(Box::into_raw(closure)));
                     } else {
                         return InterpretResult::RuntimeError(
@@ -569,7 +589,9 @@ impl VM {
                     let value = self.peek(0);
                     let closure = self.current_closure();
                     let upvalue = unsafe { (*closure).get_upvalue(idx).unwrap() };
-                    unsafe { (*upvalue).set(value); }
+                    unsafe {
+                        (*upvalue).set(value);
+                    }
                 }
 
                 CloseUpvalues => {
@@ -580,7 +602,7 @@ impl VM {
                 Return => {
                     // 1. 关闭当前帧的 upvalues
                     self.close_upvalues(0);
-                    
+
                     // 2. 弹出当前函数的调用帧
                     self.frames
                         .pop()
@@ -600,7 +622,7 @@ impl VM {
                 ReturnValue => {
                     // 1. 关闭当前帧的 upvalues
                     self.close_upvalues(0);
-                    
+
                     // 2. 弹出当前函数的调用帧
                     self.frames
                         .pop()
@@ -636,38 +658,38 @@ impl VM {
                 Resume => {
                     // 操作数：传入值个数
                     let arg_count = self.read_byte();
-                    
+
                     // 从栈顶弹出协程对象
                     let coro_val = self.pop();
                     if let Some(coro_ptr) = coro_val.as_coroutine() {
                         let coro = unsafe { &mut *coro_ptr };
-                        
+
                         // 检查协程状态
                         if coro.state == CoroutineState::Dead {
                             return InterpretResult::RuntimeError(
                                 "Cannot resume dead coroutine".to_string(),
                             );
                         }
-                        
+
                         // 收集传入的参数
                         let mut args = Vec::with_capacity(arg_count as usize);
                         for _ in 0..arg_count {
                             args.push(self.pop());
                         }
                         args.reverse();
-                        
+
                         // 如果协程是第一次运行，需要初始化调用帧
                         if coro.state == CoroutineState::Suspended && coro.frames.is_empty() {
                             let closure = coro.entry_closure;
                             let func = unsafe { &*(*closure).function };
-                            
+
                             if func.arity != arg_count {
                                 return InterpretResult::RuntimeError(format!(
                                     "Expected {} arguments but got {}",
                                     func.arity, arg_count
                                 ));
                             }
-                            
+
                             // 创建初始调用帧
                             coro.frames.push(CallFrame {
                                 closure,
@@ -676,28 +698,28 @@ impl VM {
                                 stack_base: 0,
                             });
                         }
-                        
+
                         // 切换到协程上下文执行（简化版：直接在当前 VM 中运行）
                         coro.state = CoroutineState::Running;
-                        
+
                         // 保存当前 VM 状态
                         let saved_stack = std::mem::take(&mut self.stack);
                         let saved_frames = std::mem::take(&mut self.frames);
                         let saved_upvalues = std::mem::take(&mut self.open_upvalues);
-                        
+
                         // 加载协程状态
                         self.stack = std::mem::take(&mut coro.stack);
                         self.frames = std::mem::take(&mut coro.frames);
                         self.open_upvalues = std::mem::take(&mut coro.open_upvalues);
-                        
+
                         // 执行协程
                         let result = self.run();
-                        
+
                         // 保存协程状态
                         coro.stack = std::mem::take(&mut self.stack);
                         coro.frames = std::mem::take(&mut self.frames);
                         coro.open_upvalues = std::mem::take(&mut self.open_upvalues);
-                        
+
                         // 根据执行结果处理
                         match result {
                             InterpretResult::Ok => {
@@ -716,7 +738,8 @@ impl VM {
                                     // 协程通过 yield 挂起
                                     coro.state = CoroutineState::Suspended;
                                     // 获取 yield 值（在协程栈顶）
-                                    let yield_val = coro.stack.last().copied().unwrap_or(Value::NULL);
+                                    let yield_val =
+                                        coro.stack.last().copied().unwrap_or(Value::NULL);
                                     // 恢复主 VM 状态
                                     self.stack = saved_stack;
                                     self.frames = saved_frames;
@@ -751,10 +774,10 @@ impl VM {
                 Yield => {
                     // 从栈顶弹出要返回的值
                     let value = self.pop();
-                    
+
                     // 保存返回值到当前栈
                     self.push(value);
-                    
+
                     // 返回特殊错误表示 yield（简化实现）
                     return InterpretResult::RuntimeError("yield".to_string());
                 }
@@ -771,9 +794,7 @@ impl VM {
                         };
                         self.push(Value::smi(status as i32));
                     } else {
-                        return InterpretResult::RuntimeError(
-                            "Expected a coroutine".to_string(),
-                        );
+                        return InterpretResult::RuntimeError("Expected a coroutine".to_string());
                     }
                 }
 
@@ -799,18 +820,18 @@ impl VM {
                     for _ in 0..count {
                         let key_val = self.pop();
                         let value = self.pop();
-                        
+
                         // 键必须是字符串
                         if let Some(key_ptr) = key_val.as_string() {
                             let key_str = unsafe { &(*key_ptr).chars };
                             entries.insert(key_str.clone(), value);
                         } else {
                             return InterpretResult::RuntimeError(
-                                "JSON key must be a string".to_string()
+                                "JSON key must be a string".to_string(),
                             );
                         }
                     }
-                    
+
                     let json = Box::new(ObjJson::from_hashmap(entries));
                     let json_ptr = Box::into_raw(json);
                     self.push(Value::json(json_ptr));
@@ -825,9 +846,13 @@ impl VM {
                         exports.push(self.pop());
                     }
                     exports.reverse();
-                    
+
                     // 创建模块对象（暂时不设置名称和 name_to_index，后续由编译器提供）
-                    let module = Box::new(ObjModule::new(String::new(), exports, std::collections::HashMap::new()));
+                    let module = Box::new(ObjModule::new(
+                        String::new(),
+                        exports,
+                        std::collections::HashMap::new(),
+                    ));
                     let module_ptr = Box::into_raw(module);
                     self.push(Value::module(module_ptr));
                 }
@@ -836,7 +861,7 @@ impl VM {
                     // 栈顶: [module]
                     let module_val = self.pop();
                     let shape_id = self.read_u16();
-                    
+
                     if let Some(module_ptr) = module_val.as_module() {
                         let module = unsafe { &*module_ptr };
                         if let Some(value) = module.get_by_shape_id(shape_id) {
@@ -848,7 +873,9 @@ impl VM {
                             ));
                         }
                     } else {
-                        return InterpretResult::RuntimeError("ModuleGet requires a module".to_string());
+                        return InterpretResult::RuntimeError(
+                            "ModuleGet requires a module".to_string(),
+                        );
                     }
                 }
 
@@ -857,22 +884,24 @@ impl VM {
                     // 操作数: u8 常量池索引（导出项名称字符串）
                     let module_val = self.pop();
                     let name_idx = self.read_byte() as usize;
-                    
+
                     // 从常量池获取名称字符串
-                    let name = if let Some(constant) = self.current_chunk().constants.get(name_idx) {
+                    let name = if let Some(constant) = self.current_chunk().constants.get(name_idx)
+                    {
                         if let Some(ptr) = constant.as_string() {
                             unsafe { (&*ptr).chars.clone() }
                         } else {
                             return InterpretResult::RuntimeError(
-                                "GetModuleExport name must be a string".to_string()
+                                "GetModuleExport name must be a string".to_string(),
                             );
                         }
                     } else {
-                        return InterpretResult::RuntimeError(
-                            format!("Invalid constant index for GetModuleExport: {}", name_idx)
-                        );
+                        return InterpretResult::RuntimeError(format!(
+                            "Invalid constant index for GetModuleExport: {}",
+                            name_idx
+                        ));
                     };
-                    
+
                     if let Some(module_ptr) = module_val.as_module() {
                         let module = unsafe { &*module_ptr };
                         if let Some(value) = module.get(&name) {
@@ -885,7 +914,7 @@ impl VM {
                         }
                     } else {
                         return InterpretResult::RuntimeError(
-                            "GetModuleExport requires a module".to_string()
+                            "GetModuleExport requires a module".to_string(),
                         );
                     }
                 }
@@ -893,15 +922,15 @@ impl VM {
                 GetModule => {
                     // 栈顶: [module_name] -> module
                     let name_val = self.pop();
-                    
+
                     let name = if let Some(ptr) = name_val.as_string() {
                         unsafe { (&*ptr).chars.clone() }
                     } else {
                         return InterpretResult::RuntimeError(
-                            "GetModule requires a string name".to_string()
+                            "GetModule requires a string name".to_string(),
                         );
                     };
-                    
+
                     if let Some(value) = self.globals.get(&name) {
                         self.push(*value);
                     } else {
@@ -917,7 +946,7 @@ impl VM {
                     // 操作数: u16 shape_id + u8 field_count
                     let shape_id = self.read_u16();
                     let field_count = self.read_byte() as usize;
-                    
+
                     // 从栈顶弹出字段值
                     // 编译器按 shape 字段顺序的逆序入栈，所以弹出后直接是正确顺序
                     let mut fields = Vec::with_capacity(field_count);
@@ -925,15 +954,16 @@ impl VM {
                         fields.push(self.pop());
                     }
                     // 不需要 reverse，编译器已经处理好顺序
-                    
+
                     // 创建 struct 实例
                     let shape_ptr = self.get_shape(shape_id);
                     if shape_ptr.is_null() {
-                        return InterpretResult::RuntimeError(
-                            format!("Shape ID {} not found", shape_id)
-                        );
+                        return InterpretResult::RuntimeError(format!(
+                            "Shape ID {} not found",
+                            shape_id
+                        ));
                     }
-                    
+
                     let struct_obj = Box::new(ObjStruct::new(shape_ptr, fields));
                     self.push(Value::struct_instance(Box::into_raw(struct_obj)));
                 }
@@ -941,20 +971,21 @@ impl VM {
                 GetField => {
                     // 操作数: u8 字段索引
                     let field_idx = self.read_byte() as usize;
-                    
+
                     let struct_val = self.pop();
                     if let Some(struct_ptr) = struct_val.as_struct() {
                         let struct_obj = unsafe { &*struct_ptr };
                         if let Some(value) = struct_obj.get_field(field_idx) {
                             self.push(value);
                         } else {
-                            return InterpretResult::RuntimeError(
-                                format!("Field index {} out of bounds", field_idx)
-                            );
+                            return InterpretResult::RuntimeError(format!(
+                                "Field index {} out of bounds",
+                                field_idx
+                            ));
                         }
                     } else {
                         return InterpretResult::RuntimeError(
-                            "GetField requires a struct instance".to_string()
+                            "GetField requires a struct instance".to_string(),
                         );
                     }
                 }
@@ -962,17 +993,17 @@ impl VM {
                 SetField => {
                     // 操作数: u8 字段索引
                     let field_idx = self.read_byte() as usize;
-                    
+
                     // 栈布局: [value, struct]
                     let struct_val = self.pop();
                     let value = self.pop();
-                    
+
                     if let Some(struct_ptr) = struct_val.as_struct() {
                         let struct_obj = unsafe { &mut *struct_ptr };
                         struct_obj.set_field(field_idx, value);
                     } else {
                         return InterpretResult::RuntimeError(
-                            "SetField requires a struct instance".to_string()
+                            "SetField requires a struct instance".to_string(),
                         );
                     }
                 }
@@ -980,7 +1011,7 @@ impl VM {
                 LoadMethod => {
                     // 操作数: u8 方法索引
                     let method_idx = self.read_byte();
-                    
+
                     // 栈顶是 receiver
                     let receiver = self.peek(0);
                     if let Some(struct_ptr) = receiver.as_struct() {
@@ -989,13 +1020,14 @@ impl VM {
                             // 压入函数对象（不是闭包）
                             self.push(Value::function(method));
                         } else {
-                            return InterpretResult::RuntimeError(
-                                format!("Method index {} not found in shape", method_idx)
-                            );
+                            return InterpretResult::RuntimeError(format!(
+                                "Method index {} not found in shape",
+                                method_idx
+                            ));
                         }
                     } else {
                         return InterpretResult::RuntimeError(
-                            "LoadMethod requires a struct instance".to_string()
+                            "LoadMethod requires a struct instance".to_string(),
                         );
                     }
                 }
@@ -1019,7 +1051,7 @@ impl VM {
                             }
                             let value = list.get(i).unwrap_or(Value::NULL);
                             self.push(value);
-                        } 
+                        }
                         // Struct 字段索引（整数）
                         else if let Some(struct_ptr) = obj_val.as_struct() {
                             let struct_obj = unsafe { &*struct_ptr };
@@ -1034,7 +1066,9 @@ impl VM {
                             let value = struct_obj.get_field(i).unwrap_or(Value::NULL);
                             self.push(value);
                         } else {
-                            return InterpretResult::RuntimeError("Can only index lists or structs with integers".to_string());
+                            return InterpretResult::RuntimeError(
+                                "Can only index lists or structs with integers".to_string(),
+                            );
                         }
                     }
                     // JSON 对象索引（字符串键）
@@ -1044,25 +1078,28 @@ impl VM {
                             let key = unsafe { &(*key_ptr).chars };
                             let value = json.get(key).unwrap_or(Value::NULL);
                             self.push(value);
-                        } 
+                        }
                         // Struct 字段访问（字符串键）
                         else if let Some(struct_ptr) = obj_val.as_struct() {
                             let struct_obj = unsafe { &*struct_ptr };
                             let shape = unsafe { &*struct_obj.shape };
                             let key = unsafe { &(*key_ptr).chars };
-                            
+
                             if let Some(field_idx) = shape.get_field_index(key) {
-                                let value = struct_obj.get_field(field_idx as usize).unwrap_or(Value::NULL);
+                                let value = struct_obj
+                                    .get_field(field_idx as usize)
+                                    .unwrap_or(Value::NULL);
                                 self.push(value);
                             } else {
                                 return InterpretResult::RuntimeError(format!(
                                     "Field '{}' not found in struct '{}'",
-                                    key,
-                                    shape.name
+                                    key, shape.name
                                 ));
                             }
                         } else {
-                            return InterpretResult::RuntimeError("Can only index JSON objects or structs with strings".to_string());
+                            return InterpretResult::RuntimeError(
+                                "Can only index JSON objects or structs with strings".to_string(),
+                            );
                         }
                     } else {
                         return InterpretResult::RuntimeError("Index must be an integer (for list/struct) or string (for JSON/struct)".to_string());
@@ -1082,9 +1119,11 @@ impl VM {
                             let key = unsafe { &(*key_ptr).chars };
                             json.set(key.clone(), value);
                         } else {
-                            return InterpretResult::RuntimeError("Can only set keys on JSON objects".to_string());
+                            return InterpretResult::RuntimeError(
+                                "Can only set keys on JSON objects".to_string(),
+                            );
                         }
-                    } 
+                    }
                     // 列表索引（整数）
                     else if let Some(idx) = key_val.as_smi() {
                         if let Some(list_ptr) = obj_val.as_list() {
@@ -1099,10 +1138,14 @@ impl VM {
                             }
                             list.elements[i] = value;
                         } else {
-                            return InterpretResult::RuntimeError("Can only index lists with integers".to_string());
+                            return InterpretResult::RuntimeError(
+                                "Can only index lists with integers".to_string(),
+                            );
                         }
                     } else {
-                        return InterpretResult::RuntimeError("Key must be a string (for JSON) or integer (for list)".to_string());
+                        return InterpretResult::RuntimeError(
+                            "Key must be a string (for JSON) or integer (for list)".to_string(),
+                        );
                     }
                 }
 
@@ -1138,17 +1181,18 @@ impl VM {
 
                     if let Some(iter_ptr) = iter_val.as_iterator() {
                         let iter = unsafe { &mut *iter_ptr };
-                        
+
                         // 检查是否是协程迭代器
                         if let Some(coro_ptr) = iter.as_coroutine() {
                             // 协程迭代器：resume 协程获取下一个值
                             let coro = unsafe { &mut *coro_ptr };
-                            
+
                             if coro.state == CoroutineState::Dead {
                                 self.push(Value::NULL);
                             } else {
                                 // 如果是第一次运行，初始化调用帧
-                                if coro.state == CoroutineState::Suspended && coro.frames.is_empty() {
+                                if coro.state == CoroutineState::Suspended && coro.frames.is_empty()
+                                {
                                     let closure = coro.entry_closure;
                                     let func = unsafe { &*(*closure).function };
                                     // 创建初始调用帧（无参数）
@@ -1159,44 +1203,46 @@ impl VM {
                                         stack_base: 0,
                                     });
                                 }
-                                
+
                                 // 执行 resume
                                 coro.state = CoroutineState::Running;
-                                
+
                                 // 保存当前 VM 状态
                                 let saved_stack = std::mem::take(&mut self.stack);
                                 let saved_frames = std::mem::take(&mut self.frames);
                                 let saved_upvalues = std::mem::take(&mut self.open_upvalues);
-                                
+
                                 // 加载协程状态
                                 self.stack = std::mem::take(&mut coro.stack);
                                 self.frames = std::mem::take(&mut coro.frames);
                                 self.open_upvalues = std::mem::take(&mut coro.open_upvalues);
-                                
+
                                 // 执行协程（无参数 resume）
                                 let result = self.run();
-                                
+
                                 // 保存协程状态
                                 coro.stack = std::mem::take(&mut self.stack);
                                 coro.frames = std::mem::take(&mut self.frames);
                                 coro.open_upvalues = std::mem::take(&mut coro.open_upvalues);
-                                
+
                                 // 恢复主 VM 状态
                                 self.stack = saved_stack;
                                 self.frames = saved_frames;
                                 self.open_upvalues = saved_upvalues;
-                                
+
                                 // 处理结果
                                 match result {
                                     InterpretResult::Ok => {
                                         coro.state = CoroutineState::Dead;
-                                        let return_val = coro.stack.last().copied().unwrap_or(Value::NULL);
+                                        let return_val =
+                                            coro.stack.last().copied().unwrap_or(Value::NULL);
                                         self.push(return_val);
                                     }
                                     InterpretResult::RuntimeError(msg) => {
                                         if msg == "yield" {
                                             coro.state = CoroutineState::Suspended;
-                                            let yield_val = coro.stack.last().copied().unwrap_or(Value::NULL);
+                                            let yield_val =
+                                                coro.stack.last().copied().unwrap_or(Value::NULL);
                                             self.push(yield_val);
                                         } else {
                                             coro.state = CoroutineState::Dead;
@@ -1253,11 +1299,19 @@ impl VM {
 
     /// 通过 ID 获取 Shape
     fn get_shape(&self, shape_id: u16) -> *const ObjShape {
-        self.shapes.get(&shape_id).copied().unwrap_or(std::ptr::null())
+        self.shapes
+            .get(&shape_id)
+            .copied()
+            .unwrap_or(std::ptr::null())
     }
 
     /// 注册方法到 Shape 的方法表
-    pub fn register_method_to_shape(&mut self, shape_id: u16, method_idx: u8, func: *mut ObjFunction) {
+    pub fn register_method_to_shape(
+        &mut self,
+        shape_id: u16,
+        method_idx: u8,
+        func: *mut ObjFunction,
+    ) {
         if let Some(&shape) = self.shapes.get(&shape_id) {
             unsafe {
                 let shape_mut = shape as *mut ObjShape;
@@ -1360,7 +1414,7 @@ impl VM {
                 }
             }
         }
-        
+
         // 创建新的 upvalue
         let upvalue = Box::into_raw(Box::new(ObjUpvalue::new(location)));
         self.open_upvalues.push(upvalue);
@@ -1370,9 +1424,13 @@ impl VM {
     /// 关闭从指定槽位开始的所有 upvalues
     fn close_upvalues(&mut self, slot: usize) {
         // 获取当前帧的 locals 起始地址
-        let frame_base = self.frames.last().map(|f| f.locals.as_ptr() as usize).unwrap_or(0);
+        let frame_base = self
+            .frames
+            .last()
+            .map(|f| f.locals.as_ptr() as usize)
+            .unwrap_or(0);
         let close_threshold = frame_base + slot * std::mem::size_of::<Value>();
-        
+
         // 关闭所有地址 >= close_threshold 的 upvalue
         let mut i = 0;
         while i < self.open_upvalues.len() {
@@ -1684,13 +1742,6 @@ use std::cmp::Ordering;
 mod tests {
     use super::*;
     use crate::runtime::bytecode::OpCode::*;
-
-    /// 辅助函数：创建包含单个指令的 chunk
-    fn simple_chunk(op: OpCode) -> Chunk {
-        let mut chunk = Chunk::new();
-        chunk.write_op(op, 1);
-        chunk
-    }
 
     #[test]
     fn test_push_pop() {

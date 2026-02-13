@@ -3,10 +3,12 @@
 //! 包含执行配置 RunConfig 和全局单例（供 CLI 使用）
 
 use kaubo_config::{CompilerConfig, LimitConfig};
+use kaubo_log::Logger;
 use once_cell::sync::OnceCell;
+use std::sync::Arc;
 
 /// Execution configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RunConfig {
     /// Whether to show execution steps
     pub show_steps: bool,
@@ -16,6 +18,19 @@ pub struct RunConfig {
     pub compiler: CompilerConfig,
     /// Execution limits
     pub limits: LimitConfig,
+    /// Logger (optional)
+    pub logger: Arc<Logger>,
+}
+
+impl std::fmt::Debug for RunConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunConfig")
+            .field("show_steps", &self.show_steps)
+            .field("dump_bytecode", &self.dump_bytecode)
+            .field("compiler", &self.compiler)
+            .field("limits", &self.limits)
+            .finish()
+    }
 }
 
 impl Default for RunConfig {
@@ -25,6 +40,7 @@ impl Default for RunConfig {
             dump_bytecode: false,
             compiler: CompilerConfig::default(),
             limits: LimitConfig::default(),
+            logger: Logger::noop(),
         }
     }
 }

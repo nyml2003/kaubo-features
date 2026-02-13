@@ -5,7 +5,6 @@ use crate::span::{Span, SpanId};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::fmt;
 use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 // 使用 spin::Mutex 替代 std::sync::Mutex
@@ -66,13 +65,18 @@ impl Logger {
 
     /// 记录日志（内部方法）
     #[inline(never)]
-    pub fn log(&self, level: Level, target: &'static str, message: impl Into<alloc::string::String>) {
+    pub fn log(
+        &self,
+        level: Level,
+        target: &'static str,
+        message: impl Into<alloc::string::String>,
+    ) {
         if !self.is_enabled(level) {
             return;
         }
 
         let mut record = Record::new(level, target, message);
-        
+
         // 附加当前span ID（如果有）
         let stack = self.span_stack.lock();
         if let Some(span) = stack.last() {
@@ -90,7 +94,7 @@ impl Logger {
     pub fn enter_span(self: &Arc<Self>, name: &'static str) -> SpanGuard {
         let id = SpanId(self.next_span_id.fetch_add(1, Ordering::Relaxed));
         let span = Span::new(id, name);
-        
+
         let mut stack = self.span_stack.lock();
         stack.push(span);
 
@@ -183,7 +187,7 @@ impl FileSink {
             .create(true)
             .append(true)
             .open(path)?;
-        
+
         Ok(FileSink {
             file: std::sync::Mutex::new(file),
         })
@@ -201,20 +205,16 @@ impl LogSink for FileSink {
     }
 }
 
-/// 便捷的日志记录方法（供宏使用）
-pub fn log(
-    logger: &Arc<Logger>,
-    level: Level,
-    target: &'static str,
-    args: fmt::Arguments<'_>,
-) {
-    logger.log(level, target, alloc::format!("{}", args));
-}
-
 #[cfg(test)]
 mod tests {
+    use core::fmt;
+
     use super::*;
     use crate::LogRingBuffer;
+
+    fn log(logger: &Arc<Logger>, level: Level, target: &'static str, args: fmt::Arguments<'_>) {
+        logger.log(level, target, alloc::format!("{}", args));
+    }
 
     #[test]
     fn test_logger_creation() {
@@ -228,7 +228,7 @@ mod tests {
     fn test_level_change() {
         let logger = Logger::new(Level::Info);
         assert!(!logger.is_enabled(Level::Debug));
-        
+
         logger.set_level(Level::Debug);
         assert!(logger.is_enabled(Level::Debug));
     }
@@ -237,21 +237,21 @@ mod tests {
     fn test_span_guard() {
         let logger = Logger::new(Level::Debug);
         assert_eq!(logger.span_depth(), 0);
-        
+
         {
             let guard = logger.enter_span("test_span");
             assert_eq!(logger.span_depth(), 1);
-            
+
             {
                 let guard2 = logger.enter_span("nested");
                 assert_eq!(logger.span_depth(), 2);
                 drop(guard2);
             }
-            
+
             assert_eq!(logger.span_depth(), 1);
             drop(guard);
         }
-        
+
         assert_eq!(logger.span_depth(), 0);
     }
 
@@ -319,11 +319,11 @@ mod tests {
     fn test_logger_clone() {
         let ring = LogRingBuffer::new(100);
         let logger = Logger::new(Level::Debug).with_sink(ring.clone());
-        
+
         // 克隆 logger，应该是独立实例
         let cloned = (*logger).clone();
         assert_eq!(cloned.level(), Level::Debug);
-        
+
         // 克隆的 logger 没有 sink，写入不会影响到原 ring
         cloned.log(Level::Info, "test", "from clone");
         assert_eq!(ring.len(), 0); // 原 ring 没有收到
@@ -333,14 +333,14 @@ mod tests {
     fn test_log_sink_for_arc_logger() {
         let ring = LogRingBuffer::new(100);
         let logger1 = Logger::new(Level::Debug).with_sink(ring.clone());
-        
+
         // 创建一个链式 logger
         let logger2 = Logger::new(Level::Debug);
         logger2.add_sink(logger1.clone());
-        
+
         // 写入 logger2，应该通过 logger1 最终写入 ring
         logger2.log(Level::Info, "chain", "chained log");
-        
+
         // 注意：链式 logger 会多一层转发
         let records = ring.dump_records();
         assert!(!records.is_empty());
@@ -351,7 +351,12 @@ mod tests {
         let ring = LogRingBuffer::new(100);
         let logger = Logger::new(Level::Debug).with_sink(ring.clone());
 
-        log(&logger, Level::Info, "test::func", format_args!("formatted {}", 42));
+        log(
+            &logger,
+            Level::Info,
+            "test::func",
+            format_args!("formatted {}", 42),
+        );
 
         let records = ring.dump_records();
         assert_eq!(records.len(), 1);
@@ -380,23 +385,26 @@ mod tests {
     #[test]
     fn test_file_sink() {
         use std::io::Read;
-        
+
         // 创建临时文件
         let temp_path = "test_log_file.tmp";
-        
+
         // 创建 sink 并写入
         {
             let sink = FileSink::new(temp_path).unwrap();
             let record = Record::new(Level::Error, "test", "file test message");
             sink.write(&record);
         }
-        
+
         // 读取文件验证
         let mut content = String::new();
-        std::fs::File::open(temp_path).unwrap().read_to_string(&mut content).unwrap();
+        std::fs::File::open(temp_path)
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
         assert!(content.contains("file test message"));
         assert!(content.contains("ERROR"));
-        
+
         // 清理
         std::fs::remove_file(temp_path).ok();
     }
@@ -405,26 +413,26 @@ mod tests {
     #[test]
     fn test_file_sink_append() {
         let temp_path = "test_log_append.tmp";
-        
+
         // 写入第一条
         {
             let sink = FileSink::new(temp_path).unwrap();
             let record = Record::new(Level::Info, "test", "first line");
             sink.write(&record);
         }
-        
+
         // 写入第二条（追加）
         {
             let sink = FileSink::new(temp_path).unwrap();
             let record = Record::new(Level::Info, "test", "second line");
             sink.write(&record);
         }
-        
+
         // 验证追加
         let content = std::fs::read_to_string(temp_path).unwrap();
         assert!(content.contains("first line"));
         assert!(content.contains("second line"));
-        
+
         std::fs::remove_file(temp_path).ok();
     }
 
@@ -433,13 +441,13 @@ mod tests {
     fn test_file_sink_write_lock_poisoned() {
         use std::sync::Arc;
         use std::thread;
-        
+
         let temp_path = "test_log_poison3.tmp";
-        
+
         // 创建文件 sink 并包装在 Arc 中以便跨线程共享
         let sink = Arc::new(FileSink::new(temp_path).unwrap());
         let sink_clone = Arc::clone(&sink);
-        
+
         // 在一个线程中 panic，制造 poison 状态
         let handle = thread::spawn(move || {
             // 获取锁
@@ -447,18 +455,18 @@ mod tests {
             // 直接 panic，导致锁被 poison
             panic!("intentional panic to poison mutex");
         });
-        
+
         // 等待线程结束（会 panic），确保 poison 完成
         assert!(handle.join().is_err());
-        
+
         // 现在尝试写入，应该触发 Err 分支（锁被 poison）
         // 注意：poison 后 lock() 返回 Err，但数据仍然可以访问
         let record = Record::new(Level::Info, "test", "poisoned write");
         sink.write(&record); // 这行应该执行 if let Err 分支，即不写入
-        
+
         // 验证：由于 poison 后写入被跳过，文件应该为空或只有之前的内容
         // 注意：因为 panic 的线程可能还没写入任何内容，文件可能是空的
-        
+
         // 清理
         std::fs::remove_file(temp_path).ok();
     }

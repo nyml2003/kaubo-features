@@ -3,10 +3,17 @@
 //! 使用新的 Lexer V2 实现
 
 use crate::kit::lexer::Lexer;
+use kaubo_log::Logger;
+use std::sync::Arc;
 
 /// 创建新的 Lexer
 pub fn build_lexer() -> Lexer {
     Lexer::new(102400)  // 100KB 缓存，支持更大文件
+}
+
+/// 创建新的 Lexer（带 logger）
+pub fn build_lexer_with_logger(logger: Arc<Logger>) -> Lexer {
+    Lexer::with_logger(102400, logger)
 }
 
 #[cfg(test)]

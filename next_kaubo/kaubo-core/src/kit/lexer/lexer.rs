@@ -55,7 +55,7 @@ impl Lexer {
         trace!(logger, "Creating new Lexer with capacity {}", capacity);
         Self {
             scanner: KauboScanner::with_logger(logger.clone()),
-            stream: CharStream::new(capacity),
+            stream: CharStream::with_logger(capacity, logger.clone()),
             eof: false,
             logger,
         }
@@ -123,7 +123,6 @@ impl Lexer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaubo_log::{LogConfig, Level};
 
     fn lex_all(input: &str) -> Vec<Token<KauboTokenKind>> {
         // 测试时使用静默 logger

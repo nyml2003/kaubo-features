@@ -27,8 +27,8 @@ pub struct NamedType {
 /// 函数类型
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionType {
-    pub params: Vec<TypeExpr>,  // 参数类型列表
-    pub return_type: Option<Box<TypeExpr>>,  // 返回类型（None 表示 void）
+    pub params: Vec<TypeExpr>,              // 参数类型列表
+    pub return_type: Option<Box<TypeExpr>>, // 返回类型（None 表示 void）
 }
 
 impl TypeExpr {
@@ -108,10 +108,7 @@ mod tests {
 
     #[test]
     fn test_tuple_type() {
-        let t = TypeExpr::tuple(vec![
-            TypeExpr::named("int"),
-            TypeExpr::named("string"),
-        ]);
+        let t = TypeExpr::tuple(vec![TypeExpr::named("int"), TypeExpr::named("string")]);
         assert_eq!(t.to_string(), "Tuple<int, string>");
     }
 

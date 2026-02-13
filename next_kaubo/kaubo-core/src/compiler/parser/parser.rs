@@ -15,20 +15,30 @@ use super::utils::{get_associativity, get_precedence};
 use crate::kit::lexer::scanner::Token;
 use crate::kit::lexer::types::{Coordinate, Span};
 use crate::kit::lexer::Lexer;
+use kaubo_log::{debug, trace, Logger};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct Parser {
     lexer: Rc<RefCell<Lexer>>,
     current_token: Option<Token<KauboTokenKind>>,
+    logger: Arc<Logger>,
 }
 
 impl Parser {
+    /// 创建新的 Parser（使用 noop logger）
     pub fn new(lexer: Lexer) -> Self {
+        Self::with_logger(lexer, Logger::noop())
+    }
+
+    /// 创建新的 Parser（带显式 logger）
+    pub fn with_logger(lexer: Lexer, logger: Arc<Logger>) -> Self {
         let lexer = Rc::new(RefCell::new(lexer));
         let mut parser = Self {
             lexer,
             current_token: None,
+            logger,
         };
         parser.consume(); // 预读第一个token
         parser
@@ -36,12 +46,16 @@ impl Parser {
 
     /// 解析整个模块
     pub fn parse(&mut self) -> ParseResult<Module> {
-        self.parse_module()
+        trace!(self.logger, "Starting parse");
+        let result = self.parse_module();
+        trace!(self.logger, "Parse completed: {:?}", result.is_ok());
+        result
     }
 
     /// 消费当前token并读取下一个
     fn consume(&mut self) {
         self.current_token = self.lexer.borrow_mut().next_token();
+        debug!(self.logger, "Consumed token: {:?}", self.current_token.as_ref().map(|t| &t.kind));
     }
 
     /// 检查当前token是否为指定类型
@@ -103,8 +117,10 @@ impl Parser {
             Ok(())
         } else {
             let expected = format!("{:?}", kind);
+            let found = self.current_token_text();
+            debug!(self.logger, "expect: expected {:?}, found {}", kind, found);
             Err(self.error_here(ParserErrorKind::UnexpectedToken {
-                found: self.current_token_text(),
+                found,
                 expected: vec![expected],
             }))
         }
@@ -144,6 +160,7 @@ impl Parser {
 
     /// 解析模块（顶层语句集合）
     fn parse_module(&mut self) -> ParseResult<Module> {
+        trace!(self.logger, "parse_module: starting");
         let mut statements = Vec::new();
 
         while self.current_token.is_some() {
@@ -157,11 +174,15 @@ impl Parser {
             statements.push(stmt);
         }
 
+        trace!(self.logger, "parse_module: completed with {} statements", statements.len());
         Ok(Box::new(ModuleKind { statements }))
     }
 
     /// 解析单个语句
     fn parse_statement(&mut self) -> ParseResult<Stmt> {
+        let current = self.current_token.as_ref().map(|t| format!("{:?}", t.kind));
+        trace!(self.logger, "parse_statement: current_token={:?}", current);
+        
         if self.check(KauboTokenKind::LeftCurlyBrace) {
             self.parse_block()
         } else if self.check(KauboTokenKind::Var) {
@@ -210,6 +231,7 @@ impl Parser {
 
     /// 解析代码块
     fn parse_block(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_block: starting");
         self.expect(KauboTokenKind::LeftCurlyBrace)?;
 
         let mut statements = Vec::new();
@@ -227,11 +249,13 @@ impl Parser {
         }
 
         self.expect(KauboTokenKind::RightCurlyBrace)?;
+        trace!(self.logger, "parse_block: completed with {} statements", statements.len());
         Ok(Box::new(StmtKind::Block(BlockStmt { statements })))
     }
 
     /// 解析表达式（Pratt解析核心）
     fn parse_expression(&mut self, min_precedence: i32) -> ParseResult<Expr> {
+        trace!(self.logger, "parse_expression: min_precedence={}", min_precedence);
         // 解析左操作数（一元表达式或基础表达式）
         let mut left = self.parse_unary()?;
 
@@ -265,6 +289,7 @@ impl Parser {
 
     /// 解析一元表达式
     fn parse_unary(&mut self) -> ParseResult<Expr> {
+        trace!(self.logger, "parse_unary");
         if self.check(KauboTokenKind::Minus) || self.check(KauboTokenKind::Not) {
             let token = self.current_token.as_ref().unwrap();
             let op = token.kind.clone();
@@ -306,6 +331,7 @@ impl Parser {
             .as_ref()
             .ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
 
+        trace!(self.logger, "parse_primary_base: token={:?}", token.kind);
         match token.kind {
             KauboTokenKind::LiteralInteger => self.parse_int(),
             KauboTokenKind::LiteralFloat => self.parse_float(),
@@ -552,6 +578,7 @@ impl Parser {
     /// 
     /// 语法: |param1: Type1, param2: Type2| -> ReturnType { body }
     fn parse_lambda(&mut self) -> ParseResult<Expr> {
+        trace!(self.logger, "parse_lambda");
         self.expect(KauboTokenKind::Pipe)?; // 消费 '|'
 
         let mut params: Vec<(String, Option<TypeExpr>)> = Vec::new();
@@ -601,6 +628,7 @@ impl Parser {
 
     /// 解析函数调用
     fn parse_function_call(&mut self, function_expr: Expr) -> ParseResult<Expr> {
+        trace!(self.logger, "parse_function_call");
         self.consume(); // 消费 '('
 
         let mut arguments = Vec::new();
@@ -634,6 +662,7 @@ impl Parser {
 
     /// 解析变量声明内部实现
     fn parse_var_declaration_inner(&mut self, is_public: bool) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_var_declaration: is_public={}", is_public);
         let start_coord = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'var'
 
@@ -676,6 +705,7 @@ impl Parser {
 
     /// 解析return语句
     fn parse_return_statement(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_return_statement");
         let start_coord = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'return'
 
@@ -694,6 +724,7 @@ impl Parser {
     /// 解析模块定义语句
     /// module name { ... }
     fn parse_module_statement(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_module_statement");
         self.consume(); // 消费 'module'
 
         // 解析模块名
@@ -710,6 +741,7 @@ impl Parser {
     /// import module as alias;
     /// from module import item1, item2;
     fn parse_import_statement(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_import_statement");
         // 检查是 from...import 还是 import
         if self.check(KauboTokenKind::From) {
             // from module import item1, item2;
@@ -760,6 +792,7 @@ impl Parser {
     /// 解析 struct 定义语句
     /// struct Point { x: float, y: float }
     fn parse_struct_statement(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_struct_statement");
         let start_coord = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'struct'
 
@@ -803,6 +836,7 @@ impl Parser {
     /// 解析 impl 语句
     /// 语法: impl StructName { method1: |params| -> ReturnType { body }, method2: ... }
     fn parse_impl_statement(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_impl_statement");
         let start_coord = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'impl'
 
@@ -856,6 +890,7 @@ impl Parser {
 
     /// 解析if语句
     fn parse_if_statement(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_if_statement");
         self.consume(); // 消费 'if'
         let if_condition = self.parse_expression(0)?;
         let then_body = self.parse_block()?;
@@ -889,6 +924,7 @@ impl Parser {
 
     /// 解析while循环
     fn parse_while_loop(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_while_loop");
         self.consume(); // 消费 'while'
         let condition = self.parse_expression(0)?;
         let body = self.parse_block()?;
@@ -897,6 +933,7 @@ impl Parser {
 
     /// 解析for循环
     fn parse_for_loop(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_for_loop");
         self.consume(); // 消费 'for'
 
         // 新语法: for var item in iterable { ... }

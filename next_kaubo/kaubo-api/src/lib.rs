@@ -8,16 +8,17 @@
 //! For CLI convenience, this crate provides a global singleton API.
 //! For library use, prefer the explicit `run(source, &config)` API.
 
-use tracing::{Level, debug, error, info, instrument, span};
+extern crate alloc;
+
+use kaubo_log::{debug, info, Logger};
+use std::sync::Arc;
 
 use kaubo_core::runtime::bytecode::chunk::Chunk;
-// compile_to_chunk 不再使用，compile_ast 直接使用 compile_with_shapes
 use kaubo_core::runtime::{InterpretResult, VM};
-use kaubo_core::kit::lexer::SourcePosition;
 
 // Re-export config
 pub mod config;
-pub use config::{RunConfig, init as init_config, config as get_config, is_initialized};
+pub use config::{config as get_config, init as init_config, is_initialized, RunConfig};
 
 // Re-export error and types
 pub mod error;
@@ -26,69 +27,70 @@ pub use error::{ErrorDetails, ErrorReport, KauboError, LexerError, ParserError, 
 pub use types::{CompileOutput, ExecuteOutput};
 
 // Re-export core types
+pub use kaubo_config;
 pub use kaubo_core::Value;
 pub use kaubo_core::{CompilerConfig, LimitConfig, Phase};
-pub use kaubo_config;
 
 /// Execute with explicit configuration
 ///
 /// This is the recommended API for library users.
 pub fn run(source: &str, config: &RunConfig) -> Result<ExecuteOutput, KauboError> {
-    let _span = span!(Level::INFO, "run").entered();
-    
-    info!("Starting execution");
-    
+    info!(config.logger, "Starting execution");
+
     // Compile
-    let compiled = compile_with_config(source, &config.compiler)?;
-    
+    let compiled = compile_with_config(source, config)?;
+
     // Optional: dump bytecode
     if config.dump_bytecode {
         compiled.chunk.disassemble("main");
     }
-    
+
     // Execute
-    let result = execute_with_config(&compiled.chunk, compiled.local_count, &compiled.shapes, &config.limits)?;
-    
-    info!("Execution completed");
+    let result = execute_with_config(
+        &compiled.chunk,
+        compiled.local_count,
+        &compiled.shapes,
+        config,
+    )?;
+
+    info!(config.logger, "Execution completed");
     Ok(result)
 }
 
 /// Compile with explicit configuration
-fn compile_with_config(
-    source: &str,
-    config: &CompilerConfig,
-) -> Result<CompileOutput, KauboError> {
-    use kaubo_core::compiler::lexer::builder::build_lexer;
+fn compile_with_config(source: &str, config: &RunConfig) -> Result<CompileOutput, KauboError> {
+    use kaubo_core::compiler::lexer::builder::build_lexer_with_logger;
     use kaubo_core::compiler::parser::parser::Parser;
     use kaubo_core::compiler::parser::TypeChecker;
 
-    let mut lexer = build_lexer();
-    lexer
-        .feed(&source.as_bytes().to_vec())
-        .map_err(|e| LexerError::from_stream_error(e, kaubo_core::kit::lexer::SourcePosition::start()))?;
-    lexer.terminate()
-        .map_err(|e| LexerError::from_stream_error(e, kaubo_core::kit::lexer::SourcePosition::start()))?;
+    let mut lexer = build_lexer_with_logger(config.logger.clone());
+    lexer.feed(source.as_bytes()).map_err(|e| {
+        LexerError::from_stream_error(e, kaubo_core::kit::lexer::SourcePosition::start())
+    })?;
+    lexer.terminate().map_err(|e| {
+        LexerError::from_stream_error(e, kaubo_core::kit::lexer::SourcePosition::start())
+    })?;
 
-    let mut parser = Parser::new(lexer);
+    let mut parser = Parser::with_logger(lexer, config.logger.clone());
     let ast = parser.parse().map_err(KauboError::Parser)?;
 
     // 类型检查（如果启用了 emit_debug_info 则启用严格模式）
-    let mut type_checker = TypeChecker::new();
-    if config.emit_debug_info {
+    let mut type_checker = TypeChecker::with_logger(config.logger.clone());
+    if config.compiler.emit_debug_info {
         type_checker.set_strict_mode(true);
     }
-    
+
     // 对模块中的每个语句进行类型检查
     for stmt in &ast.statements {
         if let Err(type_error) = type_checker.check_statement(stmt) {
             return Err(KauboError::Type(type_error));
         }
     }
-    
+
     // 获取生成的 shapes
     let shapes = type_checker.take_shapes();
 
-    let output = compile_ast(&ast, shapes)?;
+    let output = compile_ast(&ast, shapes, config.logger.clone())?;
     Ok(output)
 }
 
@@ -97,15 +99,15 @@ fn execute_with_config(
     chunk: &Chunk,
     local_count: usize,
     shapes: &[kaubo_core::runtime::object::ObjShape],
-    _limits: &LimitConfig,
+    config: &RunConfig,
 ) -> Result<ExecuteOutput, KauboError> {
-    let mut vm = VM::new();
-    
+    let mut vm = VM::with_logger(config.logger.clone());
+
     // 注册所有 shapes 到 VM
     for shape in shapes {
         vm.register_shape(shape as *const _);
     }
-    
+
     // 根据 Chunk.method_table 初始化 Shape 的方法表
     // 方法函数存储在常量池中，需要在执行前注册到 Shape
     for entry in &chunk.method_table {
@@ -114,7 +116,7 @@ fn execute_with_config(
             vm.register_method_to_shape(entry.shape_id, entry.method_idx, func_ptr);
         }
     }
-    
+
     let result = vm.interpret_with_locals(chunk, local_count);
 
     match result {
@@ -131,18 +133,19 @@ fn execute_with_config(
 }
 
 /// Compile AST to bytecode
-#[instrument(target = "kaubo::compiler", skip(ast, shapes))]
 pub fn compile_ast(
     ast: &kaubo_core::compiler::parser::Module,
     shapes: Vec<kaubo_core::runtime::object::ObjShape>,
+    logger: Arc<Logger>,
 ) -> Result<CompileOutput, KauboError> {
     use kaubo_core::runtime::compiler::compile_with_struct_info;
     use std::collections::HashMap;
-    
-    info!("Starting compiler");
-    
+
+    info!(logger, "Starting compiler");
+
     // 创建 struct name -> (shape_id, field_names) 映射
-    let struct_infos: HashMap<String, (u16, Vec<String>)> = shapes.iter()
+    let struct_infos: HashMap<String, (u16, Vec<String>)> = shapes
+        .iter()
         .map(|s| (s.name.clone(), (s.shape_id, s.field_names.clone())))
         .collect();
 
@@ -150,15 +153,20 @@ pub fn compile_ast(
         .map_err(|e| KauboError::Compiler(format!("{:?}", e)))?;
 
     debug!(
-        constants = chunk.constants.len(),
-        code_bytes = chunk.code.len(),
-        shapes = shapes.len(),
-        "compilation completed"
+        logger,
+        "compilation completed: constants={}, code_bytes={}, shapes={}",
+        chunk.constants.len(),
+        chunk.code.len(),
+        shapes.len(),
     );
 
-    info!("Compiler completed");
+    info!(logger, "Compiler completed");
 
-    Ok(CompileOutput { chunk, local_count, shapes })
+    Ok(CompileOutput {
+        chunk,
+        local_count,
+        shapes,
+    })
 }
 
 // ==================== Legacy API (using global config) ====================
@@ -169,16 +177,20 @@ pub fn compile_ast(
 /// If global config is not initialized
 pub fn compile(source: &str) -> Result<CompileOutput, KauboError> {
     let config = get_config();
-    compile_with_config(source, &config.compiler)
+    compile_with_config(source, &config)
 }
 
 /// Execute bytecode (uses global config)
 ///
 /// # Panics
 /// If global config is not initialized
-pub fn execute(chunk: &Chunk, local_count: usize, shapes: &[kaubo_core::runtime::object::ObjShape]) -> Result<ExecuteOutput, KauboError> {
+pub fn execute(
+    chunk: &Chunk,
+    local_count: usize,
+    shapes: &[kaubo_core::runtime::object::ObjShape],
+) -> Result<ExecuteOutput, KauboError> {
     let config = get_config();
-    execute_with_config(chunk, local_count, shapes, &config.limits)
+    execute_with_config(chunk, local_count, shapes, &config)
 }
 
 /// Compile and run (uses global config)

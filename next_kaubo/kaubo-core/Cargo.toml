@@ -11,6 +11,5 @@ trace_execution = []
 
 [dependencies]
 thiserror = { workspace = true }
-tracing = { workspace = true }
 kaubo-config = { workspace = true }
 kaubo-log = { workspace = true }
