@@ -1,0 +1,35 @@
+[package]
+name = "kaubo-log"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "结构化日志系统，支持崩溃转储和编译器调试"
+
+[features]
+default = ["std"]
+
+# 核心层级（互斥选择其一）
+# - std: 完整标准库（桌面/服务器）
+# - alloc: 仅分配器，无 std（嵌入式）
+# - wasm: Web 平台（浏览器）
+std = ["dep:thiserror", "alloc"]
+alloc = []
+wasm = ["dep:web-sys", "alloc"]
+
+# 输出目标（需配合 std 使用）
+stdout = ["std"]
+stderr = ["std"]
+file = ["std"]
+
+[dependencies]
+# std 平台依赖
+thiserror = { workspace = true, optional = true }
+
+# WASM 平台依赖
+web-sys = { version = "0.3", optional = true, features = ["console"] }
+
+[dev-dependencies]
+
+[lints]

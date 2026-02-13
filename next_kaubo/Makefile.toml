@@ -36,6 +36,24 @@ script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features 
 [tasks.cov-open]
 script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features --html --output-dir target/llvm-cov --open"
 
+# ========== kaubo-log 专用覆盖率任务 ==========
+# 使用方式: cargo make cov-log
+
+# kaubo-log 覆盖率 - 终端输出 (llvm-cov, 需 nightly)
+[tasks.cov-log]
+description = "kaubo-log 覆盖率报告 (终端输出，需 nightly)"
+script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features"
+
+# kaubo-log 覆盖率 - HTML 报告 (llvm-cov)
+[tasks.cov-log-html]
+description = "kaubo-log 覆盖率 HTML 报告 (llvm-cov，需 nightly)"
+script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features --html --output-dir target/llvm-cov/kaubo-log"
+
+# kaubo-log 覆盖率 - 打开 HTML 报告 (llvm-cov)
+[tasks.cov-log-open]
+description = "生成并打开 kaubo-log 覆盖率 HTML 报告 (llvm-cov，需 nightly)"
+script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features --html --output-dir target/llvm-cov/kaubo-log --open"
+
 # 清理生成的文件
 [tasks.clean]
 command = "cargo"

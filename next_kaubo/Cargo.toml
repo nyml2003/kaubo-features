@@ -1,5 +1,5 @@
 [workspace]
-members = ["kaubo-config", "kaubo-core", "kaubo-api", "kaubo-cli"]
+members = ["kaubo-config", "kaubo-core", "kaubo-api", "kaubo-cli", "kaubo-log"]
 resolver = "2"
 
 [workspace.package]
