@@ -675,6 +675,8 @@ pub struct ObjShape {
     pub methods: Vec<*mut ObjFunction>,
     /// 方法名到索引的映射
     pub method_names: std::collections::HashMap<String, u8>,
+    /// 运算符重载表：运算符 -> 闭包对象
+    pub operators: std::collections::HashMap<crate::runtime::operators::Operator, *mut ObjClosure>,
 }
 
 impl ObjShape {
@@ -686,6 +688,7 @@ impl ObjShape {
             field_names,
             methods: Vec::new(),
             method_names: std::collections::HashMap::new(),
+            operators: std::collections::HashMap::new(),
         }
     }
 
@@ -718,6 +721,28 @@ impl ObjShape {
     /// 获取字段数量
     pub fn field_count(&self) -> usize {
         self.field_names.len()
+    }
+
+    /// 注册运算符重载
+    pub fn register_operator(
+        &mut self,
+        op: crate::runtime::operators::Operator,
+        closure: *mut ObjClosure,
+    ) {
+        self.operators.insert(op, closure);
+    }
+
+    /// 获取运算符重载
+    pub fn get_operator(
+        &self,
+        op: crate::runtime::operators::Operator,
+    ) -> Option<*mut ObjClosure> {
+        self.operators.get(&op).copied()
+    }
+
+    /// 检查是否支持某运算符
+    pub fn has_operator(&self, op: crate::runtime::operators::Operator) -> bool {
+        self.operators.contains_key(&op)
     }
 }
 

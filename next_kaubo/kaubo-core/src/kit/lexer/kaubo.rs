@@ -573,6 +573,7 @@ static KEYWORD_TABLE: &[(&str, KauboTokenKind)] = &[
     ("module", KauboTokenKind::Module),
     ("pub", KauboTokenKind::Pub),
     ("json", KauboTokenKind::Json),
+    ("operator", KauboTokenKind::Operator),
 ];
 
 #[cfg(test)]

@@ -58,7 +58,7 @@ pub fn run(source: &str, config: &RunConfig) -> Result<ExecuteOutput, KauboError
 }
 
 /// Compile with explicit configuration
-fn compile_with_config(source: &str, config: &RunConfig) -> Result<CompileOutput, KauboError> {
+pub fn compile_with_config(source: &str, config: &RunConfig) -> Result<CompileOutput, KauboError> {
     use kaubo_core::compiler::lexer::builder::build_lexer_with_logger;
     use kaubo_core::compiler::parser::parser::Parser;
     use kaubo_core::compiler::parser::TypeChecker;
@@ -138,7 +138,7 @@ pub fn compile_ast(
     shapes: Vec<kaubo_core::runtime::object::ObjShape>,
     logger: Arc<Logger>,
 ) -> Result<CompileOutput, KauboError> {
-    use kaubo_core::runtime::compiler::compile_with_struct_info;
+    use kaubo_core::runtime::compiler::compile_with_struct_info_and_logger;
     use std::collections::HashMap;
 
     info!(logger, "Starting compiler");
@@ -149,7 +149,7 @@ pub fn compile_ast(
         .map(|s| (s.name.clone(), (s.shape_id, s.field_names.clone())))
         .collect();
 
-    let (chunk, local_count) = compile_with_struct_info(ast, struct_infos)
+    let (chunk, local_count) = compile_with_struct_info_and_logger(ast, struct_infos, logger.clone())
         .map_err(|e| KauboError::Compiler(format!("{:?}", e)))?;
 
     debug!(

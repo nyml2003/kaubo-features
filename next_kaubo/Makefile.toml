@@ -194,11 +194,29 @@ description = "运行并显示源码"
 command = "cargo"
 args = ["run", "-p", "kaubo-cli", "--", "--show-source", "examples/hello.kaubo"]
 
-# 编译示例 (不执行)
+# 运行并显示源码和步骤
+[tasks.run-full]
+description = "运行并显示源码和步骤"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "-v", "--show-source", "--show-steps", "examples/hello.kaubo"]
+
+# 编译示例并显示字节码（简洁模式）
+[tasks.bytecode]
+description = "编译示例并显示字节码"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--compile-only", "--dump-bytecode", "examples/hello.kaubo"]
+
+# 编译示例并显示字节码（详细模式，含 DEBUG 日志）
+[tasks.bytecode-debug]
+description = "编译示例并显示字节码（含 DEBUG 日志）"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "-v", "--compile-only", "--dump-bytecode", "examples/hello.kaubo"]
+
+# 编译示例 (不执行，不显示字节码)
 [tasks.compile]
 description = "编译示例 (不执行)"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--compile-only", "--dump-bytecode", "examples/hello.kaubo"]
+args = ["run", "-p", "kaubo-cli", "--", "--compile-only", "examples/hello.kaubo"]
 
 # 运行任意文件
 [tasks.run-file]

@@ -883,8 +883,19 @@ impl Parser {
 
         let mut methods = Vec::new();
         while !self.check(KauboTokenKind::RightCurlyBrace) {
-            // 解析方法名
-            let method_name = self.expect_identifier()?;
+            // 解析方法名（支持普通方法名或 operator xxx）
+            let method_name = if self.check(KauboTokenKind::Identifier) {
+                self.expect_identifier()?
+            } else if self.match_token(KauboTokenKind::Operator) {
+                // operator xxx 语法
+                let op_name = self.expect_identifier()?;
+                format!("operator {}", op_name)
+            } else {
+                return Err(self.error_here(ParserErrorKind::UnexpectedToken {
+                    found: format!("{:?}", self.current_token.as_ref().map(|t| &t.kind)),
+                    expected: vec!["Identifier".to_string(), "operator".to_string()],
+                }));
+            };
 
             // 解析冒号
             self.expect(KauboTokenKind::Colon)?;

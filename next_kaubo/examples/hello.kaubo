@@ -1,3 +1,34 @@
 // Hello World 示例
 from std import print;
 print("Hello, Kaubo!");
+
+var a = 2;
+var b = 3;
+var c = 2.5;
+var d = 3.5;
+
+print(a + b);
+print(a + c);
+print(c +d);
+print(c +a );
+
+struct Vec2 {
+    x: float,
+    y: float
+};
+
+
+impl Vec2 {
+    operator add: |this: Vec2, other: Vec2| -> Vec2 {
+        return Vec2 {
+            x: this.x + other.x,
+            y: this.y + other.y,
+        };
+    }
+};
+
+var v1 = Vec2 { x: 1.0, y: 2.0 };
+var v2 = Vec2 { x: 3.0, y: 4.0 };
+var v3 = v1 + v2;
+print(v3.x);
+print(v3.y);

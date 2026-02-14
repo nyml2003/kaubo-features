@@ -361,7 +361,7 @@ impl Compiler {
         impl_stmt: &crate::compiler::parser::stmt::ImplStmt,
     ) -> Result<(), CompileError> {
         use crate::compiler::parser::expr::ExprKind;
-        use crate::runtime::bytecode::chunk::MethodTableEntry;
+        use crate::runtime::bytecode::chunk::{MethodTableEntry, OperatorTableEntry};
 
         // 获取 shape_id（必须在 struct_infos 中存在）
         let shape_id = self
@@ -401,9 +401,24 @@ impl Compiler {
                 method_compiler.imported_modules = self.imported_modules.clone();
 
                 // 添加参数作为局部变量（self 已经在 lambda.params 中）
-                for (param_name, _param_type) in &lambda.params {
+                for (param_name, param_type) in &lambda.params {
                     let _idx = method_compiler.add_local(param_name)?;
                     method_compiler.mark_initialized();
+                    // 记录参数类型（用于字段访问优化）
+                    if param_name == "self" {
+                        // self 总是当前 struct 类型
+                        method_compiler.var_types.insert(
+                            param_name.clone(),
+                            VarType::Struct(impl_stmt.struct_name.clone()),
+                        );
+                    } else if let Some(type_expr) = param_type {
+                        if let crate::compiler::parser::type_expr::TypeExpr::Named(named_type) = type_expr {
+                            method_compiler.var_types.insert(
+                                param_name.clone(),
+                                VarType::Struct(named_type.name.clone()),
+                            );
+                        }
+                    }
                 }
 
                 // 编译方法体
@@ -430,6 +445,16 @@ impl Compiler {
                     method_idx,
                     const_idx,
                 });
+                
+                // 如果是运算符方法，添加到运算符表
+                if method.name.starts_with("operator ") {
+                    let op_name = &method.name[9..]; // 去掉 "operator " 前缀
+                    self.chunk.operator_table.push(OperatorTableEntry {
+                        shape_id,
+                        operator_name: op_name.to_string(),
+                        const_idx,
+                    });
+                }
             }
         }
 
@@ -576,14 +601,33 @@ impl Compiler {
                     }
                 }
 
-                // 普通对象访问（JSON）：编译对象 + 字符串键 + IndexGet
-                self.compile_expr(&member.object)?;
-                let key_obj = Box::new(ObjString::new(member.member.clone()));
-                let key_ptr = Box::into_raw(key_obj) as *mut ObjString;
-                let key_val = Value::string(key_ptr);
-                let idx = self.chunk.add_constant(key_val);
-                self.emit_constant(idx);
-                self.chunk.write_op(OpCode::IndexGet, 0);
+                // 尝试获取对象类型，检查是否是 struct
+                let obj_type = self.get_expr_type(&member.object);
+                let is_struct_field = if let Some(VarType::Struct(struct_name)) = obj_type {
+                    // 查找 struct 的字段索引
+                    if let Some(struct_info) = self.struct_infos.get(&struct_name) {
+                        struct_info.field_names.iter().position(|f| f == &member.member)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                
+                if let Some(field_idx) = is_struct_field {
+                    // Struct 字段访问：使用字段索引
+                    self.compile_expr(&member.object)?;
+                    self.chunk.write_op_u8(OpCode::GetField, field_idx as u8, 0);
+                } else {
+                    // 普通对象访问（JSON）：编译对象 + 字符串键 + IndexGet
+                    self.compile_expr(&member.object)?;
+                    let key_obj = Box::new(ObjString::new(member.member.clone()));
+                    let key_ptr = Box::into_raw(key_obj) as *mut ObjString;
+                    let key_val = Value::string(key_ptr);
+                    let idx = self.chunk.add_constant(key_val);
+                    self.emit_constant(idx);
+                    self.chunk.write_op(OpCode::IndexGet, 0);
+                }
             }
 
             ExprKind::IndexAccess(index) => {
@@ -1123,6 +1167,16 @@ impl Compiler {
         false
     }
 
+    /// 获取表达式的类型（简化版，仅支持变量引用）
+    fn get_expr_type(&self, expr: &Expr) -> Option<VarType> {
+        match expr.as_ref() {
+            ExprKind::VarRef(var_ref) => {
+                self.var_types.get(&var_ref.name).cloned()
+            }
+            _ => None,
+        }
+    }
+
     /// 发射局部变量加载指令
     fn emit_load_local(&mut self, idx: u8) {
         match idx {
@@ -1619,7 +1673,16 @@ pub fn compile_with_struct_info(
     module: &Module,
     struct_infos: HashMap<String, (u16, Vec<String>)>, // name -> (shape_id, field_names)
 ) -> Result<(Chunk, usize), CompileError> {
-    let mut compiler = Compiler::new_with_struct_infos(struct_infos);
+    compile_with_struct_info_and_logger(module, struct_infos, Logger::noop())
+}
+
+/// 带完整字段信息和 logger 的编译
+pub fn compile_with_struct_info_and_logger(
+    module: &Module,
+    struct_infos: HashMap<String, (u16, Vec<String>)>, // name -> (shape_id, field_names)
+    logger: Arc<Logger>,
+) -> Result<(Chunk, usize), CompileError> {
+    let mut compiler = Compiler::new_with_struct_infos_and_logger(struct_infos, logger);
     compiler.compile(module)
 }
 
@@ -1631,8 +1694,9 @@ mod tests {
     use crate::compiler::lexer::builder::build_lexer;
     use crate::compiler::parser::parser::Parser;
     use crate::runtime::{InterpretResult, VM};
+    use crate::runtime::object::ObjShape;
 
-    fn compile_code(code: &str) -> Result<(Chunk, usize), CompileError> {
+    fn compile_code(code: &str) -> Result<(Chunk, usize, HashMap<String, (u16, Vec<String>)>), CompileError> {
         let mut lexer = build_lexer();
         let _ = lexer.feed(&code.as_bytes().to_vec());
         let _ = lexer.terminate();
@@ -1642,13 +1706,42 @@ mod tests {
             .parse()
             .map_err(|e| CompileError::Unimplemented(format!("Parse error: {:?}", e)))?;
 
-        compile(&ast)
+        // 收集 struct 信息
+        let mut struct_infos: HashMap<String, (u16, Vec<String>)> = HashMap::new();
+        let mut next_shape_id: u16 = 1; // 从 1 开始，0 保留
+        
+        for stmt in &ast.statements {
+            if let StmtKind::Struct(struct_stmt) = stmt.as_ref() {
+                let field_names: Vec<String> = struct_stmt
+                    .fields
+                    .iter()
+                    .map(|f| f.name.clone())
+                    .collect();
+                struct_infos.insert(struct_stmt.name.clone(), (next_shape_id, field_names));
+                next_shape_id += 1;
+            }
+        }
+
+        let (chunk, local_count) = compile_with_struct_info(&ast, struct_infos.clone())?;
+        Ok((chunk, local_count, struct_infos))
     }
 
     fn run_code(code: &str) -> Result<Value, String> {
-        let (chunk, local_count) =
+        let (chunk, local_count, struct_infos) =
             compile_code(code).map_err(|e| format!("Compile error: {:?}", e))?;
+        
         let mut vm = VM::new();
+        
+        // 注册 shapes 到 VM
+        for (name, (shape_id, field_names)) in struct_infos {
+            let shape = Box::into_raw(Box::new(ObjShape::new(
+                shape_id,
+                name,
+                field_names,
+            )));
+            vm.register_shape(shape);
+        }
+        
         let result = vm.interpret_with_locals(&chunk, local_count);
         match result {
             InterpretResult::Ok => {
@@ -1662,19 +1755,19 @@ mod tests {
 
     #[test]
     fn test_compile_literal() {
-        let (chunk, _) = compile_code("42;").unwrap();
+        let (chunk, _, _) = compile_code("42;").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
     #[test]
     fn test_compile_binary() {
-        let (chunk, _) = compile_code("1 + 2;").unwrap();
+        let (chunk, _, _) = compile_code("1 + 2;").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
     #[test]
     fn test_compile_complex() {
-        let (chunk, _) = compile_code("1 + 2 * 3;").unwrap();
+        let (chunk, _, _) = compile_code("1 + 2 * 3;").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
@@ -1779,28 +1872,28 @@ mod tests {
     #[test]
     fn test_compile_lambda() {
         // 测试基本的 lambda 编译
-        let (chunk, _) = compile_code("|x| { return x + 1; };").unwrap();
+        let (chunk, _, _) = compile_code("|x| { return x + 1; };").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
     #[test]
     fn test_compile_lambda_no_params() {
         // 测试无参数 lambda
-        let (chunk, _) = compile_code("| | { return 42; };").unwrap();
+        let (chunk, _, _) = compile_code("| | { return 42; };").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
     #[test]
     fn test_compile_lambda_multi_params() {
         // 测试多参数 lambda
-        let (chunk, _) = compile_code("|a, b| { return a + b; };").unwrap();
+        let (chunk, _, _) = compile_code("|a, b| { return a + b; };").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
     #[test]
     fn test_compile_function_call() {
         // 测试函数调用
-        let (chunk, _) = compile_code("var f = |x| { return x + 1; }; f(5);").unwrap();
+        let (chunk, _, _) = compile_code("var f = |x| { return x + 1; }; f(5);").unwrap();
         assert!(chunk.code.len() > 0);
     }
 
@@ -1880,4 +1973,58 @@ mod tests {
     //     ").unwrap();
     //     assert_eq!(result.as_smi(), Some(110));
     // }
+
+    // ===== 运算符重载测试 =====
+
+    #[test]
+    fn test_struct_basic() {
+        // 测试基本的 struct 创建和字段访问
+        let result = run_code(
+            "
+            struct Vector {
+                x: float,
+                y: float
+            };
+            
+            var v = Vector { x: 1.0, y: 2.0 };
+            return v.x;
+        ",
+        )
+        .unwrap();
+        
+        assert!(result.is_float());
+        assert_eq!(result.as_float(), 1.0);
+    }
+
+    #[test]
+    fn test_operator_overloading_add() {
+        // 测试 Vector 的 operator add - 只访问 self.x
+        // 完整测试：创建新的 Vector
+        let result = run_code(
+            "
+            struct Vector {
+                x: float,
+                y: float
+            };
+            
+            impl Vector {
+                operator add: |self, other: Vector| -> Vector {
+                    return Vector {
+                        x: self.x,
+                        y: other.y
+                    };
+                }
+            };
+            
+            var v1 = Vector { x: 1.0, y: 2.0 };
+            var v2 = Vector { x: 3.0, y: 4.0 };
+            var v3 = v1 + v2;
+            return v3.x + v3.y;
+        ",
+        )
+        .unwrap();
+        
+        assert!(result.is_float());
+        assert_eq!(result.as_float(), 5.0);  // 1.0 + 4.0
+    }
 }

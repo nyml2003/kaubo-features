@@ -183,6 +183,7 @@ mod tests {
             ("module", KauboTokenKind::Module),
             ("pub", KauboTokenKind::Pub),
             ("json", KauboTokenKind::Json),
+            ("operator", KauboTokenKind::Operator),
         ];
 
         for (code, expected) in cases {

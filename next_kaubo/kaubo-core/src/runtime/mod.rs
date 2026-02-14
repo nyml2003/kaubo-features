@@ -5,6 +5,7 @@
 pub mod bytecode;
 pub mod compiler;
 pub mod object;
+pub mod operators;
 pub mod stdlib;
 pub mod value;
 pub mod vm;

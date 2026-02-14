@@ -35,6 +35,7 @@ pub enum KauboTokenKind {
     Async,
     Await,
     Module,
+    Operator,
     Pub,
     Json,
 

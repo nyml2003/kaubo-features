@@ -13,6 +13,14 @@ pub struct MethodTableEntry {
     pub const_idx: u8, // 函数在常量池中的索引
 }
 
+/// 运算符表条目：需要在运行时注册到 Shape 的运算符
+#[derive(Debug, Clone)]
+pub struct OperatorTableEntry {
+    pub shape_id: u16,
+    pub operator_name: String, // 如 "add", "sub" 等
+    pub const_idx: u8,        // 函数在常量池中的索引
+}
+
 /// 字节码块
 #[derive(Clone)]
 pub struct Chunk {
@@ -24,6 +32,8 @@ pub struct Chunk {
     pub lines: Vec<usize>,
     /// 方法表：需要在 VM 初始化时注册到 Shape 的方法
     pub method_table: Vec<MethodTableEntry>,
+    /// 运算符表：需要在 VM 初始化时注册到 Shape 的运算符
+    pub operator_table: Vec<OperatorTableEntry>,
     /// Logger
     logger: Arc<Logger>,
 }
@@ -35,6 +45,7 @@ impl std::fmt::Debug for Chunk {
             .field("constants", &self.constants)
             .field("lines", &self.lines)
             .field("method_table", &self.method_table)
+            .field("operator_table", &self.operator_table)
             .finish()
     }
 }
@@ -52,6 +63,7 @@ impl Chunk {
             constants: Vec::new(),
             lines: Vec::new(),
             method_table: Vec::new(),
+            operator_table: Vec::new(),
             logger,
         }
     }

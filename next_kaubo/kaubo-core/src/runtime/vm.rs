@@ -5,6 +5,7 @@ use crate::runtime::object::{
     CallFrame, CoroutineState, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson,
     ObjList, ObjModule, ObjShape, ObjStruct, ObjUpvalue,
 };
+use crate::runtime::operators::{InlineCacheEntry, Operator};
 use crate::runtime::Value;
 use kaubo_log::{trace, Logger};
 use std::collections::HashMap;
@@ -32,6 +33,8 @@ pub struct VM {
     globals: HashMap<String, Value>,
     /// Shape 表（编译期生成，运行时注册）
     shapes: HashMap<u16, *const ObjShape>,
+    /// 内联缓存表（用于运算符重载优化）
+    inline_caches: Vec<InlineCacheEntry>,
     /// Logger
     logger: Arc<Logger>,
 }
@@ -50,6 +53,7 @@ impl VM {
             open_upvalues: Vec::new(),
             globals: HashMap::new(),
             shapes: HashMap::new(),
+            inline_caches: Vec::with_capacity(64),
             logger,
         };
         vm.init_stdlib();
@@ -90,6 +94,9 @@ impl VM {
 
     /// 解释执行一个 Chunk，并预分配局部变量空间
     pub fn interpret_with_locals(&mut self, chunk: &Chunk, local_count: usize) -> InterpretResult {
+        // 注册运算符（从 Chunk 的 operator_table 到 Shape）
+        self.register_operators_from_chunk(chunk);
+
         // 创建函数对象
         let function = Box::into_raw(Box::new(ObjFunction::new(
             chunk.clone(),
@@ -124,6 +131,41 @@ impl VM {
         self.close_upvalues(0);
 
         result
+    }
+
+    /// 从 Chunk 的 operator_table 注册运算符到 Shape
+    fn register_operators_from_chunk(&mut self, chunk: &Chunk) {
+        use crate::runtime::bytecode::chunk::OperatorTableEntry;
+        
+        for entry in &chunk.operator_table {
+            let OperatorTableEntry { shape_id, operator_name, const_idx } = entry;
+            
+            // 获取函数值
+            if let Some(function_value) = chunk.constants.get(*const_idx as usize) {
+                if let Some(function_ptr) = function_value.as_function() {
+                    // 创建闭包（运算符方法没有 upvalues）
+                    let closure = Box::into_raw(Box::new(ObjClosure::new(function_ptr)));
+                    
+                    // 获取或创建 Shape
+                    let shape_ptr = self.shapes.entry(*shape_id).or_insert_with(|| {
+                        // 如果 Shape 不存在，创建一个空的（这不应该发生，但做安全处理）
+                        let shape = Box::into_raw(Box::new(ObjShape::new(
+                            *shape_id,
+                            format!("<anon_{}>", shape_id),
+                            Vec::new(),
+                        )));
+                        shape
+                    });
+                    
+                    // 注册运算符
+                    unsafe {
+                        if let Some(op) = Operator::from_method_name(operator_name) {
+                            (*(*shape_ptr as *mut ObjShape)).register_operator(op, closure);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// 执行字节码的主循环
@@ -195,10 +237,17 @@ impl VM {
                 // ===== 算术运算 =====
                 Add => {
                     let (a, b) = self.pop_two();
+                    // 先尝试基础类型
                     let result = self.add_values(a, b);
                     match result {
                         Ok(v) => self.push(v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(_) => {
+                            // 基础类型失败，尝试运算符重载
+                            match self.call_binary_operator(Operator::Add, a, b) {
+                                Ok(v) => self.push(v),
+                                Err(e) => return InterpretResult::RuntimeError(e),
+                            }
+                        }
                     }
                 }
 
@@ -207,7 +256,12 @@ impl VM {
                     let result = self.sub_values(a, b);
                     match result {
                         Ok(v) => self.push(v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(_) => {
+                            match self.call_binary_operator(Operator::Sub, a, b) {
+                                Ok(v) => self.push(v),
+                                Err(e) => return InterpretResult::RuntimeError(e),
+                            }
+                        }
                     }
                 }
 
@@ -216,7 +270,12 @@ impl VM {
                     let result = self.mul_values(a, b);
                     match result {
                         Ok(v) => self.push(v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(_) => {
+                            match self.call_binary_operator(Operator::Mul, a, b) {
+                                Ok(v) => self.push(v),
+                                Err(e) => return InterpretResult::RuntimeError(e),
+                            }
+                        }
                     }
                 }
 
@@ -225,7 +284,12 @@ impl VM {
                     let result = self.div_values(a, b);
                     match result {
                         Ok(v) => self.push(v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(_) => {
+                            match self.call_binary_operator(Operator::Div, a, b) {
+                                Ok(v) => self.push(v),
+                                Err(e) => return InterpretResult::RuntimeError(e),
+                            }
+                        }
                     }
                 }
 
@@ -234,7 +298,12 @@ impl VM {
                     let result = self.mod_values(a, b);
                     match result {
                         Ok(v) => self.push(v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(_) => {
+                            match self.call_binary_operator(Operator::Mod, a, b) {
+                                Ok(v) => self.push(v),
+                                Err(e) => return InterpretResult::RuntimeError(e),
+                            }
+                        }
                     }
                 }
 
@@ -1526,6 +1595,14 @@ impl VM {
         let b2 = self.read_byte();
         u16::from_le_bytes([b1, b2])
     }
+    
+    /// 从给定指针读取 u16（小端序）
+    #[inline]
+    fn read_u16_at_ptr(ip: *const u8) -> u16 {
+        let b1 = unsafe { *ip };
+        let b2 = unsafe { *ip.add(1) };
+        u16::from_le_bytes([b1, b2])
+    }
 
     /// 从常量池加载并压栈
     #[inline]
@@ -1567,7 +1644,7 @@ impl VM {
 
     // ==================== 数值运算 ====================
 
-    /// 加法
+    /// 加法（仅基础类型）
     fn add_values(&self, a: Value, b: Value) -> Result<Value, String> {
         // 字符串拼接
         if let (Some(ap), Some(bp)) = (a.as_string(), b.as_string()) {
@@ -1588,22 +1665,30 @@ impl VM {
             }
         }
 
-        // 回退到浮点数
-        let af = if a.is_float() {
-            a.as_float()
-        } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
-        let bf = if b.is_float() {
-            b.as_float()
-        } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
+        // 检查是否都是数值类型
+        let a_is_num = a.is_int() || a.is_float();
+        let b_is_num = b.is_int() || b.is_float();
+        
+        if a_is_num && b_is_num {
+            // 回退到浮点数
+            let af = if a.is_float() {
+                a.as_float()
+            } else {
+                a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+            let bf = if b.is_float() {
+                b.as_float()
+            } else {
+                b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+            return Ok(Value::float(af + bf));
+        }
 
-        Ok(Value::float(af + bf))
+        // 不是基础类型，返回错误以便尝试运算符重载
+        Err("Non-primitive types need operator overloading".to_string())
     }
 
-    /// 减法
+    /// 减法（仅基础类型）
     fn sub_values(&self, a: Value, b: Value) -> Result<Value, String> {
         if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
             if let Some(diff) = ai.checked_sub(bi) {
@@ -1613,21 +1698,27 @@ impl VM {
             }
         }
 
-        let af = if a.is_float() {
-            a.as_float()
-        } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
-        let bf = if b.is_float() {
-            b.as_float()
-        } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
+        let a_is_num = a.is_int() || a.is_float();
+        let b_is_num = b.is_int() || b.is_float();
+        
+        if a_is_num && b_is_num {
+            let af = if a.is_float() {
+                a.as_float()
+            } else {
+                a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+            let bf = if b.is_float() {
+                b.as_float()
+            } else {
+                b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+            return Ok(Value::float(af - bf));
+        }
 
-        Ok(Value::float(af - bf))
+        Err("Non-primitive types need operator overloading".to_string())
     }
 
-    /// 乘法
+    /// 乘法（仅基础类型）
     fn mul_values(&self, a: Value, b: Value) -> Result<Value, String> {
         if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
             if let Some(prod) = ai.checked_mul(bi) {
@@ -1637,70 +1728,90 @@ impl VM {
             }
         }
 
-        let af = if a.is_float() {
-            a.as_float()
-        } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
-        let bf = if b.is_float() {
-            b.as_float()
-        } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
-
-        Ok(Value::float(af * bf))
-    }
-
-    /// 除法
-    fn div_values(&self, a: Value, b: Value) -> Result<Value, String> {
-        // 除法总是返回浮点数（避免整数除法的困惑）
-        let af = if a.is_float() {
-            a.as_float()
-        } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
-
-        let bf = if b.is_float() {
-            b.as_float()
-        } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
-
-        if bf == 0.0 {
-            return Err("Division by zero".to_string());
+        let a_is_num = a.is_int() || a.is_float();
+        let b_is_num = b.is_int() || b.is_float();
+        
+        if a_is_num && b_is_num {
+            let af = if a.is_float() {
+                a.as_float()
+            } else {
+                a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+            let bf = if b.is_float() {
+                b.as_float()
+            } else {
+                b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+            return Ok(Value::float(af * bf));
         }
 
-        Ok(Value::float(af / bf))
+        Err("Non-primitive types need operator overloading".to_string())
     }
 
-    /// 取模/求余
+    /// 除法（仅基础类型）
+    fn div_values(&self, a: Value, b: Value) -> Result<Value, String> {
+        let a_is_num = a.is_int() || a.is_float();
+        let b_is_num = b.is_int() || b.is_float();
+        
+        if a_is_num && b_is_num {
+            // 除法总是返回浮点数（避免整数除法的困惑）
+            let af = if a.is_float() {
+                a.as_float()
+            } else {
+                a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+
+            let bf = if b.is_float() {
+                b.as_float()
+            } else {
+                b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+
+            if bf == 0.0 {
+                return Err("Division by zero".to_string());
+            }
+
+            return Ok(Value::float(af / bf));
+        }
+
+        Err("Non-primitive types need operator overloading".to_string())
+    }
+
+    /// 取模/求余（仅基础类型）
     fn mod_values(&self, a: Value, b: Value) -> Result<Value, String> {
-        // 优先尝试整数取模
-        if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
-            if bi == 0 {
+        let a_is_num = a.is_int() || a.is_float();
+        let b_is_num = b.is_int() || b.is_float();
+        
+        if a_is_num && b_is_num {
+            // 优先尝试整数取模
+            if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
+                if bi == 0 {
+                    return Err("Modulo by zero".to_string());
+                }
+                return Ok(Value::smi(ai % bi));
+            }
+
+            // 回退到浮点数
+            let af = if a.is_float() {
+                a.as_float()
+            } else {
+                a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+
+            let bf = if b.is_float() {
+                b.as_float()
+            } else {
+                b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            };
+
+            if bf == 0.0 {
                 return Err("Modulo by zero".to_string());
             }
-            return Ok(Value::smi(ai % bi));
+
+            return Ok(Value::float(af % bf));
         }
 
-        // 回退到浮点数
-        let af = if a.is_float() {
-            a.as_float()
-        } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
-
-        let bf = if b.is_float() {
-            b.as_float()
-        } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
-        };
-
-        if bf == 0.0 {
-            return Err("Modulo by zero".to_string());
-        }
-
-        Ok(Value::float(af % bf))
+        Err("Non-primitive types need operator overloading".to_string())
     }
 
     /// 取负
@@ -1740,6 +1851,349 @@ impl VM {
     /// 获取栈顶值（用于测试和获取结果）
     pub fn stack_top(&self) -> Option<Value> {
         self.stack.last().copied()
+    }
+
+    // ==================== 运算符重载 ====================
+
+    /// 获取值的 Shape ID
+    fn get_shape_id(&self, value: Value) -> u16 {
+        // 基础类型使用预定义 Shape ID
+        if value.is_int() {
+            0  // Int
+        } else if value.is_float() {
+            1  // Float
+        } else if value.is_string() {
+            2  // String
+        } else if value.is_list() {
+            3  // List
+        } else if value.is_json() {
+            4  // Json
+        } else if value.is_closure() {
+            5  // Function/Closure
+        } else if value.is_module() {
+            6  // Module
+        } else if value.is_struct() {
+            // Struct 需要动态获取 Shape ID
+            if let Some(ptr) = value.as_struct() {
+                unsafe { (*ptr).shape_id() }
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    }
+
+    /// 获取值的类型名称（用于错误信息）
+    fn get_type_name(&self, value: Value) -> &'static str {
+        if value.is_int() {
+            "int"
+        } else if value.is_float() {
+            "float"
+        } else if value.is_string() {
+            "string"
+        } else if value.is_list() {
+            "List"
+        } else if value.is_json() {
+            "json"
+        } else if value.is_closure() {
+            "function"
+        } else if value.is_module() {
+            "module"
+        } else if value.is_struct() {
+            "struct"
+        } else if value.is_coroutine() {
+            "coroutine"
+        } else if value.is_null() {
+            "null"
+        } else if value.is_bool() {
+            "bool"
+        } else {
+            "unknown"
+        }
+    }
+
+    /// 查找运算符（Level 3：元表查找）
+    fn find_operator(&self, value: Value, op: Operator) -> Option<*mut ObjClosure> {
+        let shape_id = self.get_shape_id(value);
+        
+        // 获取 Shape
+        if let Some(shape_ptr) = self.shapes.get(&shape_id) {
+            let shape = unsafe { &**shape_ptr };
+            return shape.get_operator(op);
+        }
+        
+        None
+    }
+
+    /// 调用二元运算符（带反向运算符回退）
+    fn call_binary_operator(
+        &mut self,
+        op: Operator,
+        a: Value,
+        b: Value,
+    ) -> Result<Value, String> {
+        // 1. 尝试左操作数的运算符
+        if let Some(closure) = self.find_operator(a, op) {
+            return self.call_operator_closure(closure, &[a, b]);
+        }
+
+        // 2. 尝试反向运算符
+        if let Some(reverse_op) = op.reverse() {
+            if let Some(closure) = self.find_operator(b, reverse_op) {
+                return self.call_operator_closure(closure, &[b, a]);
+            }
+        }
+
+        // 3. 报错
+        Err(format!(
+            "OperatorError: 类型 '{}' 不支持运算符 '{}'",
+            self.get_type_name(a),
+            op.symbol()
+        ))
+    }
+
+    /// 调用一元运算符
+    fn call_unary_operator(&mut self, op: Operator, value: Value) -> Result<Value, String> {
+        if let Some(closure) = self.find_operator(value, op) {
+            return self.call_operator_closure(closure, &[value]);
+        }
+
+        Err(format!(
+            "OperatorError: 类型 '{}' 不支持运算符 '{}'",
+            self.get_type_name(value),
+            op.symbol()
+        ))
+    }
+
+    /// 调用运算符闭包（辅助方法）
+    /// 使用内联执行，直接执行运算符闭包的字节码
+    fn call_operator_closure(
+        &mut self,
+        closure: *mut ObjClosure,
+        args: &[Value],
+    ) -> Result<Value, String> {
+        use OpCode::*;
+        
+        // 获取闭包信息
+        let closure_ref = unsafe { &*closure };
+        let func = unsafe { &*closure_ref.function };
+
+        if func.arity != args.len() as u8 {
+            return Err(format!(
+                "Expected {} arguments but got {}",
+                func.arity, args.len()
+            ));
+        }
+
+        // 创建局部变量表（参数）
+        let mut locals: Vec<Value> = args.to_vec();
+        
+        // 创建指令指针
+        let mut ip = func.chunk.code.as_ptr();
+        let code_end = unsafe { func.chunk.code.as_ptr().add(func.chunk.code.len()) };
+        
+        // 执行运算符闭包的字节码
+        loop {
+            if ip >= code_end {
+                return Err("Unexpected end of operator bytecode".to_string());
+            }
+            
+            let instruction = unsafe { *ip };
+            ip = unsafe { ip.add(1) };
+            let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
+            
+            match op {
+                LoadConst => {
+                    let idx = unsafe { *ip };
+                    ip = unsafe { ip.add(1) };
+                    if let Some(val) = func.chunk.constants.get(idx as usize) {
+                        self.push(*val);
+                    }
+                }
+                LoadConst0 => {
+                    if let Some(val) = func.chunk.constants.get(0) {
+                        self.push(*val);
+                    }
+                }
+                LoadConst1 => {
+                    if let Some(val) = func.chunk.constants.get(1) {
+                        self.push(*val);
+                    }
+                }
+                LoadConst2 => {
+                    if let Some(val) = func.chunk.constants.get(2) {
+                        self.push(*val);
+                    }
+                }
+                LoadConst3 => {
+                    if let Some(val) = func.chunk.constants.get(3) {
+                        self.push(*val);
+                    }
+                }
+                LoadNull => self.push(Value::NULL),
+                LoadTrue => self.push(Value::TRUE),
+                LoadFalse => self.push(Value::FALSE),
+                
+                LoadLocal0 => self.push(locals[0]),
+                LoadLocal1 => self.push(locals[1]),
+                LoadLocal2 => self.push(locals[2]),
+                LoadLocal3 => self.push(locals[3]),
+                LoadLocal => {
+                    let idx = unsafe { *ip };
+                    ip = unsafe { ip.add(1) };
+                    self.push(locals[idx as usize]);
+                }
+                StoreLocal => {
+                    let idx = unsafe { *ip };
+                    ip = unsafe { ip.add(1) };
+                    let val = self.pop();
+                    if (idx as usize) < locals.len() {
+                        locals[idx as usize] = val;
+                    } else {
+                        locals.resize(idx as usize + 1, Value::NULL);
+                        locals[idx as usize] = val;
+                    }
+                }
+                StoreLocal0 => {
+                    let val = self.pop();
+                    if locals.is_empty() {
+                        locals.push(val);
+                    } else {
+                        locals[0] = val;
+                    }
+                }
+                StoreLocal1 => {
+                    let val = self.pop();
+                    if locals.len() < 2 {
+                        locals.resize(2, Value::NULL);
+                    }
+                    locals[1] = val;
+                }
+                StoreLocal2 => {
+                    let val = self.pop();
+                    if locals.len() < 3 {
+                        locals.resize(3, Value::NULL);
+                    }
+                    locals[2] = val;
+                }
+                
+                Pop => { self.pop(); }
+                Dup => { let v = self.stack.last().copied().unwrap(); self.push(v); }
+                
+                BuildStruct => {
+                    let shape_id = Self::read_u16_at_ptr(ip);
+                    ip = unsafe { ip.add(2) };
+                    let field_count = unsafe { *ip };
+                    ip = unsafe { ip.add(1) };
+                    
+                    let mut fields = Vec::with_capacity(field_count as usize);
+                    for _ in 0..field_count {
+                        fields.push(self.pop());
+                    }
+                    fields.reverse();
+                    
+                    let shape_ptr = self.get_shape(shape_id);
+                    if shape_ptr.is_null() {
+                        return Err(format!("Shape ID {} not found", shape_id));
+                    }
+                    
+                    let obj = ObjStruct::new(shape_ptr, fields);
+                    let ptr = Box::into_raw(Box::new(obj));
+                    self.push(Value::struct_instance(ptr));
+                }
+                
+                GetField => {
+                    let field_idx = unsafe { *ip };
+                    ip = unsafe { ip.add(1) };
+                    let obj_val = self.pop();
+                    if let Some(ptr) = obj_val.as_struct() {
+                        let obj = unsafe { &*ptr };
+                        if (field_idx as usize) < obj.fields.len() {
+                            self.push(obj.fields[field_idx as usize]);
+                        } else {
+                            return Err("Field index out of bounds".to_string());
+                        }
+                    } else {
+                        return Err("Expected struct instance".to_string());
+                    }
+                }
+                
+                IndexGet => {
+                    // 栈顶: [index, object]
+                    let index_val = self.pop();
+                    let obj_val = self.pop();
+                    
+                    // Struct 字段索引（整数）
+                    if let Some(idx) = index_val.as_smi() {
+                        if let Some(struct_ptr) = obj_val.as_struct() {
+                            let struct_obj = unsafe { &*struct_ptr };
+                            let i = idx as usize;
+                            if i < struct_obj.field_count() {
+                                self.push(struct_obj.fields[i]);
+                            } else {
+                                return Err(format!("Field index out of bounds: {}", i));
+                            }
+                        } else {
+                            return Err("Expected struct instance for field access".to_string());
+                        }
+                    } else {
+                        return Err("Expected integer index".to_string());
+                    }
+                }
+                
+                Add => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    match self.add_values(a, b) {
+                        Ok(v) => self.push(v),
+                        Err(e) => return Err(e),
+                    }
+                }
+                Sub => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    match self.sub_values(a, b) {
+                        Ok(v) => self.push(v),
+                        Err(e) => return Err(e),
+                    }
+                }
+                Mul => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    match self.mul_values(a, b) {
+                        Ok(v) => self.push(v),
+                        Err(e) => return Err(e),
+                    }
+                }
+                Div => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    match self.div_values(a, b) {
+                        Ok(v) => self.push(v),
+                        Err(e) => return Err(e),
+                    }
+                }
+                
+                ReturnValue => {
+                    return Ok(self.pop());
+                }
+                Return => {
+                    return Ok(Value::NULL);
+                }
+                
+                _ => {
+                    return Err(format!("Unsupported opcode in operator: {:?}", op));
+                }
+            }
+        }
+    }
+
+    /// 分配内联缓存槽
+    fn allocate_inline_cache(&mut self) -> u8 {
+        let index = self.inline_caches.len();
+        self.inline_caches.push(InlineCacheEntry::empty());
+        index as u8
     }
 
     // ==================== 调试 ====================
