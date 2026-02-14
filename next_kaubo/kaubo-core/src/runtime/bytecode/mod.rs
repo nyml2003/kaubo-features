@@ -64,21 +64,24 @@ pub enum OpCode {
     DefineGlobal,      // + u8 索引
 
     // ===== 算术运算 (0x60-0x6F) =====
-    Add = 0x60,
-    Sub,
-    Mul,
-    Div,
-    Mod, // 取模/求余
+    // 带内联缓存索引的运算符指令
+    // 操作数: u8 cache_idx (0xFF 表示不使用缓存)
+    Add = 0x60,  // + u8 cache_idx
+    Sub,         // + u8 cache_idx
+    Mul,         // + u8 cache_idx
+    Div,         // + u8 cache_idx
+    Mod,         // + u8 cache_idx (取模/求余)
 
     Neg = 0x68, // 一元取负
 
     // ===== 比较运算 (0x70-0x77) =====
-    Equal = 0x70,
-    NotEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
+    // 带内联缓存索引的比较指令
+    Equal = 0x70,      // + u8 cache_idx (或不带，视实现而定)
+    NotEqual,          // 不带缓存
+    Greater,           // + u8 cache_idx
+    GreaterEqual,      // + u8 cache_idx
+    Less,              // + u8 cache_idx
+    LessEqual,         // + u8 cache_idx
 
     // ===== 逻辑运算 (0x78-0x7B) =====
     Not = 0x78,
@@ -288,18 +291,8 @@ impl OpCode {
             | OpCode::StoreLocal5
             | OpCode::StoreLocal6
             | OpCode::StoreLocal7
-            | OpCode::Add
-            | OpCode::Sub
-            | OpCode::Mul
-            | OpCode::Div
-            | OpCode::Mod
             | OpCode::Neg
-            | OpCode::Equal
             | OpCode::NotEqual
-            | OpCode::Greater
-            | OpCode::GreaterEqual
-            | OpCode::Less
-            | OpCode::LessEqual
             | OpCode::Not
             | OpCode::Return
             | OpCode::ReturnValue
@@ -342,6 +335,11 @@ impl OpCode {
             // u8 操作数（Struct 相关）
             OpCode::GetField | OpCode::SetField | OpCode::LoadMethod => 1,
 
+            // u8 操作数（内联缓存索引）
+            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod
+            | OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual
+            | OpCode::Equal => 1,
+
             // u16 + u8 操作数（BuildStruct）
             OpCode::BuildStruct => 3,
 
@@ -377,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_operand_size() {
-        assert_eq!(OpCode::Add.operand_size(), 0);
+        assert_eq!(OpCode::Add.operand_size(), 1);  // cache_idx
         assert_eq!(OpCode::LoadConst.operand_size(), 1);
         assert_eq!(OpCode::Jump.operand_size(), 2);
     }

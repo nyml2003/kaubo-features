@@ -202,9 +202,37 @@ cargo make ci
 4. 全部测试
 5. release 构建
 
+## 代码质量标准
+
+### 警告零容忍
+
+项目采用**零容忍警告**策略：
+
+```bash
+# 检查是否有警告
+cargo check --workspace
+
+# 应该显示：Finished dev profile [unoptimized + debuginfo] target(s)
+# 如果有 warning，必须处理
+```
+
+**处理方式**:
+
+| 情况 | 处理方式 | 示例 |
+|------|----------|------|
+| 真正的清理遗漏 | 直接删除/修复 | 未使用的 import |
+| 未完成的功能 | `#[allow(...)]` + TODO + 文档 | 内联缓存、一元运算符 |
+| 开发中代码 | `#[allow(...)]` + TODO + 文档 | 类型检查器变量 |
+
+**文档要求**:
+- 代码中的每个 TODO 必须对应文档中的条目
+- 类型检查器 TODO → `docs/20-current/type-checker-tech-debt.md`
+- VM 基础设施 TODO → `docs/20-current/vm-tech-debt.md`
+
 ## 技术债
 
-见 `docs/20-current/type-checker-tech-debt.md`
+- `docs/20-current/type-checker-tech-debt.md` - 类型系统未完成项
+- `docs/20-current/vm-tech-debt.md` - VM 基础设施未完成项
 
 ## 所有可用任务
 

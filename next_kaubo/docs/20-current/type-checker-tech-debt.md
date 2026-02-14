@@ -121,6 +121,18 @@ var x: int | string = 42;  // 可以是 int 或 string
 
 ---
 
+## 代码中标记的 TODO
+
+以下 TODO 对应代码中的 `#[allow(unused)]` 标记，需要在类型检查完善后移除：
+
+| 位置 | TODO 内容 | 关联代码 |
+|------|----------|---------|
+| `check_if` | 严格模式下检查 `cond_type` 是否为 `bool` | `#[allow(unused)] let cond_type` |
+| `check_call` | 对比 `arg_type` 与 `param_type` 进行严格检查 | `let _arg_type`, `for (_i, arg)` |
+| `check_struct_literal` | 使用 `field_defs` 验证字段名和类型 | `#[allow(unused)] let field_defs`, `for (_field_name, ...)` |
+
+---
+
 ## 相关文档
 
 - [类型系统设计](type-system.md) - 完整类型系统文档

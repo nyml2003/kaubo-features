@@ -459,8 +459,9 @@ impl TypeChecker {
     /// 检查 if 语句
     fn check_if(&mut self, if_stmt: &IfStmt) -> TypeCheckResult<Option<TypeExpr>> {
         // 检查条件表达式（应该是 bool 类型）
+        // TODO: 严格模式下检查 cond_type 是否为 bool
+        #[allow(unused)]
         let cond_type = self.check_expression(&if_stmt.if_condition)?;
-        // TODO: 检查条件类型是否为 bool
 
         // 检查 then 分支
         self.check_statement(&if_stmt.then_body)?;
@@ -715,9 +716,9 @@ impl TypeChecker {
             }
 
             // 检查参数类型（简化版）
-            for (i, arg) in call.arguments.iter().enumerate() {
-                let arg_type = self.check_expression(arg)?;
-                // TODO: 更详细的类型检查
+            // TODO: 对比 arg_type 与 param_type 进行严格检查
+            for (_i, arg) in call.arguments.iter().enumerate() {
+                let _arg_type = self.check_expression(arg)?;
             }
 
             Ok(func.return_type.map(|t| *t))
@@ -895,6 +896,8 @@ impl TypeChecker {
         struct_lit: &StructLiteral,
     ) -> TypeCheckResult<Option<TypeExpr>> {
         // 查找 struct 类型定义
+        // TODO: 使用 field_defs 验证字段名和类型
+        #[allow(unused)]
         let field_defs = match self.struct_types.get(&struct_lit.name) {
             Some(fields) => fields,
             None => {
@@ -910,9 +913,9 @@ impl TypeChecker {
         };
 
         // 检查字段（简化版：只检查字段值表达式）
-        for (field_name, value_expr) in &struct_lit.fields {
+        // TODO: 检查字段名是否存在，类型是否匹配
+        for (_field_name, value_expr) in &struct_lit.fields {
             let _value_type = self.check_expression(value_expr)?;
-            // TODO: 检查字段名是否存在，类型是否匹配
         }
 
         // 返回 struct 类型
@@ -1020,9 +1023,10 @@ mod tests {
         let mut parser = Parser::new(lexer);
         let module = parser.parse().expect("Parse failed");
 
-        let result = checker.check_statement(&module.statements[0]);
-        // 目前类型检查器只是基础框架，严格类型检查稍后完善
-        // assert!(result.is_err());
+        // TODO: 严格类型检查完善后启用断言
+        #[allow(unused)]
+        let _result = checker.check_statement(&module.statements[0]);
+        // assert!(_result.is_err());
     }
 
     #[test]

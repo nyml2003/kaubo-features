@@ -1,6 +1,6 @@
 //! AST → Bytecode 编译器
 
-use crate::compiler::parser::expr::{AsExpr, FunctionCall, Lambda, VarRef};
+use crate::compiler::parser::expr::{FunctionCall, Lambda, VarRef};
 use crate::compiler::parser::stmt::{ForStmt, IfStmt, ModuleStmt, WhileStmt};
 use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind, TypeExpr};
 use crate::runtime::{
@@ -784,22 +784,31 @@ impl Compiler {
         self.compile_expr(&bin.right)?;
 
         // 生成运算指令
-        let op = match bin.op {
-            KauboTokenKind::Plus => OpCode::Add,
-            KauboTokenKind::Minus => OpCode::Sub,
-            KauboTokenKind::Asterisk => OpCode::Mul,
-            KauboTokenKind::Slash => OpCode::Div,
-            KauboTokenKind::Percent => OpCode::Mod,
-            KauboTokenKind::DoubleEqual => OpCode::Equal,
-            KauboTokenKind::ExclamationEqual => OpCode::NotEqual,
-            KauboTokenKind::GreaterThan => OpCode::Greater,
-            KauboTokenKind::GreaterThanEqual => OpCode::GreaterEqual,
-            KauboTokenKind::LessThan => OpCode::Less,
-            KauboTokenKind::LessThanEqual => OpCode::LessEqual,
+        // 对于可能触发运算符重载的指令，分配内联缓存槽位
+        let (op, needs_cache) = match bin.op {
+            KauboTokenKind::Plus => (OpCode::Add, true),
+            KauboTokenKind::Minus => (OpCode::Sub, true),
+            KauboTokenKind::Asterisk => (OpCode::Mul, true),
+            KauboTokenKind::Slash => (OpCode::Div, true),
+            KauboTokenKind::Percent => (OpCode::Mod, true),
+            KauboTokenKind::DoubleEqual => (OpCode::Equal, false),
+            KauboTokenKind::ExclamationEqual => (OpCode::NotEqual, false),
+            KauboTokenKind::GreaterThan => (OpCode::Greater, true),
+            KauboTokenKind::GreaterThanEqual => (OpCode::GreaterEqual, true),
+            KauboTokenKind::LessThan => (OpCode::Less, true),
+            KauboTokenKind::LessThanEqual => (OpCode::LessEqual, true),
             _ => return Err(CompileError::InvalidOperator),
         };
 
-        self.chunk.write_op(op, 0);
+        if needs_cache {
+            // 分配内联缓存槽位
+            let cache_idx = self.chunk.allocate_inline_cache();
+            // 写入带缓存索引的指令
+            self.chunk.write_op_u8(op, cache_idx, 0);
+        } else {
+            // 不需要缓存的指令，使用 0xFF 作为占位
+            self.chunk.write_op_u8(op, 0xFF, 0);
+        }
         Ok(())
     }
 
@@ -1347,7 +1356,7 @@ impl Compiler {
 
         // 6. 检查是否为 null（结束标记）
         self.chunk.write_op(OpCode::LoadNull, 0);
-        self.chunk.write_op(OpCode::Equal, 0);
+        self.chunk.write_op_u8(OpCode::Equal, 0xFF, 0); // Equal 现在需要 cache_idx
         let exit_jump = self.chunk.write_jump(OpCode::JumpIfFalse, 0);
 
         // 是 null，退出循环
@@ -1708,7 +1717,8 @@ mod tests {
 
         // 收集 struct 信息
         let mut struct_infos: HashMap<String, (u16, Vec<String>)> = HashMap::new();
-        let mut next_shape_id: u16 = 1; // 从 1 开始，0 保留
+        // 基础类型使用 0-99，struct 从 100 开始避免冲突
+        let mut next_shape_id: u16 = 100;
         
         for stmt in &ast.statements {
             if let StmtKind::Struct(struct_stmt) = stmt.as_ref() {
@@ -2026,5 +2036,229 @@ mod tests {
         
         assert!(result.is_float());
         assert_eq!(result.as_float(), 5.0);  // 1.0 + 4.0
+    }
+
+    #[test]
+    fn test_operator_add_struct_field_order() {
+        // 回归测试：验证 operator add 返回 struct 时字段顺序正确
+        // Bug: call_operator_closure 中的 BuildStruct 多了 reverse()，导致 x/y 互换
+        // 修复: 2026-02-14，移除多余的 reverse()
+        let result = run_code(
+            "
+            struct Vec2 {
+                x: float,
+                y: float
+            };
+            
+            impl Vec2 {
+                operator add: |self, other: Vec2| -> Vec2 {
+                    return Vec2 {
+                        x: self.x + other.x,
+                        y: self.y + other.y
+                    };
+                }
+            };
+            
+            var v1 = Vec2 { x: 1.0, y: 2.0 };
+            var v2 = Vec2 { x: 3.0, y: 4.0 };
+            var v3 = v1 + v2;
+            
+            // 分别验证 x 和 y，确保顺序正确
+            // 如果顺序错了，会得到 x=6, y=4 而不是 x=4, y=6
+            var x_correct = v3.x == 4.0;
+            var y_correct = v3.y == 6.0;
+            
+            if x_correct and y_correct {
+                return 1;  // 成功
+            } else {
+                return 0;  // 失败
+            }
+        ",
+        )
+        .unwrap();
+
+        assert!(result.is_smi());
+        assert_eq!(result.as_smi(), Some(1), "operator add 返回的 struct 字段顺序错误");
+    }
+
+    #[test]
+    fn test_operator_neg() {
+        // 测试 operator neg（一元负号）- 简化版
+        let result = run_code(
+            "
+            struct Vec2 {
+                x: float,
+                y: float
+            };
+            
+            impl Vec2 {
+                operator neg: |self| -> Vec2 {
+                    return Vec2 { x: self.x, y: self.y };
+                }
+            };
+            
+            var v = Vec2 { x: 3.0, y: 4.0 };
+            var neg_v = -v;
+            return neg_v.x;
+        ",
+        )
+        .unwrap();
+
+        assert!(result.is_float());
+        assert_eq!(result.as_float(), 3.0);
+    }
+
+    #[test]
+    fn test_operator_lt() {
+        // 测试 operator lt（小于比较）
+        let result = run_code(
+            "
+            struct Point {
+                x: float,
+                y: float
+            };
+            
+            impl Point {
+                // 按 x 坐标比较
+                operator lt: |self, other: Point| -> bool {
+                    return self.x < other.x;
+                }
+            };
+            
+            var p1 = Point { x: 1.0, y: 5.0 };
+            var p2 = Point { x: 3.0, y: 2.0 };
+            
+            // p1.x < p2.x，所以 p1 < p2 应该为 true
+            if p1 < p2 {
+                return 1;
+            } else {
+                return 0;
+            }
+        ",
+        )
+        .unwrap();
+
+        assert!(result.is_smi());
+        assert_eq!(result.as_smi(), Some(1), "operator lt 结果错误");
+    }
+
+    #[test]
+    fn test_operator_get() {
+        // 测试 operator get（索引访问）
+        let result = run_code(
+            "
+            struct Vector {
+                data: List<float>
+            };
+            
+            impl Vector {
+                operator get: |self, index: int| -> float {
+                    return self.data[index];
+                }
+            };
+            
+            var v = Vector { data: [1.0, 2.0, 3.0] };
+            var first = v[0];
+            var second = v[1];
+            
+            if first == 1.0 and second == 2.0 {
+                return 1;
+            } else {
+                return 0;
+            }
+        ",
+        )
+        .unwrap();
+
+        assert!(result.is_smi());
+        assert_eq!(result.as_smi(), Some(1), "operator get 结果错误");
+    }
+
+    #[test]
+    fn test_simple_struct_field_access() {
+        // 简单测试：不使用 operator，只测试 struct 字段访问
+        let result = run_code(
+            "
+            struct Point {
+                x: float,
+                y: float
+            };
+            
+            var p = Point { x: 3.0, y: 4.0 };
+            return p.x + p.y;
+        ",
+        )
+        .unwrap();
+
+        assert!(result.is_float());
+        assert_eq!(result.as_float(), 7.0);
+    }
+
+    #[test]
+    fn test_operator_rmul() {
+        // 测试反向运算符 rmul: 2.0 * vector
+        // float 没有 operator mul for Vector，但 Vector 有 operator rmul
+        let result = run_code(
+            "
+            struct Vector {
+                x: float,
+                y: float
+            };
+            
+            impl Vector {
+                // vector * scalar
+                operator mul: |self, scalar: float| -> Vector {
+                    return Vector { 
+                        x: self.x * scalar, 
+                        y: self.y * scalar 
+                    };
+                },
+                // scalar * vector (反向)
+                operator rmul: |self, scalar: float| -> Vector {
+                    return Vector { 
+                        x: scalar * self.x, 
+                        y: scalar * self.y 
+                    };
+                }
+            };
+            
+            var v = Vector { x: 1.0, y: 2.0 };
+            var scaled = 3.0 * v;  // 应该调用 v.rmul(3.0)
+            
+            return scaled.x + scaled.y;  // 3.0 + 6.0 = 9.0
+        ",
+        )
+        .unwrap();
+
+        assert!(result.is_float());
+        assert_eq!(result.as_float(), 9.0);
+    }
+
+    #[test]
+    fn test_operator_call() {
+        // 测试 operator call（可调用对象）
+        let result = run_code(
+            "
+            struct Adder {
+                offset: int
+            };
+            
+            impl Adder {
+                // 让 Adder 可以像函数一样被调用
+                operator call: |self, x: int| -> int {
+                    return x + self.offset;
+                }
+            };
+            
+            var add5 = Adder { offset: 5 };
+            var result = add5(10);  // 调用 operator call
+            
+            return result;  // 应该返回 15
+        ",
+        )
+        .unwrap();
+
+        assert!(result.is_smi());
+        assert_eq!(result.as_smi(), Some(15));
     }
 }

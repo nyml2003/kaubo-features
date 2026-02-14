@@ -165,6 +165,8 @@ pub enum OperatorLookup {
     NotFound,
 }
 
+use crate::runtime::object::ObjClosure;
+
 /// 内联缓存条目
 #[derive(Debug, Clone)]
 pub struct InlineCacheEntry {
@@ -172,10 +174,12 @@ pub struct InlineCacheEntry {
     pub left_shape: u16,
     /// 右操作数 Shape ID（一元运算符为 0）
     pub right_shape: u16,
-    /// 缓存的处理函数指针
-    pub handler: *const (),
-    /// 未命中次数
-    pub miss_count: u8,
+    /// 缓存的运算符闭包指针
+    pub closure: *mut ObjClosure,
+    /// 命中次数（用于统计）
+    pub hit_count: u64,
+    /// 未命中次数（用于统计）
+    pub miss_count: u64,
 }
 
 impl InlineCacheEntry {
@@ -184,19 +188,39 @@ impl InlineCacheEntry {
         Self {
             left_shape: u16::MAX,
             right_shape: u16::MAX,
-            handler: std::ptr::null(),
+            closure: std::ptr::null_mut(),
+            hit_count: 0,
             miss_count: 0,
         }
     }
 
     /// 检查是否匹配给定的 Shape ID
     pub fn matches(&self, left: u16, right: u16) -> bool {
-        self.left_shape == left && self.right_shape == right
+        self.left_shape == left && self.right_shape == right && !self.closure.is_null()
     }
 
     /// 是否是空缓存
     pub fn is_empty(&self) -> bool {
-        self.handler.is_null()
+        self.closure.is_null()
+    }
+
+    /// 更新缓存
+    pub fn update(&mut self, left: u16, right: u16, closure: *mut ObjClosure) {
+        self.left_shape = left;
+        self.right_shape = right;
+        self.closure = closure;
+        self.hit_count = 0;
+        self.miss_count = 0;
+    }
+
+    /// 记录命中
+    pub fn record_hit(&mut self) {
+        self.hit_count += 1;
+    }
+
+    /// 记录未命中
+    pub fn record_miss(&mut self) {
+        self.miss_count += 1;
     }
 }
 
@@ -248,11 +272,15 @@ mod tests {
         assert!(cache.is_empty());
         assert!(!cache.matches(1, 2));
 
-        cache.left_shape = 1;
-        cache.right_shape = 2;
-        cache.handler = 0x1234 as *const ();
+        // 使用 update 方法设置缓存
+        cache.update(1, 2, 0x1234 as *mut ObjClosure);
 
         assert!(cache.matches(1, 2));
         assert!(!cache.matches(1, 3));
+        
+        // 测试统计
+        cache.record_hit();
+        cache.record_hit();
+        assert_eq!(cache.hit_count, 2);
     }
 }

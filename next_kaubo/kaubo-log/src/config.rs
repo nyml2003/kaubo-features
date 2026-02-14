@@ -3,10 +3,10 @@
 //! 提供便捷的日志初始化配置。
 
 #![cfg(feature = "alloc")]
-use crate::logger::LogSink;
-use crate::record::Record;
 use crate::{Level, LogRingBuffer, Logger};
 use alloc::sync::Arc;
+#[cfg(any(feature = "stdout", feature = "stderr", feature = "file"))]
+use crate::{LogSink, Record};
 #[cfg(feature = "file")]
 use std::io::Write;
 

@@ -1,6 +1,7 @@
 //! 字节码块实现
 
 use super::OpCode;
+use crate::runtime::operators::InlineCacheEntry;
 use crate::runtime::Value;
 use kaubo_log::{debug, Logger};
 use std::sync::Arc;
@@ -21,6 +22,15 @@ pub struct OperatorTableEntry {
     pub const_idx: u8,        // 函数在常量池中的索引
 }
 
+/// 内联缓存槽位条目：记录指令位置到缓存索引的映射
+#[derive(Debug, Clone)]
+pub struct InlineCacheSlot {
+    /// 指令在 code 中的偏移量
+    pub pc: usize,
+    /// 缓存条目索引
+    pub cache_idx: u8,
+}
+
 /// 字节码块
 #[derive(Clone)]
 pub struct Chunk {
@@ -34,6 +44,10 @@ pub struct Chunk {
     pub method_table: Vec<MethodTableEntry>,
     /// 运算符表：需要在 VM 初始化时注册到 Shape 的运算符
     pub operator_table: Vec<OperatorTableEntry>,
+    /// 内联缓存槽位表：记录需要缓存的指令位置
+    pub inline_cache_slots: Vec<InlineCacheSlot>,
+    /// 内联缓存条目（运行时填充）
+    pub inline_caches: Vec<InlineCacheEntry>,
     /// Logger
     logger: Arc<Logger>,
 }
@@ -46,6 +60,8 @@ impl std::fmt::Debug for Chunk {
             .field("lines", &self.lines)
             .field("method_table", &self.method_table)
             .field("operator_table", &self.operator_table)
+            .field("inline_cache_slots", &self.inline_cache_slots)
+            .field("inline_caches", &self.inline_caches)
             .finish()
     }
 }
@@ -64,6 +80,8 @@ impl Chunk {
             lines: Vec::new(),
             method_table: Vec::new(),
             operator_table: Vec::new(),
+            inline_cache_slots: Vec::new(),
+            inline_caches: Vec::new(),
             logger,
         }
     }
@@ -167,6 +185,26 @@ impl Chunk {
     /// 获取当前代码位置 (用于计算跳转)
     pub fn current_offset(&self) -> usize {
         self.code.len()
+    }
+
+    /// 分配内联缓存槽位，返回缓存索引
+    /// 在编译时调用，记录需要缓存的指令位置
+    pub fn allocate_inline_cache(&mut self) -> u8 {
+        let cache_idx = self.inline_caches.len();
+        if cache_idx > 255 {
+            panic!("Too many inline caches in one chunk");
+        }
+        
+        // 添加空的缓存条目
+        self.inline_caches.push(InlineCacheEntry::empty());
+        
+        // 记录槽位信息（PC 在写入指令后更新）
+        self.inline_cache_slots.push(InlineCacheSlot {
+            pc: 0, // 占位，实际在写入指令后更新
+            cache_idx: cache_idx as u8,
+        });
+        
+        cache_idx as u8
     }
 
     /// 反汇编打印 (调试用)
