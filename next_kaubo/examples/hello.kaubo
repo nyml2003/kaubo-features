@@ -1,16 +1,5 @@
 // Hello World 示例
 from std import print;
-print("Hello, Kaubo!");
-
-var a = 2;
-var b = 3;
-var c = 2.5;
-var d = 3.5;
-
-print(a + b);
-print(a + c);
-print(c +d);
-print(c +a );
 
 struct Vec2 {
     x: float,
@@ -25,10 +14,29 @@ impl Vec2 {
             y: this.y + other.y,
         };
     }
+    operator str: |this: Vec2| -> string {
+        return "Vec { x: " + this.x as string + ", y: " + this.y  as string + " }";
+    }
 };
 
-var v1 = Vec2 { x: 1.0, y: 2.0 };
-var v2 = Vec2 { x: 3.0, y: 4.0 };
-var v3 = v1 + v2;
-print(v3.x);
-print(v3.y);
+
+struct Hero {
+    name: string,
+    health: float,
+    position: Vec2,
+};
+
+impl Hero {
+    operator str: |this: Hero| -> string {
+        return "Hero { name: " + this.name + ", health: " + this.health as string + ", position: " + this.position as string + " }";
+    }
+};
+
+var hero = Hero {
+    name: "John",
+    health: 100.0,
+    position: Vec2 { x: 0.0, y: 0.0 },
+};
+
+print(hero);
+
