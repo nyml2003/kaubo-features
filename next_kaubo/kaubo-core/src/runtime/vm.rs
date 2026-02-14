@@ -2087,11 +2087,12 @@ impl VM {
                     let field_count = unsafe { *ip };
                     ip = unsafe { ip.add(1) };
                     
+                    // 编译器按 shape 字段顺序的逆序入栈，所以弹出后直接是正确顺序
                     let mut fields = Vec::with_capacity(field_count as usize);
                     for _ in 0..field_count {
                         fields.push(self.pop());
                     }
-                    fields.reverse();
+                    // 不需要 reverse，编译器已经处理好顺序
                     
                     let shape_ptr = self.get_shape(shape_id);
                     if shape_ptr.is_null() {
