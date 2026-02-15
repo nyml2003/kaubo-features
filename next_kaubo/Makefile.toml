@@ -186,7 +186,7 @@ args = ["run", "-p", "kaubo-cli", "--", "examples/calc.kaubo"]
 [tasks.run-verbose]
 description = "运行示例 (verbose 模式)"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "-v", "--show-steps", "examples/hello.kaubo"]
+args = ["run", "-p", "kaubo-cli", "--", "-v", "examples/hello.kaubo"]
 
 # 运行并显示源码
 [tasks.run-source]
@@ -210,7 +210,7 @@ args = ["run", "-p", "kaubo-cli", "--", "--compile-only", "--dump-bytecode", "ex
 [tasks.bytecode-debug]
 description = "编译示例并显示字节码（含 DEBUG 日志）"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "-v", "--compile-only", "--dump-bytecode", "examples/hello.kaubo"]
+args = ["run", "-p", "kaubo-cli", "--", "-vv", "--compile-only", "--dump-bytecode", "examples/hello.kaubo"]
 
 # 编译示例 (不执行，不显示字节码)
 [tasks.compile]
@@ -229,6 +229,52 @@ args = ["run", "-p", "kaubo-cli", "--", "${FILE}"]
 description = "Release 模式运行"
 command = "cargo"
 args = ["run", "-p", "kaubo-cli", "--release", "--", "examples/hello.kaubo"]
+
+# ============== 配置相关任务 ==============
+
+# Profile 任务组
+[tasks.run-silent]
+description = "使用 silent profile 运行 (仅错误日志)"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--profile", "silent", "examples/hello.kaubo"]
+
+[tasks.run-default]
+description = "使用 default profile 运行"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--profile", "default", "examples/hello.kaubo"]
+
+[tasks.run-dev]
+description = "使用 dev profile 运行 (显示步骤)"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--profile", "dev", "examples/hello.kaubo"]
+
+[tasks.run-debug]
+description = "使用 debug profile 运行 (详细日志+字节码)"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--profile", "debug", "examples/hello.kaubo"]
+
+[tasks.run-trace]
+description = "使用 trace profile 运行 (最详细日志)"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--profile", "trace", "examples/hello.kaubo"]
+
+# 配置文件任务组
+[tasks.run-config-dev]
+description = "使用 kaubo.json 配置运行"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--config", "examples/kaubo.json", "examples/hello.kaubo"]
+
+[tasks.run-config-debug]
+description = "使用 kaubo.debug.json 配置运行 (详细日志)"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--config", "examples/kaubo.debug.json", "examples/hello.kaubo"]
+
+[tasks.run-config-perf]
+description = "使用 kaubo.perf.json 配置运行 (大栈)"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "--config", "examples/kaubo.perf.json", "examples/fib.kaubo"]
+
+
 
 # ============== 文档任务 ==============
 

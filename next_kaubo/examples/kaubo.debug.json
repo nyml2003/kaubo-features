@@ -1,0 +1,18 @@
+{
+    "version": "1.0",
+    "profile": "debug",
+    "compilerOptions": {
+        "emitDebugInfo": true
+    },
+    "runtimeOptions": {
+        "logging": {
+            "level": "debug",
+            "targets": {
+                "lexer": "warn",
+                "parser": "warn",
+                "compiler": "debug",
+                "vm": "debug"
+            }
+        }
+    }
+}

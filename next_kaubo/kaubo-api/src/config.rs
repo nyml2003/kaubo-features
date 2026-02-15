@@ -2,7 +2,10 @@
 //!
 //! 包含执行配置 RunConfig 和全局单例（供 CLI 使用）
 
-use kaubo_config::{CompilerConfig, LimitConfig};
+use kaubo_config::{
+    CompilerConfig, KauboConfig, LexerConfig, LimitConfig, LogLevel, Profile,
+    VmConfig, CoroutineConfig,
+};
 use kaubo_log::Logger;
 use once_cell::sync::OnceCell;
 use std::sync::Arc;
@@ -18,6 +21,14 @@ pub struct RunConfig {
     pub compiler: CompilerConfig,
     /// Execution limits
     pub limits: LimitConfig,
+    /// Lexer configuration
+    pub lexer: LexerConfig,
+    /// VM configuration
+    pub vm: VmConfig,
+    /// Coroutine configuration
+    pub coroutine: CoroutineConfig,
+    /// Logging configuration
+    pub logging: kaubo_config::LoggingConfig,
     /// Logger (optional)
     pub logger: Arc<Logger>,
 }
@@ -40,9 +51,82 @@ impl Default for RunConfig {
             dump_bytecode: false,
             compiler: CompilerConfig::default(),
             limits: LimitConfig::default(),
+            lexer: LexerConfig::default(),
+            vm: VmConfig::default(),
+            coroutine: CoroutineConfig::default(),
+            logging: kaubo_config::LoggingConfig::default(),
             logger: Logger::noop(),
         }
     }
+}
+
+impl RunConfig {
+    /// Create RunConfig from KauboConfig with CLI overrides
+    pub fn from_config(
+        config: &KauboConfig,
+        show_steps: bool,
+        dump_bytecode: bool,
+        verbose: u8,
+    ) -> Self {
+        let runtime = &config.runtime_options;
+        
+        // Determine log level from verbose flag or config
+        let log_level = if verbose > 0 {
+            match verbose {
+                1 => LogLevel::Info,
+                2 => LogLevel::Debug,
+                _ => LogLevel::Trace,
+            }
+        } else {
+            runtime.logging.level
+        };
+
+        // Create logging config with potentially overridden level
+        let mut logging = runtime.logging.clone();
+        if verbose > 0 {
+            logging.level = log_level;
+        }
+
+        // Create logger based on level
+        let logger = create_logger(&logging);
+
+        Self {
+            show_steps: show_steps || matches!(config.profile, Profile::Dev | Profile::Debug | Profile::Trace),
+            dump_bytecode: dump_bytecode,
+            compiler: config.compiler_options.clone(),
+            limits: runtime.limits.clone(),
+            lexer: runtime.lexer.clone(),
+            vm: runtime.vm.clone(),
+            coroutine: runtime.coroutine.clone(),
+            logging,
+            logger,
+        }
+    }
+
+    /// Create RunConfig from profile directly
+    pub fn from_profile(profile: Profile) -> Self {
+        let config = KauboConfig::from_profile(profile);
+        Self::from_config(&config, false, false, 0)
+    }
+}
+
+/// Create a logger from logging configuration
+fn create_logger(config: &kaubo_config::LoggingConfig) -> Arc<Logger> {
+    use kaubo_log::{LogConfig, Level as LogLevelKaubo};
+    
+    let level = match config.level {
+        LogLevel::Error => LogLevelKaubo::Error,
+        LogLevel::Warn => LogLevelKaubo::Warn,
+        LogLevel::Info => LogLevelKaubo::Info,
+        LogLevel::Debug => LogLevelKaubo::Debug,
+        LogLevel::Trace => LogLevelKaubo::Trace,
+    };
+
+    let (logger, _) = LogConfig::new(level)
+        .with_stdout()
+        .init();
+    
+    logger
 }
 
 // Global config singleton for CLI convenience
@@ -101,6 +185,19 @@ mod tests {
         assert!(debug_str.contains("dump_bytecode"));
         assert!(debug_str.contains("compiler"));
         assert!(debug_str.contains("limits"));
+    }
+
+    #[test]
+    fn test_from_profile() {
+        let cfg = RunConfig::from_profile(Profile::Silent);
+        assert_eq!(cfg.logging.level, LogLevel::Error);
+    }
+
+    #[test]
+    fn test_from_config_with_verbose() {
+        let config = KauboConfig::from_profile(Profile::Default);
+        let cfg = RunConfig::from_config(&config, false, false, 2);
+        assert_eq!(cfg.logging.level, LogLevel::Debug);
     }
 
     #[test]

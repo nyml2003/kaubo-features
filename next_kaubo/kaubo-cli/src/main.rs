@@ -5,14 +5,13 @@
 extern crate alloc;
 
 use clap::Parser;
+use std::path::PathBuf;
 use std::process;
 
 mod platform;
 
 use crate::platform::print_error_with_source;
-use kaubo_api::{init_config, RunConfig, Value};
-use kaubo_config::{CompilerConfig, LimitConfig};
-use kaubo_log::{LogConfig as LoggerConfig, Logger};
+use kaubo_api::{init_config, KauboConfig, Profile, RunConfig, Value};
 
 #[derive(Parser)]
 #[command(
@@ -23,6 +22,14 @@ use kaubo_log::{LogConfig as LoggerConfig, Logger};
 struct Cli {
     /// Source file path
     file: String,
+
+    /// Configuration file path
+    #[arg(short, long, value_name = "PATH", conflicts_with = "profile")]
+    config: Option<PathBuf>,
+
+    /// Use built-in profile (silent, default, dev, debug, trace)
+    #[arg(short, long, value_name = "PROFILE", conflicts_with = "config")]
+    profile: Option<String>,
 
     /// Log level (-v=info, -vv=debug, -vvv=trace)
     #[arg(short, long, action = clap::ArgAction::Count)]
@@ -57,8 +64,14 @@ fn main() {
         }
     };
 
-    // Build run configuration with logger
-    let run_config = build_run_config(&cli);
+    // Build run configuration
+    let run_config = match build_run_config(&cli) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Error: Failed to load configuration: {}", e);
+            process::exit(1);
+        }
+    };
 
     // Initialize API config (global singleton for convenience)
     init_config(run_config.clone());
@@ -73,7 +86,7 @@ fn main() {
     }
 
     // Show step info
-    if cli.show_steps {
+    if run_config.show_steps {
         println!("[Kaubo VM - Bytecode Execution]");
         println!("======================");
         println!("File: {}", cli.file);
@@ -84,6 +97,45 @@ fn main() {
         handle_compile_only(&source, run_config);
     } else {
         handle_run(&source, run_config);
+    }
+}
+
+/// Build run configuration from CLI arguments and config file/profile
+fn build_run_config(cli: &Cli) -> Result<RunConfig, Box<dyn std::error::Error>> {
+    // Load config from file, profile, or auto-detect
+    let kaubo_config = if let Some(config_path) = &cli.config {
+        // Explicit config file
+        KauboConfig::from_file(config_path)?
+    } else if let Some(profile_str) = &cli.profile {
+        // Built-in profile
+        let profile = parse_profile(profile_str)?;
+        KauboConfig::from_profile(profile)
+    } else {
+        // Auto-detect config file or use default profile
+        KauboConfig::find_and_load().unwrap_or_else(|| KauboConfig::from_profile(Profile::Default))
+    };
+
+    // Build RunConfig with CLI overrides
+    Ok(RunConfig::from_config(
+        &kaubo_config,
+        cli.show_steps,
+        cli.dump_bytecode,
+        cli.verbose,
+    ))
+}
+
+/// Parse profile string to Profile enum
+fn parse_profile(s: &str) -> Result<Profile, String> {
+    match s.to_lowercase().as_str() {
+        "silent" => Ok(Profile::Silent),
+        "default" => Ok(Profile::Default),
+        "dev" => Ok(Profile::Dev),
+        "debug" => Ok(Profile::Debug),
+        "trace" => Ok(Profile::Trace),
+        _ => Err(format!(
+            "Unknown profile: {}. Available: silent, default, dev, debug, trace",
+            s
+        )),
     }
 }
 
@@ -266,25 +318,5 @@ fn handle_run(source: &str, config: RunConfig) {
             print_error_with_source(&e, source);
             process::exit(1);
         }
-    }
-}
-
-fn build_run_config(cli: &Cli) -> RunConfig {
-    // 只在 verbose 或 show_steps 时启用 dev logger
-    // dump_bytecode 现在使用独立的 stdout 输出，不需要 logger
-    let needs_logger = cli.verbose > 0 || cli.show_steps;
-    let logger = if needs_logger {
-        let (logger, _) = LoggerConfig::dev().init();
-        logger
-    } else {
-        Logger::noop()
-    };
-
-    RunConfig {
-        show_steps: cli.show_steps,
-        dump_bytecode: cli.dump_bytecode,
-        compiler: CompilerConfig::default(),
-        limits: LimitConfig::default(),
-        logger,
     }
 }

@@ -20,6 +20,12 @@ use kaubo_core::runtime::{InterpretResult, VM};
 pub mod config;
 pub use config::{config as get_config, init as init_config, is_initialized, RunConfig};
 
+// Re-export config types from kaubo_config
+pub use kaubo_config::{
+    CompilerConfig, CoroutineConfig, KauboConfig, LexerConfig, LimitConfig, 
+    LogLevel, LogTargets, LoggingConfig, Profile, RuntimeOptions, VmConfig,
+};
+
 // Re-export error and types
 pub mod error;
 pub mod types;
@@ -29,7 +35,7 @@ pub use types::{CompileOutput, ExecuteOutput};
 // Re-export core types
 pub use kaubo_config;
 pub use kaubo_core::Value;
-pub use kaubo_core::{CompilerConfig, LimitConfig, Phase};
+pub use kaubo_core::Phase;
 
 /// Execute with explicit configuration
 ///
