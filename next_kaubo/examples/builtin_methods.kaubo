@@ -1,0 +1,58 @@
+// Kaubo Builtin Type Methods 演示
+// Phase 1 & 2 & 3: List, String, Json 的方法调用 + 函数式方法
+
+from std import print;
+
+// ========== List 基础方法 ==========
+var list: List<int> = [1, 2, 3];
+
+// push() - 添加元素，返回 receiver 支持链式调用
+list.push(4).push(5).push(6);  // list = [1,2,3,4,5,6]
+
+// len() - 获取长度
+var count: int = list.len();       // 6
+
+// ========== List 函数式方法 ==========
+
+// foreach() - 遍历元素
+var sum: int = 0;
+list.foreach(|x| {
+    sum = sum + x;
+});
+// sum = 21
+
+// map() - 映射转换
+var doubled: List<int> = list.map(|x| x * 2);
+// doubled = [2,4,6,8,10,12]
+
+// filter() - 过滤元素
+var evens: List<int> = list.filter(|x| x % 2 == 0);
+// evens = [2,4,6]
+
+// reduce() - 累积计算
+var product: int = list.reduce(|acc, x| acc * x, 1);
+// product = 720 (1*2*3*4*5*6)
+
+// find() - 查找第一个满足条件的元素
+var firstEven: int = list.find(|x| x % 2 == 0);
+// firstEven = 2
+
+// any() - 检查是否有任意元素满足条件
+var hasNegative: bool = list.any(|x| x < 0);
+// hasNegative = false
+
+// all() - 检查是否所有元素都满足条件
+var allPositive: bool = list.all(|x| x > 0);
+// allPositive = true
+
+// 链式调用组合
+var result: List<int> = [1, 2, 3, 4, 5]
+    .filter(|x| x > 2)        // [3,4,5]
+    .map(|x| x * 10);          // [30,40,50]
+
+// ========== String 方法 ==========
+var s: string = "hello";
+var str_len: int = s.len();     // 5
+var str_empty: bool = "".is_empty();  // true
+
+print("List functional methods demo complete!");

@@ -313,6 +313,13 @@ impl Compiler {
             ExprKind::LiteralTrue(_) | ExprKind::LiteralFalse(_) => {
                 Some(VarType::Bool)
             }
+            ExprKind::LiteralList(_) => {
+                // List 字面量：推导为 List<any>（元素类型暂时不精确推导）
+                Some(VarType::List(Box::new(VarType::Int))) // 简化：假设 List<int>
+            }
+            ExprKind::JsonLiteral(_) => {
+                Some(VarType::Json)
+            }
             ExprKind::FunctionCall(call) => {
                 // 尝试推断函数返回类型
                 self.infer_call_return_type(call)
@@ -534,7 +541,7 @@ mod tests {
     use crate::core::{InterpretResult, Value, VM};
     use crate::core::object::ObjShape;
 
-    fn compile_code(code: &str) -> Result<(Chunk, usize, HashMap<String, (u16, Vec<String>)>), CompileError> {
+    fn compile_code(code: &str) -> Result<(Chunk, usize, HashMap<String, (u16, Vec<String>, Vec<String>)>), CompileError> {
         let mut lexer = build_lexer();
         let _ = lexer.feed(code.as_bytes());
         let _ = lexer.terminate();

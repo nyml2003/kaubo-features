@@ -610,10 +610,56 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             Call => {
                 let arg_count = read_byte(vm);
 
-                // 栈布局：[arg0, arg1, ..., argN, closure]
-                // 先弹出闭包对象（栈顶）
+                // 栈布局：[arg0, arg1, ..., argN, callee]
+                // 先弹出被调用者（栈顶）
                 let callee = vm.stack.pop().expect("Stack underflow");
-                if let Some(closure_ptr) = callee.as_closure() {
+                
+                // 检查是否为内置类型方法编码
+                use crate::core::builtin_methods::decode_method;
+                if let Some((type_tag, method_idx)) = decode_method(callee) {
+                    use crate::core::builtin_methods::builtin_types;
+                    
+                    // 收集参数（从栈顶），包含 receiver
+                    let mut args = Vec::with_capacity(arg_count as usize);
+                    for _ in 0..arg_count {
+                        args.push(vm.stack.pop().expect("Stack underflow"));
+                    }
+                    args.reverse();  // [receiver, arg1, arg2...]
+                    
+                    if args.is_empty() {
+                        return InterpretResult::RuntimeError(
+                            "Builtin method call requires at least receiver".to_string()
+                        );
+                    }
+                    
+                    // 直接调用原生方法
+                    let result = match type_tag {
+                        builtin_types::LIST => {
+                            vm.builtin_methods.list_methods()
+                                .get(method_idx as usize)
+                                .ok_or_else(|| format!("Invalid list method index: {}", method_idx))
+                                .and_then(|method| method(vm, args[0], &args[1..]))
+                        }
+                        builtin_types::STRING => {
+                            vm.builtin_methods.string_methods()
+                                .get(method_idx as usize)
+                                .ok_or_else(|| format!("Invalid string method index: {}", method_idx))
+                                .and_then(|method| method(vm, args[0], &args[1..]))
+                        }
+                        builtin_types::JSON => {
+                            vm.builtin_methods.json_methods()
+                                .get(method_idx as usize)
+                                .ok_or_else(|| format!("Invalid json method index: {}", method_idx))
+                                .and_then(|method| method(vm, args[0], &args[1..]))
+                        }
+                        _ => Err(format!("Unknown builtin type tag: {}", type_tag)),
+                    };
+                    
+                    match result {
+                        Ok(v) => vm.stack.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
+                    }
+                } else if let Some(closure_ptr) = callee.as_closure() {
                     let closure = unsafe { &*closure_ptr };
                     let func = unsafe { &*closure.function };
 
@@ -1088,7 +1134,22 @@ pub fn run(vm: &mut VM) -> InterpretResult {
 
                 // 栈顶是 receiver
                 let receiver = stack::peek(vm, 0);
-                if let Some(struct_ptr) = receiver.as_struct() {
+                
+                // 检查是否为内置类型
+                if receiver.is_list() {
+                    use crate::core::builtin_methods::{encode_method, builtin_types};
+                    let encoded = encode_method(builtin_types::LIST, method_idx);
+                    vm.stack.push(Value::smi(encoded));
+                } else if receiver.is_string() {
+                    use crate::core::builtin_methods::{encode_method, builtin_types};
+                    let encoded = encode_method(builtin_types::STRING, method_idx);
+                    vm.stack.push(Value::smi(encoded));
+                } else if receiver.is_json() {
+                    use crate::core::builtin_methods::{encode_method, builtin_types};
+                    let encoded = encode_method(builtin_types::JSON, method_idx);
+                    vm.stack.push(Value::smi(encoded));
+                } else if let Some(struct_ptr) = receiver.as_struct() {
+                    // Struct 类型：现有逻辑
                     let shape = unsafe { (*struct_ptr).shape };
                     if let Some(method) = unsafe { (*shape).get_method(method_idx) } {
                         // 压入函数对象（不是闭包）
@@ -1099,9 +1160,59 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                         ));
                     }
                 } else {
+                    return InterpretResult::RuntimeError(format!(
+                        "Type '{}' has no methods",
+                        vm.get_type_name(receiver)
+                    ));
+                }
+            }
+
+            CallBuiltin => {
+                // 操作数: u8 type_tag + u8 method_idx + u8 arg_count
+                let type_tag = read_byte(vm);
+                let method_idx = read_byte(vm);
+                let arg_count = read_byte(vm);
+                
+                // 收集参数（从栈顶），包含 receiver
+                let mut args = Vec::with_capacity(arg_count as usize);
+                for _ in 0..arg_count {
+                    args.push(vm.stack.pop().expect("Stack underflow"));
+                }
+                args.reverse();  // [receiver, arg1, arg2...]
+                
+                if args.is_empty() {
                     return InterpretResult::RuntimeError(
-                        "LoadMethod requires a struct instance".to_string(),
+                        "CallBuiltin requires at least receiver".to_string()
                     );
+                }
+                
+                // 直接调用原生方法
+                use crate::core::builtin_methods::builtin_types;
+                let result = match type_tag {
+                    builtin_types::LIST => {
+                        vm.builtin_methods.list_methods()
+                            .get(method_idx as usize)
+                            .ok_or_else(|| format!("Invalid list method index: {}", method_idx))
+                            .and_then(|method| method(vm, args[0], &args[1..]))
+                    }
+                    builtin_types::STRING => {
+                        vm.builtin_methods.string_methods()
+                            .get(method_idx as usize)
+                            .ok_or_else(|| format!("Invalid string method index: {}", method_idx))
+                            .and_then(|method| method(vm, args[0], &args[1..]))
+                    }
+                    builtin_types::JSON => {
+                        vm.builtin_methods.json_methods()
+                            .get(method_idx as usize)
+                            .ok_or_else(|| format!("Invalid json method index: {}", method_idx))
+                            .and_then(|method| method(vm, args[0], &args[1..]))
+                    }
+                    _ => Err(format!("Unknown builtin type tag: {}", type_tag)),
+                };
+                
+                match result {
+                    Ok(v) => vm.stack.push(v),
+                    Err(e) => return InterpretResult::RuntimeError(e),
                 }
             }
 

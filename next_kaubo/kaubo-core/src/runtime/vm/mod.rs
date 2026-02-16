@@ -15,6 +15,7 @@ mod stack;
 
 // 公开子模块的公共接口
 pub use stack::stack_top;
+pub use operators::call_operator_closure;
 
 impl VM {
     /// 初始化标准库模块
@@ -485,7 +486,7 @@ mod tests {
         let mut vm = VM::new();
         let mut chunk = Chunk::new();
 
-        let big = (1 << 29); // 536870912
+        let big = 1 << 29; // 536870912
         let c1 = chunk.add_constant(Value::smi(big));
         let c2 = chunk.add_constant(Value::smi(big));
 
@@ -634,10 +635,10 @@ mod tests {
     fn test_inline_cache_integration() {
         // 测试 Level 2 内联缓存集成
         // 创建一个 Chunk，使用内联缓存进行运算符重载
+        use crate::compiler::lexer::builder::build_lexer;
+        use crate::compiler::parser::parser::Parser;
         use crate::core::ObjShape;
         use crate::runtime::compiler::compile_with_struct_info;
-        use crate::compiler::parser::parser::Parser;
-        use crate::compiler::lexer::builder::build_lexer;
         use std::collections::HashMap;
 
         // 编译包含 operator add 的代码
@@ -663,20 +664,25 @@ mod tests {
         let _ = lexer.terminate();
         let mut parser = Parser::new(lexer);
         let ast = parser.parse().unwrap();
-        
+
         // 准备 struct 信息（包含字段类型）
         let mut struct_infos: HashMap<String, (u16, Vec<String>, Vec<String>)> = HashMap::new();
-        struct_infos.insert("Counter".to_string(), (100, vec!["value".to_string()], vec!["int".to_string()]));
-        
+        struct_infos.insert(
+            "Counter".to_string(),
+            (100, vec!["value".to_string()], vec!["int".to_string()]),
+        );
+
         let result = compile_with_struct_info(&ast, struct_infos);
-        
+
         if let Ok((chunk, local_count)) = result {
             // 验证 Chunk 分配了内联缓存槽位
-            assert!(!chunk.inline_caches.is_empty(), 
-                "Chunk should have allocated inline cache slots");
-            
+            assert!(
+                !chunk.inline_caches.is_empty(),
+                "Chunk should have allocated inline cache slots"
+            );
+
             let mut vm = VM::new();
-            
+
             // 注册 shapes
             let shape = Box::into_raw(Box::new(ObjShape::new(
                 100, // struct shape_id 从 100 开始
@@ -686,25 +692,31 @@ mod tests {
             unsafe {
                 vm.register_shape(shape);
             }
-            
+
             // 执行代码
             let result = vm.interpret_with_locals(&chunk, local_count);
             assert_eq!(result, InterpretResult::Ok);
-            
+
             // 验证结果: 10 + 20 = 30
             let return_value = vm.stack.last().unwrap();
-            assert_eq!(return_value.as_smi(), Some(30), 
-                "Counter addition should return 30");
-            
+            assert_eq!(
+                return_value.as_smi(),
+                Some(30),
+                "Counter addition should return 30"
+            );
+
             // 验证 VM 的内联缓存被正确加载
-            assert!(!vm.inline_caches.is_empty(),
-                "VM should have loaded inline caches from chunk");
-            
+            assert!(
+                !vm.inline_caches.is_empty(),
+                "VM should have loaded inline caches from chunk"
+            );
+
             // 验证至少有一个缓存条目被填充（非空）
-            let has_filled_cache = vm.inline_caches.iter()
-                .any(|cache| !cache.is_empty());
-            assert!(has_filled_cache,
-                "At least one inline cache entry should be filled after execution");
+            let has_filled_cache = vm.inline_caches.iter().any(|cache| !cache.is_empty());
+            assert!(
+                has_filled_cache,
+                "At least one inline cache entry should be filled after execution"
+            );
         } else {
             panic!("Compilation failed: {:?}", result);
         }
@@ -713,9 +725,9 @@ mod tests {
     #[test]
     fn test_inline_cache_multiple_calls() {
         // 测试多次调用时缓存命中的情况
-        use crate::runtime::compiler::compile_with_struct_info;
-        use crate::compiler::parser::parser::Parser;
         use crate::compiler::lexer::builder::build_lexer;
+        use crate::compiler::parser::parser::Parser;
+        use crate::runtime::compiler::compile_with_struct_info;
         use std::collections::HashMap;
 
         let code = r#"
@@ -749,16 +761,23 @@ mod tests {
         let _ = lexer.terminate();
         let mut parser = Parser::new(lexer);
         let ast = parser.parse().unwrap();
-        
+
         // 准备 struct 信息（包含字段类型）
         let mut struct_infos: HashMap<String, (u16, Vec<String>, Vec<String>)> = HashMap::new();
-        struct_infos.insert("Point".to_string(), (100, vec!["x".to_string(), "y".to_string()], vec!["int".to_string(), "int".to_string()]));
-        
+        struct_infos.insert(
+            "Point".to_string(),
+            (
+                100,
+                vec!["x".to_string(), "y".to_string()],
+                vec!["int".to_string(), "int".to_string()],
+            ),
+        );
+
         let result = compile_with_struct_info(&ast, struct_infos);
-        
+
         if let Ok((chunk, local_count)) = result {
             let mut vm = VM::new();
-            
+
             // 注册 Point shape
             let shape = Box::into_raw(Box::new(crate::core::ObjShape::new(
                 100,
@@ -768,14 +787,240 @@ mod tests {
             unsafe {
                 vm.register_shape(shape);
             }
-            
+
             let result = vm.interpret_with_locals(&chunk, local_count);
             assert_eq!(result, InterpretResult::Ok);
-            
+
             // 计算: r1=(4,6), r2=(4,6), r3=(4,6), 总和 = 4+6+4+6+4+6 = 30
             let return_value = vm.stack.last().unwrap();
-            assert_eq!(return_value.as_smi(), Some(30),
-                "Multiple Point additions should return 30");
+            assert_eq!(
+                return_value.as_smi(),
+                Some(30),
+                "Multiple Point additions should return 30"
+            );
+        } else {
+            panic!("Compilation failed: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_list_builtin_methods_integration() {
+        // 集成测试：通过 parser 和 compiler 测试内置方法
+        use crate::compiler::lexer::builder::build_lexer;
+        use crate::compiler::parser::parser::Parser;
+        use crate::runtime::compiler::compile_with_struct_info;
+        use std::collections::HashMap;
+
+        // 测试 1: list.len()
+        let code1 = r#"var list = [1, 2, 3]; return list.len();"#;
+        let result1 = run_code(code1);
+        assert_eq!(result1, Some(3), "list.len() should return 3");
+
+        // 测试 2: list.push()
+        let code2 = r#"var list = [1, 2]; list.push(3); return list.len();"#;
+        let result2 = run_code(code2);
+        assert_eq!(result2, Some(3), "list.push() should increase length");
+
+        // 测试 3: list.is_empty()
+        let code3 = r#"var list = []; return list.is_empty();"#;
+        let result3 = run_code_bool(code3);
+        assert_eq!(
+            result3,
+            Some(true),
+            "empty list.is_empty() should return true"
+        );
+
+        fn run_code(code: &str) -> Option<i32> {
+            let mut lexer = build_lexer();
+            let _ = lexer.feed(code.as_bytes());
+            let _ = lexer.terminate();
+            let mut parser = Parser::new(lexer);
+            let ast = parser.parse().ok()?;
+
+            let result = compile_with_struct_info(&ast, HashMap::new()).ok()?;
+            let (chunk, local_count) = result;
+
+            let mut vm = VM::new();
+            vm.init_stdlib();
+            let result = vm.interpret_with_locals(&chunk, local_count);
+
+            if result == InterpretResult::Ok {
+                vm.stack.last()?.as_int()
+            } else {
+                println!("VM error: {:?}", result);
+                None
+            }
+        }
+
+        fn run_code_bool(code: &str) -> Option<bool> {
+            let mut lexer = build_lexer();
+            let _ = lexer.feed(code.as_bytes());
+            let _ = lexer.terminate();
+            let mut parser = Parser::new(lexer);
+            let ast = parser.parse().ok()?;
+
+            let result = compile_with_struct_info(&ast, HashMap::new()).ok()?;
+            let (chunk, local_count) = result;
+
+            let mut vm = VM::new();
+            vm.init_stdlib();
+            let result = vm.interpret_with_locals(&chunk, local_count);
+
+            if result == InterpretResult::Ok {
+                vm.stack.last()?.as_bool()
+            } else {
+                println!("VM error: {:?}", result);
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn test_list_method_chain() {
+        // 测试 List 方法链式调用：list.push(1).push(2)
+        use crate::compiler::lexer::builder::build_lexer;
+        use crate::compiler::parser::parser::Parser;
+        use crate::runtime::compiler::compile_with_struct_info;
+        use std::collections::HashMap;
+
+        let code = r#"
+            var list = [];
+            list.push(1).push(2).push(3);
+            return list.len();
+        "#;
+
+        let mut lexer = build_lexer();
+        let _ = lexer.feed(code.as_bytes());
+        let _ = lexer.terminate();
+        let mut parser = Parser::new(lexer);
+        let ast = parser.parse().unwrap();
+
+        let result = compile_with_struct_info(&ast, HashMap::new());
+
+        if let Ok((chunk, local_count)) = result {
+            let mut vm = VM::new();
+            let result = vm.interpret_with_locals(&chunk, local_count);
+            assert_eq!(result, InterpretResult::Ok);
+
+            // 结果应该是 3
+            let return_value = vm.stack.last().unwrap();
+            assert_eq!(
+                return_value.as_int(),
+                Some(3),
+                "List length after chained push should be 3"
+            );
+        } else {
+            panic!("Compilation failed: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_list_remove_and_clear() {
+        // 测试 List remove 和 clear 方法
+        use crate::compiler::lexer::builder::build_lexer;
+        use crate::compiler::parser::parser::Parser;
+        use crate::runtime::compiler::compile_with_struct_info;
+        use std::collections::HashMap;
+
+        let code = r#"
+            var list = [10, 20, 30];
+            var removed = list.remove(1);  // 移除 20
+            var is_empty_before = list.is_empty();
+            list.clear();
+            var is_empty_after = list.is_empty();
+            return removed;
+        "#;
+
+        let mut lexer = build_lexer();
+        let _ = lexer.feed(code.as_bytes());
+        let _ = lexer.terminate();
+        let mut parser = Parser::new(lexer);
+        let ast = parser.parse().unwrap();
+
+        let result = compile_with_struct_info(&ast, HashMap::new());
+
+        if let Ok((chunk, local_count)) = result {
+            let mut vm = VM::new();
+            let result = vm.interpret_with_locals(&chunk, local_count);
+            assert_eq!(result, InterpretResult::Ok);
+
+            // removed 应该是 20
+            let return_value = vm.stack.last().unwrap();
+            assert_eq!(
+                return_value.as_int(),
+                Some(20),
+                "Removed element should be 20"
+            );
+        } else {
+            panic!("Compilation failed: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_string_builtin_methods() {
+        // 测试 String 内置方法
+        use crate::compiler::lexer::builder::build_lexer;
+        use crate::compiler::parser::parser::Parser;
+        use crate::runtime::compiler::compile_with_struct_info;
+        use std::collections::HashMap;
+
+        // 测试 string.len()
+        let code = r#"var s = "hello"; return s.len();"#;
+
+        let mut lexer = build_lexer();
+        let _ = lexer.feed(code.as_bytes());
+        let _ = lexer.terminate();
+        let mut parser = Parser::new(lexer);
+        let ast = parser.parse().unwrap();
+
+        let result = compile_with_struct_info(&ast, HashMap::new());
+
+        if let Ok((chunk, local_count)) = result {
+            let mut vm = VM::new();
+            let result = vm.interpret_with_locals(&chunk, local_count);
+            assert_eq!(result, InterpretResult::Ok);
+
+            let return_value = vm.stack.last().unwrap();
+            assert_eq!(
+                return_value.as_int(),
+                Some(5),
+                "'hello'.len() should return 5"
+            );
+        } else {
+            panic!("Compilation failed: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_json_builtin_methods() {
+        // 测试 Json 内置方法
+        use crate::compiler::lexer::builder::build_lexer;
+        use crate::compiler::parser::parser::Parser;
+        use crate::runtime::compiler::compile_with_struct_info;
+        use std::collections::HashMap;
+
+        // 测试 json.len()
+        let code = r#"var j = json {a: 1, b: 2}; return j.len();"#;
+
+        let mut lexer = build_lexer();
+        let _ = lexer.feed(code.as_bytes());
+        let _ = lexer.terminate();
+        let mut parser = Parser::new(lexer);
+        let ast = parser.parse().unwrap();
+
+        let result = compile_with_struct_info(&ast, HashMap::new());
+
+        if let Ok((chunk, local_count)) = result {
+            let mut vm = VM::new();
+            let result = vm.interpret_with_locals(&chunk, local_count);
+            assert_eq!(result, InterpretResult::Ok);
+
+            let return_value = vm.stack.last().unwrap();
+            assert_eq!(
+                return_value.as_int(),
+                Some(2),
+                "json{{a: 1, b: 2}}.len() should return 2"
+            );
         } else {
             panic!("Compilation failed: {:?}", result);
         }

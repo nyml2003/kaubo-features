@@ -980,6 +980,40 @@ pub fn call_operator_closure(
                     Err(e) => return Err(e),
                 }
             }
+            Greater => {
+                let _cache_idx = unsafe { *ip };
+                ip = unsafe { ip.add(1) };
+                let b = vm.stack.pop().expect("Stack underflow");
+                let a = vm.stack.pop().expect("Stack underflow");
+                match compare_values(vm, a, b) {
+                    Ok(ord) => vm.stack.push(Value::bool_from(ord == std::cmp::Ordering::Greater)),
+                    Err(e) => return Err(e),
+                }
+            }
+            GreaterEqual => {
+                let _cache_idx = unsafe { *ip };
+                ip = unsafe { ip.add(1) };
+                let b = vm.stack.pop().expect("Stack underflow");
+                let a = vm.stack.pop().expect("Stack underflow");
+                match compare_values(vm, a, b) {
+                    Ok(ord) => vm.stack.push(Value::bool_from(
+                        ord == std::cmp::Ordering::Greater || ord == std::cmp::Ordering::Equal,
+                    )),
+                    Err(e) => return Err(e),
+                }
+            }
+            LessEqual => {
+                let _cache_idx = unsafe { *ip };
+                ip = unsafe { ip.add(1) };
+                let b = vm.stack.pop().expect("Stack underflow");
+                let a = vm.stack.pop().expect("Stack underflow");
+                match compare_values(vm, a, b) {
+                    Ok(ord) => vm.stack.push(Value::bool_from(
+                        ord == std::cmp::Ordering::Less || ord == std::cmp::Ordering::Equal,
+                    )),
+                    Err(e) => return Err(e),
+                }
+            }
 
             ReturnValue => {
                 return Ok(vm.stack.pop().expect("Stack underflow"));

@@ -2,6 +2,7 @@
 //!
 //! 纯类型定义，执行逻辑在 runtime/vm_impl.rs 中
 
+use super::builtin_methods::BuiltinMethodTable;
 use super::object::{CallFrame, ObjShape, ObjUpvalue};
 use super::operators::InlineCacheEntry;
 use super::value::Value;
@@ -56,6 +57,8 @@ pub struct VM {
     pub inline_caches: Vec<InlineCacheEntry>,
     /// Logger（用于执行追踪）
     pub logger: Arc<Logger>,
+    /// 内置类型方法表
+    pub builtin_methods: BuiltinMethodTable,
 }
 
 impl VM {
@@ -79,6 +82,7 @@ impl VM {
             shapes: HashMap::new(),
             inline_caches: Vec::with_capacity(config.inline_cache_capacity),
             logger,
+            builtin_methods: BuiltinMethodTable::new(),
         }
     }
 }

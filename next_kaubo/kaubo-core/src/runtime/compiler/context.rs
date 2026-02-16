@@ -32,9 +32,11 @@ pub struct StructInfo {
 /// 变量类型信息
 #[derive(Debug, Clone)]
 pub enum VarType {
-    Struct(String), // struct 类型名
-    Int,            // 整数类型
-    Float,          // 浮点数类型
-    String,         // 字符串类型
-    Bool,           // 布尔类型
+    Struct(String),         // struct 类型名
+    List(Box<VarType>),     // 列表类型（元素类型）
+    Json,                   // JSON 对象类型
+    Int,                    // 整数类型
+    Float,                  // 浮点数类型
+    String,                 // 字符串类型
+    Bool,                   // 布尔类型
 }

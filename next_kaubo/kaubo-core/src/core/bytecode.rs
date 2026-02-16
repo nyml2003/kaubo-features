@@ -131,6 +131,9 @@ pub enum OpCode {
     SetField,           // + u8 字段索引，栈顶[value, struct] -> null
     LoadMethod,         // + u8 方法索引，栈顶[struct] -> [struct, method]
 
+    // ===== 内置方法调用 (0xDC-0xDF) =====
+    CallBuiltin = 0xDC, // + u8 type_tag + u8 method_idx + u8 arg_count
+
     // ===== 类型转换 (0xE0-0xE3) =====
     CastToInt = 0xE0,    // 栈顶[value] -> int
     CastToFloat,         // 栈顶[value] -> float
@@ -236,6 +239,7 @@ impl OpCode {
             OpCode::GetField => "GET_FIELD",
             OpCode::SetField => "SET_FIELD",
             OpCode::LoadMethod => "LOAD_METHOD",
+            OpCode::CallBuiltin => "CALL_BUILTIN",
             OpCode::CastToInt => "CAST_TO_INT",
             OpCode::CastToFloat => "CAST_TO_FLOAT",
             OpCode::CastToString => "CAST_TO_STRING",
@@ -332,6 +336,9 @@ impl OpCode {
 
             // u8 操作数（Struct 相关）
             OpCode::GetField | OpCode::SetField | OpCode::LoadMethod => 1,
+
+            // u8 + u8 + u8 操作数（CallBuiltin）
+            OpCode::CallBuiltin => 3,
 
             // u8 操作数（内联缓存索引）
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod

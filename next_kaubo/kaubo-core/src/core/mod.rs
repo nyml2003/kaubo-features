@@ -41,6 +41,16 @@ pub use object::{
     OptionVariant, ResultVariant,
 };
 
+pub use builtin_methods::{
+    BuiltinMethodFn, BuiltinMethodTable, builtin_types, list_methods, string_methods,
+    json_methods, encode_method, decode_method, is_builtin_method,
+};
+
+// ==================== 内置方法 ====================
+
+/// 内置类型方法表
+pub mod builtin_methods;
+
 // ==================== 虚拟机 ====================
 
 /// VM 定义

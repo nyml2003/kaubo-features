@@ -1,0 +1,13 @@
+{
+  "name": "builtin_methods",
+  "version": "0.1.0",
+  "entry": "builtin_methods.kaubo",
+  "description": "Builtin type methods demo for List, String, and Json",
+  "compiler": {
+    "log_level": "warn",
+    "show_source": false,
+    "show_steps": false,
+    "dump_bytecode": false,
+    "compile_only": false
+  }
+}

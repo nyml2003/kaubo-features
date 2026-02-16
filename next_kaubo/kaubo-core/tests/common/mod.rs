@@ -38,9 +38,9 @@ pub fn run_code(code: &str) -> Result<ExecResult, ExecError> {
     let shapes = type_checker.take_shapes();
 
     // 创建 struct_infos
-    let struct_infos: HashMap<String, (u16, Vec<String>)> = shapes
+    let struct_infos: HashMap<String, (u16, Vec<String>, Vec<String>)> = shapes
         .iter()
-        .map(|s| (s.name.clone(), (s.shape_id, s.field_names.clone())))
+        .map(|s| (s.name.clone(), (s.shape_id, s.field_names.clone(), s.field_types.clone())))
         .collect();
 
     // 编译

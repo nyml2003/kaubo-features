@@ -5,12 +5,11 @@
 
 use crate::core::object::{
     ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjNative,
-    ObjOption, ObjResult, ObjShape, ObjString, ObjStruct, ObjNativeVm,
+    ObjNativeVm, ObjOption, ObjResult, ObjShape, ObjString, ObjStruct,
 };
 use crate::core::value::{
-    Value, TAG_CLOSURE, TAG_COROUTINE, TAG_FUNCTION, TAG_ITERATOR, TAG_JSON, TAG_LIST,
-    TAG_MODULE, TAG_NATIVE, TAG_NATIVE_VM, TAG_OPTION, TAG_RESULT, TAG_SHAPE, TAG_STRING,
-    TAG_STRUCT,
+    Value, TAG_CLOSURE, TAG_COROUTINE, TAG_FUNCTION, TAG_ITERATOR, TAG_JSON, TAG_LIST, TAG_MODULE,
+    TAG_NATIVE, TAG_NATIVE_VM, TAG_OPTION, TAG_RESULT, TAG_SHAPE, TAG_STRING, TAG_STRUCT,
 };
 
 impl Value {
@@ -343,7 +342,7 @@ impl std::fmt::Display for Value {
             write!(f, "<function>")
         } else if self.is_string() {
             if let Some(ptr) = self.as_string() {
-                unsafe { write!(f, "{}", (*ptr).chars) }
+                unsafe { write!(f, "\'{}\'", (*ptr).chars) }
             } else {
                 write!(f, "<string>")
             }

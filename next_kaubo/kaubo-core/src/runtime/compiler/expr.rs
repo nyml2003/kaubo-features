@@ -555,7 +555,72 @@ fn compile_lambda(compiler: &mut Compiler, lambda: &Lambda) -> Result<(), Compil
 fn compile_function_call(compiler: &mut Compiler, call: &FunctionCall) -> Result<(), CompileError> {
     // 检测是否是方法调用：obj.method(args)
     if let ExprKind::MemberAccess(member) = call.function_expr.as_ref() {
-        // 尝试编译为方法调用
+        // 尝试推断 receiver 类型
+        let receiver_type = infer_receiver_type(compiler, &member.object);
+        
+        // 处理内置类型方法调用 - 使用 CallBuiltin 指令
+        if let Some(BuiltinType::List) = receiver_type {
+            use crate::core::builtin_methods::{BuiltinMethodTable, builtin_types};
+            if let Some(method_idx) = BuiltinMethodTable::resolve_list_method(&member.member) {
+                // 字节码顺序：
+                // 1. 加载 receiver
+                // 2. 加载参数
+                // 3. CallBuiltin(type, method, arg_count)
+                compile_expr(compiler, &member.object)?;  // [receiver]
+                for arg in call.arguments.iter() {
+                    compile_expr(compiler, arg)?;         // [receiver, arg1, arg2...]
+                }
+                let arg_count = (call.arguments.len() + 1) as u8;
+                compiler.chunk.write_op(OpCode::CallBuiltin, 0);
+                compiler.chunk.code.push(builtin_types::LIST);  // type_tag
+                compiler.chunk.lines.push(0);
+                compiler.chunk.code.push(method_idx);
+                compiler.chunk.lines.push(0);
+                compiler.chunk.code.push(arg_count);
+                compiler.chunk.lines.push(0);
+                return Ok(());
+            }
+        }
+        
+        if let Some(BuiltinType::String) = receiver_type {
+            use crate::core::builtin_methods::{BuiltinMethodTable, builtin_types};
+            if let Some(method_idx) = BuiltinMethodTable::resolve_string_method(&member.member) {
+                compile_expr(compiler, &member.object)?;
+                for arg in call.arguments.iter() {
+                    compile_expr(compiler, arg)?;
+                }
+                let arg_count = (call.arguments.len() + 1) as u8;
+                compiler.chunk.write_op(OpCode::CallBuiltin, 0);
+                compiler.chunk.code.push(builtin_types::STRING);
+                compiler.chunk.lines.push(0);
+                compiler.chunk.code.push(method_idx);
+                compiler.chunk.lines.push(0);
+                compiler.chunk.code.push(arg_count);
+                compiler.chunk.lines.push(0);
+                return Ok(());
+            }
+        }
+        
+        if let Some(BuiltinType::Json) = receiver_type {
+            use crate::core::builtin_methods::{BuiltinMethodTable, builtin_types};
+            if let Some(method_idx) = BuiltinMethodTable::resolve_json_method(&member.member) {
+                compile_expr(compiler, &member.object)?;
+                for arg in call.arguments.iter() {
+                    compile_expr(compiler, arg)?;
+                }
+                let arg_count = (call.arguments.len() + 1) as u8;
+                compiler.chunk.write_op(OpCode::CallBuiltin, 0);
+                compiler.chunk.code.push(builtin_types::JSON);
+                compiler.chunk.lines.push(0);
+                compiler.chunk.code.push(method_idx);
+                compiler.chunk.lines.push(0);
+                compiler.chunk.code.push(arg_count);
+                compiler.chunk.lines.push(0);
+                return Ok(());
+            }
+        }
+        
+        // 尝试编译为 Struct 方法调用
         if let Some(struct_name) = try_infer_struct_type(compiler, &member.object) {
             // 获取方法索引
             let method_idx = compiler.struct_infos.get(&struct_name).and_then(|info| {
@@ -597,6 +662,68 @@ fn compile_function_call(compiler: &mut Compiler, call: &FunctionCall) -> Result
     compiler.chunk.write_op_u8(OpCode::Call, arg_count, 0);
 
     Ok(())
+}
+
+/// 内置类型枚举
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BuiltinType {
+    List,
+    String,
+    Json,
+}
+
+/// 推断 receiver 类型（用于方法调用）
+fn infer_receiver_type(compiler: &Compiler, expr: &Expr) -> Option<BuiltinType> {
+    match expr.as_ref() {
+        ExprKind::VarRef(var_ref) => {
+            // 从变量类型表查找
+            if let Some(var_type) = compiler.var_types.get(&var_ref.name) {
+                match var_type {
+                    VarType::List(_) => Some(BuiltinType::List),
+                    VarType::String => Some(BuiltinType::String),
+                    VarType::Json => Some(BuiltinType::Json),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }
+        ExprKind::LiteralList(_) => Some(BuiltinType::List),
+        ExprKind::LiteralString(_) => Some(BuiltinType::String),
+        ExprKind::JsonLiteral(_) => Some(BuiltinType::Json),
+        
+        // 处理链式调用：list.push(1).push(2)
+        // 如果方法返回 receiver（如 push），则结果类型与 receiver 相同
+        ExprKind::FunctionCall(call) => {
+            if let ExprKind::MemberAccess(member) = call.function_expr.as_ref() {
+                let receiver_type = infer_receiver_type(compiler, &member.object);
+                
+                // 检查是否是返回 receiver 的方法（支持链式调用）
+                match receiver_type {
+                    Some(BuiltinType::List) => {
+                        use crate::core::builtin_methods::BuiltinMethodTable;
+                        if BuiltinMethodTable::resolve_list_method(&member.member).is_some() {
+                            // 返回 List 的方法支持链式调用
+                            // - push/clear: 返回 receiver 本身
+                            // - filter/map: 返回新的 List
+                            // - 其他方法 (len/is_empty等): 不返回 List，不能链式调用
+                            match member.member.as_str() {
+                                "push" | "clear" | "filter" | "map" => Some(BuiltinType::List),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }
+        
+        _ => None,
+    }
 }
 
 /// 尝试推断表达式的 struct 类型
