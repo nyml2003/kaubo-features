@@ -6,16 +6,19 @@
 //! - 扁平化设计：所有函数直接放在 std 下，不嵌套
 //! - 启动时自动注册到 globals
 
-use crate::runtime::object::{ObjModule, ObjNative, ObjNativeVm};
-use crate::runtime::Value;
-use crate::runtime::VM;
+use crate::core::{
+    CoroutineState, InterpretResult, NativeVmFn, ObjCoroutine, ObjList, ObjModule, ObjNative, ObjNativeVm,
+    ObjString, Value, VM,
+};
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+
 
 /// 原生函数指针类型
 pub type NativeFn = fn(&[Value]) -> Result<Value, String>;
 
-/// VM-aware 原生函数指针类型
-pub type NativeVmFn = fn(&mut VM, &[Value]) -> Result<Value, String>;
+// NativeVmFn 从 crate::core 导入
 
 /// 创建标准库模块
 pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
@@ -59,21 +62,16 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
     name_to_shape.insert("E".to_string(), 10u16);
 
     // ===== 协程函数 (11-13) - VM-aware 原生函数 =====
-    exports.push(create_native_vm_value(
-        create_coroutine_fn,
-        "create_coroutine",
-        1,
-    ));
+    let create_coro_fn: NativeVmFn = create_coroutine_fn;
+    exports.push(create_native_vm_value(create_coro_fn, "create_coroutine", 1));
     name_to_shape.insert("create_coroutine".to_string(), 11u16);
 
-    exports.push(create_native_vm_value(resume_fn, "resume", 255)); // 变参
+    let resume_fn_typed: NativeVmFn = resume_fn;
+    exports.push(create_native_vm_value(resume_fn_typed, "resume", 255)); // 变参
     name_to_shape.insert("resume".to_string(), 12u16);
 
-    exports.push(create_native_vm_value(
-        coroutine_status_fn,
-        "coroutine_status",
-        1,
-    ));
+    let status_fn: NativeVmFn = coroutine_status_fn;
+    exports.push(create_native_vm_value(status_fn, "coroutine_status", 1));
     name_to_shape.insert("coroutine_status".to_string(), 13u16);
 
     // ===== 列表操作函数 (14-18) =====
@@ -197,7 +195,7 @@ fn type_fn(args: &[Value]) -> Result<Value, String> {
         "unknown"
     };
 
-    let string_obj = Box::new(crate::runtime::object::ObjString::new(
+    let string_obj = Box::new(ObjString::new(
         type_name.to_string(),
     ));
     let string_ptr = Box::into_raw(string_obj);
@@ -213,7 +211,7 @@ fn to_string_fn(args: &[Value]) -> Result<Value, String> {
     }
 
     let s = format!("{}", args[0]);
-    let string_obj = Box::new(crate::runtime::object::ObjString::new(s));
+    let string_obj = Box::new(ObjString::new(s));
     let string_ptr = Box::into_raw(string_obj);
     Ok(Value::string(string_ptr))
 }
@@ -306,10 +304,11 @@ fn to_f64(value: &Value) -> Result<f64, String> {
 
 // ===== VM-aware 协程函数实现 =====
 
-use crate::runtime::object::{CoroutineState, ObjCoroutine};
+
 
 /// create_coroutine(closure) -> coroutine
-fn create_coroutine_fn(_vm: &mut VM, args: &[Value]) -> Result<Value, String> {
+fn create_coroutine_fn(_vm_ptr: *mut (), args: &[Value]) -> Result<Value, String> {
+    let _vm = unsafe { &mut *(_vm_ptr as *mut VM) };
     if args.len() != 1 {
         return Err(format!(
             "create_coroutine() takes exactly 1 argument ({} given)",
@@ -326,7 +325,8 @@ fn create_coroutine_fn(_vm: &mut VM, args: &[Value]) -> Result<Value, String> {
 }
 
 /// resume(coroutine, ...values) -> yielded_value
-fn resume_fn(vm: &mut VM, args: &[Value]) -> Result<Value, String> {
+fn resume_fn(vm_ptr: *mut (), args: &[Value]) -> Result<Value, String> {
+    let vm = unsafe { &mut *(vm_ptr as *mut VM) };
     if args.is_empty() {
         return Err("resume() expects at least 1 argument (coroutine)".to_string());
     }
@@ -360,7 +360,7 @@ fn resume_fn(vm: &mut VM, args: &[Value]) -> Result<Value, String> {
             }
 
             // 创建初始调用帧
-            coro.frames.push(crate::runtime::object::CallFrame {
+            coro.frames.push(crate::core::CallFrame {
                 closure,
                 ip: func.chunk.code.as_ptr(),
                 locals: resume_args,
@@ -396,13 +396,13 @@ fn resume_fn(vm: &mut VM, args: &[Value]) -> Result<Value, String> {
 
         // 根据执行结果处理
         match result {
-            crate::runtime::InterpretResult::Ok => {
+            InterpretResult::Ok => {
                 coro.state = CoroutineState::Dead;
                 // 协程正常结束，获取返回值
                 let return_val = coro.stack.last().copied().unwrap_or(Value::NULL);
                 Ok(return_val)
             }
-            crate::runtime::InterpretResult::RuntimeError(msg) => {
+            InterpretResult::RuntimeError(msg) => {
                 if msg == "yield" {
                     // 协程通过 yield 挂起
                     coro.state = CoroutineState::Suspended;
@@ -414,7 +414,7 @@ fn resume_fn(vm: &mut VM, args: &[Value]) -> Result<Value, String> {
                     Err(msg)
                 }
             }
-            crate::runtime::InterpretResult::CompileError(msg) => {
+            InterpretResult::CompileError(msg) => {
                 coro.state = CoroutineState::Dead;
                 Err(msg)
             }
@@ -425,7 +425,8 @@ fn resume_fn(vm: &mut VM, args: &[Value]) -> Result<Value, String> {
 }
 
 /// coroutine_status(coroutine) -> int (0=Suspended, 1=Running, 2=Dead)
-fn coroutine_status_fn(_vm: &mut VM, args: &[Value]) -> Result<Value, String> {
+fn coroutine_status_fn(_vm_ptr: *mut (), args: &[Value]) -> Result<Value, String> {
+    let _vm = unsafe { &mut *(_vm_ptr as *mut VM) };
     if args.len() != 1 {
         return Err(format!(
             "coroutine_status() takes exactly 1 argument ({} given)",
@@ -448,7 +449,7 @@ fn coroutine_status_fn(_vm: &mut VM, args: &[Value]) -> Result<Value, String> {
 
 // ===== 列表操作函数实现 =====
 
-use crate::runtime::object::ObjList;
+
 
 /// len(list|string|json) -> int
 fn len_fn(args: &[Value]) -> Result<Value, String> {
@@ -597,7 +598,7 @@ fn clone_fn(args: &[Value]) -> Result<Value, String> {
         Value::list(Box::into_raw(new_list))
     } else if let Some(ptr) = args[0].as_string() {
         let s = unsafe { &*ptr };
-        let new_str = Box::new(crate::runtime::object::ObjString::new(s.chars.clone()));
+        let new_str = Box::new(ObjString::new(s.chars.clone()));
         Value::string(Box::into_raw(new_str))
     } else {
         // 其他类型直接复制值
@@ -618,9 +619,6 @@ fn to_i64(value: &Value) -> Result<i64, String> {
 
 // ===== 文件系统函数实现 =====
 
-use std::fs;
-use std::path::Path;
-
 /// read_file(path) -> string
 fn read_file_fn(args: &[Value]) -> Result<Value, String> {
     if args.len() != 1 {
@@ -638,7 +636,7 @@ fn read_file_fn(args: &[Value]) -> Result<Value, String> {
 
     match fs::read_to_string(path) {
         Ok(content) => {
-            let string_obj = Box::new(crate::runtime::object::ObjString::new(content));
+            let string_obj = Box::new(ObjString::new(content));
             Ok(Value::string(Box::into_raw(string_obj)))
         }
         Err(e) => Err(format!("read_file() failed: {}", e)),

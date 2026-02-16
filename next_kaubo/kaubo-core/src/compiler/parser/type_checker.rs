@@ -13,7 +13,7 @@ use super::stmt::{
     WhileStmt,
 };
 use super::type_expr::TypeExpr;
-use crate::runtime::object::ObjShape;
+use crate::core::object::ObjShape;
 use kaubo_log::{trace, Logger};
 use std::collections::HashMap;
 use std::sync::Arc;

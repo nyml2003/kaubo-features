@@ -142,7 +142,7 @@ fn parse_profile(s: &str) -> Result<Profile, String> {
 }
 
 /// 将字节码输出到 stdout（简洁模式，无 DEBUG 日志）
-fn dump_bytecode_to_stdout(chunk: &kaubo_core::runtime::bytecode::chunk::Chunk, name: &str) {
+fn dump_bytecode_to_stdout(chunk: &kaubo_core::Chunk, name: &str) {
     println!("== {} ==", name);
     println!("Constants:");
     for (i, constant) in chunk.constants.iter().enumerate() {

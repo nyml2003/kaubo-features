@@ -1,101 +1,16 @@
 //! 虚拟机实现
 
-use crate::runtime::bytecode::chunk::{Chunk, OperatorTableEntry};
-use crate::runtime::bytecode::OpCode;
-use crate::runtime::object::{
-    CallFrame, CoroutineState, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson,
-    ObjList, ObjModule, ObjShape, ObjStruct, ObjUpvalue,
+use crate::core::{
+    CallFrame, Chunk, CoroutineState, InlineCacheEntry, InterpretResult, ObjClosure, ObjCoroutine,
+    ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule, ObjShape, ObjString, ObjStruct,
+    ObjUpvalue, OpCode, Operator, OperatorTableEntry, Value, VM,
 };
-use crate::runtime::operators::{InlineCacheEntry, Operator};
 use crate::runtime::stdlib::create_stdlib_modules;
-use crate::runtime::Value;
-use kaubo_log::{trace, Logger};
-use std::collections::HashMap;
-use std::sync::Arc;
-
-/// 虚拟机配置
-#[derive(Debug, Clone)]
-pub struct VMConfig {
-    /// 初始栈容量
-    pub initial_stack_size: usize,
-    /// 初始调用帧容量
-    pub initial_frames_capacity: usize,
-    /// 内联缓存容量
-    pub inline_cache_capacity: usize,
-}
-
-impl Default for VMConfig {
-    fn default() -> Self {
-        Self {
-            initial_stack_size: 256,
-            initial_frames_capacity: 64,
-            inline_cache_capacity: 64,
-        }
-    }
-}
-
-/// 解释执行结果
-#[derive(Debug, Clone, PartialEq)]
-pub enum InterpretResult {
-    Ok,
-    CompileError(String),
-    RuntimeError(String),
-}
-
-// CallFrame 已从 object.rs 导入
-
-/// 虚拟机
-pub struct VM {
-    /// 操作数栈（独立于局部变量）
-    stack: Vec<Value>,
-    /// 调用栈
-    frames: Vec<CallFrame>,
-    /// 打开的 upvalues（按地址排序，方便二分查找）
-    open_upvalues: Vec<*mut ObjUpvalue>,
-    /// 全局变量表
-    globals: HashMap<String, Value>,
-    /// Shape 表（编译期生成，运行时注册）
-    shapes: HashMap<u16, *const ObjShape>,
-    /// 内联缓存表（用于运算符重载 Level 2 优化）
-    /// TODO: Phase 3 实现内联缓存
-    #[allow(dead_code)]
-    inline_caches: Vec<InlineCacheEntry>,
-    /// Logger
-    logger: Arc<Logger>,
-}
+// use kaubo_log::{trace, Logger};
 
 impl VM {
-    /// 创建新的虚拟机，并初始化标准库（使用默认配置）
-    pub fn new() -> Self {
-        Self::with_config(VMConfig::default(), Logger::noop())
-    }
-
-    /// 创建新的虚拟机（带 logger，使用默认配置）
-    pub fn with_logger(logger: Arc<Logger>) -> Self {
-        Self::with_config(VMConfig::default(), logger)
-    }
-
-    /// 创建新的虚拟机（带显式配置）
-    ///
-    /// # Arguments
-    /// * `config` - 虚拟机配置
-    /// * `logger` - 日志记录器
-    pub fn with_config(config: VMConfig, logger: Arc<Logger>) -> Self {
-        let mut vm = Self {
-            stack: Vec::with_capacity(config.initial_stack_size),
-            frames: Vec::with_capacity(config.initial_frames_capacity),
-            open_upvalues: Vec::new(),
-            globals: HashMap::new(),
-            shapes: HashMap::new(),
-            inline_caches: Vec::with_capacity(config.inline_cache_capacity),
-            logger,
-        };
-        vm.init_stdlib();
-        vm
-    }
-
     /// 初始化标准库模块
-    fn init_stdlib(&mut self) {
+    pub fn init_stdlib(&mut self) {
         let modules = create_stdlib_modules();
         for (name, module) in modules {
             // 将模块对象转为 Value 并注册到 globals
@@ -168,14 +83,18 @@ impl VM {
     /// 从 Chunk 的 operator_table 注册运算符到 Shape
     fn register_operators_from_chunk(&mut self, chunk: &Chunk) {
         for entry in &chunk.operator_table {
-            let OperatorTableEntry { shape_id, operator_name, const_idx } = entry;
-            
+            let OperatorTableEntry {
+                shape_id,
+                operator_name,
+                const_idx,
+            } = entry;
+
             // 获取函数值
             if let Some(function_value) = chunk.constants.get(*const_idx as usize) {
                 if let Some(function_ptr) = function_value.as_function() {
                     // 创建闭包（运算符方法没有 upvalues）
                     let closure = Box::into_raw(Box::new(ObjClosure::new(function_ptr)));
-                    
+
                     // 获取或创建 Shape
                     let shape_ptr = self.shapes.entry(*shape_id).or_insert_with(|| {
                         // 如果 Shape 不存在，创建一个空的（这不应该发生，但做安全处理）
@@ -186,7 +105,7 @@ impl VM {
                         )));
                         shape
                     });
-                    
+
                     // 注册运算符
                     unsafe {
                         if let Some(op) = Operator::from_method_name(operator_name) {
@@ -214,8 +133,8 @@ impl VM {
             self.advance_ip(1);
             let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
 
-            // VM 执行追踪
-            trace!(self.logger, "execute: {:?}, stack: {:?}", op, self.stack);
+            // VM 执行追踪 (logger removed - now in core)
+            // trace!(logger, "execute: {:?}, stack: {:?}", op, self.stack);
             match op {
                 // ===== 常量加载 =====
                 LoadConst0 => self.push_const(0),
@@ -268,7 +187,7 @@ impl VM {
                 Add => {
                     let cache_idx = self.read_byte();
                     let (a, b) = self.pop_two();
-                    
+
                     // 先尝试基础类型（Level 1）
                     let result = self.add_values(a, b);
                     match result {
@@ -284,7 +203,12 @@ impl VM {
                                     }
                                 } else {
                                     // 缓存未命中，查找并更新缓存
-                                    match self.call_binary_operator_cached(Operator::Add, a, b, cache_idx) {
+                                    match self.call_binary_operator_cached(
+                                        Operator::Add,
+                                        a,
+                                        b,
+                                        cache_idx,
+                                    ) {
                                         Ok(v) => self.push(v),
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
@@ -314,7 +238,12 @@ impl VM {
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
                                 } else {
-                                    match self.call_binary_operator_cached(Operator::Sub, a, b, cache_idx) {
+                                    match self.call_binary_operator_cached(
+                                        Operator::Sub,
+                                        a,
+                                        b,
+                                        cache_idx,
+                                    ) {
                                         Ok(v) => self.push(v),
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
@@ -343,7 +272,12 @@ impl VM {
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
                                 } else {
-                                    match self.call_binary_operator_cached(Operator::Mul, a, b, cache_idx) {
+                                    match self.call_binary_operator_cached(
+                                        Operator::Mul,
+                                        a,
+                                        b,
+                                        cache_idx,
+                                    ) {
                                         Ok(v) => self.push(v),
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
@@ -372,7 +306,12 @@ impl VM {
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
                                 } else {
-                                    match self.call_binary_operator_cached(Operator::Div, a, b, cache_idx) {
+                                    match self.call_binary_operator_cached(
+                                        Operator::Div,
+                                        a,
+                                        b,
+                                        cache_idx,
+                                    ) {
                                         Ok(v) => self.push(v),
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
@@ -401,7 +340,12 @@ impl VM {
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
                                 } else {
-                                    match self.call_binary_operator_cached(Operator::Mod, a, b, cache_idx) {
+                                    match self.call_binary_operator_cached(
+                                        Operator::Mod,
+                                        a,
+                                        b,
+                                        cache_idx,
+                                    ) {
                                         Ok(v) => self.push(v),
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
@@ -471,7 +415,12 @@ impl VM {
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
                                 } else {
-                                    match self.call_binary_operator_cached(Operator::Lt, b, a, cache_idx) {
+                                    match self.call_binary_operator_cached(
+                                        Operator::Lt,
+                                        b,
+                                        a,
+                                        cache_idx,
+                                    ) {
                                         Ok(v) => self.push(v),
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
@@ -502,7 +451,12 @@ impl VM {
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
                                 } else {
-                                    match self.call_binary_operator_cached(Operator::Lt, a, b, cache_idx) {
+                                    match self.call_binary_operator_cached(
+                                        Operator::Lt,
+                                        a,
+                                        b,
+                                        cache_idx,
+                                    ) {
                                         Ok(v) => self.push(v),
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
@@ -533,7 +487,12 @@ impl VM {
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
                                 } else {
-                                    match self.call_binary_operator_cached(Operator::Le, a, b, cache_idx) {
+                                    match self.call_binary_operator_cached(
+                                        Operator::Le,
+                                        a,
+                                        b,
+                                        cache_idx,
+                                    ) {
                                         Ok(v) => self.push(v),
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
@@ -565,7 +524,12 @@ impl VM {
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
                                 } else {
-                                    match self.call_binary_operator_cached(Operator::Le, b, a, cache_idx) {
+                                    match self.call_binary_operator_cached(
+                                        Operator::Le,
+                                        b,
+                                        a,
+                                        cache_idx,
+                                    ) {
                                         Ok(v) => self.push(v),
                                         Err(e) => return InterpretResult::RuntimeError(e),
                                     }
@@ -809,7 +773,7 @@ impl VM {
                         args.reverse();
 
                         // 调用 VM-aware 原生函数，传入 self (VM)
-                        match native_vm.call(self, &args) {
+                        match (native_vm.function)(self as *mut _ as *mut (), &args) {
                             Ok(result) => self.push(result),
                             Err(msg) => return InterpretResult::RuntimeError(msg),
                         }
@@ -821,11 +785,11 @@ impl VM {
                             args.push(self.pop());
                         }
                         args.reverse();
-                        
+
                         // callee 作为 self，args 作为参数
                         let mut all_args = vec![callee];
                         all_args.extend(args);
-                        
+
                         match self.call_callable_operator(Operator::Call, &all_args) {
                             Ok(result) => self.push(result),
                             Err(e) => return InterpretResult::RuntimeError(e),
@@ -1334,7 +1298,7 @@ impl VM {
 
                     // 首先尝试基础类型索引
                     let base_result = self.index_get_base(obj_val, index_val);
-                    
+
                     match base_result {
                         Ok(Some(value)) => {
                             self.push(value);
@@ -1361,7 +1325,7 @@ impl VM {
 
                     // 首先尝试基础类型索引设置
                     let base_result = self.index_set_base(obj_val, key_val, value);
-                    
+
                     match base_result {
                         Ok(true) => {
                             // 基础类型设置成功
@@ -1522,7 +1486,10 @@ impl VM {
                         v
                     } else if let Some(s) = v.as_string() {
                         let s_ref = unsafe { &(*s).chars };
-                        s_ref.parse::<f64>().map(Value::float).unwrap_or(Value::NULL)
+                        s_ref
+                            .parse::<f64>()
+                            .map(Value::float)
+                            .unwrap_or(Value::NULL)
                     } else {
                         Value::NULL
                     };
@@ -1531,17 +1498,22 @@ impl VM {
 
                 CastToString => {
                     let v = self.pop();
-                    
+
                     // 基础类型：直接转换
-                    let result = if v.is_int() || v.is_float() || v.is_bool() || v.is_string() || v.is_null() {
+                    let result = if v.is_int()
+                        || v.is_float()
+                        || v.is_bool()
+                        || v.is_string()
+                        || v.is_null()
+                    {
                         let s = v.to_string();
-                        let string_obj = Box::new(crate::runtime::object::ObjString::new(s));
+                        let string_obj = Box::new(ObjString::new(s));
                         Ok(Value::string(Box::into_raw(string_obj)))
                     } else {
                         // 自定义类型：尝试 operator str
                         self.call_unary_operator(Operator::Str, v)
                     };
-                    
+
                     match result {
                         Ok(v) => self.push(v),
                         Err(e) => return InterpretResult::RuntimeError(e),
@@ -1769,7 +1741,7 @@ impl VM {
         let b2 = self.read_byte();
         u16::from_le_bytes([b1, b2])
     }
-    
+
     /// 从给定指针读取 u16（小端序）
     #[inline]
     fn read_u16_at_ptr(ip: *const u8) -> u16 {
@@ -1833,7 +1805,7 @@ impl VM {
             let a_str = unsafe { &(*ap).chars };
             let b_str = unsafe { &(*bp).chars };
             let concatenated = format!("{}{}", a_str, b_str);
-            let string_obj = Box::new(crate::runtime::object::ObjString::new(concatenated));
+            let string_obj = Box::new(ObjString::new(concatenated));
             return Ok(Value::string(Box::into_raw(string_obj)));
         }
 
@@ -1850,7 +1822,7 @@ impl VM {
         // 检查是否都是数值类型
         let a_is_num = a.is_int() || a.is_float();
         let b_is_num = b.is_int() || b.is_float();
-        
+
         if a_is_num && b_is_num {
             // 回退到浮点数
             let af = if a.is_float() {
@@ -1882,7 +1854,7 @@ impl VM {
 
         let a_is_num = a.is_int() || a.is_float();
         let b_is_num = b.is_int() || b.is_float();
-        
+
         if a_is_num && b_is_num {
             let af = if a.is_float() {
                 a.as_float()
@@ -1912,7 +1884,7 @@ impl VM {
 
         let a_is_num = a.is_int() || a.is_float();
         let b_is_num = b.is_int() || b.is_float();
-        
+
         if a_is_num && b_is_num {
             let af = if a.is_float() {
                 a.as_float()
@@ -1934,7 +1906,7 @@ impl VM {
     fn div_values(&self, a: Value, b: Value) -> Result<Value, String> {
         let a_is_num = a.is_int() || a.is_float();
         let b_is_num = b.is_int() || b.is_float();
-        
+
         if a_is_num && b_is_num {
             // 除法总是返回浮点数（避免整数除法的困惑）
             let af = if a.is_float() {
@@ -1963,11 +1935,11 @@ impl VM {
     fn mod_values(&self, a: Value, b: Value) -> Result<Value, String> {
         let a_is_num = a.is_int() || a.is_float();
         let b_is_num = b.is_int() || b.is_float();
-        
+
         if !a_is_num || !b_is_num {
             return Err("Non-primitive types need operator mod".to_string());
         }
-        
+
         if a_is_num && b_is_num {
             // 优先尝试整数取模
             if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
@@ -2004,11 +1976,11 @@ impl VM {
     fn neg_value(&self, v: Value) -> Result<Value, String> {
         // 检查是否为数值类型
         let is_numeric = v.is_int() || v.is_float();
-        
+
         if !is_numeric {
             return Err("Non-primitive type needs operator neg".to_string());
         }
-        
+
         if let Some(i) = v.as_smi() {
             if i != i32::MIN {
                 // 避免溢出
@@ -2029,11 +2001,11 @@ impl VM {
         // 检查是否都是数值类型
         let a_is_num = a.is_int() || a.is_float();
         let b_is_num = b.is_int() || b.is_float();
-        
+
         if !a_is_num || !b_is_num {
             return Err("Non-primitive types need operator lt".to_string());
         }
-        
+
         let af = if a.is_float() {
             a.as_float()
         } else {
@@ -2062,7 +2034,7 @@ impl VM {
         // 整数索引：列表索引或自定义类型的 operator get
         if let Some(idx) = index_val.as_smi() {
             let i = idx as usize;
-            
+
             // 列表索引（内置类型）
             if let Some(list_ptr) = obj_val.as_list() {
                 let list = unsafe { &*list_ptr };
@@ -2075,45 +2047,47 @@ impl VM {
                 }
                 return Ok(Some(list.get(i).unwrap_or(Value::NULL)));
             }
-            
+
             // 对于自定义 struct，整数索引尝试 operator get（不直接访问字段）
             // 字段访问应该使用 .field_name 或 ["field_name"]
             if obj_val.is_struct() {
                 return Ok(None);
             }
-            
+
             // 整数索引但不匹配任何基础类型，尝试 operator get
             return Ok(None);
         }
-        
+
         // 字符串键：JSON 对象或 struct 字段（struct 字符串键将在 release 版移除）
         if let Some(key_ptr) = index_val.as_string() {
             let key = unsafe { &(*key_ptr).chars };
-            
+
             // JSON 对象索引
             if let Some(json_ptr) = obj_val.as_json() {
                 let json = unsafe { &*json_ptr };
                 return Ok(Some(json.get(key).unwrap_or(Value::NULL)));
             }
-            
+
             // Struct 字段访问（过渡阶段保留，后续只支持 .field）
             if let Some(struct_ptr) = obj_val.as_struct() {
                 let struct_obj = unsafe { &*struct_ptr };
                 let shape = unsafe { &*struct_obj.shape };
-                
+
                 if let Some(field_idx) = shape.get_field_index(key) {
                     return Ok(Some(
-                        struct_obj.get_field(field_idx as usize).unwrap_or(Value::NULL)
+                        struct_obj
+                            .get_field(field_idx as usize)
+                            .unwrap_or(Value::NULL),
                     ));
                 }
                 // 字段名不存在，尝试 operator get
                 return Ok(None);
             }
-            
+
             // 字符串键但不匹配 JSON 或 struct，尝试 operator get
             return Ok(None);
         }
-        
+
         // 其他索引类型，尝试 operator get
         Ok(None)
     }
@@ -2122,25 +2096,30 @@ impl VM {
     /// 返回 Ok(true) - 成功设置值
     /// 返回 Ok(false) - 基础类型不匹配，需要尝试 operator set
     /// 返回 Err(e) - 基础类型处理出错（如索引越界）
-    fn index_set_base(&mut self, obj_val: Value, key_val: Value, value: Value) -> Result<bool, String> {
+    fn index_set_base(
+        &mut self,
+        obj_val: Value,
+        key_val: Value,
+        value: Value,
+    ) -> Result<bool, String> {
         // 字符串键：JSON 对象
         if let Some(key_ptr) = key_val.as_string() {
             let key = unsafe { &(*key_ptr).chars };
-            
+
             if let Some(json_ptr) = obj_val.as_json() {
                 let json = unsafe { &mut *json_ptr };
                 json.set(key.clone(), value);
                 return Ok(true);
             }
-            
+
             // 字符串键但不匹配 JSON，尝试 operator set
             return Ok(false);
         }
-        
+
         // 整数键：列表
         if let Some(idx) = key_val.as_smi() {
             let i = idx as usize;
-            
+
             if let Some(list_ptr) = obj_val.as_list() {
                 let list = unsafe { &mut *list_ptr };
                 if i >= list.len() {
@@ -2153,22 +2132,17 @@ impl VM {
                 list.elements[i] = value;
                 return Ok(true);
             }
-            
+
             // 整数键但不匹配列表，尝试 operator set
             return Ok(false);
         }
-        
+
         // 其他键类型，尝试 operator set
         Ok(false)
     }
 
     /// 调用 operator set（三元运算符）
-    fn call_set_operator(
-        &mut self,
-        obj: Value,
-        index: Value,
-        value: Value,
-    ) -> Result<(), String> {
+    fn call_set_operator(&mut self, obj: Value, index: Value, value: Value) -> Result<(), String> {
         if let Some(closure) = self.find_operator(obj, Operator::Set) {
             return self.call_operator_closure_set(closure, obj, index, value);
         }
@@ -2482,19 +2456,19 @@ impl VM {
     fn get_shape_id(&self, value: Value) -> u16 {
         // 基础类型使用预定义 Shape ID
         if value.is_int() {
-            0  // Int
+            0 // Int
         } else if value.is_float() {
-            1  // Float
+            1 // Float
         } else if value.is_string() {
-            2  // String
+            2 // String
         } else if value.is_list() {
-            3  // List
+            3 // List
         } else if value.is_json() {
-            4  // Json
+            4 // Json
         } else if value.is_closure() {
-            5  // Function/Closure
+            5 // Function/Closure
         } else if value.is_module() {
-            6  // Module
+            6 // Module
         } else if value.is_struct() {
             // Struct 需要动态获取 Shape ID
             if let Some(ptr) = value.as_struct() {
@@ -2539,23 +2513,18 @@ impl VM {
     /// 查找运算符（Level 3：元表查找）
     fn find_operator(&self, value: Value, op: Operator) -> Option<*mut ObjClosure> {
         let shape_id = self.get_shape_id(value);
-        
+
         // 获取 Shape
         if let Some(shape_ptr) = self.shapes.get(&shape_id) {
             let shape = unsafe { &**shape_ptr };
             return shape.get_operator(op);
         }
-        
+
         None
     }
 
     /// 调用二元运算符（带反向运算符回退）
-    fn call_binary_operator(
-        &mut self,
-        op: Operator,
-        a: Value,
-        b: Value,
-    ) -> Result<Value, String> {
+    fn call_binary_operator(&mut self, op: Operator, a: Value, b: Value) -> Result<Value, String> {
         // 1. 尝试左操作数的运算符
         if let Some(closure) = self.find_operator(a, op) {
             return self.call_operator_closure(closure, &[a, b]);
@@ -2577,17 +2546,13 @@ impl VM {
     }
 
     /// 调用 operator call（可调用对象，变长参数）
-    fn call_callable_operator(
-        &mut self,
-        op: Operator,
-        args: &[Value],
-    ) -> Result<Value, String> {
+    fn call_callable_operator(&mut self, op: Operator, args: &[Value]) -> Result<Value, String> {
         if args.is_empty() {
             return Err("call operator requires at least self argument".to_string());
         }
-        
+
         let self_val = args[0];
-        
+
         // 查找 operator call
         if let Some(closure) = self.find_operator(self_val, op) {
             return self.call_operator_closure_varargs(closure, args);
@@ -2613,7 +2578,8 @@ impl VM {
         if func.arity != args.len() as u8 {
             return Err(format!(
                 "Expected {} arguments but got {}",
-                func.arity, args.len()
+                func.arity,
+                args.len()
             ));
         }
 
@@ -2836,8 +2802,13 @@ impl VM {
                 }
 
                 // 栈操作
-                Pop => { self.pop(); }
-                Dup => { let v = self.stack.last().copied().unwrap(); self.push(v); }
+                Pop => {
+                    self.pop();
+                }
+                Dup => {
+                    let v = self.stack.last().copied().unwrap();
+                    self.push(v);
+                }
 
                 // 跳转
                 Jump => {
@@ -2888,25 +2859,31 @@ impl VM {
                             return Err("Field index out of bounds".to_string());
                         }
                     } else {
-                        return Err(format!("Expected struct instance, got {}", self.get_type_name(obj_val)));
+                        return Err(format!(
+                            "Expected struct instance, got {}",
+                            self.get_type_name(obj_val)
+                        ));
                     }
                 }
 
                 IndexGet => {
                     let index_val = self.pop();
                     let obj_val = self.pop();
-                    
+
                     if let Some(idx) = index_val.as_smi() {
                         let i = idx as usize;
-                        
+
                         if let Some(list_ptr) = obj_val.as_list() {
                             let list = unsafe { &*list_ptr };
                             if i >= list.len() {
-                                return Err(format!("Index out of bounds: {} (length {})", i, list.len()));
+                                return Err(format!(
+                                    "Index out of bounds: {} (length {})",
+                                    i,
+                                    list.len()
+                                ));
                             }
                             self.push(list.get(i).unwrap_or(Value::NULL));
-                        }
-                        else if let Some(struct_ptr) = obj_val.as_struct() {
+                        } else if let Some(struct_ptr) = obj_val.as_struct() {
                             let struct_obj = unsafe { &*struct_ptr };
                             if i < struct_obj.field_count() {
                                 self.push(struct_obj.fields[i]);
@@ -2958,7 +2935,7 @@ impl VM {
         args: &[Value],
     ) -> Result<Value, String> {
         use OpCode::*;
-        
+
         // 获取闭包信息
         let closure_ref = unsafe { &*closure };
         let func = unsafe { &*closure_ref.function };
@@ -2966,29 +2943,30 @@ impl VM {
         if func.arity != args.len() as u8 {
             return Err(format!(
                 "Expected {} arguments but got {}",
-                func.arity, args.len()
+                func.arity,
+                args.len()
             ));
         }
 
         // 创建局部变量表（参数）
         let mut locals: Vec<Value> = args.to_vec();
-        
+
         // 执行运算符闭包的字节码
-        
+
         // 创建指令指针
         let mut ip = func.chunk.code.as_ptr();
         let code_end = unsafe { func.chunk.code.as_ptr().add(func.chunk.code.len()) };
-        
+
         // 执行运算符闭包的字节码
         loop {
             if ip >= code_end {
                 return Err("Unexpected end of operator bytecode".to_string());
             }
-            
+
             let instruction = unsafe { *ip };
             ip = unsafe { ip.add(1) };
             let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
-            
+
             match op {
                 LoadConst => {
                     let idx = unsafe { *ip };
@@ -3020,7 +2998,7 @@ impl VM {
                 LoadNull => self.push(Value::NULL),
                 LoadTrue => self.push(Value::TRUE),
                 LoadFalse => self.push(Value::FALSE),
-                
+
                 LoadLocal0 => self.push(locals[0]),
                 LoadLocal1 => self.push(locals[1]),
                 LoadLocal2 => self.push(locals[2]),
@@ -3063,10 +3041,15 @@ impl VM {
                     }
                     locals[2] = val;
                 }
-                
-                Pop => { self.pop(); }
-                Dup => { let v = self.stack.last().copied().unwrap(); self.push(v); }
-                
+
+                Pop => {
+                    self.pop();
+                }
+                Dup => {
+                    let v = self.stack.last().copied().unwrap();
+                    self.push(v);
+                }
+
                 Jump => {
                     let offset = Self::read_i16_at_ptr(ip);
                     ip = unsafe { ip.add(2) };
@@ -3080,30 +3063,30 @@ impl VM {
                         ip = unsafe { ip.offset(offset as isize) };
                     }
                 }
-                
+
                 BuildStruct => {
                     let shape_id = Self::read_u16_at_ptr(ip);
                     ip = unsafe { ip.add(2) };
                     let field_count = unsafe { *ip };
                     ip = unsafe { ip.add(1) };
-                    
+
                     // 编译器按 shape 字段顺序的逆序入栈，所以弹出后直接是正确顺序
                     let mut fields = Vec::with_capacity(field_count as usize);
                     for _ in 0..field_count {
                         fields.push(self.pop());
                     }
                     // 不需要 reverse，编译器已经处理好顺序
-                    
+
                     let shape_ptr = self.get_shape(shape_id);
                     if shape_ptr.is_null() {
                         return Err(format!("Shape ID {} not found", shape_id));
                     }
-                    
+
                     let obj = ObjStruct::new(shape_ptr, fields);
                     let ptr = Box::into_raw(Box::new(obj));
                     self.push(Value::struct_instance(ptr));
                 }
-                
+
                 GetField => {
                     let field_idx = unsafe { *ip };
                     ip = unsafe { ip.add(1) };
@@ -3116,24 +3099,31 @@ impl VM {
                             return Err("Field index out of bounds".to_string());
                         }
                     } else {
-                        return Err(format!("Expected struct instance, got {}", self.get_type_name(obj_val)));
+                        return Err(format!(
+                            "Expected struct instance, got {}",
+                            self.get_type_name(obj_val)
+                        ));
                     }
                 }
-                
+
                 IndexGet => {
                     // 栈顶: [index, object]
                     let index_val = self.pop();
                     let obj_val = self.pop();
-                    
+
                     // 整数索引：List 或 Struct 字段（过渡阶段保留 struct 整数索引）
                     if let Some(idx) = index_val.as_smi() {
                         let i = idx as usize;
-                        
+
                         // List 索引
                         if let Some(list_ptr) = obj_val.as_list() {
                             let list = unsafe { &*list_ptr };
                             if i >= list.len() {
-                                return Err(format!("Index out of bounds: {} (length {})", i, list.len()));
+                                return Err(format!(
+                                    "Index out of bounds: {} (length {})",
+                                    i,
+                                    list.len()
+                                ));
                             }
                             self.push(list.get(i).unwrap_or(Value::NULL));
                         }
@@ -3152,7 +3142,7 @@ impl VM {
                         return Err("Expected integer index".to_string());
                     }
                 }
-                
+
                 Add => {
                     let _cache_idx = unsafe { *ip };
                     ip = unsafe { ip.add(1) };
@@ -3205,7 +3195,7 @@ impl VM {
                     // 在 operator str 中，假设输入已经是基础类型
                     // 直接转换为字符串
                     let s = v.to_string();
-                    let string_obj = Box::new(crate::runtime::object::ObjString::new(s));
+                    let string_obj = Box::new(ObjString::new(s));
                     self.push(Value::string(Box::into_raw(string_obj)));
                 }
                 Less => {
@@ -3218,14 +3208,14 @@ impl VM {
                         Err(e) => return Err(e),
                     }
                 }
-                
+
                 ReturnValue => {
                     return Ok(self.pop());
                 }
                 Return => {
                     return Ok(Value::NULL);
                 }
-                
+
                 _ => {
                     return Err(format!("Unsupported opcode in operator: {:?}", op));
                 }
@@ -3243,11 +3233,16 @@ impl VM {
     }
 
     /// 获取内联缓存条目（如果匹配）
-    fn inline_cache_get(&self, cache_idx: u8, left: Value, right: Value) -> Option<*mut ObjClosure> {
+    fn inline_cache_get(
+        &self,
+        cache_idx: u8,
+        left: Value,
+        right: Value,
+    ) -> Option<*mut ObjClosure> {
         let cache = self.inline_caches.get(cache_idx as usize)?;
         let left_shape = self.get_shape_id(left);
         let right_shape = self.get_shape_id(right);
-        
+
         if cache.matches(left_shape, right_shape) {
             Some(cache.closure)
         } else {
@@ -3256,7 +3251,13 @@ impl VM {
     }
 
     /// 更新内联缓存
-    fn inline_cache_update(&mut self, cache_idx: u8, left: Value, right: Value, closure: *mut ObjClosure) {
+    fn inline_cache_update(
+        &mut self,
+        cache_idx: u8,
+        left: Value,
+        right: Value,
+        closure: *mut ObjClosure,
+    ) {
         // 先计算 shape_id，避免借用冲突
         let left_shape = self.get_shape_id(left);
         let right_shape = self.get_shape_id(right);
@@ -3313,12 +3314,6 @@ impl VM {
         let instruction = unsafe { *frame.ip };
         let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
         println!("{:04} {:?}", offset, op);
-    }
-}
-
-impl Default for VM {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

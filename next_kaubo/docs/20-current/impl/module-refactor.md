@@ -1,162 +1,64 @@
 # 模块架构重构设计
 
-> 目标：明确模块边界，消除循环依赖，建立清晰的三层架构
+## 问题分析
 
----
-
-## 现状问题
-
+当前循环依赖：
 ```
-当前混乱的依赖关系：
-┌─────────────────────────────────────────────────────────┐
-│  kaubo-core/src/                                        │
-│  ├── compiler/lexer/lexer.rs  ──→ kit/lexer/CharStream  │
-│  ├── compiler/parser/parser.rs ──→ kit/lexer/scanner    │
-│  ├── runtime/compiler.rs      ──→ runtime::Value        │
-│  ├── runtime/object.rs        ──→ crate::runtime::VM    │
-│  └── runtime/bytecode/chunk.rs ──→ runtime::Value       │
-└─────────────────────────────────────────────────────────┘
+Value → ObjXxx (通过 as_function 等方法)
+ObjUpvalue → Value (closed: Option<Value>)
+ObjList → Value (elements: Vec<Value>)
+Chunk → Value (constants: Vec<Value>)
+ObjFunction → Chunk
 ```
 
-**问题清单**：
-1. 公共类型（Value, Chunk, VM）散落在各子模块
-2. 模块间直接交叉依赖，没有统一抽象层
-3. `pub use` 重新导出混乱，外部难以知道该用哪个路径
-4. 内部实现细节（如 KauboScanner）被不必要地公开
+## 解耦策略：类型定义与实现分离
 
----
-
-## 目标架构
-
-### 三层架构
-
+### Core 层（纯类型定义）
 ```
-┌─────────────────────────────────────────────────────────┐
-│ Layer 3: API 层 (kaubo-api)                              │
-│ - 统一入口：run(), compile()                              │
-│ - 配置聚合：RunConfig                                     │
-│ - 错误封装：KauboError                                    │
-└─────────────────────────────────────────────────────────┘
-                            ↑
-┌─────────────────────────────────────────────────────────┐
-│ Layer 2: 核心类型层 (kaubo-core::core)                   │
-│ 仅包含数据结构和类型定义，无业务逻辑                      │
-│ - value.rs: Value, ValueType                             │
-│ - bytecode.rs: Chunk, OpCode                             │
-│ - vm.rs: InterpretResult, VMConfig                       │
-│ - object.rs: ObjShape, ObjXxx                            │
-│ - error.rs: LexerError, ParserError, TypeError          │
-└─────────────────────────────────────────────────────────┘
-                            ↑
-┌─────────────────────────────────────────────────────────┐
-│ Layer 1: 实现层                                          │
-│ 只依赖 core，模块间不直接依赖                            │
-│ ├── lexer/     (核心: Lexer, SourcePosition)             │
-│ ├── parser/    (核心: Parser, Module)                    │
-│ ├── compiler/  (核心: Compiler, CompileError)            │
-│ └── runtime/   (核心: VM, Chunk)                         │
-└─────────────────────────────────────────────────────────┘
+core/
+  mod.rs       # 统一导出
+  value.rs     # Value 结构体 + Tag 常量
+  object.rs    # ObjXxx 类型定义（字段只有原始类型/Box）
+  bytecode.rs  # Chunk, OpCode
+  vm.rs        # VM, InterpretResult, VMConfig
+  error.rs     # 错误类型
 ```
 
-### 依赖规则
-
-| 规则 | 说明 |
-|------|------|
-| **单向依赖** | 实现层 → core → API，禁止反向依赖 |
-| **同层隔离** | lexer/parser/compiler/runtime 互不直接依赖 |
-| **核心无逻辑** | core 只放数据结构，无方法实现 |
-| **内部私有** | 实现细节用 `pub(crate)` 或 `mod` |
-
----
-
-## 实施步骤
-
-### Phase 1: 创建 core 模块
-
-1. 新建 `kaubo-core/src/core/` 目录
-2. 迁移类型：
-   - `runtime/value.rs` → `core/value.rs`
-   - `runtime/bytecode/` → `core/bytecode.rs`
-   - `runtime/vm.rs` (VMConfig, InterpretResult) → `core/vm.rs`
-   - `runtime/object.rs` (ObjXxx) → `core/object.rs`
-   - `kit/lexer/error.rs` (LexerError) → `core/error.rs`
-   - `compiler/parser/error.rs` (ParserError) → `core/error.rs`
-   - `compiler/parser/type_checker.rs` (TypeError) → `core/error.rs`
-
-### Phase 2: 更新内部依赖
-
-1. 所有 `use crate::runtime::Value` → `use crate::core::Value`
-2. 所有 `use crate::runtime::bytecode::Chunk` → `use crate::core::bytecode::Chunk`
-3. 所有 `use crate::kit::lexer::LexerError` → `use crate::core::error::LexerError`
-
-### Phase 3: 收敛导出
-
-**kaubo-core/src/lib.rs**:
-```rust
-// 核心类型统一导出
-pub use core::{
-    bytecode::{Chunk, OpCode},
-    error::{LexerError, ParserError, TypeError, CompileError},
-    object::ObjShape,
-    value::Value,
-    vm::{InterpretResult, VM, VMConfig},
-};
-
-// 实现模块按需导出
-pub mod lexer {
-    pub use crate::lexer::{Lexer, SourcePosition, SourceSpan};
-}
-pub mod parser {
-    pub use crate::parser::{Parser, Module, TypeChecker};
-}
-// ... 其他模块
+### Runtime 层（实现）
+```
+runtime/
+  mod.rs           # 重新导出 core 类型
+  value_impl.rs    # Value 方法实现（as_xxx, is_xxx, 运算）
+  object_impl.rs   # ObjXxx 方法实现
+  vm_impl.rs       # VM 执行逻辑
+  operators.rs     # 运算符实现
+  gc.rs            # 垃圾回收
 ```
 
-### Phase 4: 清理冗余
+## 关键设计决策
 
-1. 删除原位置的类型定义
-2. 删除不必要的 `pub use` 重新导出
-3. 将内部实现标记为 `pub(crate)`
+### 1. Value 与 ObjXxx 解耦
+- Core 层：Value 只存储 `u64`，ObjXxx 使用 `*mut T` 或 `Box<T>`
+- Runtime 层：通过 `impl Value { pub fn as_string(&self) -> Option<*mut ObjString> {...} }` 添加方法
 
----
+### 2. Chunk 依赖 Value
+- Chunk.constants 使用 `Vec<Value>` 是可以的，因为 Value 在 Core 层是完整的类型
 
-## 文件变更清单
+### 3. ObjUpvalue 处理
+- `closed: Option<Value>` 保留，因为 Value 是完整的类型
+- 指针字段 `location: *mut Value` 也保留
 
-| 原位置 | 新位置 | 说明 |
-|--------|--------|------|
-| `runtime/value.rs` | `core/value.rs` | Value 类型 |
-| `runtime/bytecode/mod.rs` | `core/bytecode.rs` | Chunk, OpCode |
-| `runtime/bytecode/chunk.rs` | 合并到 `core/bytecode.rs` | 简化 |
-| `runtime/object.rs` | `core/object.rs` | ObjXxx 类型 |
-| `runtime/vm.rs` (部分) | `core/vm.rs` | VMConfig, InterpretResult |
-| `kit/lexer/error.rs` | `core/error.rs` | LexerError |
-| `compiler/parser/error.rs` | `core/error.rs` | ParserError |
-| `compiler/parser/type_checker.rs` (TypeError) | `core/error.rs` | TypeError |
-| `runtime/compiler.rs` (CompileError) | `core/error.rs` | CompileError |
+## 迁移步骤
 
----
+1. **创建 core/object.rs** - 移动所有 ObjXxx 定义
+2. **创建 core/value.rs** - 移动 Value 定义和基础构造
+3. **创建 core/bytecode.rs** - 移动 Chunk 和 OpCode
+4. **创建 core/vm.rs** - 移动 VM 定义
+5. **创建 core/error.rs** - 移动错误类型
+6. **更新 runtime/** - 保留实现，改为 `use crate::core::*`
+7. **更新 lib.rs** - 重新组织导出
 
-## 风险与缓解
+## 兼容性
 
-| 风险 | 缓解措施 |
-|------|----------|
-| 改动文件过多 | 一次性完成，不拆分提交 |
-| 测试失效 | 每步都运行 `cargo test --workspace` |
-| API 破坏 | kaubo-api 层保持兼容，只改内部 |
-| 性能影响 | 仅移动代码，无逻辑变更 |
-
----
-
-## 成功标准
-
-- [ ] `cargo build --workspace` 无警告
-- [ ] `cargo test --workspace` 全部通过
-- [ ] `kaubo-core/src/lib.rs` 导出不超过 20 个类型
-- [ ] 各实现模块无直接交叉依赖
-- [ ] 文档测试通过
-
----
-
-## 相关文档
-
-- [技术债务](../tech-debt/README.md) - 记录重构决策
+- 外部使用 `kaubo_core::Value` 不变
+- 内部使用 `crate::core::Value` 或 `crate::Value`（通过 runtime/mod.rs 重新导出）

@@ -4,9 +4,8 @@ use crate::compiler::lexer::token_kind::KauboTokenKind;
 use crate::compiler::parser::expr::{FunctionCall, Lambda, VarRef};
 use crate::compiler::parser::stmt::{ForStmt, IfStmt, ModuleStmt, WhileStmt};
 use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind, TypeExpr};
-use crate::runtime::{
-    bytecode::chunk::{Chunk, MethodTableEntry, OperatorTableEntry},
-    bytecode::OpCode,
+use crate::core::{
+    Chunk, MethodTableEntry, OperatorTableEntry, OpCode,
     object::{ObjFunction, ObjString},
     Value,
 };
@@ -428,7 +427,7 @@ impl Compiler {
 
                 // 创建函数对象
                 let arity = lambda.params.len() as u8;
-                let function = Box::new(crate::runtime::object::ObjFunction::new(
+                let function = Box::new(crate::core::object::ObjFunction::new(
                     method_compiler.chunk.clone(),
                     arity,
                     Some(function_name),
@@ -1698,8 +1697,8 @@ mod tests {
     use super::*;
     use crate::compiler::lexer::builder::build_lexer;
     use crate::compiler::parser::parser::Parser;
-    use crate::runtime::{InterpretResult, VM};
-    use crate::runtime::object::ObjShape;
+    use crate::core::{InterpretResult, VM};
+    use crate::core::object::ObjShape;
 
     fn compile_code(code: &str) -> Result<(Chunk, usize, HashMap<String, (u16, Vec<String>)>), CompileError> {
         let mut lexer = build_lexer();

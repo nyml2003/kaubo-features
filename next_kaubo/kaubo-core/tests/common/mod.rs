@@ -49,6 +49,7 @@ pub fn run_code(code: &str) -> Result<ExecResult, ExecError> {
 
     // 执行
     let mut vm = VM::new();
+    vm.init_stdlib();
 
     // 注册 shapes
     for shape in &shapes {

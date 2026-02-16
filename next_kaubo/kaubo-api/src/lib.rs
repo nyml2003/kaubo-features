@@ -15,9 +15,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use kaubo_core::lexer::{build_lexer_with_config, LexerConfig as CoreLexerConfig};
-use kaubo_core::parser::{Module, Parser, TypeChecker};
-use kaubo_core::utils::Lexer;
-use kaubo_core::{Chunk, InterpretResult, ObjShape, VM, VMConfig};
+use kaubo_core::parser::{Parser, TypeChecker};
+use kaubo_core::{Chunk, InterpretResult, VMConfig, VM};
 
 // 编译器内部函数（临时，待移到 kaubo-core 公共 API）
 use kaubo_core::kit::lexer::LexerError;
@@ -50,7 +49,7 @@ pub fn run(source: &str, config: &RunConfig) -> Result<ExecuteOutput, KauboError
 
     // Optional: dump bytecode
     if config.dump_bytecode {
-        compiled.chunk.disassemble("main");
+        // compiled.chunk.disassemble("main");  // TODO: 需要重新实现
     }
 
     // Execute
@@ -108,12 +107,14 @@ fn execute_with_config(
     shapes: &[kaubo_core::ObjShape],
     config: &RunConfig,
 ) -> Result<ExecuteOutput, KauboError> {
+    // 使用配置创建 VM 并初始化标准库
     let vm_config = VMConfig {
         initial_stack_size: config.vm.initial_stack_size,
         initial_frames_capacity: config.vm.initial_frames_capacity,
         inline_cache_capacity: config.vm.inline_cache_capacity,
     };
-    let mut vm = VM::with_config(vm_config, config.logger.clone());
+    let mut vm = VM::with_config(vm_config);
+    vm.init_stdlib();
 
     // 注册所有 shapes 到 VM
     for shape in shapes {
@@ -158,8 +159,9 @@ pub fn compile_ast(
         .map(|s| (s.name.clone(), (s.shape_id, s.field_names.clone())))
         .collect();
 
-    let (chunk, local_count) = compile_with_struct_info_and_logger(ast, struct_infos, logger.clone())
-        .map_err(|e| KauboError::Compiler(format!("{:?}", e)))?;
+    let (chunk, local_count) =
+        compile_with_struct_info_and_logger(ast, struct_infos, logger.clone())
+            .map_err(|e| KauboError::Compiler(format!("{:?}", e)))?;
 
     debug!(
         logger,
