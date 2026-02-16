@@ -6,14 +6,47 @@ use crate::kit::lexer::Lexer;
 use kaubo_log::Logger;
 use std::sync::Arc;
 
-/// 创建新的 Lexer
-pub fn build_lexer() -> Lexer {
-    Lexer::new(102400) // 100KB 缓存，支持更大文件
+/// 默认缓冲区大小：100KB
+pub const DEFAULT_BUFFER_SIZE: usize = 102400;
+
+/// Lexer 配置
+#[derive(Debug, Clone)]
+pub struct LexerConfig {
+    /// 输入缓冲区大小（字节）
+    pub buffer_size: usize,
 }
 
-/// 创建新的 Lexer（带 logger）
-pub fn build_lexer_with_logger(logger: Arc<Logger>) -> Lexer {
-    Lexer::with_logger(102400, logger)
+impl Default for LexerConfig {
+    fn default() -> Self {
+        Self {
+            buffer_size: DEFAULT_BUFFER_SIZE,
+        }
+    }
+}
+
+/// 创建新的 Lexer（使用默认配置，向后兼容）
+///
+/// 仅用于测试和简单场景。生产代码应使用 `build_lexer_with_config`。
+pub fn build_lexer() -> Lexer {
+    Lexer::new(DEFAULT_BUFFER_SIZE)
+}
+
+/// 创建新的 Lexer（带显式配置）
+///
+/// # Arguments
+/// * `config` - Lexer 配置
+/// * `logger` - 日志记录器
+///
+/// # Example
+/// ```
+/// use kaubo_core::compiler::lexer::builder::{build_lexer_with_config, LexerConfig};
+/// use kaubo_log::Logger;
+///
+/// let config = LexerConfig { buffer_size: 102400 };
+/// let lexer = build_lexer_with_config(&config, Logger::noop());
+/// ```
+pub fn build_lexer_with_config(config: &LexerConfig, logger: Arc<Logger>) -> Lexer {
+    Lexer::with_logger(config.buffer_size, logger)
 }
 
 #[cfg(test)]

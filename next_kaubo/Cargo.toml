@@ -37,12 +37,3 @@ license = "MIT"
 [lib]
 name = "kaubo_workspace"
 path = "src/lib.rs"
-
-# 测试覆盖率配置 (cargo-tarpaulin)
-[profile.test]
-opt-level = 0
-debug = true
-
-[package.metadata.tarpaulin]
-out = ["Html", "Xml"]
-output-dir = "target/tarpaulin"

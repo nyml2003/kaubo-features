@@ -1,10 +1,12 @@
 //! AST → Bytecode 编译器
 
+use crate::compiler::lexer::token_kind::KauboTokenKind;
 use crate::compiler::parser::expr::{FunctionCall, Lambda, VarRef};
 use crate::compiler::parser::stmt::{ForStmt, IfStmt, ModuleStmt, WhileStmt};
 use crate::compiler::parser::{Binary, Expr, ExprKind, Module, Stmt, StmtKind, TypeExpr};
 use crate::runtime::{
-    bytecode::{chunk::Chunk, OpCode},
+    bytecode::chunk::{Chunk, MethodTableEntry, OperatorTableEntry},
+    bytecode::OpCode,
     object::{ObjFunction, ObjString},
     Value,
 };
@@ -360,8 +362,6 @@ impl Compiler {
         &mut self,
         impl_stmt: &crate::compiler::parser::stmt::ImplStmt,
     ) -> Result<(), CompileError> {
-        use crate::compiler::parser::expr::ExprKind;
-        use crate::runtime::bytecode::chunk::{MethodTableEntry, OperatorTableEntry};
 
         // 获取 shape_id（必须在 struct_infos 中存在）
         let shape_id = self
@@ -521,8 +521,8 @@ impl Compiler {
             ExprKind::Unary(un) => {
                 self.compile_expr(&un.operand)?;
                 let op = match un.op {
-                    crate::compiler::lexer::token_kind::KauboTokenKind::Minus => OpCode::Neg,
-                    crate::compiler::lexer::token_kind::KauboTokenKind::Not => OpCode::Not,
+                    KauboTokenKind::Minus => OpCode::Neg,
+                    KauboTokenKind::Not => OpCode::Not,
                     _ => return Err(CompileError::InvalidOperator),
                 };
                 self.chunk.write_op(op, 0);
@@ -760,8 +760,6 @@ impl Compiler {
 
     /// 编译二元运算
     fn compile_binary(&mut self, bin: &Binary) -> Result<(), CompileError> {
-        use crate::compiler::lexer::token_kind::KauboTokenKind;
-
         // 特殊处理赋值运算符：=
         if bin.op == KauboTokenKind::Equal {
             return self.compile_assignment(&bin.left, &bin.right);
@@ -1453,8 +1451,6 @@ impl Compiler {
         &mut self,
         import_stmt: &crate::compiler::parser::stmt::ImportStmt,
     ) -> Result<(), CompileError> {
-        use crate::runtime::object::ObjString;
-
         // 检查模块是否存在（同文件内模块或标准库模块）
         let module_name = &import_stmt.module_path;
 

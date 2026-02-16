@@ -11,7 +11,8 @@ use std::process;
 mod platform;
 
 use crate::platform::print_error_with_source;
-use kaubo_api::{init_config, KauboConfig, Profile, RunConfig, Value};
+use kaubo_api::{compile_with_config, init_config, run, KauboConfig, Profile, RunConfig, Value};
+use kaubo_core::runtime::bytecode::OpCode;
 
 #[derive(Parser)]
 #[command(
@@ -141,8 +142,6 @@ fn parse_profile(s: &str) -> Result<Profile, String> {
 
 /// 将字节码输出到 stdout（简洁模式，无 DEBUG 日志）
 fn dump_bytecode_to_stdout(chunk: &kaubo_core::runtime::bytecode::chunk::Chunk, name: &str) {
-    use kaubo_core::runtime::bytecode::OpCode;
-    
     println!("== {} ==", name);
     println!("Constants:");
     for (i, constant) in chunk.constants.iter().enumerate() {
@@ -261,8 +260,6 @@ fn dump_bytecode_to_stdout(chunk: &kaubo_core::runtime::bytecode::chunk::Chunk, 
 }
 
 fn handle_compile_only(source: &str, config: RunConfig) {
-    use kaubo_api::compile_with_config;
-
     if config.show_steps {
         println!("[Compilation]");
     }
@@ -294,8 +291,6 @@ fn handle_compile_only(source: &str, config: RunConfig) {
 }
 
 fn handle_run(source: &str, config: RunConfig) {
-    use kaubo_api::run;
-
     if config.show_steps {
         println!("[Execution]");
     }

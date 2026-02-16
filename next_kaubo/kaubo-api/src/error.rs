@@ -7,6 +7,9 @@ use thiserror::Error;
 /// 词法错误（结构化）
 pub use kaubo_core::kit::lexer::LexerError;
 
+/// ErrorLocation 重新导出
+use kaubo_core::compiler::parser::error::ErrorLocation;
+
 /// 语法错误（结构化）
 pub use kaubo_core::compiler::parser::error::ParserError;
 
@@ -41,7 +44,6 @@ pub enum KauboError {
 fn location_to_tuple(
     loc: &kaubo_core::compiler::parser::error::ErrorLocation,
 ) -> (&'static str, Option<usize>, Option<usize>) {
-    use kaubo_core::compiler::parser::error::ErrorLocation;
     match loc {
         ErrorLocation::At(coord) => ("at", Some(coord.line), Some(coord.column)),
         ErrorLocation::After(coord) => ("after", Some(coord.line), Some(coord.column)),
@@ -53,7 +55,6 @@ fn location_to_tuple(
 impl KauboError {
     /// 获取错误行号（如果有）
     pub fn line(&self) -> Option<usize> {
-        use kaubo_core::compiler::parser::error::ErrorLocation;
         match self {
             KauboError::Lexer(e) => Some(e.line()),
             KauboError::Parser(e) => e.line(),
@@ -73,7 +74,6 @@ impl KauboError {
 
     /// 获取错误列号（如果有）
     pub fn column(&self) -> Option<usize> {
-        use kaubo_core::compiler::parser::error::ErrorLocation;
         match self {
             KauboError::Lexer(e) => Some(e.column()),
             KauboError::Parser(e) => e.column(),

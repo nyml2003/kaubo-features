@@ -6,7 +6,7 @@ use kaubo_config::{
     CompilerConfig, KauboConfig, LexerConfig, LimitConfig, LogLevel, Profile,
     VmConfig, CoroutineConfig,
 };
-use kaubo_log::Logger;
+use kaubo_log::{LogConfig, Level as LogLevelKaubo, Logger};
 use once_cell::sync::OnceCell;
 use std::sync::Arc;
 
@@ -112,8 +112,6 @@ impl RunConfig {
 
 /// Create a logger from logging configuration
 fn create_logger(config: &kaubo_config::LoggingConfig) -> Arc<Logger> {
-    use kaubo_log::{LogConfig, Level as LogLevelKaubo};
-    
     let level = match config.level {
         LogLevel::Error => LogLevelKaubo::Error,
         LogLevel::Warn => LogLevelKaubo::Warn,

@@ -7,6 +7,7 @@ use super::expr::{
     Binary, Expr, ExprKind, FunctionCall, IndexAccess, Lambda, MemberAccess, StructLiteral, Unary,
     VarRef,
 };
+use crate::compiler::lexer::token_kind::KauboTokenKind;
 use super::stmt::{
     BlockStmt, ForStmt, IfStmt, ImplStmt, ReturnStmt, Stmt, StmtKind, StructStmt, VarDeclStmt,
     WhileStmt,
@@ -590,8 +591,6 @@ impl TypeChecker {
 
     /// 检查二元表达式
     fn check_binary(&mut self, binary: &Binary) -> TypeCheckResult<Option<TypeExpr>> {
-        use super::super::lexer::token_kind::KauboTokenKind;
-
         let left_type = self.check_expression(&binary.left)?;
         let right_type = self.check_expression(&binary.right)?;
 
@@ -636,8 +635,6 @@ impl TypeChecker {
 
     /// 检查一元表达式
     fn check_unary(&mut self, unary: &Unary) -> TypeCheckResult<Option<TypeExpr>> {
-        use super::super::lexer::token_kind::KauboTokenKind;
-
         let operand_type = self.check_expression(&unary.operand)?;
 
         match unary.op {

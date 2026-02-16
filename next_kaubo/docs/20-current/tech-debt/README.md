@@ -135,6 +135,33 @@ pub struct InlineCacheEntry {
 let mut next_shape_id: u16 = 100;
 ```
 
+### 配置未落实问题（2026-02-16）
+
+**问题**：多个组件硬编码配置值，未使用配置系统
+
+#### 1. Lexer builder
+**修复前**：`build_lexer()` 硬编码 `102400` 缓冲区大小
+
+**修复后**：
+- 收敛为单一入口 `build_lexer_with_config(&LexerConfig, logger)`
+- 保留 `build_lexer()` 仅用于测试（向后兼容）
+
+#### 2. VM 初始化
+**修复前**：`VM::with_logger()` 硬编码：
+- `stack: Vec::with_capacity(256)`
+- `frames: Vec::with_capacity(64)`
+- `inline_caches: Vec::with_capacity(64)`
+
+**修复后**：
+- 新增 `VMConfig` 结构体
+- 使用 `VM::with_config(VMConfig, logger)`
+- `kaubo-api` 传入 `config.vm.*` 值
+
+**相关文件**：
+- `kaubo-core/src/compiler/lexer/builder.rs`
+- `kaubo-core/src/runtime/vm.rs`
+- `kaubo-api/src/lib.rs`
+
 ---
 
 ## 相关文档

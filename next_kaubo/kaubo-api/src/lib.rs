@@ -11,9 +11,15 @@
 extern crate alloc;
 
 use kaubo_log::{debug, info, Logger};
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use kaubo_core::compiler::lexer::builder::{build_lexer_with_config, LexerConfig as CoreLexerConfig};
+use kaubo_core::compiler::parser::parser::Parser;
+use kaubo_core::compiler::parser::TypeChecker;
 use kaubo_core::runtime::bytecode::chunk::Chunk;
+use kaubo_core::runtime::compiler::compile_with_struct_info_and_logger;
+use kaubo_core::runtime::vm::VMConfig;
 use kaubo_core::runtime::{InterpretResult, VM};
 
 // Re-export config
@@ -65,11 +71,10 @@ pub fn run(source: &str, config: &RunConfig) -> Result<ExecuteOutput, KauboError
 
 /// Compile with explicit configuration
 pub fn compile_with_config(source: &str, config: &RunConfig) -> Result<CompileOutput, KauboError> {
-    use kaubo_core::compiler::lexer::builder::build_lexer_with_logger;
-    use kaubo_core::compiler::parser::parser::Parser;
-    use kaubo_core::compiler::parser::TypeChecker;
-
-    let mut lexer = build_lexer_with_logger(config.logger.clone());
+    let core_lexer_config = CoreLexerConfig {
+        buffer_size: config.lexer.buffer_size,
+    };
+    let mut lexer = build_lexer_with_config(&core_lexer_config, config.logger.clone());
     lexer.feed(source.as_bytes()).map_err(|e| {
         LexerError::from_stream_error(e, kaubo_core::kit::lexer::SourcePosition::start())
     })?;
@@ -107,7 +112,12 @@ fn execute_with_config(
     shapes: &[kaubo_core::runtime::object::ObjShape],
     config: &RunConfig,
 ) -> Result<ExecuteOutput, KauboError> {
-    let mut vm = VM::with_logger(config.logger.clone());
+    let vm_config = VMConfig {
+        initial_stack_size: config.vm.initial_stack_size,
+        initial_frames_capacity: config.vm.initial_frames_capacity,
+        inline_cache_capacity: config.vm.inline_cache_capacity,
+    };
+    let mut vm = VM::with_config(vm_config, config.logger.clone());
 
     // 注册所有 shapes 到 VM
     for shape in shapes {
@@ -144,9 +154,6 @@ pub fn compile_ast(
     shapes: Vec<kaubo_core::runtime::object::ObjShape>,
     logger: Arc<Logger>,
 ) -> Result<CompileOutput, KauboError> {
-    use kaubo_core::runtime::compiler::compile_with_struct_info_and_logger;
-    use std::collections::HashMap;
-
     info!(logger, "Starting compiler");
 
     // 创建 struct name -> (shape_id, field_names) 映射

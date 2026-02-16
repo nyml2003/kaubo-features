@@ -6,7 +6,7 @@
 //! - 扁平化设计：所有函数直接放在 std 下，不嵌套
 //! - 启动时自动注册到 globals
 
-use crate::runtime::object::{ObjModule, ObjNativeVm};
+use crate::runtime::object::{ObjModule, ObjNative, ObjNativeVm};
 use crate::runtime::Value;
 use crate::runtime::VM;
 use std::collections::HashMap;
@@ -115,7 +115,6 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
 
 /// 辅助函数：创建原生函数 Value
 fn create_native_value(func: NativeFn, name: &str, arity: u8) -> Value {
-    use crate::runtime::object::ObjNative;
     let native = Box::new(ObjNative::new(func, name.to_string(), arity));
     Value::native_fn(Box::into_raw(native))
 }

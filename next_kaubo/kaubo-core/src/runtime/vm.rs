@@ -1,15 +1,38 @@
 //! 虚拟机实现
 
-use crate::runtime::bytecode::{chunk::Chunk, OpCode};
+use crate::runtime::bytecode::chunk::{Chunk, OperatorTableEntry};
+use crate::runtime::bytecode::OpCode;
 use crate::runtime::object::{
     CallFrame, CoroutineState, ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson,
     ObjList, ObjModule, ObjShape, ObjStruct, ObjUpvalue,
 };
 use crate::runtime::operators::{InlineCacheEntry, Operator};
+use crate::runtime::stdlib::create_stdlib_modules;
 use crate::runtime::Value;
 use kaubo_log::{trace, Logger};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// 虚拟机配置
+#[derive(Debug, Clone)]
+pub struct VMConfig {
+    /// 初始栈容量
+    pub initial_stack_size: usize,
+    /// 初始调用帧容量
+    pub initial_frames_capacity: usize,
+    /// 内联缓存容量
+    pub inline_cache_capacity: usize,
+}
+
+impl Default for VMConfig {
+    fn default() -> Self {
+        Self {
+            initial_stack_size: 256,
+            initial_frames_capacity: 64,
+            inline_cache_capacity: 64,
+        }
+    }
+}
 
 /// 解释执行结果
 #[derive(Debug, Clone, PartialEq)]
@@ -42,20 +65,29 @@ pub struct VM {
 }
 
 impl VM {
-    /// 创建新的虚拟机，并初始化标准库
+    /// 创建新的虚拟机，并初始化标准库（使用默认配置）
     pub fn new() -> Self {
-        Self::with_logger(Logger::noop())
+        Self::with_config(VMConfig::default(), Logger::noop())
     }
 
-    /// 创建新的虚拟机（带 logger）
+    /// 创建新的虚拟机（带 logger，使用默认配置）
     pub fn with_logger(logger: Arc<Logger>) -> Self {
+        Self::with_config(VMConfig::default(), logger)
+    }
+
+    /// 创建新的虚拟机（带显式配置）
+    ///
+    /// # Arguments
+    /// * `config` - 虚拟机配置
+    /// * `logger` - 日志记录器
+    pub fn with_config(config: VMConfig, logger: Arc<Logger>) -> Self {
         let mut vm = Self {
-            stack: Vec::with_capacity(256),
-            frames: Vec::with_capacity(64),
+            stack: Vec::with_capacity(config.initial_stack_size),
+            frames: Vec::with_capacity(config.initial_frames_capacity),
             open_upvalues: Vec::new(),
             globals: HashMap::new(),
             shapes: HashMap::new(),
-            inline_caches: Vec::with_capacity(64),
+            inline_caches: Vec::with_capacity(config.inline_cache_capacity),
             logger,
         };
         vm.init_stdlib();
@@ -64,8 +96,6 @@ impl VM {
 
     /// 初始化标准库模块
     fn init_stdlib(&mut self) {
-        use crate::runtime::stdlib::create_stdlib_modules;
-
         let modules = create_stdlib_modules();
         for (name, module) in modules {
             // 将模块对象转为 Value 并注册到 globals
@@ -137,8 +167,6 @@ impl VM {
 
     /// 从 Chunk 的 operator_table 注册运算符到 Shape
     fn register_operators_from_chunk(&mut self, chunk: &Chunk) {
-        use crate::runtime::bytecode::chunk::OperatorTableEntry;
-        
         for entry in &chunk.operator_table {
             let OperatorTableEntry { shape_id, operator_name, const_idx } = entry;
             
