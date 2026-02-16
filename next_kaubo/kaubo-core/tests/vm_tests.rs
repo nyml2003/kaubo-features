@@ -637,6 +637,7 @@ fn test_float_arithmetic() {
 }
 
 #[test]
+#[allow(clippy::approximate_constant)]
 fn test_float_literal() {
     // 测试浮点数字面量
     let code = r#"

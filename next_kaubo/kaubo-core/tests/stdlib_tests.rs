@@ -132,7 +132,7 @@ fn test_std_pi() {
     )
     .unwrap();
     let value = get_float(&result).unwrap();
-    assert!((value - 3.14159).abs() < 0.0001);
+    assert!((value - std::f64::consts::PI).abs() < 0.0001);
 }
 
 #[test]

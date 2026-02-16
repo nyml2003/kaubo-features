@@ -291,6 +291,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approximate_constant)]
     fn test_float() {
         let v = Value::float(3.14);
         assert!(v.is_float());

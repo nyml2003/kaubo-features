@@ -1,6 +1,6 @@
 //! 函数调用相关 (closure, upvalue 操作)
 
-use crate::core::{ObjClosure, ObjUpvalue, Value, VM};
+use crate::core::{ObjUpvalue, Value, VM};
 
 /// 获取局部变量指针（用于 upvalue 捕获）
 pub fn current_local_ptr(vm: &mut VM, idx: usize) -> *mut Value {
@@ -90,7 +90,7 @@ mod tests {
         let mut vm = VM::new();
 
         // 创建一个调用帧
-        use crate::core::{CallFrame, Chunk, ObjFunction};
+        use crate::core::{CallFrame, Chunk, ObjClosure, ObjFunction};
         let chunk = Chunk::new();
         let func = Box::into_raw(Box::new(ObjFunction::new(chunk, 0, None)));
         let closure = Box::into_raw(Box::new(ObjClosure::new(func)));

@@ -1,11 +1,10 @@
 //! run() 主执行循环、interpret 方法
 
-use crate::core::{
-    CallFrame, Chunk, CoroutineState, InterpretResult, ObjClosure, ObjFunction, ObjIterator,
-    ObjJson, ObjList, ObjModule, ObjShape, ObjString, ObjStruct, ObjCoroutine,
-    Operator, Value, VM,
-};
 use crate::core::OperatorTableEntry;
+use crate::core::{
+    CallFrame, Chunk, CoroutineState, InterpretResult, ObjClosure, ObjCoroutine, ObjIterator,
+    ObjJson, ObjList, ObjModule, ObjShape, ObjString, ObjStruct, Operator, Value, VM,
+};
 use crate::runtime::OpCode::*;
 
 /// 从 Chunk 的 operator_table 注册运算符到 Shape
@@ -48,9 +47,7 @@ pub fn register_operators_from_chunk(vm: &mut VM, chunk: &Chunk) {
 
 /// 执行字节码的主循环
 pub fn run(vm: &mut VM) -> InterpretResult {
-    use crate::runtime::vm::{
-        call, index, operators, shape, stack,
-    };
+    use crate::runtime::vm::{call, index, operators, shape, stack};
 
     loop {
         // 调试: 打印当前栈状态和指令
@@ -761,9 +758,8 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                         } else {
                             // 继承当前闭包的 upvalue
                             let current_closure = current_closure(vm);
-                            let upvalue = unsafe {
-                                (*current_closure).get_upvalue(index as usize).unwrap()
-                            };
+                            let upvalue =
+                                unsafe { (*current_closure).get_upvalue(index as usize).unwrap() };
                             closure.add_upvalue(upvalue);
                         }
                     }
@@ -973,20 +969,19 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 let name_idx = read_byte(vm) as usize;
 
                 // 从常量池获取名称字符串
-                let name =
-                    if let Some(constant) = current_chunk(vm).constants.get(name_idx) {
-                        if let Some(ptr) = constant.as_string() {
-                            unsafe { (&*ptr).chars.clone() }
-                        } else {
-                            return InterpretResult::RuntimeError(
-                                "GetModuleExport name must be a string".to_string(),
-                            );
-                        }
+                let name = if let Some(constant) = current_chunk(vm).constants.get(name_idx) {
+                    if let Some(ptr) = constant.as_string() {
+                        unsafe { (&*ptr).chars.clone() }
                     } else {
-                        return InterpretResult::RuntimeError(format!(
-                            "Invalid constant index for GetModuleExport: {name_idx}"
-                        ));
-                    };
+                        return InterpretResult::RuntimeError(
+                            "GetModuleExport name must be a string".to_string(),
+                        );
+                    }
+                } else {
+                    return InterpretResult::RuntimeError(format!(
+                        "Invalid constant index for GetModuleExport: {name_idx}"
+                    ));
+                };
 
                 if let Some(module_ptr) = module_val.as_module() {
                     let module = unsafe { &*module_ptr };
@@ -1040,13 +1035,12 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 // 创建 struct 实例
                 let shape_ptr = shape::get_shape(vm, shape_id);
                 if shape_ptr.is_null() {
-                    return InterpretResult::RuntimeError(format!(
-                        "Shape ID {shape_id} not found"
-                    ));
+                    return InterpretResult::RuntimeError(format!("Shape ID {shape_id} not found"));
                 }
 
                 let struct_obj = Box::new(ObjStruct::new(shape_ptr, fields));
-                vm.stack.push(Value::struct_instance(Box::into_raw(struct_obj)));
+                vm.stack
+                    .push(Value::struct_instance(Box::into_raw(struct_obj)));
             }
 
             GetField => {
@@ -1125,7 +1119,8 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     }
                     Ok(None) => {
                         // 基础类型不匹配，尝试 operator get
-                        match operators::call_binary_operator(vm, Operator::Get, obj_val, index_val) {
+                        match operators::call_binary_operator(vm, Operator::Get, obj_val, index_val)
+                        {
                             Ok(v) => vm.stack.push(v),
                             Err(e) => return InterpretResult::RuntimeError(e),
                         }
@@ -1232,19 +1227,15 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 let v = vm.stack.pop().expect("Stack underflow");
 
                 // 基础类型：直接转换
-                let result = if v.is_int()
-                    || v.is_float()
-                    || v.is_bool()
-                    || v.is_string()
-                    || v.is_null()
-                {
-                    let s = v.to_string();
-                    let string_obj = Box::new(ObjString::new(s));
-                    Ok(Value::string(Box::into_raw(string_obj)))
-                } else {
-                    // 自定义类型：尝试 operator str
-                    operators::call_unary_operator(vm, Operator::Str, v)
-                };
+                let result =
+                    if v.is_int() || v.is_float() || v.is_bool() || v.is_string() || v.is_null() {
+                        let s = v.to_string();
+                        let string_obj = Box::new(ObjString::new(s));
+                        Ok(Value::string(Box::into_raw(string_obj)))
+                    } else {
+                        // 自定义类型：尝试 operator str
+                        operators::call_unary_operator(vm, Operator::Str, v)
+                    };
 
                 match result {
                     Ok(v) => vm.stack.push(v),
@@ -1276,8 +1267,6 @@ pub fn run(vm: &mut VM) -> InterpretResult {
 
 // Resume 指令处理
 fn handle_resume(vm: &mut VM) {
-    use crate::runtime::vm::{call, operators};
-
     // 操作数：传入值个数
     let arg_count = read_byte(vm);
 
@@ -1304,10 +1293,7 @@ fn handle_resume(vm: &mut VM) {
             let func = unsafe { &*(*closure).function };
 
             if func.arity != arg_count {
-                panic!(
-                    "Expected {} arguments but got {}",
-                    func.arity, arg_count
-                );
+                panic!("Expected {} arguments but got {}", func.arity, arg_count);
             }
 
             // 创建初始调用帧
@@ -1371,7 +1357,7 @@ fn handle_resume(vm: &mut VM) {
                     vm.stack = saved_stack;
                     vm.frames = saved_frames;
                     vm.open_upvalues = saved_upvalues;
-                    panic!("Coroutine runtime error: {}", msg);
+                    panic!("Coroutine runtime error: {msg}");
                 }
             }
             InterpretResult::CompileError(msg) => {
@@ -1380,7 +1366,7 @@ fn handle_resume(vm: &mut VM) {
                 vm.stack = saved_stack;
                 vm.frames = saved_frames;
                 vm.open_upvalues = saved_upvalues;
-                panic!("Coroutine compile error: {}", msg);
+                panic!("Coroutine compile error: {msg}");
             }
         }
     } else {
@@ -1390,8 +1376,6 @@ fn handle_resume(vm: &mut VM) {
 
 // IterNext 指令处理
 fn handle_iter_next(vm: &mut VM) {
-    use crate::runtime::vm::{call, operators};
-
     // 获取迭代器下一个值
     let iter_val = vm.stack.pop().expect("Stack underflow");
 
@@ -1459,12 +1443,12 @@ fn handle_iter_next(vm: &mut VM) {
                             vm.stack.push(yield_val);
                         } else {
                             coro.state = CoroutineState::Dead;
-                            panic!("Coroutine runtime error: {}", msg);
+                            panic!("Coroutine runtime error: {msg}");
                         }
                     }
                     InterpretResult::CompileError(msg) => {
                         coro.state = CoroutineState::Dead;
-                        panic!("Coroutine compile error: {}", msg);
+                        panic!("Coroutine compile error: {msg}");
                     }
                 }
             }
@@ -1636,11 +1620,5 @@ pub fn trace_instruction(vm: &VM) {
     let op = unsafe { std::mem::transmute::<u8, crate::runtime::OpCode>(instruction) };
 
     // 使用 logger 记录栈状态和指令
-    kaubo_log::trace!(
-        &vm.logger,
-        "{:04} {:?} | stack: {:?}",
-        offset,
-        op,
-        vm.stack
-    );
+    kaubo_log::trace!(&vm.logger, "{:04} {:?} | stack: {:?}", offset, op, vm.stack);
 }

@@ -1,7 +1,7 @@
 //! 运算符实现 (add_values, sub_values 等)
 
 use crate::core::{
-    InlineCacheEntry, ObjClosure, ObjShape, ObjString, Operator, Value, VM,
+    InlineCacheEntry, ObjClosure, ObjString, Operator, Value, VM,
 };
 
 /// 加法（仅基础类型）
@@ -356,7 +356,7 @@ pub fn call_operator_closure_varargs(
     closure: *mut ObjClosure,
     args: &[Value],
 ) -> Result<Value, String> {
-    use crate::core::ObjFunction;
+    
     use crate::core::OpCode::*;
 
     let closure_ref = unsafe { &*closure };
@@ -720,7 +720,7 @@ pub fn call_operator_closure(
     closure: *mut ObjClosure,
     args: &[Value],
 ) -> Result<Value, String> {
-    use crate::core::ObjFunction;
+    
     use crate::core::OpCode::*;
 
     // 获取闭包信息

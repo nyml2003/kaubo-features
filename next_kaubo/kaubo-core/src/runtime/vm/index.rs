@@ -1,7 +1,7 @@
 //! 索引操作 (index_get_base, index_set_base)
 
 use crate::core::{
-    ObjClosure, ObjList, ObjString, ObjStruct, Operator, Value, VM,
+    ObjClosure, Operator, Value, VM,
 };
 
 /// 基础类型索引获取（用于 IndexGet）
@@ -9,7 +9,7 @@ use crate::core::{
 /// 返回 Ok(None) - 基础类型不匹配，需要尝试 operator get
 /// 返回 Err(e) - 基础类型处理出错（如索引越界）
 pub fn index_get_base(
-    vm: &VM,
+    _vm: &VM,
     obj_val: Value,
     index_val: Value,
 ) -> Result<Option<Value>, String> {
@@ -46,7 +46,7 @@ pub fn index_get_base(
 
         // JSON 对象索引
         if let Some(json_ptr) = obj_val.as_json() {
-            use crate::core::ObjJson;
+            
             let json = unsafe { &*json_ptr };
             return Ok(Some(json.get(key).unwrap_or(Value::NULL)));
         }
@@ -80,7 +80,7 @@ pub fn index_get_base(
 /// 返回 Ok(false) - 基础类型不匹配，需要尝试 operator set
 /// 返回 Err(e) - 基础类型处理出错（如索引越界）
 pub fn index_set_base(
-    vm: &mut VM,
+    _vm: &mut VM,
     obj_val: Value,
     key_val: Value,
     value: Value,
@@ -90,7 +90,7 @@ pub fn index_set_base(
         let key = unsafe { &(*key_ptr).chars };
 
         if let Some(json_ptr) = obj_val.as_json() {
-            use crate::core::ObjJson;
+            
             let json = unsafe { &mut *json_ptr };
             json.set(key.clone(), value);
             return Ok(true);
@@ -151,7 +151,7 @@ fn call_operator_closure_set(
     value: Value,
 ) -> Result<(), String> {
     use crate::core::OpCode::*;
-    use crate::core::ObjFunction;
+    
 
     let closure_ref = unsafe { &*closure };
     let func = unsafe { &*closure_ref.function };
