@@ -113,7 +113,13 @@ fn execute_with_config(
         initial_frames_capacity: config.vm.initial_frames_capacity,
         inline_cache_capacity: config.vm.inline_cache_capacity,
     };
-    let mut vm = VM::with_config(vm_config);
+    
+    // 根据配置决定是否传递 logger 用于执行追踪
+    let mut vm = if config.vm.trace_execution {
+        VM::with_config_and_logger(vm_config, config.logger.clone())
+    } else {
+        VM::with_config(vm_config)
+    };
     vm.init_stdlib();
 
     // 注册所有 shapes 到 VM

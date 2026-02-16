@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for compiler behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompilerConfig {
     /// Whether to emit debug information
     #[serde(default = "default_emit_debug_info")]
@@ -50,6 +51,7 @@ fn default_lexer_buffer_size() -> usize {
 
 /// Configuration for VM
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VmConfig {
     /// Initial stack capacity (slots)
     #[serde(default = "default_vm_initial_stack_size")]
@@ -60,6 +62,9 @@ pub struct VmConfig {
     /// Inline cache capacity
     #[serde(default = "default_vm_inline_cache_capacity")]
     pub inline_cache_capacity: usize,
+    /// Enable VM execution tracing (via logger)
+    #[serde(default = "default_vm_trace_execution")]
+    pub trace_execution: bool,
 }
 
 fn default_vm_initial_stack_size() -> usize {
@@ -72,6 +77,10 @@ fn default_vm_initial_frames_capacity() -> usize {
 
 fn default_vm_inline_cache_capacity() -> usize {
     64
+}
+
+fn default_vm_trace_execution() -> bool {
+    false
 }
 
 /// Configuration for coroutine
@@ -155,6 +164,7 @@ impl Default for LoggingConfig {
 
 /// Runtime configuration options
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeOptions {
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -223,6 +233,7 @@ impl Profile {
 
 /// Kaubo configuration file structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KauboConfig {
     /// Configuration format version
     #[serde(default = "default_version")]
@@ -298,6 +309,9 @@ impl RuntimeOptions {
         }
         if other.vm.inline_cache_capacity != default_vm_inline_cache_capacity() {
             self.vm.inline_cache_capacity = other.vm.inline_cache_capacity;
+        }
+        if other.vm.trace_execution != default_vm_trace_execution() {
+            self.vm.trace_execution = other.vm.trace_execution;
         }
         
         // Merge coroutine
@@ -393,6 +407,7 @@ impl Default for VmConfig {
             initial_stack_size: default_vm_initial_stack_size(),
             initial_frames_capacity: default_vm_initial_frames_capacity(),
             inline_cache_capacity: default_vm_inline_cache_capacity(),
+            trace_execution: default_vm_trace_execution(),
         }
     }
 }
@@ -467,7 +482,7 @@ mod tests {
     fn test_config_from_json() {
         let json = r#"{
             "profile": "dev",
-            "runtime_options": {
+            "runtimeOptions": {
                 "logging": {
                     "level": "debug",
                     "targets": {
@@ -480,6 +495,39 @@ mod tests {
         assert!(matches!(config.profile, Profile::Dev));
         assert_eq!(config.runtime_options.logging.level, LogLevel::Debug);
         assert_eq!(config.runtime_options.logging.targets.lexer, Some(LogLevel::Trace));
+    }
+
+    #[test]
+    fn test_config_trace_execution_from_json() {
+        // 测试 camelCase 格式（配置文件中使用）
+        let json = r#"{
+            "profile": "trace",
+            "runtimeOptions": {
+                "vm": {
+                    "traceExecution": true
+                }
+            }
+        }"#;
+        let config = KauboConfig::from_json(json).unwrap();
+        assert!(config.runtime_options.vm.trace_execution, "traceExecution should be true");
+    }
+
+    #[test]
+    fn test_config_trace_execution_full() {
+        // 测试完整的配置文件（类似 examples/kaubo.trace.json）
+        let json = r#"{
+            "version": "1.0",
+            "profile": "trace",
+            "runtimeOptions": {
+                "vm": {
+                    "traceExecution": true
+                }
+            }
+        }"#;
+        let config = KauboConfig::from_json(json).unwrap();
+        assert_eq!(config.version, "1.0");
+        assert!(matches!(config.profile, Profile::Trace));
+        assert!(config.runtime_options.vm.trace_execution, "traceExecution should be true in full config");
     }
 
     #[test]

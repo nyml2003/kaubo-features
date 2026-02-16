@@ -200,6 +200,41 @@ description = "运行并显示源码和步骤"
 command = "cargo"
 args = ["run", "-p", "kaubo-cli", "--", "-v", "--show-source", "--show-steps", "examples/hello.kaubo"]
 
+# ============== VM 执行追踪任务 (使用 logger) ==============
+
+# 运行并启用 VM 执行追踪 (通过 logger 输出)
+[tasks.run-trace-vm]
+description = "运行并启用 VM 执行追踪 (logger 输出)"
+env = { "RUST_LOG" = "trace" }
+script_runner = "powershell"
+script = '''
+cargo run -p kaubo-cli --features kaubo-core/trace_execution -- --config examples/kaubo.trace.json examples/hello.kaubo 2>&1
+'''
+
+# 运行斐波那契并追踪 VM 执行
+[tasks.run-fib-trace]
+description = "运行斐波那契并追踪 VM 执行"
+script_runner = "powershell"
+script = '''
+cargo run -p kaubo-cli --features kaubo-core/trace_execution -- --config examples/kaubo.trace.json examples/fib.kaubo 2>&1
+'''
+
+# 使用 trace_execution feature 构建 CLI
+[tasks.build-trace]
+description = "构建带 VM 执行追踪的 CLI"
+command = "cargo"
+args = ["build", "-p", "kaubo-cli", "--features", "kaubo-core/trace_execution"]
+
+# 运行并输出 VM 追踪日志到文件
+[tasks.run-trace-log]
+description = "运行并输出 VM 追踪日志到文件"
+script_runner = "powershell"
+script = '''
+$File = if ($env:FILE) { $env:FILE } else { "examples/hello.kaubo" }
+cargo run -p kaubo-cli --features kaubo-core/trace_execution --release -- --config examples/kaubo.trace.json $File > trace.log 2>&1
+Write-Host "Trace log saved to trace.log"
+'''
+
 # 编译示例并显示字节码（简洁模式）
 [tasks.bytecode]
 description = "编译示例并显示字节码"

@@ -13,7 +13,7 @@ mod platform;
 use crate::platform::print_error_with_source;
 use kaubo_api::{compile_with_config, init_config, run, RunConfig, Value};
 use kaubo_api::kaubo_config::{KauboConfig, Profile};
-use kaubo_core::runtime::bytecode::OpCode;
+use kaubo_core::runtime::OpCode;
 
 #[derive(Parser)]
 #[command(

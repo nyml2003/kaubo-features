@@ -1,0 +1,21 @@
+{
+    "version": "1.0",
+    "profile": "trace",
+    "compilerOptions": {
+        "emitDebugInfo": true
+    },
+    "runtimeOptions": {
+        "logging": {
+            "level": "trace",
+            "targets": {
+                "lexer": "warn",
+                "parser": "warn",
+                "compiler": "info",
+                "vm": "trace"
+            }
+        },
+        "vm": {
+            "traceExecution": true
+        }
+    }
+}

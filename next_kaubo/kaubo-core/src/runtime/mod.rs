@@ -11,17 +11,13 @@
 // ==================== 核心类型（从 core 层重新导出）====================
 
 pub use crate::core::{
-    Chunk, InlineCacheEntry, InterpretResult, ObjClosure, ObjCoroutine, ObjFunction,
-    ObjIterator, ObjJson, ObjList, ObjModule, ObjNative, ObjNativeVm, ObjOption, ObjResult,
-    ObjShape, ObjString, ObjStruct, ObjUpvalue, OpCode, Operator, Value, VMConfig, VM,
+    Chunk, InlineCacheEntry, InlineCacheSlot, InterpretResult, MethodTableEntry,
+    ObjClosure, ObjCoroutine, ObjFunction, ObjIterator, ObjJson, ObjList, ObjModule,
+    ObjNative, ObjNativeVm, ObjOption, ObjResult, ObjShape, ObjString, ObjStruct,
+    ObjUpvalue, OpCode, Operator, OperatorTableEntry, Value, VMConfig, VM,
 };
 
 // ==================== Runtime 实现模块 ====================
-
-/// 字节码模块（重新导出以保持向后兼容）
-pub mod bytecode {
-    pub use crate::core::{Chunk, InlineCacheSlot, MethodTableEntry, OpCode, OperatorTableEntry};
-}
 
 /// 运算符实现
 pub mod operators;

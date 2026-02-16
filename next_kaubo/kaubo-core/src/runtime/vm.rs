@@ -6,7 +6,7 @@ use crate::core::{
     ObjUpvalue, OpCode, Operator, OperatorTableEntry, Value, VM,
 };
 use crate::runtime::stdlib::create_stdlib_modules;
-// use kaubo_log::{trace, Logger};
+
 
 impl VM {
     /// 初始化标准库模块
@@ -44,7 +44,7 @@ impl VM {
         // 注册运算符（从 Chunk 的 operator_table 到 Shape）
         self.register_operators_from_chunk(chunk);
 
-        // 创建函数对象
+        // 创建函数对象（使用 clone 的 chunk，所有权转移给 function）
         let function = Box::into_raw(Box::new(ObjFunction::new(
             chunk.clone(),
             0,
@@ -61,9 +61,12 @@ impl VM {
         }
 
         // 创建初始调用帧
+        // 注意：ip 必须指向 closure 的 function 的 chunk，而不是传入的 chunk
+        // 因为 function 拥有 chunk 的 clone
+        let ip = unsafe { (*(*closure).function).chunk.code.as_ptr() };
         self.frames.push(CallFrame {
             closure,
-            ip: chunk.code.as_ptr(),
+            ip,
             locals,
             stack_base: 0,
         });
@@ -1189,9 +1192,7 @@ impl VM {
                     if let Some(value) = self.globals.get(&name) {
                         self.push(*value);
                     } else {
-                        return InterpretResult::RuntimeError(format!(
-                            "Module '{name}' not found"
-                        ));
+                        return InterpretResult::RuntimeError(format!("Module '{name}' not found"));
                     }
                 }
 
@@ -1528,9 +1529,7 @@ impl VM {
                 }
 
                 _ => {
-                    return InterpretResult::RuntimeError(format!(
-                        "Unimplemented opcode: {op:?}"
-                    ));
+                    return InterpretResult::RuntimeError(format!("Unimplemented opcode: {op:?}"));
                 }
             }
         }
@@ -3293,19 +3292,37 @@ impl VM {
     /// 追踪当前指令执行
     #[cfg(feature = "trace_execution")]
     fn trace_instruction(&self) {
-        print!("          ");
-        for (i, slot) in self.stack.iter().enumerate() {
-            print!("[ {} ]", slot);
-        }
-        println!();
-
         // 反汇编当前指令
         let frame = self.frames.last().unwrap();
-        let offset = unsafe { frame.ip.offset_from(frame.chunk().code.as_ptr()) } as usize;
-        // 只读取查看，不修改 ip
+        let chunk = frame.chunk();
+        let code = &chunk.code;
+        
+        // 计算偏移量：使用指针差值
+        let offset = unsafe { frame.ip.offset_from(code.as_ptr()) };
+        let offset = if offset >= 0 && (offset as usize) < code.len() {
+            offset as usize
+        } else {
+            // IP 越界，记录警告
+            kaubo_log::warn!(
+                &self.logger,
+                "VM IP out of bounds: offset={}, code_len={}",
+                offset,
+                code.len()
+            );
+            0
+        };
+        
         let instruction = unsafe { *frame.ip };
         let op = unsafe { std::mem::transmute::<u8, OpCode>(instruction) };
-        println!("{:04} {:?}", offset, op);
+
+        // 使用 logger 记录栈状态和指令
+        kaubo_log::trace!(
+            &self.logger,
+            "{:04} {:?} | stack: {:?}",
+            offset,
+            op,
+            self.stack
+        );
     }
 }
 
@@ -3324,7 +3341,7 @@ use std::cmp::Ordering;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::bytecode::OpCode::*;
+    use crate::runtime::OpCode::*;
 
     #[test]
     fn test_push_pop() {

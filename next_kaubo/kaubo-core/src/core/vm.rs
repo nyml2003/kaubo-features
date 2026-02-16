@@ -6,6 +6,8 @@ use super::object::{CallFrame, ObjShape, ObjUpvalue};
 use super::operators::InlineCacheEntry;
 use super::value::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
+use kaubo_log::Logger;
 
 /// 虚拟机配置
 #[derive(Debug, Clone)]
@@ -52,6 +54,8 @@ pub struct VM {
     pub shapes: HashMap<u16, *const ObjShape>,
     /// 内联缓存表
     pub inline_caches: Vec<InlineCacheEntry>,
+    /// Logger（用于执行追踪）
+    pub logger: Arc<Logger>,
 }
 
 impl VM {
@@ -62,6 +66,11 @@ impl VM {
 
     /// 创建新的虚拟机（带配置）
     pub fn with_config(config: VMConfig) -> Self {
+        Self::with_config_and_logger(config, Logger::noop())
+    }
+
+    /// 创建新的虚拟机（带配置和 logger）
+    pub fn with_config_and_logger(config: VMConfig, logger: Arc<Logger>) -> Self {
         Self {
             stack: Vec::with_capacity(config.initial_stack_size),
             frames: Vec::with_capacity(config.initial_frames_capacity),
@@ -69,6 +78,7 @@ impl VM {
             globals: HashMap::new(),
             shapes: HashMap::new(),
             inline_caches: Vec::with_capacity(config.inline_cache_capacity),
+            logger,
         }
     }
 }
