@@ -162,6 +162,36 @@ let mut next_shape_id: u16 = 100;
 - `kaubo-core/src/runtime/vm.rs`
 - `kaubo-api/src/lib.rs`
 
+### 包导出优化（2026-02-16）
+
+**问题**：各 crate 导出过于宽泛，增加了 API 维护负担
+
+**优化内容**：
+
+#### kaubo-core
+| 优化前 | 优化后 |
+|--------|--------|
+| `pub use kaubo_config::{...}` | 移除（由调用方直接使用 kaubo-config） |
+| `pub mod compiler/kit/runtime` | 精简的重新导出 |
+| 无顶层快捷导出 | 新增 `Value`, `VM`, `Chunk`, `InterpretResult`, `VMConfig`, `ObjShape` |
+
+#### kaubo-api
+| 优化前 | 优化后 |
+|--------|--------|
+| 导出 12 个 `kaubo_config` 单个类型 | 统一 `pub use kaubo_config;` |
+| 导出 `LexerError`, `ParserError`, `TypeError` | 封装在 `KauboError` 中，不暴露底层 |
+| `pub use kaubo_core::Value/Phase` | 仅保留 `pub use kaubo_core::Value;` |
+
+**设计原则**：
+- 顶层 crate（kaubo-api）提供统一入口
+- 底层 crate（kaubo-core）只导出核心类型
+- 配置 crate（kaubo-config）完整导出供上层使用
+
+**相关文件**：
+- `kaubo-core/src/lib.rs`
+- `kaubo-api/src/lib.rs`
+- `kaubo-api/src/error.rs`
+
 ---
 
 ## 相关文档

@@ -14,34 +14,30 @@ use kaubo_log::{debug, info, Logger};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use kaubo_core::compiler::lexer::builder::{build_lexer_with_config, LexerConfig as CoreLexerConfig};
-use kaubo_core::compiler::parser::parser::Parser;
-use kaubo_core::compiler::parser::TypeChecker;
-use kaubo_core::runtime::bytecode::chunk::Chunk;
+use kaubo_core::lexer::{build_lexer_with_config, LexerConfig as CoreLexerConfig};
+use kaubo_core::parser::{Module, Parser, TypeChecker};
+use kaubo_core::utils::Lexer;
+use kaubo_core::{Chunk, InterpretResult, ObjShape, VM, VMConfig};
+
+// 编译器内部函数（临时，待移到 kaubo-core 公共 API）
+use kaubo_core::kit::lexer::LexerError;
 use kaubo_core::runtime::compiler::compile_with_struct_info_and_logger;
-use kaubo_core::runtime::vm::VMConfig;
-use kaubo_core::runtime::{InterpretResult, VM};
 
 // Re-export config
 pub mod config;
 pub use config::{config as get_config, init as init_config, is_initialized, RunConfig};
 
-// Re-export config types from kaubo_config
-pub use kaubo_config::{
-    CompilerConfig, CoroutineConfig, KauboConfig, LexerConfig, LimitConfig, 
-    LogLevel, LogTargets, LoggingConfig, Profile, RuntimeOptions, VmConfig,
-};
+// 配置统一导出
+pub use kaubo_config;
 
-// Re-export error and types
+// 核心类型导出
+pub use kaubo_core::Value;
+
+// 错误类型（统一封装，不暴露底层细节）
 pub mod error;
 pub mod types;
-pub use error::{ErrorDetails, ErrorReport, KauboError, LexerError, ParserError, TypeError};
+pub use error::{ErrorReport, KauboError};
 pub use types::{CompileOutput, ExecuteOutput};
-
-// Re-export core types
-pub use kaubo_config;
-pub use kaubo_core::Value;
-pub use kaubo_core::Phase;
 
 /// Execute with explicit configuration
 ///
@@ -76,10 +72,10 @@ pub fn compile_with_config(source: &str, config: &RunConfig) -> Result<CompileOu
     };
     let mut lexer = build_lexer_with_config(&core_lexer_config, config.logger.clone());
     lexer.feed(source.as_bytes()).map_err(|e| {
-        LexerError::from_stream_error(e, kaubo_core::kit::lexer::SourcePosition::start())
+        LexerError::from_stream_error(e, kaubo_core::utils::SourcePosition::start())
     })?;
     lexer.terminate().map_err(|e| {
-        LexerError::from_stream_error(e, kaubo_core::kit::lexer::SourcePosition::start())
+        LexerError::from_stream_error(e, kaubo_core::utils::SourcePosition::start())
     })?;
 
     let mut parser = Parser::with_logger(lexer, config.logger.clone());
@@ -109,7 +105,7 @@ pub fn compile_with_config(source: &str, config: &RunConfig) -> Result<CompileOu
 fn execute_with_config(
     chunk: &Chunk,
     local_count: usize,
-    shapes: &[kaubo_core::runtime::object::ObjShape],
+    shapes: &[kaubo_core::ObjShape],
     config: &RunConfig,
 ) -> Result<ExecuteOutput, KauboError> {
     let vm_config = VMConfig {
@@ -150,8 +146,8 @@ fn execute_with_config(
 
 /// Compile AST to bytecode
 pub fn compile_ast(
-    ast: &kaubo_core::compiler::parser::Module,
-    shapes: Vec<kaubo_core::runtime::object::ObjShape>,
+    ast: &kaubo_core::parser::Module,
+    shapes: Vec<kaubo_core::ObjShape>,
     logger: Arc<Logger>,
 ) -> Result<CompileOutput, KauboError> {
     info!(logger, "Starting compiler");
@@ -200,7 +196,7 @@ pub fn compile(source: &str) -> Result<CompileOutput, KauboError> {
 pub fn execute(
     chunk: &Chunk,
     local_count: usize,
-    shapes: &[kaubo_core::runtime::object::ObjShape],
+    shapes: &[kaubo_core::ObjShape],
 ) -> Result<ExecuteOutput, KauboError> {
     let config = get_config();
     execute_with_config(chunk, local_count, shapes, &config)

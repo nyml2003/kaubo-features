@@ -2,9 +2,7 @@
 //!
 //! 编译和执行的输入输出类型。
 
-use kaubo_core::runtime::bytecode::chunk::Chunk;
-use kaubo_core::runtime::object::ObjShape;
-use kaubo_core::runtime::value::Value;
+use kaubo_core::{Chunk, ObjShape, Value};
 
 /// 编译输出
 #[derive(Debug)]

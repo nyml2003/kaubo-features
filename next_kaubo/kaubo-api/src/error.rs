@@ -1,20 +1,15 @@
 //! API 错误类型
 //!
 //! 提供统一的错误类型和结构化错误报告。
+//! 
+//! 设计原则：封装底层错误细节，用户只需关心 `KauboError` 和 `ErrorReport`。
 
 use thiserror::Error;
 
-/// 词法错误（结构化）
-pub use kaubo_core::kit::lexer::LexerError;
-
-/// ErrorLocation 重新导出
-use kaubo_core::compiler::parser::error::ErrorLocation;
-
-/// 语法错误（结构化）
-pub use kaubo_core::compiler::parser::error::ParserError;
-
-/// 类型错误（结构化）
-pub use kaubo_core::compiler::parser::type_checker::TypeError;
+// 内部使用，不导出
+use kaubo_core::compiler::parser::error::{ErrorLocation, ParserError};
+use kaubo_core::compiler::parser::type_checker::TypeError;
+use kaubo_core::kit::lexer::LexerError;
 
 /// Kaubo 错误类型
 #[derive(Error, Debug, Clone)]
@@ -42,7 +37,7 @@ pub enum KauboError {
 
 /// 辅助函数：将 ErrorLocation 转换为元组
 fn location_to_tuple(
-    loc: &kaubo_core::compiler::parser::error::ErrorLocation,
+    loc: &ErrorLocation,
 ) -> (&'static str, Option<usize>, Option<usize>) {
     match loc {
         ErrorLocation::At(coord) => ("at", Some(coord.line), Some(coord.column)),
@@ -131,14 +126,14 @@ impl KauboError {
             },
             KauboError::Parser(e) => {
                 let (loc_type, line, col) = match &e.location {
-                    kaubo_core::compiler::parser::error::ErrorLocation::At(coord) => {
+                    ErrorLocation::At(coord) => {
                         ("at", Some(coord.line), Some(coord.column))
                     }
-                    kaubo_core::compiler::parser::error::ErrorLocation::After(coord) => {
+                    ErrorLocation::After(coord) => {
                         ("after", Some(coord.line), Some(coord.column))
                     }
-                    kaubo_core::compiler::parser::error::ErrorLocation::Eof => ("eof", None, None),
-                    kaubo_core::compiler::parser::error::ErrorLocation::Unknown => {
+                    ErrorLocation::Eof => ("eof", None, None),
+                    ErrorLocation::Unknown => {
                         ("unknown", None, None)
                     }
                 };
