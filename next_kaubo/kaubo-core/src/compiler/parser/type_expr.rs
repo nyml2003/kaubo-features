@@ -68,7 +68,7 @@ impl fmt::Display for TypeExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TypeExpr::Named(n) => write!(f, "{}", n.name),
-            TypeExpr::List(elem) => write!(f, "List<{}>", elem),
+            TypeExpr::List(elem) => write!(f, "List<{elem}>"),
             TypeExpr::Tuple(elems) => {
                 let types: Vec<String> = elems.iter().map(|t| t.to_string()).collect();
                 write!(f, "Tuple<{}>", types.join(", "))

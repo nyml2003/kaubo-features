@@ -158,10 +158,10 @@ impl fmt::Display for StmtKind {
                 let stmts = block
                     .statements
                     .iter()
-                    .map(|s| format!("  {}", s))
+                    .map(|s| format!("  {s}"))
                     .collect::<Vec<_>>()
                     .join("\n");
-                write!(f, "{{\n{}\n}}", stmts)
+                write!(f, "{{\n{stmts}\n}}")
             }
             StmtKind::VarDecl(var_decl) => match &var_decl.type_annotation {
                 Some(ty) => write!(
@@ -179,13 +179,13 @@ impl fmt::Display for StmtKind {
                     .iter()
                     .zip(if_stmt.elif_bodies.iter())
                 {
-                    s.push_str(&format!(" elif ({}) {}", cond, body));
+                    s.push_str(&format!(" elif ({cond}) {body}"));
                 }
                 // 拼接else
                 if let Some(else_body) = &if_stmt.else_body {
-                    s.push_str(&format!(" else {}", else_body));
+                    s.push_str(&format!(" else {else_body}"));
                 }
-                write!(f, "{}", s)
+                write!(f, "{s}")
             }
             StmtKind::While(while_stmt) => {
                 write!(f, "while ({}) {}", while_stmt.condition, while_stmt.body)
@@ -199,7 +199,7 @@ impl fmt::Display for StmtKind {
             }
             StmtKind::Return(ret_stmt) => {
                 if let Some(value) = &ret_stmt.value {
-                    write!(f, "return {};", value)
+                    write!(f, "return {value};")
                 } else {
                     write!(f, "return;")
                 }
@@ -258,13 +258,13 @@ mod tests {
     #[test]
     fn test_empty_stmt_display() {
         let stmt = StmtKind::Empty(EmptyStmt);
-        assert_eq!(format!("{}", stmt), ";");
+        assert_eq!(format!("{stmt}"), ";");
     }
 
     #[test]
     fn test_block_stmt_display() {
         let stmt = StmtKind::Block(BlockStmt { statements: vec![] });
-        assert!(format!("{}", stmt).contains('{'));
+        assert!(format!("{stmt}").contains('{'));
     }
 
     #[test]
@@ -276,7 +276,7 @@ mod tests {
             is_public: false,
             span: Span::default(),
         });
-        assert!(format!("{}", stmt).contains("var x = 5"));
+        assert!(format!("{stmt}").contains("var x = 5"));
     }
 
     #[test]
@@ -285,7 +285,7 @@ mod tests {
             condition: make_expr(ExprKind::LiteralTrue(LiteralTrue)),
             body: make_stmt(StmtKind::Empty(EmptyStmt)),
         });
-        assert!(format!("{}", stmt).contains("while"));
+        assert!(format!("{stmt}").contains("while"));
     }
 
     #[test]
@@ -299,7 +299,7 @@ mod tests {
             })),
             body: make_stmt(StmtKind::Empty(EmptyStmt)),
         });
-        assert!(format!("{}", stmt).contains("for"));
+        assert!(format!("{stmt}").contains("for"));
     }
 
     #[test]
@@ -313,8 +313,8 @@ mod tests {
             span: Span::default(),
         });
 
-        assert!(format!("{}", stmt_with_value).contains("return 42"));
-        assert_eq!(format!("{}", stmt_without_value), "return;");
+        assert!(format!("{stmt_with_value}").contains("return 42"));
+        assert_eq!(format!("{stmt_without_value}"), "return;");
     }
 
     #[test]
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_empty_stmt_default() {
-        let _ = EmptyStmt::default();
+        let _ = EmptyStmt;
     }
 
     fn make_stmt(kind: StmtKind) -> Stmt {

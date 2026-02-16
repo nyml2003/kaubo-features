@@ -208,7 +208,7 @@ mod tests {
     fn test_error_io_display() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "test");
         let err = Error::Io(io_err);
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("IO error"));
     }
 }

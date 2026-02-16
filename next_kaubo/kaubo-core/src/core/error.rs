@@ -25,12 +25,12 @@ pub enum RuntimeError {
 impl std::fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RuntimeError::TypeError(msg) => write!(f, "TypeError: {}", msg),
-            RuntimeError::UndefinedVariable(name) => write!(f, "UndefinedVariable: {}", name),
+            RuntimeError::TypeError(msg) => write!(f, "TypeError: {msg}"),
+            RuntimeError::UndefinedVariable(name) => write!(f, "UndefinedVariable: {name}"),
             RuntimeError::IndexOutOfBounds => write!(f, "IndexOutOfBounds"),
             RuntimeError::DivisionByZero => write!(f, "DivisionByZero"),
             RuntimeError::StackOverflow => write!(f, "StackOverflow"),
-            RuntimeError::Other(msg) => write!(f, "{}", msg),
+            RuntimeError::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

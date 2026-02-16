@@ -213,7 +213,7 @@ mod tests {
     use crate::LogRingBuffer;
 
     fn log(logger: &Arc<Logger>, level: Level, target: &'static str, args: fmt::Arguments<'_>) {
-        logger.log(level, target, alloc::format!("{}", args));
+        logger.log(level, target, alloc::format!("{args}"));
     }
 
     #[test]

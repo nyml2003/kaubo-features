@@ -194,6 +194,39 @@ let mut next_shape_id: u16 = 100;
 
 ---
 
+## Clippy 警告（有意忽略）
+
+以下 clippy 警告经过评估，决定**暂时保留**（非阻塞）：
+
+| 警告 | 位置 | 保留原因 | 决策时间 |
+|------|------|---------|---------|
+| `should_implement_trait` | `object.rs:201` | `ObjIterator::next()` 命名与 `Iterator::next` 冲突，但实现 `Iterator` trait 需要返回值是引用，与当前设计不符。需要 API 设计决策。 | 2026-02-16 |
+| `module_inception` | `parser/mod.rs`<br>`lexer/mod.rs`<br>`ring_buffer/mod.rs` | 模块与父模块同名是故意设计的（`parser` 模块包含 `parser` 子模块）。重构需要大量文件移动，收益有限。 | 2026-02-16 |
+| `not_unsafe_ptr_arg_deref` | `vm.rs:1553` | ✅ **已修复** - `register_shape` 已标记为 `unsafe` | 2026-02-16 |
+| `implicit_autoref` | `stdlib/mod.rs:461,514` | 原始指针解引用时的隐式自动引用是安全的，但显式处理会使代码更冗长。属于风格问题。 | 2026-02-16 |
+
+### 已修复的 Clippy 警告（2026-02-16）
+
+通过 `cargo clippy --fix` 和手动修复解决了 60+ 个警告：
+
+- ✅ `uninlined_format_args` - 内联 format 参数
+- ✅ `redundant_field_names` - 移除冗余字段名
+- ✅ `derivable_impls` - 使用 derive 宏实现 Default
+- ✅ `unnecessary_cast` - 移除不必要的类型转换
+- ✅ `mixed_attributes_style` - 合并内部/外部文档属性
+- ✅ `len_without_is_empty` - 为 ObjList/ObjJson 添加 is_empty 方法
+- ✅ `missing_safety_doc` - 为 unsafe 函数添加 Safety 文档
+- ✅ `needless_range_loop` - 使用迭代器替代索引循环
+- ✅ `collapsible_match` - 折叠嵌套的 if let
+- ✅ `len_zero` - 使用 is_empty() 替代 len() == 0
+
+**修复命令**：
+```bash
+cargo clippy --workspace --fix --allow-dirty --allow-staged
+```
+
+---
+
 ## 相关文档
 
 - [运算符重载](../impl/operators/README.md) - 四级分发策略

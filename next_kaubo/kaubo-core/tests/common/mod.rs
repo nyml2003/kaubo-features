@@ -19,21 +19,21 @@ use std::collections::HashMap;
 pub fn run_code(code: &str) -> Result<ExecResult, ExecError> {
     // 词法分析
     let mut lexer = build_lexer();
-    let _ = lexer.feed(&code.as_bytes().to_vec());
+    let _ = lexer.feed(code.as_bytes());
     let _ = lexer.terminate();
 
     // 语法分析
     let mut parser = Parser::new(lexer);
     let ast = parser
         .parse()
-        .map_err(|e| ExecError::Parser(format!("{:?}", e)))?;
+        .map_err(|e| ExecError::Parser(format!("{e:?}")))?;
 
     // 类型检查（生成 shapes）
     let mut type_checker = TypeChecker::new();
     for stmt in &ast.statements {
         type_checker
             .check_statement(stmt)
-            .map_err(|e| ExecError::Compiler(format!("{:?}", e)))?;
+            .map_err(|e| ExecError::Compiler(format!("{e:?}")))?;
     }
     let shapes = type_checker.take_shapes();
 
@@ -45,7 +45,7 @@ pub fn run_code(code: &str) -> Result<ExecResult, ExecError> {
 
     // 编译
     let (chunk, local_count) = compile_with_struct_info(&ast, struct_infos)
-        .map_err(|e| ExecError::Compiler(format!("{:?}", e)))?;
+        .map_err(|e| ExecError::Compiler(format!("{e:?}")))?;
 
     // 执行
     let mut vm = VM::new();
@@ -53,7 +53,9 @@ pub fn run_code(code: &str) -> Result<ExecResult, ExecError> {
 
     // 注册 shapes
     for shape in &shapes {
-        vm.register_shape(shape as *const _);
+        unsafe {
+            vm.register_shape(shape as *const _);
+        }
     }
 
     // 根据 Chunk.method_table 初始化 Shape 的方法表
@@ -100,10 +102,10 @@ pub enum ExecError {
 impl std::fmt::Display for ExecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExecError::Lexer(msg) => write!(f, "Lexer error: {}", msg),
-            ExecError::Parser(msg) => write!(f, "Parser error: {}", msg),
-            ExecError::Compiler(msg) => write!(f, "Compiler error: {}", msg),
-            ExecError::Runtime(msg) => write!(f, "Runtime error: {}", msg),
+            ExecError::Lexer(msg) => write!(f, "Lexer error: {msg}"),
+            ExecError::Parser(msg) => write!(f, "Parser error: {msg}"),
+            ExecError::Compiler(msg) => write!(f, "Compiler error: {msg}"),
+            ExecError::Runtime(msg) => write!(f, "Runtime error: {msg}"),
         }
     }
 }

@@ -96,19 +96,16 @@ fn default_coroutine_initial_frames_capacity() -> usize {
 /// Log level
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum LogLevel {
     Error,
+    #[default]
     Warn,
     Info,
     Debug,
     Trace,
 }
 
-impl Default for LogLevel {
-    fn default() -> Self {
-        LogLevel::Warn
-    }
-}
 
 impl LogLevel {
     /// Convert to string representation
@@ -174,19 +171,16 @@ pub struct RuntimeOptions {
 /// Built-in profiles
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum Profile {
     Silent,
+    #[default]
     Default,
     Dev,
     Debug,
     Trace,
 }
 
-impl Default for Profile {
-    fn default() -> Self {
-        Profile::Default
-    }
-}
 
 impl Profile {
     /// Get the name of the profile

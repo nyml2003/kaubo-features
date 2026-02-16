@@ -85,8 +85,8 @@ pub enum KauboTokenKind {
     InvalidToken = 255,
 }
 
-impl Into<u8> for KauboTokenKind {
-    fn into(self) -> u8 {
-        self as u8
+impl From<KauboTokenKind> for u8 {
+    fn from(val: KauboTokenKind) -> Self {
+        val as u8
     }
 }

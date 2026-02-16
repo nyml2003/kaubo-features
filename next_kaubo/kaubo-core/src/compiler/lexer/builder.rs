@@ -89,12 +89,11 @@ mod tests {
         ];
 
         for (i, (expected_kind, expected_value)) in expected.iter().enumerate() {
-            assert_eq!(tokens[i].0, *expected_kind, "Token {} kind mismatch", i);
+            assert_eq!(tokens[i].0, *expected_kind, "Token {i} kind mismatch");
             assert_eq!(
                 tokens[i].1,
                 Some(expected_value.to_string()),
-                "Token {} value mismatch",
-                i
+                "Token {i} value mismatch"
             );
         }
     }
@@ -221,8 +220,8 @@ mod tests {
 
         for (code, expected) in cases {
             let tokens = lex_all(code);
-            assert!(tokens.len() > 0, "Failed to tokenize '{}'", code);
-            assert_eq!(tokens[0].0, expected, "Wrong token kind for '{}'", code);
+            assert!(!tokens.is_empty(), "Failed to tokenize '{code}'");
+            assert_eq!(tokens[0].0, expected, "Wrong token kind for '{code}'");
         }
     }
 }

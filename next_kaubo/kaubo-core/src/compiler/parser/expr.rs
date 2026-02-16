@@ -187,7 +187,7 @@ impl fmt::Display for ExprKind {
                     .map(|e| e.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "[{}]", elements)
+                write!(f, "[{elements}]")
             }
             ExprKind::Binary(bin) => write!(f, "({} {:?} {})", bin.left, bin.op, bin.right),
             ExprKind::Unary(un) => write!(f, "({:?} {})", un.op, un.operand),
@@ -207,7 +207,7 @@ impl fmt::Display for ExprKind {
                     .params
                     .iter()
                     .map(|(name, ty)| match ty {
-                        Some(t) => format!("{}: {}", name, t),
+                        Some(t) => format!("{name}: {t}"),
                         None => name.clone(),
                     })
                     .collect();
@@ -222,20 +222,20 @@ impl fmt::Display for ExprKind {
                 let entries = json
                     .entries
                     .iter()
-                    .map(|(k, v)| format!("\"{}\": {}", k, v))
+                    .map(|(k, v)| format!("\"{k}\": {v}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "json {{ {} }}", entries)
+                write!(f, "json {{ {entries} }}")
             }
             ExprKind::Yield(y) => match &y.value {
-                Some(v) => write!(f, "yield {}", v),
+                Some(v) => write!(f, "yield {v}"),
                 None => write!(f, "yield"),
             },
             ExprKind::StructLiteral(s) => {
                 let fields = s
                     .fields
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .map(|(k, v)| format!("{k}: {v}"))
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "{} {{ {} }}", s.name, fields)
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn test_literal_int_display() {
         let expr = ExprKind::LiteralInt(LiteralInt { value: 42 });
-        assert_eq!(format!("{}", expr), "42");
+        assert_eq!(format!("{expr}"), "42");
     }
 
     #[test]
@@ -260,27 +260,27 @@ mod tests {
         let expr = ExprKind::LiteralString(LiteralString {
             value: "hello".to_string(),
         });
-        assert_eq!(format!("{}", expr), "\"hello\"");
+        assert_eq!(format!("{expr}"), "\"hello\"");
     }
 
     #[test]
     fn test_literal_bool_display() {
         let expr_true = ExprKind::LiteralTrue(LiteralTrue);
         let expr_false = ExprKind::LiteralFalse(LiteralFalse);
-        assert_eq!(format!("{}", expr_true), "true");
-        assert_eq!(format!("{}", expr_false), "false");
+        assert_eq!(format!("{expr_true}"), "true");
+        assert_eq!(format!("{expr_false}"), "false");
     }
 
     #[test]
     fn test_literal_null_display() {
         let expr = ExprKind::LiteralNull(LiteralNull);
-        assert_eq!(format!("{}", expr), "null");
+        assert_eq!(format!("{expr}"), "null");
     }
 
     #[test]
     fn test_literal_list_display() {
         let expr = ExprKind::LiteralList(LiteralList { elements: vec![] });
-        assert_eq!(format!("{}", expr), "[]");
+        assert_eq!(format!("{expr}"), "[]");
     }
 
     #[test]
@@ -288,7 +288,7 @@ mod tests {
         let expr = ExprKind::VarRef(VarRef {
             name: "x".to_string(),
         });
-        assert_eq!(format!("{}", expr), "x");
+        assert_eq!(format!("{expr}"), "x");
     }
 
     #[test]
@@ -300,8 +300,8 @@ mod tests {
 
     #[test]
     fn test_struct_defaults() {
-        let _ = LiteralTrue::default();
-        let _ = LiteralFalse::default();
-        let _ = LiteralNull::default();
+        let _ = LiteralTrue;
+        let _ = LiteralFalse;
+        let _ = LiteralNull;
     }
 }

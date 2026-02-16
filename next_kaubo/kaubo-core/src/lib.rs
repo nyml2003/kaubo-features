@@ -65,22 +65,19 @@ pub mod kit;
 
 // ==================== 向后兼容导出 ====================
 
-/// Lexer 构建器（高级用户）
 pub mod lexer {
-    //! Lexer 构建工具
+    //! Lexer 构建器（高级用户）
     pub use crate::compiler::lexer::builder::{build_lexer, build_lexer_with_config, LexerConfig};
 }
 
-/// Parser（高级用户）
 pub mod parser {
-    //! 语法解析器
+    //! Parser（高级用户）
     pub use crate::compiler::parser::parser::Parser;
     pub use crate::compiler::parser::Module;
     pub use crate::compiler::parser::TypeChecker;
 }
 
-/// 底层工具（高级用户）
 pub mod utils {
-    //! 底层工具（Lexer 核心、环形缓冲区等）
+    //! 底层工具（高级用户）
     pub use crate::kit::lexer::{Lexer, SourcePosition};
 }

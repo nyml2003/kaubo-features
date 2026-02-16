@@ -118,7 +118,9 @@ fn execute_with_config(
 
     // 注册所有 shapes 到 VM
     for shape in shapes {
-        vm.register_shape(shape as *const _);
+        unsafe {
+            vm.register_shape(shape as *const _);
+        }
     }
 
     // 根据 Chunk.method_table 初始化 Shape 的方法表
@@ -161,7 +163,7 @@ pub fn compile_ast(
 
     let (chunk, local_count) =
         compile_with_struct_info_and_logger(ast, struct_infos, logger.clone())
-            .map_err(|e| KauboError::Compiler(format!("{:?}", e)))?;
+            .map_err(|e| KauboError::Compiler(format!("{e:?}")))?;
 
     debug!(
         logger,
@@ -188,7 +190,7 @@ pub fn compile_ast(
 /// If global config is not initialized
 pub fn compile(source: &str) -> Result<CompileOutput, KauboError> {
     let config = get_config();
-    compile_with_config(source, &config)
+    compile_with_config(source, config)
 }
 
 /// Execute bytecode (uses global config)
@@ -201,7 +203,7 @@ pub fn execute(
     shapes: &[kaubo_core::ObjShape],
 ) -> Result<ExecuteOutput, KauboError> {
     let config = get_config();
-    execute_with_config(chunk, local_count, shapes, &config)
+    execute_with_config(chunk, local_count, shapes, config)
 }
 
 /// Compile and run (uses global config)

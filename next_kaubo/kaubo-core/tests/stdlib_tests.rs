@@ -196,7 +196,7 @@ fn test_std_assert_success() {
     "#,
     );
     if let Err(ref e) = result {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {e}");
     }
     assert!(result.is_ok());
     assert_eq!(get_int(&result.unwrap()), Some(1));

@@ -99,12 +99,12 @@ impl std::fmt::Display for LexerError {
         write!(f, "[{}:{}] ", self.position.line, self.position.column)?;
 
         match &self.kind {
-            ErrorKind::InvalidChar(ch) => write!(f, "Invalid character '{}'", ch),
+            ErrorKind::InvalidChar(ch) => write!(f, "Invalid character '{ch}'"),
             ErrorKind::UnterminatedString => write!(f, "Unterminated string literal"),
-            ErrorKind::InvalidEscape(seq) => write!(f, "Invalid escape sequence '{}'", seq),
-            ErrorKind::InvalidNumber(num) => write!(f, "Invalid number format '{}'", num),
+            ErrorKind::InvalidEscape(seq) => write!(f, "Invalid escape sequence '{seq}'"),
+            ErrorKind::InvalidNumber(num) => write!(f, "Invalid number format '{num}'"),
             ErrorKind::Utf8Error => write!(f, "UTF-8 decoding error"),
-            ErrorKind::Custom(msg) => write!(f, "{}", msg),
+            ErrorKind::Custom(msg) => write!(f, "{msg}"),
         }
     }
 }
@@ -131,7 +131,7 @@ mod tests {
         let pos = SourcePosition::new(3, 7, 50, 7);
         let err = LexerError::at(ErrorKind::UnterminatedString, pos);
 
-        let display = format!("{}", err);
+        let display = format!("{err}");
         assert!(display.contains("3:7"));
         assert!(display.contains("Unterminated"));
     }

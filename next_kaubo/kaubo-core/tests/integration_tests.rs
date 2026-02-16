@@ -7,16 +7,16 @@ use kaubo_core::compiler::parser::parser::Parser;
 fn parse_code(code: &str) -> Result<String, String> {
     let mut lexer = build_lexer();
     lexer
-        .feed(&code.as_bytes().to_vec())
-        .map_err(|e| format!("Lexer error: {:?}", e))?;
+        .feed(code.as_bytes())
+        .map_err(|e| format!("Lexer error: {e:?}"))?;
     lexer
         .terminate()
-        .map_err(|e| format!("Lexer terminate error: {:?}", e))?;
+        .map_err(|e| format!("Lexer terminate error: {e:?}"))?;
 
     let mut parser = Parser::new(lexer);
     match parser.parse() {
-        Ok(ast) => Ok(format!("{:?}", ast)),
-        Err(e) => Err(format!("Parse error: {:?}", e)),
+        Ok(ast) => Ok(format!("{ast:?}")),
+        Err(e) => Err(format!("Parse error: {e:?}")),
     }
 }
 
@@ -485,7 +485,7 @@ fn test_parse_error_cases() {
 
     for (code, desc) in error_cases {
         let result = parse_code(code);
-        assert!(result.is_err(), "Expected error for {} but got Ok", desc);
+        assert!(result.is_err(), "Expected error for {desc} but got Ok");
     }
 }
 
@@ -510,8 +510,7 @@ fn test_parse_unexpected_end() {
         let result = parse_code(code);
         assert!(
             result.is_err(),
-            "Should error for incomplete code: {}",
-            code
+            "Should error for incomplete code: {code}"
         );
     }
 }

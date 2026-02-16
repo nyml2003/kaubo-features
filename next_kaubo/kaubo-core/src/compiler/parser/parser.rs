@@ -117,10 +117,10 @@ impl Parser {
 
     /// 期望并消费指定类型的token，否则返回错误
     fn expect(&mut self, kind: KauboTokenKind) -> ParseResult<()> {
-        if self.match_token(kind.clone()) {
+        if self.match_token(kind) {
             Ok(())
         } else {
-            let expected = format!("{:?}", kind);
+            let expected = format!("{kind:?}");
             let found = self.current_token_text();
             debug!(self.logger, "expect: expected {:?}, found {}", kind, found);
             Err(self.error_here(ParserErrorKind::UnexpectedToken {
@@ -277,7 +277,7 @@ impl Parser {
 
         // 循环解析二元运算符和右操作数
         while let Some(token) = &self.current_token {
-            let op_precedence = get_precedence(token.kind.clone());
+            let op_precedence = get_precedence(token.kind);
 
             // 优先级不足，停止解析
             if op_precedence <= min_precedence {
@@ -285,11 +285,11 @@ impl Parser {
             }
 
             // 消费运算符
-            let op = token.kind.clone();
+            let op = token.kind;
             self.consume();
 
             // 解析右操作数（考虑结合性）
-            let next_precedence = if get_associativity(op.clone()) {
+            let next_precedence = if get_associativity(op) {
                 op_precedence
             } else {
                 op_precedence - 1
@@ -308,7 +308,7 @@ impl Parser {
         trace!(self.logger, "parse_unary");
         if self.check(KauboTokenKind::Minus) || self.check(KauboTokenKind::Not) {
             let token = self.current_token.as_ref().unwrap();
-            let op = token.kind.clone();
+            let op = token.kind;
             self.consume();
 
             let operand = self.parse_unary()?;
@@ -676,8 +676,8 @@ impl Parser {
 
         // 方法调用保持原样：obj.method(args) 在运行时解析
         Ok(Box::new(ExprKind::FunctionCall(FunctionCall {
-            function_expr: function_expr,
-            arguments: arguments,
+            function_expr,
+            arguments,
         })))
     }
 
@@ -889,7 +889,7 @@ impl Parser {
             } else if self.match_token(KauboTokenKind::Operator) {
                 // operator xxx 语法
                 let op_name = self.expect_identifier()?;
-                format!("operator {}", op_name)
+                format!("operator {op_name}")
             } else {
                 return Err(self.error_here(ParserErrorKind::UnexpectedToken {
                     found: format!("{:?}", self.current_token.as_ref().map(|t| &t.kind)),
@@ -1111,7 +1111,7 @@ mod tests {
 
     fn parse_code(code: &str) -> ParseResult<Module> {
         let mut lexer = build_lexer();
-        let _ = lexer.feed(&code.as_bytes().to_vec());
+        let _ = lexer.feed(code.as_bytes());
         let _ = lexer.terminate();
         let mut parser = Parser::new(lexer);
         parser.parse()
@@ -1128,7 +1128,7 @@ mod tests {
     fn test_parse_literal_string() {
         // 调试 lexer 输出
         let mut lexer = build_lexer();
-        let _ = lexer.feed(&r#""hello";"#.as_bytes().to_vec());
+        let _ = lexer.feed(r#""hello";"#.as_bytes());
         let _ = lexer.terminate();
 
         println!("Tokens from lexer:");
@@ -1137,7 +1137,7 @@ mod tests {
             match lexer.next_token() {
                 Some(token) => println!("  [{}] {:?} = {:?}", i, token.kind, token.text),
                 None => {
-                    println!("  [{}] None (EOF)", i);
+                    println!("  [{i}] None (EOF)");
                     break;
                 }
             }
@@ -1146,12 +1146,11 @@ mod tests {
         let code = r#""hello";"#;
         let result = parse_code(code);
         if let Err(ref e) = result {
-            println!("Parse error: {:?}", e);
+            println!("Parse error: {e:?}");
         }
         assert!(
             result.is_ok(),
-            "Failed to parse string literal: {:?}",
-            result
+            "Failed to parse string literal: {result:?}"
         );
     }
 
@@ -1324,9 +1323,9 @@ mod tests {
         for (code, expected_op) in cases {
             let result = parse_code(code);
             if let Err(ref e) = result {
-                println!("Failed to parse '{}': {:?}", code, e);
+                println!("Failed to parse '{code}': {e:?}");
             }
-            assert!(result.is_ok(), "Failed to parse {} comparison", expected_op);
+            assert!(result.is_ok(), "Failed to parse {expected_op} comparison");
         }
     }
 
@@ -1391,7 +1390,7 @@ mod tests {
         let result = parse_code(code);
         // 当前实现可能允许最后一个语句无分号
         // 这个测试用于确认当前行为
-        println!("Result: {:?}", result);
+        println!("Result: {result:?}");
     }
 
     // ===== 索引访问测试 =====
@@ -1786,7 +1785,7 @@ mod tests {
         let code = "import std";
         let result = parse_code(code);
         // 最后一个语句可能允许无分号
-        println!("Import without semicolon: {:?}", result);
+        println!("Import without semicolon: {result:?}");
     }
 
     #[test]

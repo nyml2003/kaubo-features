@@ -92,7 +92,7 @@ impl RunConfig {
 
         Self {
             show_steps: show_steps || matches!(config.profile, Profile::Dev | Profile::Debug | Profile::Trace),
-            dump_bytecode: dump_bytecode,
+            dump_bytecode,
             compiler: config.compiler_options.clone(),
             limits: runtime.limits.clone(),
             lexer: runtime.lexer.clone(),
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn test_run_config_debug() {
         let cfg = RunConfig::default();
-        let debug_str = format!("{:?}", cfg);
+        let debug_str = format!("{cfg:?}");
         assert!(debug_str.contains("show_steps"));
         assert!(debug_str.contains("dump_bytecode"));
         assert!(debug_str.contains("compiler"));

@@ -138,8 +138,7 @@ impl std::fmt::Display for TypeError {
             } => {
                 write!(
                     f,
-                    "Type mismatch: expected '{}', found '{}'",
-                    expected, found
+                    "Type mismatch: expected '{expected}', found '{found}'"
                 )
             }
             TypeError::ReturnTypeMismatch {
@@ -147,18 +146,17 @@ impl std::fmt::Display for TypeError {
             } => {
                 write!(
                     f,
-                    "Return type mismatch: expected '{}', found '{}'",
-                    expected, found
+                    "Return type mismatch: expected '{expected}', found '{found}'"
                 )
             }
             TypeError::UndefinedVar { name, .. } => {
-                write!(f, "Undefined variable: '{}'", name)
+                write!(f, "Undefined variable: '{name}'")
             }
             TypeError::UnsupportedOp { op, .. } => {
-                write!(f, "Unsupported operation: '{}'", op)
+                write!(f, "Unsupported operation: '{op}'")
             }
             TypeError::CannotInfer { message, .. } => {
-                write!(f, "Cannot infer type: {}", message)
+                write!(f, "Cannot infer type: {message}")
             }
         }
     }
@@ -714,7 +712,7 @@ impl TypeChecker {
 
             // 检查参数类型（简化版）
             // TODO: 对比 arg_type 与 param_type 进行严格检查
-            for (_i, arg) in call.arguments.iter().enumerate() {
+            for arg in call.arguments.iter() {
                 let _arg_type = self.check_expression(arg)?;
             }
 
@@ -953,7 +951,7 @@ mod tests {
 
     fn parse_and_check(code: &str) -> TypeCheckResult<Option<TypeExpr>> {
         let mut lexer = build_lexer();
-        let _ = lexer.feed(&code.as_bytes().to_vec());
+        let _ = lexer.feed(code.as_bytes());
         let _ = lexer.terminate();
         let mut parser = Parser::new(lexer);
         let module = parser.parse().expect("Parse failed");
@@ -1015,7 +1013,7 @@ mod tests {
         checker.set_strict_mode(true);
 
         let mut lexer = build_lexer();
-        let _ = lexer.feed(&code.as_bytes().to_vec());
+        let _ = lexer.feed(code.as_bytes());
         let _ = lexer.terminate();
         let mut parser = Parser::new(lexer);
         let module = parser.parse().expect("Parse failed");

@@ -57,7 +57,7 @@ fn test_and_left_false_returns_left() {
     let result = run_code(code).unwrap();
     // 检查返回的是 false（Value::FALSE）
     let value = result.return_value.unwrap();
-    assert!(value.is_false(), "Expected false, got {:?}", value);
+    assert!(value.is_false(), "Expected false, got {value:?}");
 }
 
 #[test]

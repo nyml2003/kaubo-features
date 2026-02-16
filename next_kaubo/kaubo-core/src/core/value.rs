@@ -65,7 +65,7 @@ impl Value {
     /// 范围: -2^30 ~ 2^30-1 (约 ±10亿)
     #[inline]
     pub fn smi(n: i32) -> Self {
-        debug_assert!(n >= SMI_MIN && n <= SMI_MAX, "SMI out of range: {}", n);
+        debug_assert!((SMI_MIN..=SMI_MAX).contains(&n), "SMI out of range: {n}");
         let payload = (n as u64) & ((1 << 31) - 1);
         Self(QNAN | TAG_SMI | payload)
     }
@@ -81,7 +81,7 @@ impl Value {
                 Self(QNAN | tag)
             }
             SMI_MIN..=SMI_MAX => Self::smi(n),
-            _ => panic!("Integer {} out of SMI range", n),
+            _ => panic!("Integer {n} out of SMI range"),
         }
     }
 
@@ -151,7 +151,7 @@ impl Value {
         }
         let tag = self.raw_tag();
         let payload = self.0 & PAYLOAD_MASK;
-        tag >= 8 && tag <= 23 && payload == 0
+        (8..=23).contains(&tag) && payload == 0
     }
 
     /// 是否为整数（SMI 或内联整数）
@@ -227,7 +227,7 @@ impl Value {
         }
         let tag = self.raw_tag();
         let payload = self.0 & PAYLOAD_MASK;
-        if tag >= 8 && tag <= 23 && payload == 0 {
+        if (8..=23).contains(&tag) && payload == 0 {
             Some((tag as i32) - 16)
         } else {
             None
@@ -285,7 +285,7 @@ mod tests {
     fn test_inline_int() {
         for n in -8..=7 {
             let v = Value::int(n);
-            assert!(v.is_inline_int(), "{} should be inline", n);
+            assert!(v.is_inline_int(), "{n} should be inline");
             assert_eq!(v.as_int(), Some(n));
         }
     }

@@ -6,7 +6,7 @@ use kaubo_api::KauboError;
 
 /// 打印错误并显示源代码上下文
 pub fn print_error_with_source(e: &KauboError, source: &str) {
-    eprintln!("❌ {}", e);
+    eprintln!("❌ {e}");
 
     // 获取错误位置
     let line_num = e.line();
@@ -36,34 +36,33 @@ pub fn print_source_context(source: &str, error_line: usize, error_col: usize) {
     let max_line_num_width = end_line.to_string().len();
 
     // 打印分隔线
-    let separator: String = std::iter::repeat('-')
-        .take(max_line_num_width + 1)
+    let separator: String = std::iter::repeat_n('-', max_line_num_width + 1)
         .collect();
-    eprintln!("{}|--", separator);
+    eprintln!("{separator}|--");
 
     // 打印上下文行
     for line_idx in start_line..=end_line {
         let line_content = lines[line_idx - 1];
         let line_str = line_idx.to_string();
         let padding_len = max_line_num_width.saturating_sub(line_str.len());
-        let padding: String = std::iter::repeat(' ').take(padding_len).collect();
+        let padding: String = std::iter::repeat_n(' ', padding_len).collect();
 
         if line_idx == error_line {
             // 错误行：打印行号和源代码
-            eprintln!("{}{} | {}", padding, line_str, line_content);
+            eprintln!("{padding}{line_str} | {line_content}");
 
             // 打印指向错误位置的标记
             let marker_offset = error_col.saturating_sub(1);
-            let marker: String = std::iter::repeat(' ').take(marker_offset).collect();
+            let marker: String = std::iter::repeat_n(' ', marker_offset).collect();
             let separator_padding: String =
-                std::iter::repeat(' ').take(max_line_num_width).collect();
-            eprintln!("{} | {}^", separator_padding, marker);
+                std::iter::repeat_n(' ', max_line_num_width).collect();
+            eprintln!("{separator_padding} | {marker}^");
         } else {
             // 普通上下文行
-            eprintln!("{}{} | {}", padding, line_str, line_content);
+            eprintln!("{padding}{line_str} | {line_content}");
         }
     }
 
     // 打印分隔线
-    eprintln!("{}|--", separator);
+    eprintln!("{separator}|--");
 }

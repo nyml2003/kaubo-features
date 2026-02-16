@@ -344,7 +344,7 @@ mod tests {
                 match rb2.pop() {
                     Ok(val) => received.push(val),
                     Err(RingBufferError::BufferClosedAndEmpty) => break,
-                    Err(e) => panic!("Unexpected error: {:?}", e),
+                    Err(e) => panic!("Unexpected error: {e:?}"),
                 }
             }
             received

@@ -31,12 +31,12 @@ impl std::fmt::Display for CompileError {
             CompileError::TooManyConstants => write!(f, "Too many constants in one chunk"),
             CompileError::TooManyLocals => write!(f, "Too many local variables"),
             CompileError::VariableAlreadyExists(name) => {
-                write!(f, "Variable '{}' already exists", name)
+                write!(f, "Variable '{name}' already exists")
             }
             CompileError::UninitializedVariable(name) => {
-                write!(f, "Variable '{}' is not initialized", name)
+                write!(f, "Variable '{name}' is not initialized")
             }
-            CompileError::Unimplemented(s) => write!(f, "Unimplemented: {}", s),
+            CompileError::Unimplemented(s) => write!(f, "Unimplemented: {s}"),
         }
     }
 }
@@ -410,13 +410,11 @@ impl Compiler {
                             param_name.clone(),
                             VarType::Struct(impl_stmt.struct_name.clone()),
                         );
-                    } else if let Some(type_expr) = param_type {
-                        if let crate::compiler::parser::type_expr::TypeExpr::Named(named_type) = type_expr {
-                            method_compiler.var_types.insert(
-                                param_name.clone(),
-                                VarType::Struct(named_type.name.clone()),
-                            );
-                        }
+                    } else if let Some(crate::compiler::parser::type_expr::TypeExpr::Named(named_type)) = param_type {
+                        method_compiler.var_types.insert(
+                            param_name.clone(),
+                            VarType::Struct(named_type.name.clone()),
+                        );
                     }
                 }
 
@@ -478,7 +476,7 @@ impl Compiler {
             ExprKind::LiteralString(lit) => {
                 // 创建字符串对象
                 let string_obj = Box::new(ObjString::new(lit.value.clone()));
-                let string_ptr = Box::into_raw(string_obj) as *mut ObjString;
+                let string_ptr = Box::into_raw(string_obj);
                 let value = Value::string(string_ptr);
                 let idx = self.chunk.add_constant(value);
                 self.emit_constant(idx);
@@ -540,7 +538,7 @@ impl Compiler {
                         if self.is_module_name(&var_ref.name) {
                             // 模块作为全局变量访问
                             let name_obj = Box::new(ObjString::new(var_ref.name.clone()));
-                            let name_ptr = Box::into_raw(name_obj) as *mut ObjString;
+                            let name_ptr = Box::into_raw(name_obj);
                             let name_val = Value::string(name_ptr);
                             let name_idx = self.chunk.add_constant(name_val);
                             self.emit_constant(name_idx);
@@ -548,7 +546,7 @@ impl Compiler {
                         } else {
                             // 作为全局变量访问（如 std 函数）
                             let name_obj = Box::new(ObjString::new(var_ref.name.clone()));
-                            let name_ptr = Box::into_raw(name_obj) as *mut ObjString;
+                            let name_ptr = Box::into_raw(name_obj);
                             let name_val = Value::string(name_ptr);
                             let name_idx = self.chunk.add_constant(name_val);
                             self.chunk.write_op_u8(OpCode::LoadGlobal, name_idx, 0);
@@ -587,7 +585,7 @@ impl Compiler {
                         } else {
                             // 模块是全局变量：LoadGlobal + ModuleGet(shape_id)
                             let name_obj = Box::new(ObjString::new(var_ref.name.clone()));
-                            let name_ptr = Box::into_raw(name_obj) as *mut ObjString;
+                            let name_ptr = Box::into_raw(name_obj);
                             let name_val = Value::string(name_ptr);
                             let name_idx = self.chunk.add_constant(name_val);
                             self.chunk.write_op_u8(OpCode::LoadGlobal, name_idx, 0);
@@ -621,7 +619,7 @@ impl Compiler {
                     // 普通对象访问（JSON）：编译对象 + 字符串键 + IndexGet
                     self.compile_expr(&member.object)?;
                     let key_obj = Box::new(ObjString::new(member.member.clone()));
-                    let key_ptr = Box::into_raw(key_obj) as *mut ObjString;
+                    let key_ptr = Box::into_raw(key_obj);
                     let key_val = Value::string(key_ptr);
                     let idx = self.chunk.add_constant(key_val);
                     self.emit_constant(idx);
@@ -653,7 +651,7 @@ impl Compiler {
                     self.compile_expr(value)?;
                     // 键（字符串）入栈
                     let key_obj = Box::new(ObjString::new(key.clone()));
-                    let key_ptr = Box::into_raw(key_obj) as *mut ObjString;
+                    let key_ptr = Box::into_raw(key_obj);
                     let key_val = Value::string(key_ptr);
                     let idx = self.chunk.add_constant(key_val);
                     self.emit_constant(idx);
@@ -907,7 +905,7 @@ impl Compiler {
                 self.compile_expr(right)?; // value
                                            // 成员名作为字符串
                 let key_obj = Box::new(ObjString::new(member.member.clone()));
-                let key_ptr = Box::into_raw(key_obj) as *mut ObjString;
+                let key_ptr = Box::into_raw(key_obj);
                 let key_val = Value::string(key_ptr);
                 let idx = self.chunk.add_constant(key_val);
                 self.emit_constant(idx); // key
@@ -1425,7 +1423,7 @@ impl Compiler {
 
             // 定义全局变量：模块名
             let module_name_obj = Box::new(ObjString::new(module_stmt.name.clone()));
-            let module_name_ptr = Box::into_raw(module_name_obj) as *mut ObjString;
+            let module_name_ptr = Box::into_raw(module_name_obj);
             let module_name_val = Value::string(module_name_ptr);
             let module_name_idx = self.chunk.add_constant(module_name_val);
             self.chunk
@@ -1455,8 +1453,7 @@ impl Compiler {
 
         if !self.is_module_name(module_name) && !self.is_std_module(module_name) {
             return Err(CompileError::Unimplemented(format!(
-                "Module '{}' not found",
-                module_name
+                "Module '{module_name}' not found"
             )));
         }
 
@@ -1473,7 +1470,7 @@ impl Compiler {
                 // 加载模块并获取导出项
                 // 1. 加载模块名（字符串常量）
                 let module_str_obj = Box::new(ObjString::new(module_name.clone()));
-                let module_str_ptr = Box::into_raw(module_str_obj) as *mut ObjString;
+                let module_str_ptr = Box::into_raw(module_str_obj);
                 let module_name_val = Value::string(module_str_ptr);
                 let module_name_constant = self.chunk.add_constant(module_name_val);
                 self.emit_constant(module_name_constant);
@@ -1483,7 +1480,7 @@ impl Compiler {
 
                 // 3. 添加导出项名称到常量池（用于 GetModuleExport）
                 let item_str_obj = Box::new(ObjString::new(item_name.clone()));
-                let item_str_ptr = Box::into_raw(item_str_obj) as *mut ObjString;
+                let item_str_ptr = Box::into_raw(item_str_obj);
                 let item_name_val = Value::string(item_str_ptr);
                 let item_name_constant = self.chunk.add_constant(item_name_val);
 
@@ -1494,7 +1491,7 @@ impl Compiler {
                 // 4. 使用 GetModuleExport 从模块获取导出项
                 // 操作数: u8 常量池索引
                 self.chunk.write_op(OpCode::GetModuleExport, 0);
-                self.chunk.code.push(item_name_constant as u8);
+                self.chunk.code.push(item_name_constant);
                 self.chunk.lines.push(0);
 
                 // 5. 存储到局部变量
@@ -1515,7 +1512,7 @@ impl Compiler {
 
             // 加载模块名
             let module_str_obj = Box::new(ObjString::new(module_name.clone()));
-            let module_str_ptr = Box::into_raw(module_str_obj) as *mut ObjString;
+            let module_str_ptr = Box::into_raw(module_str_obj);
             let module_name_val = Value::string(module_str_ptr);
             let module_name_constant = self.chunk.add_constant(module_name_val);
             self.emit_constant(module_name_constant);
@@ -1569,13 +1566,13 @@ impl Compiler {
         ));
 
         // 将函数对象作为常量添加到当前 chunk
-        let function_ptr = Box::into_raw(function) as *mut ObjFunction;
+        let function_ptr = Box::into_raw(function);
         let function_value = Value::function(function_ptr);
         let idx = self.chunk.add_constant(function_value);
 
         // 发射 Closure 指令：函数索引 + upvalue数量 + upvalue描述符
         self.chunk.write_op(OpCode::Closure, 0);
-        self.chunk.code.push(idx as u8);
+        self.chunk.code.push(idx);
         self.chunk.lines.push(0);
         self.chunk.code.push(upvalues.len() as u8);
         self.chunk.lines.push(0);
@@ -1702,13 +1699,13 @@ mod tests {
 
     fn compile_code(code: &str) -> Result<(Chunk, usize, HashMap<String, (u16, Vec<String>)>), CompileError> {
         let mut lexer = build_lexer();
-        let _ = lexer.feed(&code.as_bytes().to_vec());
+        let _ = lexer.feed(code.as_bytes());
         let _ = lexer.terminate();
 
         let mut parser = Parser::new(lexer);
         let ast = parser
             .parse()
-            .map_err(|e| CompileError::Unimplemented(format!("Parse error: {:?}", e)))?;
+            .map_err(|e| CompileError::Unimplemented(format!("Parse error: {e:?}")))?;
 
         // 收集 struct 信息
         let mut struct_infos: HashMap<String, (u16, Vec<String>)> = HashMap::new();
@@ -1733,7 +1730,7 @@ mod tests {
 
     fn run_code(code: &str) -> Result<Value, String> {
         let (chunk, local_count, struct_infos) =
-            compile_code(code).map_err(|e| format!("Compile error: {:?}", e))?;
+            compile_code(code).map_err(|e| format!("Compile error: {e:?}"))?;
         
         let mut vm = VM::new();
         
@@ -1744,7 +1741,9 @@ mod tests {
                 name,
                 field_names,
             )));
-            vm.register_shape(shape);
+            unsafe {
+                vm.register_shape(shape);
+            }
         }
         
         let result = vm.interpret_with_locals(&chunk, local_count);
@@ -1761,19 +1760,19 @@ mod tests {
     #[test]
     fn test_compile_literal() {
         let (chunk, _, _) = compile_code("42;").unwrap();
-        assert!(chunk.code.len() > 0);
+        assert!(!chunk.code.is_empty());
     }
 
     #[test]
     fn test_compile_binary() {
         let (chunk, _, _) = compile_code("1 + 2;").unwrap();
-        assert!(chunk.code.len() > 0);
+        assert!(!chunk.code.is_empty());
     }
 
     #[test]
     fn test_compile_complex() {
         let (chunk, _, _) = compile_code("1 + 2 * 3;").unwrap();
-        assert!(chunk.code.len() > 0);
+        assert!(!chunk.code.is_empty());
     }
 
     // ===== End-to-End 测试 =====
@@ -1878,28 +1877,28 @@ mod tests {
     fn test_compile_lambda() {
         // 测试基本的 lambda 编译
         let (chunk, _, _) = compile_code("|x| { return x + 1; };").unwrap();
-        assert!(chunk.code.len() > 0);
+        assert!(!chunk.code.is_empty());
     }
 
     #[test]
     fn test_compile_lambda_no_params() {
         // 测试无参数 lambda
         let (chunk, _, _) = compile_code("| | { return 42; };").unwrap();
-        assert!(chunk.code.len() > 0);
+        assert!(!chunk.code.is_empty());
     }
 
     #[test]
     fn test_compile_lambda_multi_params() {
         // 测试多参数 lambda
         let (chunk, _, _) = compile_code("|a, b| { return a + b; };").unwrap();
-        assert!(chunk.code.len() > 0);
+        assert!(!chunk.code.is_empty());
     }
 
     #[test]
     fn test_compile_function_call() {
         // 测试函数调用
         let (chunk, _, _) = compile_code("var f = |x| { return x + 1; }; f(5);").unwrap();
-        assert!(chunk.code.len() > 0);
+        assert!(!chunk.code.is_empty());
     }
 
     #[test]

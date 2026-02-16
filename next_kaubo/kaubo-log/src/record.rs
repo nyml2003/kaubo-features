@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn test_record_debug() {
         let record = Record::new(Level::Info, "test::module", "debug test");
-        let debug_str = format!("{:?}", record);
+        let debug_str = format!("{record:?}");
 
         // 验证 Debug 输出包含关键字段
         assert!(debug_str.contains("Record"));

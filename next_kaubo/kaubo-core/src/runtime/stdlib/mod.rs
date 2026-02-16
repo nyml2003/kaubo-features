@@ -298,7 +298,7 @@ fn to_f64(value: &Value) -> Result<f64, String> {
     } else if value.is_float() {
         Ok(value.as_float())
     } else {
-        Err(format!("Expected number, got unknown type"))
+        Err("Expected number, got unknown type".to_string())
     }
 }
 
@@ -342,10 +342,7 @@ fn resume_fn(vm_ptr: *mut (), args: &[Value]) -> Result<Value, String> {
 
         // 收集传入的参数（除了第一个协程参数）
         let arg_count = args.len() - 1;
-        let mut resume_args = Vec::with_capacity(arg_count);
-        for i in 1..args.len() {
-            resume_args.push(args[i]);
-        }
+        let resume_args: Vec<_> = args.iter().skip(1).copied().collect();
 
         // 如果协程是第一次运行，需要初始化调用帧
         if coro.state == CoroutineState::Suspended && coro.frames.is_empty() {
@@ -461,7 +458,7 @@ fn len_fn(args: &[Value]) -> Result<Value, String> {
     }
 
     let len = if let Some(ptr) = args[0].as_string() {
-        unsafe { (&(*ptr).chars).len() as i64 }
+        unsafe { (*ptr).chars.len() as i64 }
     } else if let Some(ptr) = args[0].as_list() {
         unsafe { (*ptr).len() as i64 }
     } else if let Some(ptr) = args[0].as_json() {
@@ -514,11 +511,11 @@ fn is_empty_fn(args: &[Value]) -> Result<Value, String> {
     }
 
     let is_empty = if let Some(ptr) = args[0].as_string() {
-        unsafe { (&(*ptr).chars).is_empty() }
+        unsafe { (*ptr).chars.is_empty() }
     } else if let Some(ptr) = args[0].as_list() {
-        unsafe { (*ptr).len() == 0 }
+        unsafe { (*ptr).is_empty() }
     } else if let Some(ptr) = args[0].as_json() {
-        unsafe { (*ptr).len() == 0 }
+        unsafe { (*ptr).is_empty() }
     } else {
         return Err("is_empty() expects string, list, or json".to_string());
     };
@@ -528,7 +525,7 @@ fn is_empty_fn(args: &[Value]) -> Result<Value, String> {
 
 /// range(end) or range(start, end) or range(start, end, step) -> list
 fn range_fn(args: &[Value]) -> Result<Value, String> {
-    if args.len() < 1 || args.len() > 3 {
+    if args.is_empty() || args.len() > 3 {
         return Err(format!(
             "range() takes 1 to 3 arguments ({} given)",
             args.len()
@@ -562,13 +559,13 @@ fn range_fn(args: &[Value]) -> Result<Value, String> {
         let mut i = start;
         while i < end {
             elements.push(Value::smi(i as i32));
-            i = i + step;
+            i += step;
         }
     } else {
         let mut i = start;
         while i > end {
             elements.push(Value::smi(i as i32));
-            i = i + step;
+            i += step;
         }
     }
 
@@ -639,7 +636,7 @@ fn read_file_fn(args: &[Value]) -> Result<Value, String> {
             let string_obj = Box::new(ObjString::new(content));
             Ok(Value::string(Box::into_raw(string_obj)))
         }
-        Err(e) => Err(format!("read_file() failed: {}", e)),
+        Err(e) => Err(format!("read_file() failed: {e}")),
     }
 }
 
@@ -666,7 +663,7 @@ fn write_file_fn(args: &[Value]) -> Result<Value, String> {
 
     match fs::write(path, content) {
         Ok(_) => Ok(Value::NULL),
-        Err(e) => Err(format!("write_file() failed: {}", e)),
+        Err(e) => Err(format!("write_file() failed: {e}")),
     }
 }
 

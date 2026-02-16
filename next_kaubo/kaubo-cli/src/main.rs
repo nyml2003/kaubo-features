@@ -70,7 +70,7 @@ fn main() {
     let run_config = match build_run_config(&cli) {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("Error: Failed to load configuration: {}", e);
+            eprintln!("Error: Failed to load configuration: {e}");
             process::exit(1);
         }
     };
@@ -135,18 +135,17 @@ fn parse_profile(s: &str) -> Result<Profile, String> {
         "debug" => Ok(Profile::Debug),
         "trace" => Ok(Profile::Trace),
         _ => Err(format!(
-            "Unknown profile: {}. Available: silent, default, dev, debug, trace",
-            s
+            "Unknown profile: {s}. Available: silent, default, dev, debug, trace"
         )),
     }
 }
 
 /// 将字节码输出到 stdout（简洁模式，无 DEBUG 日志）
 fn dump_bytecode_to_stdout(chunk: &kaubo_core::Chunk, name: &str) {
-    println!("== {} ==", name);
+    println!("== {name} ==");
     println!("Constants:");
     for (i, constant) in chunk.constants.iter().enumerate() {
-        println!("  [{:3}] {:?}", i, constant);
+        println!("  [{i:3}] {constant:?}");
     }
     println!("Bytecode:");
 
@@ -170,22 +169,22 @@ fn dump_bytecode_to_stdout(chunk: &kaubo_core::Chunk, name: &str) {
             // u8 操作数
             OpCode::LoadConst => {
                 let idx = chunk.code[offset + 1];
-                println!("{:04} {}LOAD_CONST {}", offset, line_info, idx);
+                println!("{offset:04} {line_info}LOAD_CONST {idx}");
                 offset += 2;
             }
             OpCode::LoadLocal => {
                 let idx = chunk.code[offset + 1];
-                println!("{:04} {}LOAD_LOCAL {}", offset, line_info, idx);
+                println!("{offset:04} {line_info}LOAD_LOCAL {idx}");
                 offset += 2;
             }
             OpCode::StoreLocal => {
                 let idx = chunk.code[offset + 1];
-                println!("{:04} {}STORE_LOCAL {}", offset, line_info, idx);
+                println!("{offset:04} {line_info}STORE_LOCAL {idx}");
                 offset += 2;
             }
             OpCode::Call => {
                 let argc = chunk.code[offset + 1];
-                println!("{:04} {}CALL {}", offset, line_info, argc);
+                println!("{offset:04} {line_info}CALL {argc}");
                 offset += 2;
             }
             OpCode::GetField | OpCode::SetField | OpCode::LoadMethod => {
@@ -198,28 +197,28 @@ fn dump_bytecode_to_stdout(chunk: &kaubo_core::Chunk, name: &str) {
                 let hi = chunk.code[offset + 1] as u16;
                 let lo = chunk.code[offset + 2] as u16;
                 let target = (hi << 8) | lo;
-                println!("{:04} {}JUMP {}", offset, line_info, target);
+                println!("{offset:04} {line_info}JUMP {target}");
                 offset += 3;
             }
             OpCode::JumpIfFalse => {
                 let hi = chunk.code[offset + 1] as u16;
                 let lo = chunk.code[offset + 2] as u16;
                 let target = (hi << 8) | lo;
-                println!("{:04} {}JUMP_IF_FALSE {}", offset, line_info, target);
+                println!("{offset:04} {line_info}JUMP_IF_FALSE {target}");
                 offset += 3;
             }
             OpCode::JumpBack => {
                 let hi = chunk.code[offset + 1] as u16;
                 let lo = chunk.code[offset + 2] as u16;
                 let target = (hi << 8) | lo;
-                println!("{:04} {}JUMP_BACK {}", offset, line_info, target);
+                println!("{offset:04} {line_info}JUMP_BACK {target}");
                 offset += 3;
             }
             OpCode::ModuleGet => {
                 let hi = chunk.code[offset + 1] as u16;
                 let lo = chunk.code[offset + 2] as u16;
                 let id = (hi << 8) | lo;
-                println!("{:04} {}MODULE_GET {}", offset, line_info, id);
+                println!("{offset:04} {line_info}MODULE_GET {id}");
                 offset += 3;
             }
             OpCode::BuildStruct => {
@@ -227,7 +226,7 @@ fn dump_bytecode_to_stdout(chunk: &kaubo_core::Chunk, name: &str) {
                 let lo = chunk.code[offset + 2] as u16;
                 let id = (hi << 8) | lo;
                 let count = chunk.code[offset + 3];
-                println!("{:04} {}BUILD_STRUCT {} {}", offset, line_info, id, count);
+                println!("{offset:04} {line_info}BUILD_STRUCT {id} {count}");
                 offset += 4;
             }
             // 其他 u16 操作数
@@ -235,7 +234,7 @@ fn dump_bytecode_to_stdout(chunk: &kaubo_core::Chunk, name: &str) {
                 let hi = chunk.code[offset + 1] as u16;
                 let lo = chunk.code[offset + 2] as u16;
                 let idx = (hi << 8) | lo;
-                println!("{:04} {}LOAD_CONST_WIDE {}", offset, line_info, idx);
+                println!("{offset:04} {line_info}LOAD_CONST_WIDE {idx}");
                 offset += 3;
             }
             // 默认处理
@@ -301,12 +300,12 @@ fn handle_run(source: &str, config: RunConfig) {
             if config.show_steps {
                 println!("✅ Execution successful!");
                 if let Some(value) = output.value {
-                    println!("Return value: {}", value);
+                    println!("Return value: {value}");
                 }
             } else if let Some(value) = output.value {
                 // Non-step mode: only print return value (actual program output)
                 if value != Value::NULL {
-                    println!("{}", value);
+                    println!("{value}");
                 }
             }
         }

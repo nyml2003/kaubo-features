@@ -1224,7 +1224,7 @@ fn test_coroutine_basic() {
         return sum;
     "#;
     let result = run_code(code);
-    assert!(result.is_ok(), "Coroutine test failed: {:?}", result);
+    assert!(result.is_ok(), "Coroutine test failed: {result:?}");
     assert_eq!(get_int(&result.unwrap()), Some(6));
 }
 
@@ -1268,7 +1268,7 @@ fn test_impl_method_call() {
     "#;
 
     let result = run_code(code);
-    assert!(result.is_ok(), "Impl method call failed: {:?}", result);
+    assert!(result.is_ok(), "Impl method call failed: {result:?}");
 
     // 3-4-5 直角三角形，距离应该是 5.0
     if let Ok(ref val) = result {
@@ -1276,8 +1276,7 @@ fn test_impl_method_call() {
         assert!(dist.is_some(), "Expected float result");
         assert!(
             (dist.unwrap() - 5.0).abs() < 0.001,
-            "Expected distance ~5.0, got {:?}",
-            dist
+            "Expected distance ~5.0, got {dist:?}"
         );
     }
 }

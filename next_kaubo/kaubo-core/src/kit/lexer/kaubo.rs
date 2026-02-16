@@ -49,7 +49,7 @@ impl Scanner for KauboScanner {
         Self {
             mode: KauboMode::Default,
             token_start: SourcePosition::start(),
-            keywords: &KEYWORD_TABLE,
+            keywords: KEYWORD_TABLE,
             logger,
         }
     }
@@ -59,7 +59,7 @@ impl Scanner for KauboScanner {
         Self {
             mode: KauboMode::Default,
             token_start: SourcePosition::start(),
-            keywords: &KEYWORD_TABLE,
+            keywords: KEYWORD_TABLE,
             logger,
         }
     }
@@ -154,7 +154,7 @@ impl KauboScanner {
                 ScanResult::Error(LexError {
                     kind: super::scanner::ErrorKind::InvalidChar(c),
                     position: self.token_start,
-                    message: format!("Unexpected character '{}'", c),
+                    message: format!("Unexpected character '{c}'"),
                 })
             }
         }
@@ -535,7 +535,7 @@ impl KauboScanner {
         for (kw, kind) in self.keywords {
             if *kw == word {
                 debug!(self.logger, "Matched keyword: {}", word);
-                return kind.clone();
+                return *kind;
             }
         }
         KauboTokenKind::Identifier
@@ -597,7 +597,7 @@ mod tests {
                 ScanResult::Token(t) => tokens.push(t),
                 ScanResult::Eof => break,
                 ScanResult::Error(e) => {
-                    panic!("Lex error: {:?}", e);
+                    panic!("Lex error: {e:?}");
                 }
                 ScanResult::Incomplete => {
                     panic!("Unexpected incomplete");

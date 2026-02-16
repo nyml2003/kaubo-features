@@ -117,6 +117,10 @@ impl ObjList {
         self.elements.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
     pub fn get(&self, index: usize) -> Option<Value> {
         self.elements.get(index).copied()
     }
@@ -169,6 +173,8 @@ impl ObjIterator {
         }
     }
 
+    /// # Safety
+    /// `json` 必须是有效的、非空的指向 `ObjJson` 的指针
     pub unsafe fn from_json(json: *mut ObjJson) -> Self {
         let keys = { (*json).entries.keys().cloned().collect() };
         Self {
@@ -384,6 +390,10 @@ impl ObjJson {
 
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 }
 

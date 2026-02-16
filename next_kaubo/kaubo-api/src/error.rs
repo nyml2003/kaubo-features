@@ -358,7 +358,7 @@ mod tests {
             }),
         };
 
-        let display = format!("{}", report);
+        let display = format!("{report}");
         assert!(display.contains("[10:5]"));
         assert!(display.contains("parser"));
         assert!(display.contains("expected ';'"));
@@ -375,7 +375,7 @@ mod tests {
             details: None,
         };
 
-        let display = format!("{}", report);
+        let display = format!("{report}");
         assert!(display.contains("[compiler]"));
         assert!(display.contains("compiler error"));
     }

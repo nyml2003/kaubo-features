@@ -356,7 +356,7 @@ impl std::fmt::Display for Value {
                         if i > 0 {
                             write!(f, ", ")?;
                         }
-                        write!(f, "{}", elem)?;
+                        write!(f, "{elem}")?;
                     }
                     write!(f, "]")
                 }
@@ -383,7 +383,7 @@ impl std::fmt::Display for Value {
                         if i > 0 {
                             write!(f, ", ")?;
                         }
-                        write!(f, "\"{}\": {}", key, value)?;
+                        write!(f, "\"{key}\": {value}")?;
                     }
                     write!(f, "}}")
                 }
@@ -406,9 +406,9 @@ impl std::fmt::Display for Value {
                             write!(f, ", ")?;
                         }
                         if let Some(name) = shape.field_names.get(i) {
-                            write!(f, "{}: {}", name, field)?;
+                            write!(f, "{name}: {field}")?;
                         } else {
-                            write!(f, "{}", field)?;
+                            write!(f, "{field}")?;
                         }
                     }
                     write!(f, " }}")

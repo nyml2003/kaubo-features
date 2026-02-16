@@ -237,7 +237,7 @@ mod tests {
         let buffer = LogRingBuffer::new(3);
 
         for i in 0..5 {
-            buffer.push(Record::new(Level::Info, "test", alloc::format!("msg{}", i)));
+            buffer.push(Record::new(Level::Info, "test", alloc::format!("msg{i}")));
         }
 
         assert_eq!(buffer.len(), 3);
@@ -321,7 +321,7 @@ mod tests {
 
         // 溢出触发丢弃
         for i in 0..10 {
-            buffer.push(Record::new(Level::Info, "test", format!("msg{}", i)));
+            buffer.push(Record::new(Level::Info, "test", format!("msg{i}")));
         }
 
         let stats = buffer.stats();
@@ -378,7 +378,7 @@ mod tests {
                     buf.push(Record::new(
                         Level::Info,
                         "test",
-                        format!("thread {} msg {}", i, j),
+                        format!("thread {i} msg {j}"),
                     ));
                 }
             }));

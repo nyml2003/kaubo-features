@@ -100,7 +100,7 @@ impl VM {
                         // 如果 Shape 不存在，创建一个空的（这不应该发生，但做安全处理）
                         let shape = Box::into_raw(Box::new(ObjShape::new(
                             *shape_id,
-                            format!("<anon_{}>", shape_id),
+                            format!("<anon_{shape_id}>"),
                             Vec::new(),
                         )));
                         shape
@@ -629,8 +629,7 @@ impl VM {
                         self.push(*value);
                     } else {
                         return InterpretResult::RuntimeError(format!(
-                            "Undefined global variable: {}",
-                            name
+                            "Undefined global variable: {name}"
                         ));
                     }
                 }
@@ -1127,8 +1126,7 @@ impl VM {
                             self.push(value);
                         } else {
                             return InterpretResult::RuntimeError(format!(
-                                "Module field with ShapeID {} not found",
-                                shape_id
+                                "Module field with ShapeID {shape_id} not found"
                             ));
                         }
                     } else {
@@ -1156,8 +1154,7 @@ impl VM {
                         }
                     } else {
                         return InterpretResult::RuntimeError(format!(
-                            "Invalid constant index for GetModuleExport: {}",
-                            name_idx
+                            "Invalid constant index for GetModuleExport: {name_idx}"
                         ));
                     };
 
@@ -1167,8 +1164,7 @@ impl VM {
                             self.push(value);
                         } else {
                             return InterpretResult::RuntimeError(format!(
-                                "Export '{}' not found in module",
-                                name
+                                "Export '{name}' not found in module"
                             ));
                         }
                     } else {
@@ -1194,8 +1190,7 @@ impl VM {
                         self.push(*value);
                     } else {
                         return InterpretResult::RuntimeError(format!(
-                            "Module '{}' not found",
-                            name
+                            "Module '{name}' not found"
                         ));
                     }
                 }
@@ -1218,8 +1213,7 @@ impl VM {
                     let shape_ptr = self.get_shape(shape_id);
                     if shape_ptr.is_null() {
                         return InterpretResult::RuntimeError(format!(
-                            "Shape ID {} not found",
-                            shape_id
+                            "Shape ID {shape_id} not found"
                         ));
                     }
 
@@ -1238,8 +1232,7 @@ impl VM {
                             self.push(value);
                         } else {
                             return InterpretResult::RuntimeError(format!(
-                                "Field index {} out of bounds",
-                                field_idx
+                                "Field index {field_idx} out of bounds"
                             ));
                         }
                     } else {
@@ -1280,8 +1273,7 @@ impl VM {
                             self.push(Value::function(method));
                         } else {
                             return InterpretResult::RuntimeError(format!(
-                                "Method index {} not found in shape",
-                                method_idx
+                                "Method index {method_idx} not found in shape"
                             ));
                         }
                     } else {
@@ -1528,7 +1520,7 @@ impl VM {
                 // ===== 调试 =====
                 Print => {
                     let v = self.pop();
-                    println!("{}", v);
+                    println!("{v}");
                 }
 
                 Invalid => {
@@ -1537,8 +1529,7 @@ impl VM {
 
                 _ => {
                     return InterpretResult::RuntimeError(format!(
-                        "Unimplemented opcode: {:?}",
-                        op
+                        "Unimplemented opcode: {op:?}"
                     ));
                 }
             }
@@ -1548,11 +1539,12 @@ impl VM {
     // ==================== Shape 管理 ====================
 
     /// 注册 Shape 到 VM
-    pub fn register_shape(&mut self, shape: *const ObjShape) {
-        unsafe {
-            let shape_id = (*shape).shape_id;
-            self.shapes.insert(shape_id, shape);
-        }
+    ///
+    /// # Safety
+    /// `shape` 必须是有效的、非空的指向 `ObjShape` 的指针
+    pub unsafe fn register_shape(&mut self, shape: *const ObjShape) {
+        let shape_id = (*shape).shape_id;
+        self.shapes.insert(shape_id, shape);
     }
 
     /// 通过 ID 获取 Shape
@@ -1804,7 +1796,7 @@ impl VM {
         if let (Some(ap), Some(bp)) = (a.as_string(), b.as_string()) {
             let a_str = unsafe { &(*ap).chars };
             let b_str = unsafe { &(*bp).chars };
-            let concatenated = format!("{}{}", a_str, b_str);
+            let concatenated = format!("{a_str}{b_str}");
             let string_obj = Box::new(ObjString::new(concatenated));
             return Ok(Value::string(Box::into_raw(string_obj)));
         }
@@ -1813,7 +1805,7 @@ impl VM {
         if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
             // 检查溢出
             if let Some(sum) = ai.checked_add(bi) {
-                if sum >= -(1 << 30) && sum < (1 << 30) {
+                if (-(1 << 30)..(1 << 30)).contains(&sum) {
                     return Ok(Value::smi(sum));
                 }
             }
@@ -1846,7 +1838,7 @@ impl VM {
     fn sub_values(&self, a: Value, b: Value) -> Result<Value, String> {
         if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
             if let Some(diff) = ai.checked_sub(bi) {
-                if diff >= -(1 << 30) && diff < (1 << 30) {
+                if (-(1 << 30)..(1 << 30)).contains(&diff) {
                     return Ok(Value::smi(diff));
                 }
             }
@@ -1876,7 +1868,7 @@ impl VM {
     fn mul_values(&self, a: Value, b: Value) -> Result<Value, String> {
         if let (Some(ai), Some(bi)) = (a.as_smi(), b.as_smi()) {
             if let Some(prod) = ai.checked_mul(bi) {
-                if prod >= -(1 << 30) && prod < (1 << 30) {
+                if (-(1 << 30)..(1 << 30)).contains(&prod) {
                     return Ok(Value::smi(prod));
                 }
             }
@@ -2199,7 +2191,7 @@ impl VM {
                     }
                 }
                 LoadConst0 => {
-                    if let Some(val) = func.chunk.constants.get(0) {
+                    if let Some(val) = func.chunk.constants.first() {
                         self.push(*val);
                     }
                 }
@@ -2425,7 +2417,7 @@ impl VM {
 
                     let shape_ptr = self.get_shape(shape_id);
                     if shape_ptr.is_null() {
-                        return Err(format!("Shape ID {} not found", shape_id));
+                        return Err(format!("Shape ID {shape_id} not found"));
                     }
 
                     let obj = ObjStruct::new(shape_ptr, fields);
@@ -2444,7 +2436,7 @@ impl VM {
                 }
 
                 _ => {
-                    return Err(format!("Unsupported opcode in operator set: {:?}", op));
+                    return Err(format!("Unsupported opcode in operator set: {op:?}"));
                 }
             }
         }
@@ -2609,7 +2601,7 @@ impl VM {
                     }
                 }
                 LoadConst0 => {
-                    if let Some(val) = func.chunk.constants.get(0) {
+                    if let Some(val) = func.chunk.constants.first() {
                         self.push(*val);
                     }
                 }
@@ -2839,7 +2831,7 @@ impl VM {
 
                     let shape_ptr = self.get_shape(shape_id);
                     if shape_ptr.is_null() {
-                        return Err(format!("Shape ID {} not found", shape_id));
+                        return Err(format!("Shape ID {shape_id} not found"));
                     }
 
                     let obj = ObjStruct::new(shape_ptr, fields);
@@ -2888,7 +2880,7 @@ impl VM {
                             if i < struct_obj.field_count() {
                                 self.push(struct_obj.fields[i]);
                             } else {
-                                return Err(format!("Field index out of bounds: {}", i));
+                                return Err(format!("Field index out of bounds: {i}"));
                             }
                         } else {
                             return Err("Expected list or struct for integer index".to_string());
@@ -2906,7 +2898,7 @@ impl VM {
                 }
 
                 _ => {
-                    return Err(format!("Unsupported opcode in operator: {:?}", op));
+                    return Err(format!("Unsupported opcode in operator: {op:?}"));
                 }
             }
         }
@@ -2976,7 +2968,7 @@ impl VM {
                     }
                 }
                 LoadConst0 => {
-                    if let Some(val) = func.chunk.constants.get(0) {
+                    if let Some(val) = func.chunk.constants.first() {
                         self.push(*val);
                     }
                 }
@@ -3079,7 +3071,7 @@ impl VM {
 
                     let shape_ptr = self.get_shape(shape_id);
                     if shape_ptr.is_null() {
-                        return Err(format!("Shape ID {} not found", shape_id));
+                        return Err(format!("Shape ID {shape_id} not found"));
                     }
 
                     let obj = ObjStruct::new(shape_ptr, fields);
@@ -3133,7 +3125,7 @@ impl VM {
                             if i < struct_obj.field_count() {
                                 self.push(struct_obj.fields[i]);
                             } else {
-                                return Err(format!("Field index out of bounds: {}", i));
+                                return Err(format!("Field index out of bounds: {i}"));
                             }
                         } else {
                             return Err("Expected list or struct for integer index".to_string());
@@ -3217,7 +3209,7 @@ impl VM {
                 }
 
                 _ => {
-                    return Err(format!("Unsupported opcode in operator: {:?}", op));
+                    return Err(format!("Unsupported opcode in operator: {op:?}"));
                 }
             }
         }
@@ -3374,7 +3366,7 @@ mod tests {
         let mut vm = VM::new();
         let mut chunk = Chunk::new();
 
-        let big = (1 << 29) as i32; // 536870912
+        let big = (1 << 29); // 536870912
         let c1 = chunk.add_constant(Value::smi(big));
         let c2 = chunk.add_constant(Value::smi(big));
 

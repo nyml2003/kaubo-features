@@ -106,7 +106,7 @@ impl std::fmt::Display for ParserError {
         let message = match &self.kind {
             ParserErrorKind::UnexpectedToken { found, expected } => {
                 if expected.is_empty() {
-                    format!("Unexpected token '{}'", found)
+                    format!("Unexpected token '{found}'")
                 } else {
                     format!(
                         "Unexpected token '{}', expected: {}",
@@ -116,7 +116,7 @@ impl std::fmt::Display for ParserError {
                 }
             }
             ParserErrorKind::InvalidNumberFormat(s) => {
-                format!("Invalid number format: '{}'", s)
+                format!("Invalid number format: '{s}'")
             }
             ParserErrorKind::MissingRightParen => "Missing right parenthesis ')'".to_string(),
             ParserErrorKind::MissingRightBracket => "Missing right bracket ']'".to_string(),
@@ -129,12 +129,12 @@ impl std::fmt::Display for ParserError {
                 "Expected identifier after '.'".to_string()
             }
             ParserErrorKind::ExpectedIdentifier { found } => {
-                format!("Expected identifier, found: '{}'", found)
+                format!("Expected identifier, found: '{found}'")
             }
             ParserErrorKind::Custom(msg) => msg.clone(),
         };
 
-        write!(f, "[{}] {}", location_prefix, message)
+        write!(f, "[{location_prefix}] {message}")
     }
 }
 
@@ -191,7 +191,7 @@ mod tests {
             5,
             10,
         );
-        let display = format!("{}", err);
+        let display = format!("{err}");
         assert!(display.contains("5:10"));
         assert!(display.contains("Unexpected token"));
     }
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn test_error_display_eof() {
         let err = ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput);
-        let display = format!("{}", err);
+        let display = format!("{err}");
         assert!(display.contains("EOF"));
     }
 

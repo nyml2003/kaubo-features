@@ -15,6 +15,7 @@ impl Default for Coordinate {
 
 /// 源代码范围（span）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub struct Span {
     pub start: Coordinate,
     pub end: Coordinate,
@@ -43,11 +44,3 @@ impl Span {
     }
 }
 
-impl Default for Span {
-    fn default() -> Self {
-        Self {
-            start: Coordinate::default(),
-            end: Coordinate::default(),
-        }
-    }
-}
