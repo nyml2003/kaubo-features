@@ -17,6 +17,10 @@ pub struct RunConfig {
     pub show_steps: bool,
     /// Whether to dump bytecode after compilation
     pub dump_bytecode: bool,
+    /// Whether to show source content
+    pub show_source: bool,
+    /// Whether to compile only, do not execute
+    pub compile_only: bool,
     /// Compiler configuration
     pub compiler: CompilerConfig,
     /// Execution limits
@@ -49,6 +53,8 @@ impl Default for RunConfig {
         Self {
             show_steps: false,
             dump_bytecode: false,
+            show_source: false,
+            compile_only: false,
             compiler: CompilerConfig::default(),
             limits: LimitConfig::default(),
             lexer: LexerConfig::default(),
@@ -93,6 +99,8 @@ impl RunConfig {
         Self {
             show_steps: show_steps || matches!(config.profile, Profile::Dev | Profile::Debug | Profile::Trace),
             dump_bytecode,
+            show_source: false,
+            compile_only: false,
             compiler: config.compiler_options.clone(),
             limits: runtime.limits.clone(),
             lexer: runtime.lexer.clone(),
@@ -108,11 +116,62 @@ impl RunConfig {
         let config = KauboConfig::from_profile(profile);
         Self::from_config(&config, false, false, 0)
     }
+
+    /// Create RunConfig from profile with CLI overrides
+    pub fn from_profile_with_overrides(
+        profile: Profile,
+        show_steps: bool,
+        dump_bytecode: bool,
+        verbose: u8,
+    ) -> Self {
+        let config = KauboConfig::from_profile(profile);
+        Self::from_config(&config, show_steps, dump_bytecode, verbose)
+    }
+
+    /// Create RunConfig from individual options (for package.json config)
+    pub fn from_options(
+        show_steps: bool,
+        dump_bytecode: bool,
+        show_source: bool,
+        compile_only: bool,
+        log_level: Option<LogLevel>,
+    ) -> Self {
+        // Determine logging level
+        let level = log_level.unwrap_or(LogLevel::Warn);
+        
+        // Create logging config
+        let logging = kaubo_config::LoggingConfig {
+            level,
+            ..Default::default()
+        };
+
+        // Create logger
+        let logger = create_logger_with_level(level);
+
+        Self {
+            show_steps,
+            dump_bytecode,
+            show_source,
+            compile_only,
+            compiler: CompilerConfig::default(),
+            limits: LimitConfig::default(),
+            lexer: LexerConfig::default(),
+            vm: VmConfig::default(),
+            coroutine: CoroutineConfig::default(),
+            logging,
+            logger,
+        }
+    }
 }
 
 /// Create a logger from logging configuration
 fn create_logger(config: &kaubo_config::LoggingConfig) -> Arc<Logger> {
-    let level = match config.level {
+    create_logger_with_level(config.level)
+}
+
+/// Create a logger from log level
+fn create_logger_with_level(level: LogLevel) -> Arc<Logger> {
+    let level = match level {
         LogLevel::Error => LogLevelKaubo::Error,
         LogLevel::Warn => LogLevelKaubo::Warn,
         LogLevel::Info => LogLevelKaubo::Info,

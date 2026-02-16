@@ -137,6 +137,7 @@ fn compile_impl_block(
         .or_insert_with(|| StructInfo {
             shape_id: 0,
             field_names: Vec::new(),
+            field_types: Vec::new(),
             method_names: Vec::new(),
         });
 

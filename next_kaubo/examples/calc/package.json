@@ -1,0 +1,13 @@
+{
+  "name": "calculator",
+  "version": "0.1.0",
+  "entry": "main.kaubo",
+  "description": "Simple calculator example",
+  "compiler": {
+    "log_level": "error",
+    "show_source": false,
+    "show_steps": false,
+    "dump_bytecode": false,
+    "compile_only": false
+  }
+}

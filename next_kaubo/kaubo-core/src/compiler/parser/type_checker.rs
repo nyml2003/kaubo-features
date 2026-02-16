@@ -361,8 +361,9 @@ impl TypeChecker {
         self.next_shape_id += 1;
 
         let field_names: Vec<String> = struct_stmt.fields.iter().map(|f| f.name.clone()).collect();
+        let field_types: Vec<String> = struct_stmt.fields.iter().map(|f| f.type_annotation.to_string()).collect();
 
-        let shape = ObjShape::new(shape_id, struct_stmt.name.clone(), field_names);
+        let shape = ObjShape::new_with_types(shape_id, struct_stmt.name.clone(), field_names, field_types);
         self.shapes.push(shape);
 
         // 存储字段信息用于类型检查

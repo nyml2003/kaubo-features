@@ -480,6 +480,7 @@ pub struct ObjShape {
     pub shape_id: u16,
     pub name: String,
     pub field_names: Vec<String>,
+    pub field_types: Vec<String>,  // 字段类型（与 field_names 对应）
     pub methods: Vec<*mut ObjFunction>,
     pub method_names: HashMap<String, u8>,
     pub operators: HashMap<Operator, *mut ObjClosure>,
@@ -491,6 +492,20 @@ impl ObjShape {
             shape_id,
             name,
             field_names,
+            field_types: Vec::new(),
+            methods: Vec::new(),
+            method_names: HashMap::new(),
+            operators: HashMap::new(),
+        }
+    }
+
+    /// 创建带字段类型的 Shape
+    pub fn new_with_types(shape_id: u16, name: String, field_names: Vec<String>, field_types: Vec<String>) -> Self {
+        Self {
+            shape_id,
+            name,
+            field_names,
+            field_types,
             methods: Vec::new(),
             method_names: HashMap::new(),
             operators: HashMap::new(),

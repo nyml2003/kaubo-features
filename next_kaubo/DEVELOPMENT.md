@@ -12,8 +12,12 @@ cargo make build
 # 运行测试
 cargo make test
 
-# 运行示例
-cargo make run
+# 运行示例项目
+cd examples/hello
+kaubo
+
+# 或指定配置文件路径
+kaubo examples/hello/package.json
 ```
 
 ## 常用命令
@@ -41,17 +45,12 @@ cargo make run
 
 | 命令 | 说明 |
 |------|------|
-| `cargo make run` | 运行 Hello World 示例 |
-| `cargo make run-fib` | 运行斐波那契示例 |
-| `cargo make run-calc` | 运行计算器示例 |
-| `cargo make run-verbose` | 运行 (详细输出) |
-| `cargo make run-source` | 运行并显示源码 |
-| `cargo make compile` | 编译并显示字节码 |
+| `cargo make run` | 运行默认项目 (examples/hello) |
+| `cargo make run PROJECT=examples/fib` | 运行指定项目 |
+| `cargo make run PROJECT=examples/calc` | 运行计算器示例 |
+| `cargo make run-release` | Release 模式运行 |
 
-运行指定文件:
-```bash
-cargo make run-file FILE=examples/hello.kaubo
-```
+每个项目的行为（日志级别、显示源码等）通过 `package.json` 中的 `compiler` 字段配置。
 
 ### 代码质量
 
@@ -96,48 +95,83 @@ cargo install cargo-llvm-cov
 
 ## CLI 使用
 
-### 基础用法
+Kaubo 采用**项目制**管理，所有配置通过 `package.json` 指定。
+
+### 项目结构
+
+```
+my_project/
+├── package.json      # 项目配置（必须）
+└── src/
+    └── main.kaubo    # 入口文件
+```
+
+### package.json
+
+```json
+{
+  "name": "my-app",
+  "version": "0.1.0",
+  "entry": "src/main.kaubo",
+  "compiler": {
+    "compile_only": false,
+    "dump_bytecode": false,
+    "show_steps": false,
+    "show_source": false,
+    "log_level": "warn"
+  }
+}
+```
+
+### 命令行用法
 
 ```bash
-# 运行文件
-cargo run -p kaubo-cli -- examples/hello.kaubo
+# 在项目目录下执行（自动读取 package.json）
+cd my_project
+kaubo
 
-# 或使用已构建的二进制
-./target/release/kaubo examples/hello.kaubo
+# 指定配置文件路径
+kaubo path/to/package.json
+
+# 运行示例项目
+kaubo examples/hello/package.json
+kaubo examples/fib/package.json
+kaubo examples/calc/package.json
 ```
 
-### 命令行选项
+### 项目配置示例
 
+每个项目通过 `package.json` 独立配置：
+
+```json
+{
+  "name": "hello",
+  "version": "0.1.0",
+  "entry": "main.kaubo",
+  "compiler": {
+    "show_source": true,
+    "show_steps": false,
+    "log_level": "info"
+  }
+}
 ```
-kaubo [OPTIONS] <FILE>
 
-Options:
-  -v, --verbose      日志级别 (-v=info, -vv=debug, -vvv=trace)
-      --compile-only 仅编译，不执行
-      --dump-bytecode 显示字节码
-      --show-steps    显示执行步骤
-      --show-source   显示源码
-  -h, --help         显示帮助
-  -V, --version      显示版本
-```
+### 配置选项
 
-### 示例
-
-```bash
-# 基本运行
-cargo run -p kaubo-cli -- examples/hello.kaubo
-
-# 带日志
-cargo run -p kaubo-cli -- -v examples/hello.kaubo
-
-# 显示字节码
-cargo run -p kaubo-cli -- --dump-bytecode examples/fib.kaubo
-
-# 详细模式
-cargo run -p kaubo-cli -- -v --show-steps examples/calc.kaubo
-```
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `name` | string | 项目名称 |
+| `version` | string | 版本号 |
+| `entry` | string | 入口文件路径（相对 package.json） |
+| `compiler.compile_only` | bool | 仅编译，不执行 |
+| `compiler.dump_bytecode` | bool | 显示字节码 |
+| `compiler.show_steps` | bool | 显示执行步骤 |
+| `compiler.show_source` | bool | 显示源码 |
+| `compiler.log_level` | string | 日志级别: silent/error/warn/info/debug/trace |
 
 ## 项目结构
+
+### 源码结构
 
 ```
 kaubo/
@@ -147,11 +181,37 @@ kaubo/
 ├── kaubo-log/       # 日志系统
 ├── kaubo-config/    # 配置数据
 ├── examples/        # 示例程序
-│   ├── hello.kaubo  # Hello World
-│   ├── fib.kaubo    # 斐波那契
-│   └── calc.kaubo   # 计算器
+│   ├── hello.kaubo
+│   ├── fib.kaubo
+│   └── calc.kaubo
+├── package.json     # 项目配置（运行必需）
 ├── scripts/         # 辅助脚本
 └── docs/            # 文档
+```
+
+### Kaubo 项目结构
+
+```
+my_project/
+├── package.json          # 项目配置（必须）
+├── main.kaubo            # 入口文件（或其他名字）
+└── lib/
+    └── utils.kaubo       # 模块文件
+```
+
+### 示例项目结构
+
+```
+examples/
+├── hello/
+│   ├── package.json
+│   └── main.kaubo
+├── fib/
+│   ├── package.json
+│   └── main.kaubo
+└── calc/
+    ├── package.json
+    └── main.kaubo
 ```
 
 ## Kaubo 语言示例

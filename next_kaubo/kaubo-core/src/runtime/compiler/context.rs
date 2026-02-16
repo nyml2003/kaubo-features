@@ -25,6 +25,7 @@ pub struct ModuleInfo {
 pub struct StructInfo {
     pub shape_id: u16,
     pub field_names: Vec<String>,  // 字段名列表（索引即字段位置）
+    pub field_types: Vec<String>,  // 字段类型列表（与 field_names 对应）
     pub method_names: Vec<String>, // 方法名列表（来自 impl 块）
 }
 

@@ -158,6 +158,8 @@ dependencies = [
  "kaubo-config",
  "kaubo-core",
  "kaubo-log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

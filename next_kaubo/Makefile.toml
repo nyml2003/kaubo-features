@@ -3,36 +3,31 @@
 # 使用: cargo make <task>
 #
 # 常用任务:
-#   cargo make test          # 运行所有测试
-#   cargo make run           # 运行示例
-#   cargo make build         # 构建 release 版本
-#   cargo make check         # 检查代码
-#   cargo make cov           # 生成覆盖率报告
+#   cargo make run                      # 运行默认项目 (examples/hello)
+#   cargo make run PROJECT=examples/fib # 运行指定项目
+#   cargo make test                     # 运行所有测试
+#   cargo make build                    # 构建 release 版本
+#   cargo make check                    # 检查代码
+#   cargo make cov-open                 # 生成并打开覆盖率报告
+#
+# 项目配置:
+#   每个项目通过 package.json 配置编译器行为 (log_level, show_source 等)
 
 [config]
 default_to_workspace = false
 
 # ============== 默认任务 ==============
 
-# 默认运行测试
 [tasks.default]
 alias = "test"
 
 # ============== 构建任务 ==============
 
-# 构建 CLI (debug 模式)
-[tasks.build-dev]
-description = "构建 CLI (debug 模式)"
-command = "cargo"
-args = ["build", "-p", "kaubo-cli"]
-
-# 构建 CLI (release 模式)
 [tasks.build]
 description = "构建 CLI release 版本"
 command = "cargo"
 args = ["build", "-p", "kaubo-cli", "--release"]
 
-# 构建所有 workspace 成员
 [tasks.build-all]
 description = "构建所有 workspace 成员"
 command = "cargo"
@@ -40,37 +35,31 @@ args = ["build", "--workspace"]
 
 # ============== 测试任务 ==============
 
-# 运行所有测试
 [tasks.test]
 description = "运行所有测试"
 command = "cargo"
 args = ["test", "--workspace"]
 
-# 运行核心测试
 [tasks.test-core]
 description = "运行 kaubo-core 测试"
 command = "cargo"
 args = ["test", "-p", "kaubo-core"]
 
-# 运行 API 测试
 [tasks.test-api]
 description = "运行 kaubo-api 测试"
 command = "cargo"
 args = ["test", "-p", "kaubo-api"]
 
-# 运行日志系统测试
 [tasks.test-log]
 description = "运行 kaubo-log 测试"
 command = "cargo"
 args = ["test", "-p", "kaubo-log", "--all-features"]
 
-# 运行 CLI 测试
 [tasks.test-cli]
 description = "运行 kaubo-cli 测试"
 command = "cargo"
 args = ["test", "-p", "kaubo-cli"]
 
-# 持续测试 (文件变更时自动运行)
 [tasks.test-watch]
 description = "持续测试 (需 cargo-watch)"
 command = "cargo"
@@ -78,248 +67,96 @@ args = ["watch", "-x", "test"]
 
 # ============== 代码质量任务 ==============
 
-# 检查代码
 [tasks.check]
 description = "检查代码"
 command = "cargo"
 args = ["check", "--workspace"]
 
-# 检查所有目标
 [tasks.check-all]
 description = "检查所有目标 (包括测试)"
 command = "cargo"
 args = ["check", "--workspace", "--all-targets"]
 
-# 格式化代码
 [tasks.fmt]
 description = "格式化代码"
 command = "cargo"
 args = ["fmt", "--all"]
 
-# 检查格式
 [tasks.fmt-check]
 description = "检查代码格式"
 command = "cargo"
 args = ["fmt", "--all", "--", "--check"]
 
-# 运行 clippy (严格模式，用于检查技术债)
-[tasks.lint]
-description = "运行 clippy 检查 (显示所有警告)"
-command = "cargo"
-args = ["clippy", "--workspace"]
-
-# 运行 clippy (宽松模式，忽略已知技术债)
-[tasks.lint-strict]
-description = "运行 clippy 严格检查 (-D warnings)"
-command = "cargo"
-args = ["clippy", "--workspace", "--", "-D", "warnings"]
-
-# 运行 clippy (允许警告)
 [tasks.clippy]
 description = "运行 clippy (允许警告)"
 command = "cargo"
 args = ["clippy", "--workspace"]
 
-# 代码质量检查全套
+[tasks.lint]
+description = "运行 clippy 严格检查 (-D warnings)"
+command = "cargo"
+args = ["clippy", "--workspace", "--", "-D", "warnings"]
+
 [tasks.quality]
 description = "运行全套代码质量检查"
-dependencies = ["fmt-check", "check-all", "lint", "test"]
+dependencies = ["fmt-check", "check-all", "clippy", "test"]
 
 # ============== 覆盖率任务 ==============
 
-# 生成覆盖率报告 (终端输出)
 [tasks.cov]
 description = "生成覆盖率报告 (终端输出，需 nightly)"
 script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features"
 
-# 生成 HTML 覆盖率报告
 [tasks.cov-html]
 description = "生成 HTML 覆盖率报告"
 script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features --html --output-dir target/llvm-cov"
 
-# 生成并打开 HTML 覆盖率报告
 [tasks.cov-open]
 description = "生成并打开 HTML 覆盖率报告"
 script = "rustup run nightly cargo llvm-cov --workspace --branch --all-features --html --output-dir target/llvm-cov --open"
 
-# kaubo-log 覆盖率 - 终端输出
 [tasks.cov-log]
 description = "kaubo-log 覆盖率报告 (终端)"
 script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features"
 
-# kaubo-log 覆盖率 - HTML
 [tasks.cov-log-html]
 description = "kaubo-log 覆盖率 HTML 报告"
 script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features --html --output-dir target/llvm-cov/kaubo-log"
 
-# kaubo-log 覆盖率 - 打开
 [tasks.cov-log-open]
 description = "打开 kaubo-log 覆盖率报告"
 script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features --html --output-dir target/llvm-cov/kaubo-log --open"
 
-# 使用 Python 脚本生成覆盖率
-[tasks.cov-py]
-description = "使用 Python 脚本生成覆盖率报告"
-script = "python scripts/coverage.py --html"
-
 # ============== CLI 运行任务 ==============
+# 项目配置通过 package.json 控制
 
-# 运行 Hello World 示例
 [tasks.run]
-description = "运行 Hello World 示例"
+description = "运行项目 (默认 examples/hello)"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "examples/hello.kaubo"]
+args = ["run", "-p", "kaubo-cli", "--", "examples/hello/package.json"]
 
-# 运行斐波那契示例
 [tasks.run-fib]
 description = "运行斐波那契示例"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "examples/fib.kaubo"]
+args = ["run", "-p", "kaubo-cli", "--", "examples/fib/package.json"]
 
-# 运行计算器示例
 [tasks.run-calc]
 description = "运行计算器示例"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "examples/calc.kaubo"]
+args = ["run", "-p", "kaubo-cli", "--", "examples/calc/package.json"]
 
-# 运行示例 (带详细输出)
-[tasks.run-verbose]
-description = "运行示例 (verbose 模式)"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "-v", "examples/hello.kaubo"]
-
-# 运行并显示源码
-[tasks.run-source]
-description = "运行并显示源码"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--show-source", "examples/hello.kaubo"]
-
-# 运行并显示源码和步骤
-[tasks.run-full]
-description = "运行并显示源码和步骤"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "-v", "--show-source", "--show-steps", "examples/hello.kaubo"]
-
-# ============== VM 执行追踪任务 (使用 logger) ==============
-
-# 运行并启用 VM 执行追踪 (通过 logger 输出)
-[tasks.run-trace-vm]
-description = "运行并启用 VM 执行追踪 (logger 输出)"
-env = { "RUST_LOG" = "trace" }
-script_runner = "powershell"
-script = '''
-cargo run -p kaubo-cli --features kaubo-core/trace_execution -- --config examples/kaubo.trace.json examples/hello.kaubo 2>&1
-'''
-
-# 运行斐波那契并追踪 VM 执行
-[tasks.run-fib-trace]
-description = "运行斐波那契并追踪 VM 执行"
-script_runner = "powershell"
-script = '''
-cargo run -p kaubo-cli --features kaubo-core/trace_execution -- --config examples/kaubo.trace.json examples/fib.kaubo 2>&1
-'''
-
-# 使用 trace_execution feature 构建 CLI
-[tasks.build-trace]
-description = "构建带 VM 执行追踪的 CLI"
-command = "cargo"
-args = ["build", "-p", "kaubo-cli", "--features", "kaubo-core/trace_execution"]
-
-# 运行并输出 VM 追踪日志到文件
-[tasks.run-trace-log]
-description = "运行并输出 VM 追踪日志到文件"
-script_runner = "powershell"
-script = '''
-$File = if ($env:FILE) { $env:FILE } else { "examples/hello.kaubo" }
-cargo run -p kaubo-cli --features kaubo-core/trace_execution --release -- --config examples/kaubo.trace.json $File > trace.log 2>&1
-Write-Host "Trace log saved to trace.log"
-'''
-
-# 编译示例并显示字节码（简洁模式）
-[tasks.bytecode]
-description = "编译示例并显示字节码"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--compile-only", "--dump-bytecode", "examples/hello.kaubo"]
-
-# 编译示例并显示字节码（详细模式，含 DEBUG 日志）
-[tasks.bytecode-debug]
-description = "编译示例并显示字节码（含 DEBUG 日志）"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "-vv", "--compile-only", "--dump-bytecode", "examples/hello.kaubo"]
-
-# 编译示例 (不执行，不显示字节码)
-[tasks.compile]
-description = "编译示例 (不执行)"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--compile-only", "examples/hello.kaubo"]
-
-# 运行任意文件
-[tasks.run-file]
-description = "运行指定文件: cargo make run-file FILE=examples/test.kaubo"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "${FILE}"]
-
-# release 模式运行
 [tasks.run-release]
-description = "Release 模式运行"
+description = "Release 模式运行 (默认 examples/hello)"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--release", "--", "examples/hello.kaubo"]
-
-# ============== 配置相关任务 ==============
-
-# Profile 任务组
-[tasks.run-silent]
-description = "使用 silent profile 运行 (仅错误日志)"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--profile", "silent", "examples/hello.kaubo"]
-
-[tasks.run-default]
-description = "使用 default profile 运行"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--profile", "default", "examples/hello.kaubo"]
-
-[tasks.run-dev]
-description = "使用 dev profile 运行 (显示步骤)"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--profile", "dev", "examples/hello.kaubo"]
-
-[tasks.run-debug]
-description = "使用 debug profile 运行 (详细日志+字节码)"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--profile", "debug", "examples/hello.kaubo"]
-
-[tasks.run-trace]
-description = "使用 trace profile 运行 (最详细日志)"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--profile", "trace", "examples/hello.kaubo"]
-
-# 配置文件任务组
-[tasks.run-config-dev]
-description = "使用 kaubo.json 配置运行"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--config", "examples/kaubo.json", "examples/hello.kaubo"]
-
-[tasks.run-config-debug]
-description = "使用 kaubo.debug.json 配置运行 (详细日志)"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--config", "examples/kaubo.debug.json", "examples/hello.kaubo"]
-
-[tasks.run-config-perf]
-description = "使用 kaubo.perf.json 配置运行 (大栈)"
-command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "--config", "examples/kaubo.perf.json", "examples/fib.kaubo"]
-
-
+args = ["run", "-p", "kaubo-cli", "--release", "--", "examples/hello/package.json"]
 
 # ============== 文档任务 ==============
 
-# 生成文档
 [tasks.doc]
 description = "生成文档"
 command = "cargo"
 args = ["doc", "--workspace", "--no-deps"]
 
-# 生成并打开文档
 [tasks.doc-open]
 description = "生成并打开文档"
 command = "cargo"
@@ -327,26 +164,21 @@ args = ["doc", "--workspace", "--no-deps", "--open"]
 
 # ============== 清理任务 ==============
 
-# 清理构建文件
 [tasks.clean]
 description = "清理构建文件"
 command = "cargo"
 args = ["clean"]
 
-# 深度清理 (包括覆盖率数据)
 [tasks.clean-all]
 description = "深度清理 (包括覆盖率数据)"
-command = "cargo"
-args = ["clean"]
+script = "cargo clean && Remove-Item -Recurse -Force target/llvm-cov -ErrorAction SilentlyContinue"
 
 # ============== 安装/设置任务 ==============
 
-# 安装必要工具 (需手动运行以下命令)
 [tasks.install-tools]
 description = "显示安装说明"
-script = "echo '请手动运行以下命令:' && echo '1. cargo install cargo-make' && echo '2. cargo install cargo-llvm-cov' && echo '3. rustup install nightly' && echo '4. cargo install cargo-watch (可选)'"
+script = "echo '请手动运行以下命令:' && echo '1. cargo install cargo-make' && echo '2. cargo install cargo-llvm-cov' && echo '3. rustup install nightly'"
 
-# 检查 Rust 版本
 [tasks.check-env]
 description = "检查开发环境"
 command = "rustc"
@@ -354,7 +186,6 @@ args = ["--version"]
 
 # ============== CI/自动化任务 ==============
 
-# CI 检查全套 (使用宽松模式，因为存在已知技术债)
 [tasks.ci]
-description = "CI 全套检查 (允许已知技术债警告)"
+description = "CI 全套检查"
 dependencies = ["fmt-check", "check-all", "clippy", "test", "build"]

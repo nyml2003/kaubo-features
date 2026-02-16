@@ -60,6 +60,7 @@ impl Compiler {
                     StructInfo {
                         shape_id,
                         field_names: Vec::new(),
+                        field_types: Vec::new(),
                         method_names: Vec::new(),
                     },
                 )
@@ -84,22 +85,24 @@ impl Compiler {
     }
 
     /// 使用完整的 struct 信息创建编译器（支持字段索引优化）
-    pub fn new_with_struct_infos(infos: HashMap<String, (u16, Vec<String>)>) -> Self {
+    /// infos: name -> (shape_id, field_names, field_types)
+    pub fn new_with_struct_infos(infos: HashMap<String, (u16, Vec<String>, Vec<String>)>) -> Self {
         Self::new_with_struct_infos_and_logger(infos, Logger::noop())
     }
 
     pub fn new_with_struct_infos_and_logger(
-        infos: HashMap<String, (u16, Vec<String>)>,
+        infos: HashMap<String, (u16, Vec<String>, Vec<String>)>,
         logger: Arc<Logger>,
     ) -> Self {
         let struct_infos: HashMap<String, StructInfo> = infos
             .into_iter()
-            .map(|(name, (shape_id, field_names))| {
+            .map(|(name, (shape_id, field_names, field_types))| {
                 (
                     name,
                     StructInfo {
                         shape_id,
                         field_names,
+                        field_types,
                         method_names: Vec::new(),
                     },
                 )
@@ -502,17 +505,19 @@ pub fn compile_with_shapes(
 }
 
 /// 带完整字段信息的编译（支持编译期字段索引优化）
+/// struct_infos: name -> (shape_id, field_names, field_types)
 pub fn compile_with_struct_info(
     module: &Module,
-    struct_infos: HashMap<String, (u16, Vec<String>)>, // name -> (shape_id, field_names)
+    struct_infos: HashMap<String, (u16, Vec<String>, Vec<String>)>,
 ) -> Result<(Chunk, usize), CompileError> {
     compile_with_struct_info_and_logger(module, struct_infos, Logger::noop())
 }
 
 /// 带完整字段信息和 logger 的编译
+/// struct_infos: name -> (shape_id, field_names, field_types)
 pub fn compile_with_struct_info_and_logger(
     module: &Module,
-    struct_infos: HashMap<String, (u16, Vec<String>)>, // name -> (shape_id, field_names)
+    struct_infos: HashMap<String, (u16, Vec<String>, Vec<String>)>,
     logger: Arc<Logger>,
 ) -> Result<(Chunk, usize), CompileError> {
     let mut compiler = Compiler::new_with_struct_infos_and_logger(struct_infos, logger);
@@ -539,8 +544,8 @@ mod tests {
             .parse()
             .map_err(|e| CompileError::Unimplemented(format!("Parse error: {e:?}")))?;
 
-        // 收集 struct 信息
-        let mut struct_infos: HashMap<String, (u16, Vec<String>)> = HashMap::new();
+        // 收集 struct 信息（包括字段名和类型）
+        let mut struct_infos: HashMap<String, (u16, Vec<String>, Vec<String>)> = HashMap::new();
         // 基础类型使用 0-99，struct 从 100 开始避免冲突
         let mut next_shape_id: u16 = 100;
         
@@ -551,7 +556,12 @@ mod tests {
                     .iter()
                     .map(|f| f.name.clone())
                     .collect();
-                struct_infos.insert(struct_stmt.name.clone(), (next_shape_id, field_names));
+                let field_types: Vec<String> = struct_stmt
+                    .fields
+                    .iter()
+                    .map(|f| f.type_annotation.to_string())
+                    .collect();
+                struct_infos.insert(struct_stmt.name.clone(), (next_shape_id, field_names, field_types));
                 next_shape_id += 1;
             }
         }
@@ -576,12 +586,13 @@ mod tests {
         let (logger, _ring) = config.init();
         let mut vm = VM::with_config_and_logger(crate::core::VMConfig::default(), logger);
         
-        // 注册 shapes 到 VM
-        for (name, (shape_id, field_names)) in struct_infos {
-            let shape = Box::into_raw(Box::new(ObjShape::new(
+        // 注册 shapes 到 VM（包含字段类型）
+        for (name, (shape_id, field_names, field_types)) in struct_infos {
+            let shape = Box::into_raw(Box::new(ObjShape::new_with_types(
                 shape_id,
                 name,
                 field_names,
+                field_types,
             )));
             unsafe {
                 vm.register_shape(shape);

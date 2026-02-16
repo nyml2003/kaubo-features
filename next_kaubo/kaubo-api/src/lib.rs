@@ -161,10 +161,10 @@ pub fn compile_ast(
 ) -> Result<CompileOutput, KauboError> {
     info!(logger, "Starting compiler");
 
-    // 创建 struct name -> (shape_id, field_names) 映射
-    let struct_infos: HashMap<String, (u16, Vec<String>)> = shapes
+    // 创建 struct name -> (shape_id, field_names, field_types) 映射
+    let struct_infos: HashMap<String, (u16, Vec<String>, Vec<String>)> = shapes
         .iter()
-        .map(|s| (s.name.clone(), (s.shape_id, s.field_names.clone())))
+        .map(|s| (s.name.clone(), (s.shape_id, s.field_names.clone(), s.field_types.clone())))
         .collect();
 
     let (chunk, local_count) =

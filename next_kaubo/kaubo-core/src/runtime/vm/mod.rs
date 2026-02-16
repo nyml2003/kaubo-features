@@ -664,9 +664,9 @@ mod tests {
         let mut parser = Parser::new(lexer);
         let ast = parser.parse().unwrap();
         
-        // 准备 struct 信息
-        let mut struct_infos: HashMap<String, (u16, Vec<String>)> = HashMap::new();
-        struct_infos.insert("Counter".to_string(), (100, vec!["value".to_string()]));
+        // 准备 struct 信息（包含字段类型）
+        let mut struct_infos: HashMap<String, (u16, Vec<String>, Vec<String>)> = HashMap::new();
+        struct_infos.insert("Counter".to_string(), (100, vec!["value".to_string()], vec!["int".to_string()]));
         
         let result = compile_with_struct_info(&ast, struct_infos);
         
@@ -750,9 +750,9 @@ mod tests {
         let mut parser = Parser::new(lexer);
         let ast = parser.parse().unwrap();
         
-        // 准备 struct 信息
-        let mut struct_infos: HashMap<String, (u16, Vec<String>)> = HashMap::new();
-        struct_infos.insert("Point".to_string(), (100, vec!["x".to_string(), "y".to_string()]));
+        // 准备 struct 信息（包含字段类型）
+        let mut struct_infos: HashMap<String, (u16, Vec<String>, Vec<String>)> = HashMap::new();
+        struct_infos.insert("Point".to_string(), (100, vec!["x".to_string(), "y".to_string()], vec!["int".to_string(), "int".to_string()]));
         
         let result = compile_with_struct_info(&ast, struct_infos);
         
