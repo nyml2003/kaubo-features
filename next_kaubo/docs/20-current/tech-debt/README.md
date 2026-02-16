@@ -40,32 +40,34 @@
 
 ### 🚧 未完成（当前阶段）
 
-#### 1. Level 2 内联缓存
+#### 1. Level 2 内联缓存 ✅ 已完成
 
-**状态**：基础设施就绪，待集成
+**状态**：✅ 已集成并测试通过
 
 **代码位置**：
 
-- `kaubo-core/src/runtime/operators.rs` - `InlineCacheEntry`
-- `kaubo-core/src/runtime/vm.rs` - `inline_caches`, `allocate_inline_cache`
+- `kaubo-core/src/core/operators.rs` - `InlineCacheEntry`
+- `kaubo-core/src/runtime/vm/mod.rs` - `interpret_with_locals` (加载 Chunk 缓存到 VM)
+- `kaubo-core/src/runtime/vm/execution.rs` - Add/Sub/Mul/Div 指令缓存检查逻辑
+- `kaubo-core/src/runtime/vm/operators.rs` - 缓存操作函数
 
-**设计**：
+**实现概要**：
+
+1. **编译阶段**：`kaubo-core/src/runtime/compiler/expr.rs` 为二元运算指令分配内联缓存槽位
+2. **加载阶段**：`interpret_with_locals` 将 Chunk 的 `inline_caches` 加载到 VM
+3. **执行阶段**：算术指令先检查缓存命中，未命中则查找并更新缓存
+
+**关键修改**：
 
 ```rust
-pub struct InlineCacheEntry {
-    pub left_shape: u16,
-    pub right_shape: u16,
-    pub closure: *mut ObjClosure,
-    pub hit_count: u64,
-    pub miss_count: u64,
-}
+// VM::interpret_with_locals - 加载内联缓存
+self.inline_caches.clear();
+self.inline_caches.extend(chunk.inline_caches.clone());
 ```
 
-**待完成**：
-
-- 修改 Add/Sub/Mul/Div 指令，添加缓存检查逻辑
-- 在 Chunk 中分配缓存槽位
-- 缓存预热策略
+**测试**：
+- `test_inline_cache_integration` - 验证缓存加载和基本功能
+- `test_inline_cache_multiple_calls` - 验证多次调用缓存命中
 
 **预期性能**：Level 3 (~30-100ns) → Level 2 (~15ns)，提升 2-6 倍
 

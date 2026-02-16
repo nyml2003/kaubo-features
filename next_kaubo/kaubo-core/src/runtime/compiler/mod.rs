@@ -289,14 +289,148 @@ impl Compiler {
         false
     }
 
-    /// 获取表达式的类型（简化版，仅支持变量引用）
+    /// 获取表达式的类型（扩展版，支持变量引用、函数调用、struct 字面量、unary/binary 运算符等）
     pub(crate) fn get_expr_type(&self, expr: &Expr) -> Option<VarType> {
         match expr.as_ref() {
             ExprKind::VarRef(var_ref) => {
                 self.var_types.get(&var_ref.name).cloned()
             }
+            ExprKind::StructLiteral(struct_lit) => {
+                Some(VarType::Struct(struct_lit.name.clone()))
+            }
+            ExprKind::LiteralInt(_) => {
+                Some(VarType::Int)
+            }
+            ExprKind::LiteralFloat(_) => {
+                Some(VarType::Float)
+            }
+            ExprKind::LiteralString(_) => {
+                Some(VarType::String)
+            }
+            ExprKind::LiteralTrue(_) | ExprKind::LiteralFalse(_) => {
+                Some(VarType::Bool)
+            }
+            ExprKind::FunctionCall(call) => {
+                // 尝试推断函数返回类型
+                self.infer_call_return_type(call)
+            }
+            ExprKind::Unary(unary) => {
+                // 尝试推断 unary 运算符返回类型
+                self.infer_unary_return_type(unary)
+            }
+            ExprKind::Binary(binary) => {
+                // 尝试推断 binary 运算符返回类型
+                self.infer_binary_return_type(binary)
+            }
             _ => None,
         }
+    }
+
+    /// 推断 unary 运算符的返回类型
+    fn infer_unary_return_type(&self, unary: &crate::compiler::parser::expr::Unary) -> Option<VarType> {
+        match unary.op {
+            crate::compiler::lexer::token_kind::KauboTokenKind::Minus => {
+                // 取负运算符：返回类型与操作数相同
+                self.get_expr_type(&unary.operand)
+            }
+            _ => None,
+        }
+    }
+
+    /// 推断函数调用的返回类型
+    fn infer_call_return_type(&self, call: &crate::compiler::parser::expr::FunctionCall) -> Option<VarType> {
+        // 检查是否是方法调用：obj.method(args)
+        if let ExprKind::MemberAccess(member) = call.function_expr.as_ref() {
+            if let Some(obj_type) = self.get_expr_type(&member.object) {
+                if let VarType::Struct(struct_name) = obj_type {
+                    // 查找方法返回类型
+                    return self.find_method_return_type(&struct_name, &member.member);
+                }
+            }
+        }
+        
+        // 检查是否是运算符调用（如 -v）
+        // 这里简化处理：如果是单个参数且是 struct 类型，查找 operator
+        if call.arguments.len() == 1 {
+            if let Some(arg_type) = self.get_expr_type(&call.arguments[0]) {
+                if let VarType::Struct(struct_name) = arg_type {
+                    // 检查是否有匹配的 operator
+                    if let Some(ret_type) = self.find_operator_return_type(&struct_name, "neg") {
+                        return Some(ret_type);
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// 查找方法的返回类型
+    fn find_method_return_type(&self, struct_name: &str, method_name: &str) -> Option<VarType> {
+        // 对于 operator，返回类型通常是 struct 自身
+        if method_name.starts_with("operator ") {
+            return Some(VarType::Struct(struct_name.to_string()));
+        }
+        // TODO: 从方法定义中获取实际返回类型
+        None
+    }
+
+    /// 查找运算符的返回类型
+    fn find_operator_return_type(&self, struct_name: &str, op: &str) -> Option<VarType> {
+        // 简化：运算符通常返回相同的 struct 类型
+        // 实际应该从 impl 块定义中查找
+        Some(VarType::Struct(struct_name.to_string()))
+    }
+
+    /// 推断 binary 运算符的返回类型
+    fn infer_binary_return_type(&self, binary: &crate::compiler::parser::expr::Binary) -> Option<VarType> {
+        let left_type = self.get_expr_type(&binary.left)?;
+        let right_type = self.get_expr_type(&binary.right)?;
+        
+        // 获取运算符名称
+        let op_name = match binary.op {
+            crate::compiler::lexer::token_kind::KauboTokenKind::Plus => "add",
+            crate::compiler::lexer::token_kind::KauboTokenKind::Minus => "sub",
+            crate::compiler::lexer::token_kind::KauboTokenKind::Asterisk => "mul",
+            crate::compiler::lexer::token_kind::KauboTokenKind::Slash => "div",
+            crate::compiler::lexer::token_kind::KauboTokenKind::Percent => "mod",
+            // 比较运算符返回 bool，但我们不跟踪 bool 类型，返回 None
+            crate::compiler::lexer::token_kind::KauboTokenKind::LessThan => return None,
+            crate::compiler::lexer::token_kind::KauboTokenKind::LessThanEqual => return None,
+            crate::compiler::lexer::token_kind::KauboTokenKind::GreaterThan => return None,
+            crate::compiler::lexer::token_kind::KauboTokenKind::GreaterThanEqual => return None,
+            crate::compiler::lexer::token_kind::KauboTokenKind::DoubleEqual => return None,
+            crate::compiler::lexer::token_kind::KauboTokenKind::ExclamationEqual => return None,
+            _ => return None,
+        };
+        
+        // 如果左操作数是 struct，查找 operator 的返回类型
+        if let VarType::Struct(struct_name) = left_type {
+            return self.find_operator_return_type(&struct_name, op_name);
+        }
+        
+        // 如果右操作数是 struct（尝试 rmul/rsub/rdiv 等反向运算符）
+        // 注意：基础类型（Int, Float, String, Bool）在左边时也需要检查反向运算符
+        if let VarType::Struct(struct_name) = right_type {
+            // 只有当左操作数是基础类型或 struct 时才检查反向运算符
+            let should_check_reverse = matches!(left_type, 
+                VarType::Int | VarType::Float | VarType::String | VarType::Bool
+            );
+            if should_check_reverse {
+                let reverse_op = match op_name {
+                    "add" => "radd",
+                    "sub" => "rsub",
+                    "mul" => "rmul",
+                    "div" => "rdiv",
+                    "mod" => "rmod",
+                    _ => op_name,
+                };
+                return self.find_operator_return_type(&struct_name, reverse_op);
+            }
+        }
+        
+        // 基础类型的运算返回左操作数类型（简化处理）
+        Some(left_type)
     }
 
     // ==================== 以下方法供其他模块使用（内部 API） ====================
@@ -422,7 +556,12 @@ mod tests {
             }
         }
 
-        let (chunk, local_count) = compile_with_struct_info(&ast, struct_infos.clone())?;
+        // 创建带日志的编译器
+        let logger = kaubo_log::LogConfig::new(kaubo_log::Level::Trace)
+            .with_stdout()
+            .init()
+            .0;
+        let (chunk, local_count) = compile_with_struct_info_and_logger(&ast, struct_infos.clone(), logger)?;
         Ok((chunk, local_count, struct_infos))
     }
 
@@ -430,7 +569,12 @@ mod tests {
         let (chunk, local_count, struct_infos) =
             compile_code(code).map_err(|e| format!("Compile error: {e:?}"))?;
         
-        let mut vm = VM::new();
+        // 创建带日志的 VM
+        let config = kaubo_log::LogConfig::new(kaubo_log::Level::Trace)
+            .with_stdout()
+            .with_ring_buffer(1000);
+        let (logger, _ring) = config.init();
+        let mut vm = VM::with_config_and_logger(crate::core::VMConfig::default(), logger);
         
         // 注册 shapes 到 VM
         for (name, (shape_id, field_names)) in struct_infos {

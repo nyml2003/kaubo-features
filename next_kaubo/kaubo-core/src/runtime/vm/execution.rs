@@ -1110,6 +1110,13 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 let index_val = vm.stack.pop().expect("Stack underflow");
                 let obj_val = vm.stack.pop().expect("Stack underflow");
 
+                kaubo_log::trace!(
+                    &vm.logger,
+                    "IndexGet: obj_type={}, index_type={}",
+                    if obj_val.is_struct() { "struct" } else if obj_val.is_list() { "list" } else if obj_val.is_json() { "json" } else { "other" },
+                    if index_val.is_string() { "string" } else if index_val.is_int() { "int" } else { "other" }
+                );
+
                 // 首先尝试基础类型索引
                 let base_result = index::index_get_base(vm, obj_val, index_val);
 
@@ -1118,11 +1125,15 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                         vm.stack.push(value);
                     }
                     Ok(None) => {
+                        kaubo_log::trace!(&vm.logger, "IndexGet: base_result=None, trying operator get");
                         // 基础类型不匹配，尝试 operator get
                         match operators::call_binary_operator(vm, Operator::Get, obj_val, index_val)
                         {
                             Ok(v) => vm.stack.push(v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => {
+                                kaubo_log::trace!(&vm.logger, "IndexGet: operator get failed: {}", e);
+                                return InterpretResult::RuntimeError(e);
+                            }
                         }
                     }
                     Err(e) => {

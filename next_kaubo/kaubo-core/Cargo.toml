@@ -12,4 +12,4 @@ trace_execution = []
 [dependencies]
 thiserror = { workspace = true }
 kaubo-config = { workspace = true }
-kaubo-log = { workspace = true }
+kaubo-log = { workspace = true, features = ["stdout"] }

@@ -34,8 +34,8 @@ impl Hero {
 
 var hero = Hero {
     name: "John",
-    health: 100.0,
-    position: Vec2 { x: 0.0, y: 0.0 },
+    health: 12.05,
+    position: Vec2 { x: 11.2, y: 22.3 },
 };
 
 print(hero);

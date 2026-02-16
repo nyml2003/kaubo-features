@@ -40,7 +40,8 @@ pub fn index_get_base(
         return Ok(None);
     }
 
-    // 字符串键：JSON 对象或 struct 字段（struct 字符串键将在 release 版移除）
+    // 字符串键：仅 JSON 对象支持
+    // struct 不再支持字符串键访问，请使用 .field_name
     if let Some(key_ptr) = index_val.as_string() {
         let key = unsafe { &(*key_ptr).chars };
 
@@ -51,23 +52,7 @@ pub fn index_get_base(
             return Ok(Some(json.get(key).unwrap_or(Value::NULL)));
         }
 
-        // Struct 字段访问（过渡阶段保留，后续只支持 .field）
-        if let Some(struct_ptr) = obj_val.as_struct() {
-            let struct_obj = unsafe { &*struct_ptr };
-            let shape = unsafe { &*struct_obj.shape };
-
-            if let Some(field_idx) = shape.get_field_index(key) {
-                return Ok(Some(
-                    struct_obj
-                        .get_field(field_idx as usize)
-                        .unwrap_or(Value::NULL),
-                ));
-            }
-            // 字段名不存在，尝试 operator get
-            return Ok(None);
-        }
-
-        // 字符串键但不匹配 JSON 或 struct，尝试 operator get
+        // 字符串键但不匹配 JSON，尝试 operator get
         return Ok(None);
     }
 

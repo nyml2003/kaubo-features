@@ -53,6 +53,11 @@ impl VM {
         // 注册运算符（从 Chunk 的 operator_table 到 Shape）
         execution::register_operators_from_chunk(self, chunk);
 
+        // 加载 Chunk 的内联缓存到 VM
+        // 这会预分配缓存槽位，供执行期间使用
+        self.inline_caches.clear();
+        self.inline_caches.extend(chunk.inline_caches.clone());
+
         // 创建函数对象（使用 clone 的 chunk，所有权转移给 function）
         let function = Box::into_raw(Box::new(ObjFunction::new(
             chunk.clone(),
@@ -623,5 +628,156 @@ mod tests {
         let result = vm.interpret_with_locals(&chunk, 10);
         assert_eq!(result, InterpretResult::Ok);
         assert_eq!(vm.stack.last().unwrap().as_smi(), Some(42));
+    }
+
+    #[test]
+    fn test_inline_cache_integration() {
+        // 测试 Level 2 内联缓存集成
+        // 创建一个 Chunk，使用内联缓存进行运算符重载
+        use crate::core::ObjShape;
+        use crate::runtime::compiler::compile_with_struct_info;
+        use crate::compiler::parser::parser::Parser;
+        use crate::compiler::lexer::builder::build_lexer;
+        use std::collections::HashMap;
+
+        // 编译包含 operator add 的代码
+        let code = r#"
+            struct Counter {
+                value: int
+            };
+            
+            impl Counter {
+                operator add: |self, other: Counter| -> Counter {
+                    return Counter { value: self.value + other.value };
+                }
+            };
+            
+            var c1 = Counter { value: 10 };
+            var c2 = Counter { value: 20 };
+            var c3 = c1 + c2;
+            return c3.value;
+        "#;
+
+        let mut lexer = build_lexer();
+        let _ = lexer.feed(code.as_bytes());
+        let _ = lexer.terminate();
+        let mut parser = Parser::new(lexer);
+        let ast = parser.parse().unwrap();
+        
+        // 准备 struct 信息
+        let mut struct_infos: HashMap<String, (u16, Vec<String>)> = HashMap::new();
+        struct_infos.insert("Counter".to_string(), (100, vec!["value".to_string()]));
+        
+        let result = compile_with_struct_info(&ast, struct_infos);
+        
+        if let Ok((chunk, local_count)) = result {
+            // 验证 Chunk 分配了内联缓存槽位
+            assert!(!chunk.inline_caches.is_empty(), 
+                "Chunk should have allocated inline cache slots");
+            
+            let mut vm = VM::new();
+            
+            // 注册 shapes
+            let shape = Box::into_raw(Box::new(ObjShape::new(
+                100, // struct shape_id 从 100 开始
+                "Counter".to_string(),
+                vec!["value".to_string()],
+            )));
+            unsafe {
+                vm.register_shape(shape);
+            }
+            
+            // 执行代码
+            let result = vm.interpret_with_locals(&chunk, local_count);
+            assert_eq!(result, InterpretResult::Ok);
+            
+            // 验证结果: 10 + 20 = 30
+            let return_value = vm.stack.last().unwrap();
+            assert_eq!(return_value.as_smi(), Some(30), 
+                "Counter addition should return 30");
+            
+            // 验证 VM 的内联缓存被正确加载
+            assert!(!vm.inline_caches.is_empty(),
+                "VM should have loaded inline caches from chunk");
+            
+            // 验证至少有一个缓存条目被填充（非空）
+            let has_filled_cache = vm.inline_caches.iter()
+                .any(|cache| !cache.is_empty());
+            assert!(has_filled_cache,
+                "At least one inline cache entry should be filled after execution");
+        } else {
+            panic!("Compilation failed: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_inline_cache_multiple_calls() {
+        // 测试多次调用时缓存命中的情况
+        use crate::runtime::compiler::compile_with_struct_info;
+        use crate::compiler::parser::parser::Parser;
+        use crate::compiler::lexer::builder::build_lexer;
+        use std::collections::HashMap;
+
+        let code = r#"
+            struct Point {
+                x: int,
+                y: int
+            };
+            
+            impl Point {
+                operator add: |self, other: Point| -> Point {
+                    return Point { 
+                        x: self.x + other.x,
+                        y: self.y + other.y
+                    };
+                }
+            };
+            
+            var p1 = Point { x: 1, y: 2 };
+            var p2 = Point { x: 3, y: 4 };
+            
+            // 多次执行相同的加法，应该命中缓存
+            var r1 = p1 + p2;
+            var r2 = p1 + p2;
+            var r3 = p1 + p2;
+            
+            return r1.x + r1.y + r2.x + r2.y + r3.x + r3.y;
+        "#;
+
+        let mut lexer = build_lexer();
+        let _ = lexer.feed(code.as_bytes());
+        let _ = lexer.terminate();
+        let mut parser = Parser::new(lexer);
+        let ast = parser.parse().unwrap();
+        
+        // 准备 struct 信息
+        let mut struct_infos: HashMap<String, (u16, Vec<String>)> = HashMap::new();
+        struct_infos.insert("Point".to_string(), (100, vec!["x".to_string(), "y".to_string()]));
+        
+        let result = compile_with_struct_info(&ast, struct_infos);
+        
+        if let Ok((chunk, local_count)) = result {
+            let mut vm = VM::new();
+            
+            // 注册 Point shape
+            let shape = Box::into_raw(Box::new(crate::core::ObjShape::new(
+                100,
+                "Point".to_string(),
+                vec!["x".to_string(), "y".to_string()],
+            )));
+            unsafe {
+                vm.register_shape(shape);
+            }
+            
+            let result = vm.interpret_with_locals(&chunk, local_count);
+            assert_eq!(result, InterpretResult::Ok);
+            
+            // 计算: r1=(4,6), r2=(4,6), r3=(4,6), 总和 = 4+6+4+6+4+6 = 30
+            let return_value = vm.stack.last().unwrap();
+            assert_eq!(return_value.as_smi(), Some(30),
+                "Multiple Point additions should return 30");
+        } else {
+            panic!("Compilation failed: {:?}", result);
+        }
     }
 }

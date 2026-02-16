@@ -7,6 +7,7 @@ use crate::core::{
     object::{ObjFunction, ObjString},
     OpCode, Value,
 };
+use kaubo_log::trace;
 
 use super::{
     var, CompileError, Compiler, VarType,
@@ -154,11 +155,26 @@ pub fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileE
 
             // 尝试获取对象类型，检查是否是 struct
             let obj_type = compiler.get_expr_type(&member.object);
+            trace!(
+                compiler.logger,
+                "compile MemberAccess: obj_type={:?}, member={}",
+                obj_type,
+                member.member
+            );
             let is_struct_field = if let Some(VarType::Struct(struct_name)) = obj_type {
                 // 查找 struct 的字段索引
                 if let Some(struct_info) = compiler.struct_infos.get(&struct_name) {
-                    struct_info.field_names.iter().position(|f| f == &member.member)
+                    let field_idx = struct_info.field_names.iter().position(|f| f == &member.member);
+                    trace!(
+                        compiler.logger,
+                        "  struct_info found: shape_id={}, field_names={:?}, field_idx={:?}",
+                        struct_info.shape_id,
+                        struct_info.field_names,
+                        field_idx
+                    );
+                    field_idx
                 } else {
+                    trace!(compiler.logger, "  struct_info NOT found for: {}", struct_name);
                     None
                 }
             } else {
@@ -167,10 +183,17 @@ pub fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileE
             
             if let Some(field_idx) = is_struct_field {
                 // Struct 字段访问：使用字段索引
+                trace!(
+                    compiler.logger,
+                    "  -> Using GetField, field_idx={}",
+                    field_idx
+                );
                 compile_expr(compiler, &member.object)?;
                 compiler.chunk.write_op_u8(OpCode::GetField, field_idx as u8, 0);
             } else {
                 // 普通对象访问（JSON）：编译对象 + 字符串键 + IndexGet
+                // 注意：struct 不再支持字符串键访问
+                trace!(compiler.logger, "  -> Using IndexGet (fallback for JSON)");
                 compile_expr(compiler, &member.object)?;
                 let key_obj = Box::new(ObjString::new(member.member.clone()));
                 let key_ptr = Box::into_raw(key_obj);
@@ -581,8 +604,9 @@ fn try_infer_struct_type(compiler: &Compiler, expr: &Expr) -> Option<String> {
     // 从变量类型表中查找
     if let ExprKind::VarRef(var_ref) = expr.as_ref() {
         if let Some(var_type) = compiler.var_types.get(&var_ref.name) {
-            let VarType::Struct(struct_name) = var_type;
-            return Some(struct_name.clone());
+            if let VarType::Struct(struct_name) = var_type {
+                return Some(struct_name.clone());
+            }
         }
     }
     None

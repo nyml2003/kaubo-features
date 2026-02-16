@@ -784,16 +784,14 @@ impl TypeChecker {
             }
             Some(TypeExpr::Named(named_type)) => {
                 // 检查是否是 struct 类型
-                if let Some(fields) = self.struct_types.get(&named_type.name) {
-                    // struct[index] 返回字段类型（简化：返回第一个字段类型或 any）
-                    if let Some((_, field_type)) = fields.first() {
-                        Ok(Some(field_type.clone()))
-                    } else {
-                        Ok(Some(TypeExpr::named("any")))
-                    }
-                } else {
-                    Ok(None)
+                if self.struct_types.contains_key(&named_type.name) {
+                    // struct 不再支持索引访问，请使用 .field_name
+                    return Err(TypeError::UnsupportedOp {
+                        op: format!("index access on struct '{}'", named_type.name),
+                        location: ErrorLocation::Unknown,
+                    });
                 }
+                Ok(None)
             }
             _ => Ok(None),
         }

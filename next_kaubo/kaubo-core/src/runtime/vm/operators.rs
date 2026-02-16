@@ -657,7 +657,8 @@ pub fn call_operator_closure_varargs(
                 let index_val = vm.stack.pop().expect("Stack underflow");
                 let obj_val = vm.stack.pop().expect("Stack underflow");
 
-                // 整数索引：List 或 Struct 字段
+                // 整数索引：仅 List 支持
+                // struct 不再支持整数索引访问，请使用 .field_name
                 if let Some(idx) = index_val.as_smi() {
                     let i = idx as usize;
 
@@ -671,15 +672,8 @@ pub fn call_operator_closure_varargs(
                             ));
                         }
                         vm.stack.push(list.get(i).unwrap_or(Value::NULL));
-                    } else if let Some(struct_ptr) = obj_val.as_struct() {
-                        let struct_obj = unsafe { &*struct_ptr };
-                        if i < struct_obj.field_count() {
-                            vm.stack.push(struct_obj.fields[i]);
-                        } else {
-                            return Err(format!("Field index out of bounds: {i}"));
-                        }
                     } else {
-                        return Err("Expected list or struct for integer index".to_string());
+                        return Err("Expected list for integer index".to_string());
                     }
                 } else {
                     return Err("Expected integer index".to_string());
@@ -897,7 +891,8 @@ pub fn call_operator_closure(
                 let index_val = vm.stack.pop().expect("Stack underflow");
                 let obj_val = vm.stack.pop().expect("Stack underflow");
 
-                // 整数索引：List 或 Struct 字段（过渡阶段保留 struct 整数索引）
+                // 整数索引：仅 List 支持
+                // struct 不再支持整数索引访问，请使用 .field_name
                 if let Some(idx) = index_val.as_smi() {
                     let i = idx as usize;
 
@@ -912,17 +907,8 @@ pub fn call_operator_closure(
                             ));
                         }
                         vm.stack.push(list.get(i).unwrap_or(Value::NULL));
-                    }
-                    // Struct 字段索引（过渡阶段，后续只支持 .field）
-                    else if let Some(struct_ptr) = obj_val.as_struct() {
-                        let struct_obj = unsafe { &*struct_ptr };
-                        if i < struct_obj.field_count() {
-                            vm.stack.push(struct_obj.fields[i]);
-                        } else {
-                            return Err(format!("Field index out of bounds: {i}"));
-                        }
                     } else {
-                        return Err("Expected list or struct for integer index".to_string());
+                        return Err("Expected list for integer index".to_string());
                     }
                 } else {
                     return Err("Expected integer index".to_string());

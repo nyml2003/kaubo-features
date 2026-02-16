@@ -7,6 +7,7 @@ use crate::core::{
     object::ObjString,
     MethodTableEntry, OperatorTableEntry, OpCode, Value,
 };
+use kaubo_log::trace;
 
 use super::{
     context::{Export, ModuleInfo, VarType},
@@ -33,10 +34,12 @@ pub fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileE
             var::mark_initialized(compiler);
             var::emit_store_local(compiler, idx);
 
-            // 记录变量类型（如果是 struct 实例）
-            if let ExprKind::StructLiteral(struct_lit) = decl.initializer.as_ref() {
-                compiler.var_types
-                    .insert(decl.name.clone(), VarType::Struct(struct_lit.name.clone()));
+            // 记录变量类型（通过类型推断）
+            if let Some(var_type) = compiler.get_expr_type(&decl.initializer) {
+                trace!(compiler.logger, "VarDecl: {} has type {:?}", decl.name, var_type);
+                compiler.var_types.insert(decl.name.clone(), var_type);
+            } else {
+                trace!(compiler.logger, "VarDecl: {} type unknown", decl.name);
             }
 
             // 如果是 pub 且在当前模块中，记录导出
@@ -150,12 +153,15 @@ fn compile_impl_block(
 
         if let ExprKind::Lambda(lambda) = method.lambda.as_ref() {
             // 创建独立编译器编译方法体（方法不捕获 upvalues）
-            let mut method_compiler = Compiler::new();
+            let mut method_compiler = Compiler::new_with_logger(compiler.logger.clone());
             // 复制 struct_infos 用于类型推断
             method_compiler.struct_infos = compiler.struct_infos.clone();
             // 继承模块信息（用于访问 std 等模块）
             method_compiler.module_aliases = compiler.module_aliases.clone();
             method_compiler.imported_modules = compiler.imported_modules.clone();
+
+            trace!(method_compiler.logger, "compile_impl_method: struct={}, method={}, params={:?}", 
+                impl_stmt.struct_name, method.name, lambda.params);
 
             // 添加参数作为局部变量（self 已经在 lambda.params 中）
             for (param_name, param_type) in &lambda.params {
@@ -164,6 +170,7 @@ fn compile_impl_block(
                 // 记录参数类型（用于字段访问优化）
                 if param_name == "self" {
                     // self 总是当前 struct 类型
+                    trace!(method_compiler.logger, "  adding self type: {}", impl_stmt.struct_name);
                     method_compiler.var_types.insert(
                         param_name.clone(),
                         VarType::Struct(impl_stmt.struct_name.clone()),
@@ -175,6 +182,8 @@ fn compile_impl_block(
                     );
                 }
             }
+            
+            trace!(method_compiler.logger, "  var_types after setup: {:?}", method_compiler.var_types);
 
             // 编译方法体
             compile_stmt(&mut method_compiler, &lambda.body)?;
