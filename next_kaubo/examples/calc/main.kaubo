@@ -2,7 +2,7 @@ from std import print, to_string;
 
 var main = || {
     // 链式调用组合
-    var result = [1, 2, 3, 4, 5]
+    var result : List<int> = [1, 2, 3, 4, 5]
     .filter(|x| {return x > 2;})        // [3,4,5]
     .map(|x| { return x * 10;})          // [30,40,50]
     .filter(|x| {return x < 50;});      // [30,40]

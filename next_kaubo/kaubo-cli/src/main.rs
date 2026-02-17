@@ -12,6 +12,33 @@ mod platform;
 
 use crate::platform::print_error_with_source;
 use kaubo_api::{compile_project_with_config, compile_with_config, init_config, run, RunConfig, Value};
+use kaubo_core::binary::{
+    encode_chunk_with_context, BinaryWriter, BuildMode, DecodeContext, EncodeContext, 
+    FunctionPool, SectionData, SectionKind, StringPool, VMExecuteBinary, WriteOptions,
+};
+use kaubo_core::VM;
+use std::fs;
+
+/// 执行模式
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ExecutionMode {
+    /// 自动选择：二进制存在且最新则执行二进制，否则解释执行
+    Auto,
+    /// 总是解释执行源码
+    Source,
+    /// 执行二进制（不存在则报错）
+    Binary,
+}
+
+impl ExecutionMode {
+    fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "source" => ExecutionMode::Source,
+            "binary" => ExecutionMode::Binary,
+            _ => ExecutionMode::Auto, // 默认 auto
+        }
+    }
+}
 
 /// package.json 结构
 #[derive(Debug, serde::Deserialize)]
@@ -35,6 +62,13 @@ struct CompilerConfig {
     show_source: Option<bool>,
     /// 日志级别: "silent", "error", "warn", "info", "debug", "trace"
     log_level: Option<String>,
+    /// 执行模式: "auto" | "source" | "binary"
+    /// - "auto": 自动选择（如果二进制存在且最新则执行二进制，否则解释执行源码）
+    /// - "source": 总是解释执行源码
+    /// - "binary": 执行二进制（不存在则报错）
+    mode: Option<String>,
+    /// 是否生成二进制文件 (emit .kaubod)
+    emit_binary: Option<bool>,
 }
 
 #[derive(Parser)]
@@ -99,11 +133,17 @@ fn main() {
         println!("Entry: {}", entry_path.display());
     }
 
-    // Execute
+    // Execute based on mode
+    let mode = get_execution_mode(&package);
+    let emit_binary = should_emit_binary(&package);
+    let binary_path = get_binary_path(&entry_path);
+    
     if run_config.compile_only {
-        handle_compile_only(&source, run_config, &package);
+        // Compile-only mode: compile and optionally emit binary
+        handle_compile_only(&source, run_config, &package, emit_binary.then_some(&binary_path));
     } else {
-        handle_run(&source, run_config, &package, &entry_path);
+        // Run mode: choose execution method based on mode
+        handle_run(&source, run_config, &package, &entry_path, mode, emit_binary, &binary_path);
     }
 }
 
@@ -134,6 +174,128 @@ fn read_package_json(path: &Path) -> Result<PackageJson, String> {
 fn resolve_entry_path(package_path: &Path, entry: &str) -> PathBuf {
     let base_dir = package_path.parent().unwrap_or(Path::new("."));
     base_dir.join(entry)
+}
+
+/// Get execution mode from compiler config
+fn get_execution_mode(package: &PackageJson) -> ExecutionMode {
+    package
+        .compiler
+        .as_ref()
+        .and_then(|c| c.mode.as_ref())
+        .map(|m| ExecutionMode::from_str(m))
+        .unwrap_or(ExecutionMode::Auto)
+}
+
+/// Check if should emit binary file
+fn should_emit_binary(package: &PackageJson) -> bool {
+    package
+        .compiler
+        .as_ref()
+        .and_then(|c| c.emit_binary)
+        .unwrap_or(false)
+}
+
+/// Get binary path from source path (e.g., main.kaubo -> main.kaubod)
+fn get_binary_path(source_path: &Path) -> PathBuf {
+    let mut binary_path = source_path.to_path_buf();
+    if let Some(stem) = source_path.file_stem() {
+        let parent = source_path.parent().unwrap_or(Path::new("."));
+        binary_path = parent.join(format!("{}.kaubod", stem.to_string_lossy()));
+    }
+    binary_path
+}
+
+/// Check if binary exists and is up-to-date (newer than source)
+fn is_binary_up_to_date(source_path: &Path, binary_path: &Path) -> bool {
+    if !binary_path.exists() {
+        return false;
+    }
+    
+    let source_modified = match fs::metadata(source_path).and_then(|m| m.modified()) {
+        Ok(t) => t,
+        Err(_) => return false, // Can't determine, assume out of date
+    };
+    
+    let binary_modified = match fs::metadata(binary_path).and_then(|m| m.modified()) {
+        Ok(t) => t,
+        Err(_) => return false, // Can't determine, assume out of date
+    };
+    
+    binary_modified >= source_modified
+}
+
+/// Compile source and optionally emit binary file
+fn compile_and_emit(
+    source: &str,
+    config: &RunConfig,
+    binary_path: Option<&Path>,
+) -> Result<kaubo_api::CompileOutput, String> {
+    use kaubo_api::compile_with_config;
+    
+    let output = compile_with_config(source, config)
+        .map_err(|e| format!("Compilation error: {:?}", e))?;
+    
+    // Emit binary if requested
+    if let Some(path) = binary_path {
+        // 使用新的上下文编码来支持堆对象
+        let mut string_pool = StringPool::new();
+        let mut function_pool = FunctionPool::new();
+        
+        // 先添加模块元数据到 String Pool（确保索引稳定）
+        let main_idx = string_pool.add("main");
+        let main_kaubo_idx = string_pool.add("main.kaubo");
+        
+        let mut ctx = EncodeContext::new(&mut string_pool, &mut function_pool);
+        
+        let chunk_data = encode_chunk_with_context(&output.chunk, &mut ctx)
+            .map_err(|e| format!("Failed to encode chunk: {:?}", e))?;
+        
+        // 创建完整的二进制文件
+        let options = WriteOptions {
+            build_mode: BuildMode::Debug,
+            compress: false,
+            strip_debug: false,
+            source_map_external: false,
+        };
+        
+        let mut writer = BinaryWriter::new(options);
+        
+        // 写入 String Pool
+        writer.write_section(SectionKind::StringPool, &ctx.string_pool.serialize());
+        
+        // 写入 Function Pool
+        writer.write_section(SectionKind::FunctionPool, &ctx.function_pool.serialize());
+        
+        // 写入 Module Table（简化版，单模块）
+        use kaubo_core::binary::{ModuleEntry, ModuleTable};
+        let mut module_table = ModuleTable::new();
+        module_table.add(ModuleEntry {
+            name_idx: main_idx,
+            source_path_idx: main_kaubo_idx,
+            chunk_offset: 0,
+            chunk_size: chunk_data.len() as u32,
+            shape_start: 0,
+            shape_count: 0,
+            export_start: 0,
+            export_count: 0,
+            import_start: 0,
+            import_count: 0,
+        });
+        writer.write_section(SectionKind::ModuleTable, &module_table.serialize());
+        
+        // 写入 Chunk Data
+        writer.write_section(SectionKind::ChunkData, &chunk_data);
+        
+        // 设置入口点
+        writer.set_entry(0, 0);
+        
+        // 写入文件
+        let binary_data = writer.finish();
+        fs::write(path, binary_data)
+            .map_err(|e| format!("Failed to write binary file: {}", e))?;
+    }
+    
+    Ok(output)
 }
 
 /// Build run configuration from package.json
@@ -276,12 +438,17 @@ fn get_function_chunk(value: &kaubo_core::Value) -> Option<&kaubo_core::Chunk> {
     None
 }
 
-fn handle_compile_only(source: &str, config: RunConfig, package: &PackageJson) {
+fn handle_compile_only(
+    source: &str, 
+    config: RunConfig, 
+    package: &PackageJson,
+    binary_path: Option<&Path>,
+) {
     if config.show_steps {
         println!("[Compilation]");
     }
 
-    match compile_with_config(source, &config) {
+    match compile_and_emit(source, &config, binary_path) {
         Ok(output) => {
             if config.show_steps {
                 println!("Constants: {}", output.chunk.constants.len());
@@ -293,52 +460,68 @@ fn handle_compile_only(source: &str, config: RunConfig, package: &PackageJson) {
                 dump_bytecode_to_stdout(&output.chunk, &output.shapes, "main");
             }
 
+            if let Some(path) = binary_path {
+                if config.show_steps {
+                    println!("📦 Binary emitted: {}", path.display());
+                }
+            }
+
             if config.show_steps {
                 println!("✅ Compilation successful");
             }
         }
         Err(e) => {
-            print_error_with_source(&e, source);
+            eprintln!("Error: {}", e);
             process::exit(1);
         }
     }
 }
 
-fn handle_run(source: &str, config: RunConfig, package: &PackageJson, entry_path: &Path) {
+fn handle_run(
+    source: &str, 
+    config: RunConfig, 
+    package: &PackageJson, 
+    entry_path: &Path,
+    mode: ExecutionMode,
+    emit_binary: bool,
+    binary_path: &Path,
+) {
     if config.show_steps {
-        println!("[Execution]");
+        println!("[Execution Mode: {:?}]", mode);
     }
 
-    // Check if source contains imports - if so, try multi-file compilation
-    let has_imports = source.contains("import ");
-    
-    if has_imports {
-        // Try multi-file compilation first
-        let root_dir = entry_path.parent().unwrap_or(Path::new("."));
-        match compile_project_with_config(entry_path, root_dir, &config) {
-            Ok(result) => {
-                if config.show_steps {
-                    println!("✅ Multi-file compilation successful!");
-                    println!("  Compiled {} modules:", result.units.len());
-                    for (i, unit) in result.units.iter().enumerate() {
-                        println!("    {}. {} ({})", i + 1, unit.import_path, unit.path.display());
-                    }
-                }
-                // Note: Full multi-module execution not yet implemented
-                // Falling back to single-file execution for now
-                if config.show_steps {
-                    println!("  Note: Executing entry module only (full multi-module execution WIP)");
-                }
-            }
-            Err(e) => {
-                eprintln!("Multi-file compilation error: {}", e);
+    // Determine execution strategy based on mode
+    let use_binary = match mode {
+        ExecutionMode::Binary => {
+            // Binary mode: must use binary file
+            if !binary_path.exists() {
+                eprintln!("Error: Binary mode specified but binary not found: {}", 
+                         binary_path.display());
+                eprintln!("       Run with compile-only mode first to generate binary.");
                 process::exit(1);
             }
+            true
         }
-    }
+        ExecutionMode::Source => {
+            // Source mode: always use source
+            false
+        }
+        ExecutionMode::Auto => {
+            // Auto mode: use binary if it exists and is up-to-date
+            let up_to_date = is_binary_up_to_date(entry_path, binary_path);
+            if config.show_steps {
+                if up_to_date {
+                    println!("📦 Using cached binary: {}", binary_path.display());
+                } else {
+                    println!("📝 Binary out of date or missing, using source");
+                }
+            }
+            up_to_date
+        }
+    };
 
-    // Compile first to get chunk for bytecode dump
-    if config.dump_bytecode {
+    // Handle bytecode dump if requested
+    if config.dump_bytecode && !use_binary {
         match compile_with_config(source, &config) {
             Ok(output) => {
                 dump_bytecode_to_stdout(&output.chunk, &output.shapes, "main");
@@ -350,7 +533,104 @@ fn handle_run(source: &str, config: RunConfig, package: &PackageJson, entry_path
         }
     }
 
-    match run(source, &config) {
+    // Execute based on strategy
+    if use_binary {
+        // Execute binary file
+        execute_binary_file(binary_path, &config, emit_binary);
+    } else {
+        // Execute from source
+        execute_from_source(source, entry_path, &config, emit_binary, binary_path);
+    }
+}
+
+/// Execute binary file directly
+fn execute_binary_file(binary_path: &Path, config: &RunConfig, emit_binary: bool) {
+    if config.show_steps {
+        println!("[Binary Execution]");
+        println!("  Binary: {}", binary_path.display());
+    }
+
+    // Read binary file
+    let binary_data = match fs::read(binary_path) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Error: Failed to read binary file '{}': {}", 
+                     binary_path.display(), e);
+            process::exit(1);
+        }
+    };
+
+    // Create VM and execute binary
+    let mut vm = VM::new();
+    
+    match vm.execute_binary(binary_data) {
+        Ok(result) => {
+            if config.show_steps {
+                println!("✅ Execution successful!");
+                println!("  Result: {:?}", result);
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: Binary execution failed: {:?}", e);
+            process::exit(1);
+        }
+    }
+}
+
+/// Execute from source (compile + interpret)
+fn execute_from_source(
+    source: &str,
+    entry_path: &Path,
+    config: &RunConfig,
+    emit_binary: bool,
+    binary_path: &Path,
+) {
+    if config.show_steps {
+        println!("[Source Execution]");
+    }
+
+    // Check if source contains imports - try multi-file compilation
+    let has_imports = source.contains("import ");
+    
+    if has_imports {
+        let root_dir = entry_path.parent().unwrap_or(Path::new("."));
+        match compile_project_with_config(entry_path, root_dir, config) {
+            Ok(result) => {
+                if config.show_steps {
+                    println!("✅ Multi-file compilation successful!");
+                    println!("  Compiled {} modules:", result.units.len());
+                    for (i, unit) in result.units.iter().enumerate() {
+                        println!("    {}. {} ({})", i + 1, unit.import_path, unit.path.display());
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Multi-file compilation error: {}", e);
+                process::exit(1);
+            }
+        }
+    }
+
+    // Compile and optionally emit binary
+    if emit_binary {
+        if config.show_steps {
+            println!("📦 Emitting binary: {}", binary_path.display());
+        }
+        match compile_and_emit(source, config, Some(binary_path)) {
+            Ok(_) => {
+                if config.show_steps {
+                    println!("✅ Binary generated successfully");
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to emit binary: {}", e);
+                // Continue with execution even if binary emission fails
+            }
+        }
+    }
+
+    // Execute from source
+    match run(source, config) {
         Ok(output) => {
             if config.show_steps {
                 println!("✅ Execution successful!");

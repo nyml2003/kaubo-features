@@ -112,9 +112,11 @@ Kaubo Binary Module
 
 **任务列表：**
 
-- [ ] Header 设计与序列化
-- [ ] Section 管理系统
-- [ ] Chunk Encoder/Decoder
+- [x] Header 设计与序列化
+- [x] Section 管理系统
+- [x] Chunk Encoder/Decoder
+- [x] String Pool / Module Table / Export Table / Import Table
+- [x] Debug Info (Line Table, Local Names)
 - [ ] Source Map (VLQ 编码)
 - [ ] zstd 压缩集成
 - [ ] CLI `kaubo build --debug/--release`

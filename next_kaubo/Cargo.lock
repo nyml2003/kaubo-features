@@ -178,6 +178,8 @@ dependencies = [
  "kaubo-config",
  "kaubo-log",
  "kaubo-vfs",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

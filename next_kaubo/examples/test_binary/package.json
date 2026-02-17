@@ -1,14 +1,12 @@
 {
-  "name": "calculator",
+  "name": "test_binary",
   "version": "0.1.0",
   "entry": "main.kaubo",
-  "description": "Simple calculator example",
+  "description": "Simple test for binary mode",
   "compiler": {
     "log_level": "error",
     "show_source": true,
-    "show_steps": false,
-    "dump_bytecode": false,
-    "compile_only": false,
+    "show_steps": true,
     "mode": "auto",
     "emit_binary": true
   }

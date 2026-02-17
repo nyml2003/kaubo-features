@@ -58,6 +58,11 @@ pub mod runtime;
 /// 编译器模块（Lexer + Parser + Compiler）
 pub mod compiler;
 
+// ==================== 二进制格式（Binary）====================
+
+/// 二进制格式支持 (.kaubod/.kaubor)
+pub mod binary;
+
 // ==================== 工具模块（Kit）====================
 
 /// 底层工具模块

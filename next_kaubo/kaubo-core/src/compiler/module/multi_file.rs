@@ -141,6 +141,12 @@ impl MultiFileCompiler {
             return Ok(());
         }
 
+        // 标准库是内置模块，不需要从文件系统加载
+        // 它们由 VM 在运行时提供
+        if import_path == "std" || import_path.starts_with("std.") {
+            return Ok(());
+        }
+
         // 检测循环依赖
         if self.resolve_stack.contains(&import_path.to_string()) {
             let mut chain = self.resolve_stack.clone();

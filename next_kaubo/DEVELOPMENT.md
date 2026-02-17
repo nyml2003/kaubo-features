@@ -119,7 +119,9 @@ my_project/
     "dump_bytecode": false,
     "show_steps": false,
     "show_source": false,
-    "log_level": "warn"
+    "log_level": "warn",
+    "mode": "auto",
+    "emit_binary": false
   }
 }
 ```
@@ -169,6 +171,38 @@ kaubo examples/calc/package.json
 | `compiler.show_steps` | bool | 显示执行步骤 |
 | `compiler.show_source` | bool | 显示源码 |
 | `compiler.log_level` | string | 日志级别: silent/error/warn/info/debug/trace |
+| `compiler.mode` | string | 执行模式: auto/source/binary (见下方说明) |
+| `compiler.emit_binary` | bool | 编译时生成 .kaubod 二进制文件 |
+
+#### 执行模式 (`mode`)
+
+- **`auto`** (默认): 自动选择执行方式
+  - 如果存在 `.kaubod` 二进制文件且比源码新，则直接执行二进制
+  - 否则编译并解释执行源码
+  
+- **`source`**: 总是解释执行源码（忽略二进制缓存）
+
+- **`binary`**: 执行二进制文件
+  - 如果 `.kaubod` 文件不存在，报错并退出
+  - 适用于生产环境部署
+
+#### 二进制文件生成 (`emit_binary`)
+
+当设置为 `true` 时，编译成功后会生成 `.kaubod` 文件（与源码同名，扩展名改为 `.kaubod`）。
+
+**限制**: 当前 Chunk 编码器仅支持纯数值运算的程序。包含字符串、函数或结构体的程序无法生成二进制文件。
+
+```bash
+# 示例: 启用二进制缓存
+{
+  "compiler": {
+    "mode": "auto",
+    "emit_binary": true
+  }
+}
+# 第一次: 编译源码 → 生成 main.kaubod → 执行
+# 第二次: 检测到 main.kaubod 存在且最新 → 直接执行二进制（更快）
+```
 
 ## 项目结构
 

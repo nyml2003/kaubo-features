@@ -82,5 +82,7 @@ fn test_nested_import_example() {
     assert!(result.is_ok(), "Nested import example should compile: {:?}", result.err());
     
     let compile_result = result.unwrap();
-    assert!(compile_result.units.len() >= 4, "Should have at least 4 modules");
+    // std.* imports are treated as built-in modules and skipped during file resolution
+    // So we only have main.kaubo and app.utils (2 modules)
+    assert_eq!(compile_result.units.len(), 2, "Should have 2 modules (main + app.utils, std.* are built-in)");
 }
