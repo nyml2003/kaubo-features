@@ -8,7 +8,7 @@ use super::expr::{
 use super::module::{Module, ModuleKind};
 use super::stmt::{
     BlockStmt, EmptyStmt, ExprStmt, FieldDef, ForStmt, IfStmt, ImplStmt, ImportStmt, MethodDef,
-    ModuleStmt, ReturnStmt, Stmt, StmtKind, StructStmt, VarDeclStmt, WhileStmt,
+    ReturnStmt, Stmt, StmtKind, StructStmt, VarDeclStmt, WhileStmt,
 };
 use super::type_expr::TypeExpr;
 use super::utils::{get_associativity, get_precedence};
@@ -207,7 +207,8 @@ impl Parser {
         } else if self.check(KauboTokenKind::For) {
             self.parse_for_loop()
         } else if self.check(KauboTokenKind::Module) {
-            self.parse_module_statement()
+            // module 关键字已废弃，单文件即模块
+            return Err(self.error_here(ParserErrorKind::ModuleKeywordDeprecated));
         } else if self.check(KauboTokenKind::Import) {
             self.parse_import_statement()
         } else if self.check(KauboTokenKind::From) {
@@ -754,21 +755,6 @@ impl Parser {
         let end_coord = self.current_coordinate().unwrap_or(start_coord);
         let span = Span::new(start_coord, end_coord);
         Ok(Box::new(StmtKind::Return(ReturnStmt { value, span })))
-    }
-
-    /// 解析模块定义语句
-    /// module name { ... }
-    fn parse_module_statement(&mut self) -> ParseResult<Stmt> {
-        trace!(self.logger, "parse_module_statement");
-        self.consume(); // 消费 'module'
-
-        // 解析模块名
-        let name = self.expect_identifier()?;
-
-        // 解析模块体（代码块）
-        let body = self.parse_block()?;
-
-        Ok(Box::new(StmtKind::Module(ModuleStmt { name, body })))
     }
 
     /// 解析导入语句
@@ -1511,22 +1497,22 @@ mod tests {
     // ===== 模块定义测试 =====
 
     #[test]
-    fn test_parse_module_definition() {
+    fn test_parse_module_deprecated() {
+        // module 关键字已废弃，单文件即模块
         let code = r#"
         module math {
             var PI = 314;
         }
         "#;
         let result = parse_code(code);
-        assert!(
-            result.is_ok(),
-            "Failed to parse module definition: {:?}",
-            result.err()
-        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.kind, ParserErrorKind::ModuleKeywordDeprecated));
     }
 
     #[test]
-    fn test_parse_module_with_exports() {
+    fn test_parse_module_with_exports_deprecated() {
+        // pub var 在 module 中已废弃
         let code = r#"
         module utils {
             pub var version = 1;
@@ -1534,15 +1520,14 @@ mod tests {
         }
         "#;
         let result = parse_code(code);
-        assert!(
-            result.is_ok(),
-            "Failed to parse module with exports: {:?}",
-            result.err()
-        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.kind, ParserErrorKind::ModuleKeywordDeprecated));
     }
 
     #[test]
-    fn test_parse_nested_module() {
+    fn test_parse_nested_module_deprecated() {
+        // 嵌套 module 已废弃
         let code = r#"
         module outer {
             module inner {
@@ -1551,11 +1536,48 @@ mod tests {
         }
         "#;
         let result = parse_code(code);
-        assert!(
-            result.is_ok(),
-            "Failed to parse nested module: {:?}",
-            result.err()
-        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.kind, ParserErrorKind::ModuleKeywordDeprecated));
+    }
+
+    #[test]
+    fn test_parse_empty_module_body_deprecated() {
+        // module 关键字已废弃
+        let code = "module empty {}";
+        let result = parse_code(code);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.kind, ParserErrorKind::ModuleKeywordDeprecated));
+    }
+
+    #[test]
+    fn test_module_error_location() {
+        // 验证错误位置是否正确
+        let code = "module math {}";
+        let mut lexer = build_lexer();
+        let _ = lexer.feed(code.as_bytes());
+        let _ = lexer.terminate();
+        let mut parser = Parser::new(lexer);
+        
+        let result = parser.parse();
+        assert!(result.is_err());
+        
+        let err = result.unwrap_err();
+        assert!(matches!(err.kind, ParserErrorKind::ModuleKeywordDeprecated));
+        assert_eq!(err.line(), Some(1));
+        assert_eq!(err.column(), Some(1));
+    }
+
+    #[test]
+    fn test_pub_var_still_works_at_top_level() {
+        // pub var 在顶层仍然有效（用于文件导出）
+        let code = r#"
+        pub var exported = 42;
+        var internal = 0;
+        "#;
+        let result = parse_code(code);
+        assert!(result.is_ok(), "pub var should work at top level: {:?}", result.err());
     }
 
     // ===== 导入语句测试 =====
@@ -1795,17 +1817,6 @@ mod tests {
         assert!(
             result.is_err(),
             "Should error for from import without items"
-        );
-    }
-
-    #[test]
-    fn test_parse_empty_module_body() {
-        let code = "module empty {}";
-        let result = parse_code(code);
-        assert!(
-            result.is_ok(),
-            "Failed to parse empty module body: {:?}",
-            result.err()
         );
     }
 

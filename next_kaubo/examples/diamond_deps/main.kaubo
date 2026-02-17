@@ -1,0 +1,31 @@
+// Diamond dependency example
+// Demonstrates that shared dependencies are loaded only once
+// Structure:
+//   main
+//   ├── math (imports common)
+//   └── strings (imports common)
+// 
+// Common is imported by both math and strings, but should only be loaded once
+
+import math;
+import strings;
+
+print("=== Diamond Dependency Example ===");
+print("");
+
+// Use math module
+print(math.greet("Demo"));
+var clamped = math.clamp(150, 0, 100);
+print("clamp(150, 0, 100) = " + clamped);
+print("max(10, 20) = " + math.max(10, 20));
+
+print("");
+
+// Use strings module
+print(strings.version_info());
+var padded = strings.pad_left("42", 5, "0");
+print("pad_left('42', 5, '0') = " + padded);
+
+print("");
+print("Diamond dependency example completed!");
+print("Note: 'common' module was loaded only once despite being imported twice.");

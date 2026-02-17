@@ -1,0 +1,20 @@
+// App module - top of import chain
+// Imports database (which imports logger)
+
+import database;
+
+pub var run = || {
+    print("=== Import Chain Example ===");
+    print("App imports database, which imports logger");
+    print("");
+    
+    var conn = database.connect("localhost", 5432);
+    var results = database.query(conn, "SELECT * FROM users");
+    
+    print("Query returned " + results.len() + " rows");
+    
+    database.disconnect(conn);
+    
+    print("");
+    print("Import chain example completed!");
+};

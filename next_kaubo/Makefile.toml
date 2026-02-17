@@ -145,6 +145,26 @@ description = "运行计算器示例"
 command = "cargo"
 args = ["run", "-p", "kaubo-cli", "--", "examples/calc/package.json"]
 
+[tasks.run-multi]
+description = "运行多模块示例（编译解析测试）"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/multi_module/package.json"]
+
+[tasks.run-diamond]
+description = "运行菱形依赖示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/diamond_deps/package.json"]
+
+[tasks.run-chain]
+description = "运行导入链示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/import_chain/package.json"]
+
+[tasks.run-nested]
+description = "运行嵌套导入示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/nested_import/package.json"]
+
 [tasks.run-release]
 description = "Release 模式运行 (默认 examples/hello)"
 command = "cargo"

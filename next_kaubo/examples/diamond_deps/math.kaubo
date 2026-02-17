@@ -1,0 +1,27 @@
+// Math module - one branch of the diamond
+// Imports common (shared with strings module)
+
+import common;
+
+pub var max = |a, b| {
+    if a > b {
+        return a;
+    }
+    return b;
+};
+
+pub var min = |a, b| {
+    if a < b {
+        return a;
+    }
+    return b;
+};
+
+pub var clamp = |value, low, high| {
+    common.assert(low <= high, "low must be <= high");
+    return max(low, min(value, high));
+};
+
+pub var greet = |name| {
+    return common.repeat("=", 10) + " Math " + name + " " + common.repeat("=", 10);
+};

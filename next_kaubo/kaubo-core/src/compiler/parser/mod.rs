@@ -1,6 +1,6 @@
 pub mod error;
 pub mod expr;
-mod module;
+pub mod module;
 pub mod parser;
 pub mod stmt;
 pub mod type_checker;

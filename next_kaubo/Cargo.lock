@@ -145,6 +145,7 @@ dependencies = [
  "kaubo-config",
  "kaubo-core",
  "kaubo-log",
+ "kaubo-vfs",
  "once_cell",
  "thiserror",
 ]
@@ -176,6 +177,7 @@ version = "0.1.0"
 dependencies = [
  "kaubo-config",
  "kaubo-log",
+ "kaubo-vfs",
  "thiserror",
 ]
 
@@ -186,6 +188,10 @@ dependencies = [
  "thiserror",
  "web-sys",
 ]
+
+[[package]]
+name = "kaubo-vfs"
+version = "0.1.0"
 
 [[package]]
 name = "kaubo-workspace"

@@ -631,7 +631,8 @@ fn test_parse_chained_member_and_index() {
 // ===== 模块和导入测试 =====
 
 #[test]
-fn test_parse_module_definition() {
+fn test_parse_module_deprecated() {
+    // module keyword is deprecated - single file = single module
     let code = r#"
         module math {
             var PI = 314;
@@ -639,23 +640,26 @@ fn test_parse_module_definition() {
     "#;
     let result = parse_code(code);
     assert!(
-        result.is_ok(),
-        "Failed to parse module definition: {:?}",
-        result.err()
+        result.is_err(),
+        "module keyword should be deprecated: {:?}",
+        result
     );
+    // Verify it's the right error kind (ModuleKeywordDeprecated in debug output)
+    let err = result.unwrap_err();
+    assert!(err.contains("ModuleKeywordDeprecated"));
 }
 
 #[test]
-fn test_parse_module_with_pub() {
+fn test_parse_pub_var_at_top_level() {
+    // pub var at top level exports from the file (module)
     let code = r#"
-        module utils {
-            pub var version = 1;
-        }
+        pub var version = 1;
+        pub var name = "test";
     "#;
     let result = parse_code(code);
     assert!(
         result.is_ok(),
-        "Failed to parse module with pub: {:?}",
+        "Failed to parse pub var at top level: {:?}",
         result.err()
     );
 }
@@ -804,17 +808,16 @@ fn test_parse_deeply_nested_blocks() {
 }
 
 #[test]
-fn test_parse_complex_program_with_modules() {
+fn test_parse_complex_program_with_imports() {
+    // Single file is a module - use pub var for exports, import for dependencies
     let code = r#"
         import std;
         
-        module math {
-            pub var PI = 314;
-            pub var E = 271;
-        }
+        pub var PI = 314;
+        pub var E = 271;
         
         var circle_area = |r| {
-            return math.PI * r * r / 100;
+            return PI * r * r / 100;
         };
         
         var result = circle_area(5);
@@ -822,7 +825,7 @@ fn test_parse_complex_program_with_modules() {
     let result = parse_code(code);
     assert!(
         result.is_ok(),
-        "Failed to parse complex program with modules: {:?}",
+        "Failed to parse complex program with imports: {:?}",
         result.err()
     );
 }

@@ -48,6 +48,8 @@ pub enum ParserErrorKind {
     ExpectedIdentifier { found: String },
     /// 自定义错误消息
     Custom(String),
+    /// module 关键字已废弃（单文件即模块）
+    ModuleKeywordDeprecated,
 }
 
 impl ParserError {
@@ -132,6 +134,9 @@ impl std::fmt::Display for ParserError {
                 format!("Expected identifier, found: '{found}'")
             }
             ParserErrorKind::Custom(msg) => msg.clone(),
+            ParserErrorKind::ModuleKeywordDeprecated => {
+                "The 'module' keyword is deprecated. Use file-based modules instead.".to_string()
+            }
         };
 
         write!(f, "[{location_prefix}] {message}")

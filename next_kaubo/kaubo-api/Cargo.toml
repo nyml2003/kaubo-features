@@ -10,5 +10,6 @@ description = "Kaubo language API - execution orchestration and unified interfac
 kaubo-config = { workspace = true }
 kaubo-core = { workspace = true }
 kaubo-log = { workspace = true, features = ["alloc", "stdout"] }
+kaubo-vfs = { workspace = true }
 thiserror = { workspace = true }
 once_cell = { workspace = true }

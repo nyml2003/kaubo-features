@@ -1,0 +1,15 @@
+{
+  "name": "import_chain",
+  "version": "1.0.0",
+  "description": "Demonstrates transitive dependencies in import chain",
+  "entry": "main.kaubo",
+  "author": "Kaubo Team",
+  "license": "MIT",
+  "compiler": {
+    "log_level": "warn",
+    "show_source": false,
+    "show_steps": false,
+    "dump_bytecode": false,
+    "compile_only": false
+  }
+}

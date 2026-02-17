@@ -1,7 +1,7 @@
 //! 语句编译
 
 use crate::compiler::parser::expr::{VarRef};
-use crate::compiler::parser::stmt::{ForStmt, IfStmt, ModuleStmt, WhileStmt};
+use crate::compiler::parser::stmt::{ForStmt, IfStmt, WhileStmt};
 use crate::compiler::parser::{ExprKind, Stmt, StmtKind};
 use crate::core::{
     object::ObjString,
@@ -94,10 +94,6 @@ pub fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileE
 
         StmtKind::For(for_stmt) => {
             compile_for(compiler, for_stmt)?;
-        }
-
-        StmtKind::Module(module_stmt) => {
-            compile_module(compiler, module_stmt)?;
         }
 
         StmtKind::Import(import_stmt) => {
@@ -377,67 +373,6 @@ fn compile_for(compiler: &mut Compiler, for_stmt: &ForStmt) -> Result<(), Compil
     compiler.chunk.patch_jump(exit_patch);
 
     // 11. 退出作用域（item 和 $iter 被清理）
-    var::end_scope(compiler);
-
-    Ok(())
-}
-
-/// 编译模块定义
-/// module name { ... }
-/// 模块在运行时是一个 ObjModule 对象，导出项按索引存储
-fn compile_module(compiler: &mut Compiler, module_stmt: &ModuleStmt) -> Result<(), CompileError> {
-    // 进入模块作用域
-    var::begin_scope(compiler);
-
-    // 创建模块信息
-    let module_info = ModuleInfo {
-        name: module_stmt.name.clone(),
-        exports: Vec::new(),
-        export_name_to_shape_id: std::collections::HashMap::new(),
-    };
-
-    // 设置当前模块
-    let prev_module = compiler.current_module.take();
-    compiler.current_module = Some(module_info);
-
-    // 编译模块体
-    compile_stmt(compiler, &module_stmt.body)?;
-
-    // 收集导出信息并生成模块对象
-    if let Some(info) = compiler.current_module.take() {
-        let export_count = info.exports.len();
-
-        // 对于每个导出项，加载其值（正序压栈，BuildModule 会 reverse）
-        for export in info.exports.iter() {
-            // 加载导出值（从局部变量）
-            var::emit_load_local(compiler, export.local_idx);
-        }
-
-        // 生成 BuildModule 指令创建模块对象
-        if export_count > 255 {
-            return Err(CompileError::Unimplemented(
-                "Module has too many exports (max 255)".to_string(),
-            ));
-        }
-        compiler.chunk
-            .write_op_u8(OpCode::BuildModule, export_count as u8, 0);
-
-        // 定义全局变量：模块名
-        let module_name_obj = Box::new(ObjString::new(module_stmt.name.clone()));
-        let module_name_ptr = Box::into_raw(module_name_obj);
-        let module_name_val = Value::string(module_name_ptr);
-        let module_name_idx = compiler.chunk.add_constant(module_name_val);
-        compiler.chunk
-            .write_op_u8(OpCode::DefineGlobal, module_name_idx, 0);
-
-        // 保存模块信息
-        compiler.modules.push(info);
-    }
-
-    // 恢复之前的模块上下文
-    compiler.current_module = prev_module;
-
-    // 退出模块作用域
     var::end_scope(compiler);
 
     Ok(())

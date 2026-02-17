@@ -1,0 +1,7 @@
+// Import chain example
+// Demonstrates transitive dependencies (A → B → C)
+// main imports app, app imports database, database imports logger
+
+import app;
+
+app.run();

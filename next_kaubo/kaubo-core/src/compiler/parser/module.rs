@@ -1,6 +1,6 @@
 use super::stmt::Stmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModuleKind {
     pub statements: Vec<Stmt>,
 }

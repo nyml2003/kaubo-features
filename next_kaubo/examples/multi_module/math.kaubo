@@ -1,0 +1,17 @@
+// Math module - provides basic math utilities
+// This module exports constants and functions for calculations
+
+pub var PI = 3.14159;
+pub var E = 2.71828;
+
+pub var add = |a, b| {
+    return a + b;
+};
+
+pub var multiply = |a, b| {
+    return a * b;
+};
+
+pub var circle_area = |radius| {
+    return PI * radius * radius;
+};

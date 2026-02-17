@@ -1,0 +1,21 @@
+// Common module - shared by multiple modules
+// This module is imported by both math and strings
+
+pub var VERSION = "1.0.0";
+pub var DEBUG = false;
+
+pub var assert = |condition, message| {
+    if condition == false {
+        print("Assertion failed: " + message);
+    }
+};
+
+pub var repeat = |str, times| {
+    var result = "";
+    var i = 0;
+    while i < times {
+        result = result + str;
+        i = i + 1;
+    }
+    return result;
+};

@@ -11,8 +11,7 @@ use std::process;
 mod platform;
 
 use crate::platform::print_error_with_source;
-use kaubo_api::{compile_with_config, init_config, run, RunConfig, Value};
-use kaubo_core::runtime::OpCode;
+use kaubo_api::{compile_project_with_config, compile_with_config, init_config, run, RunConfig, Value};
 
 /// package.json 结构
 #[derive(Debug, serde::Deserialize)]
@@ -104,7 +103,7 @@ fn main() {
     if run_config.compile_only {
         handle_compile_only(&source, run_config, &package);
     } else {
-        handle_run(&source, run_config, &package);
+        handle_run(&source, run_config, &package, &entry_path);
     }
 }
 
@@ -305,9 +304,37 @@ fn handle_compile_only(source: &str, config: RunConfig, package: &PackageJson) {
     }
 }
 
-fn handle_run(source: &str, config: RunConfig, package: &PackageJson) {
+fn handle_run(source: &str, config: RunConfig, package: &PackageJson, entry_path: &Path) {
     if config.show_steps {
         println!("[Execution]");
+    }
+
+    // Check if source contains imports - if so, try multi-file compilation
+    let has_imports = source.contains("import ");
+    
+    if has_imports {
+        // Try multi-file compilation first
+        let root_dir = entry_path.parent().unwrap_or(Path::new("."));
+        match compile_project_with_config(entry_path, root_dir, &config) {
+            Ok(result) => {
+                if config.show_steps {
+                    println!("✅ Multi-file compilation successful!");
+                    println!("  Compiled {} modules:", result.units.len());
+                    for (i, unit) in result.units.iter().enumerate() {
+                        println!("    {}. {} ({})", i + 1, unit.import_path, unit.path.display());
+                    }
+                }
+                // Note: Full multi-module execution not yet implemented
+                // Falling back to single-file execution for now
+                if config.show_steps {
+                    println!("  Note: Executing entry module only (full multi-module execution WIP)");
+                }
+            }
+            Err(e) => {
+                eprintln!("Multi-file compilation error: {}", e);
+                process::exit(1);
+            }
+        }
     }
 
     // Compile first to get chunk for bytecode dump

@@ -14,9 +14,13 @@ use kaubo_log::{debug, info, Logger};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use kaubo_core::compiler::module::multi_file::{MultiFileCompiler, MultiFileCompileResult};
+use kaubo_core::compiler::module::resolver::ModuleResolver;
+use std::path::Path;
 use kaubo_core::lexer::{build_lexer_with_config, LexerConfig as CoreLexerConfig};
 use kaubo_core::parser::{Parser, TypeChecker};
 use kaubo_core::{Chunk, InterpretResult, VMConfig, VM};
+use kaubo_vfs::NativeFileSystem;
 
 // 编译器内部函数（临时，待移到 kaubo-core 公共 API）
 use kaubo_core::kit::lexer::LexerError;
@@ -62,6 +66,26 @@ pub fn run(source: &str, config: &RunConfig) -> Result<ExecuteOutput, KauboError
 
     info!(config.logger, "Execution completed");
     Ok(result)
+}
+
+/// Compile a multi-file project with explicit configuration
+/// 
+/// # Arguments
+/// * `entry_path` - Path to the entry file (e.g., "main.kaubo")
+/// * `root_dir` - Root directory for module resolution
+/// * `config` - Run configuration
+pub fn compile_project_with_config(
+    entry_path: &std::path::Path,
+    root_dir: &std::path::Path,
+    config: &RunConfig,
+) -> Result<MultiFileCompileResult, KauboError> {
+    info!(config.logger, "Starting multi-file compilation");
+    
+    let vfs = Box::<NativeFileSystem>::default();
+    let mut compiler = MultiFileCompiler::new(vfs, root_dir);
+    
+    compiler.compile_entry(entry_path)
+        .map_err(|e| KauboError::Compiler(format!("{e:?}")))
 }
 
 /// Compile with explicit configuration

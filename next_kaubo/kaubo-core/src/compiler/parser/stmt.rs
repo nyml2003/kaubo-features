@@ -27,8 +27,7 @@ pub enum StmtKind {
     Return(ReturnStmt),
     // Print语句（临时调试用，如 `print expr;`）
     Print(PrintStmt),
-    // 模块定义语句（如 `module foo { ... }`）
-    Module(ModuleStmt),
+
     // 导入语句（如 `import foo;` 或 `from foo import bar;`）
     Import(ImportStmt),
     // Struct 定义语句（如 `struct Point { x: float, y: float }`）
@@ -99,13 +98,6 @@ pub struct ReturnStmt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrintStmt {
     pub expression: Expr, // 要打印的表达式
-}
-
-// 模块定义语句结构体
-#[derive(Debug, Clone, PartialEq)]
-pub struct ModuleStmt {
-    pub name: String, // 模块名
-    pub body: Stmt,   // 模块体（代码块）
 }
 
 // 导入语句结构体
@@ -206,9 +198,6 @@ impl fmt::Display for StmtKind {
             }
             StmtKind::Print(print_stmt) => {
                 write!(f, "print {};", print_stmt.expression)
-            }
-            StmtKind::Module(module_stmt) => {
-                write!(f, "module {} {}", module_stmt.name, module_stmt.body)
             }
             StmtKind::Import(import_stmt) => {
                 if import_stmt.items.is_empty() {

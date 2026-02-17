@@ -1,5 +1,5 @@
 [workspace]
-members = ["kaubo-config", "kaubo-core", "kaubo-api", "kaubo-cli", "kaubo-log"]
+members = ["kaubo-config", "kaubo-vfs", "kaubo-core", "kaubo-api", "kaubo-cli", "kaubo-log"]
 resolver = "2"
 
 [workspace.package]
@@ -18,8 +18,11 @@ serde_json = "1"
 
 # kaubo-config (无依赖)
 
+# kaubo-vfs 依赖 (无)
+
 # kaubo-core 依赖
 kaubo-config = { path = "kaubo-config" }
+kaubo-vfs = { path = "kaubo-vfs" }
 kaubo-log = { path = "kaubo-log" }
 
 # kaubo-api 依赖

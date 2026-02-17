@@ -1,0 +1,38 @@
+// Nested import example
+// Demonstrates importing modules using dot notation (e.g., import std.list)
+// 
+// Directory structure:
+//   std/list.kaubo   -> import std.list
+//   std/math.kaubo   -> import std.math
+//   app/utils.kaubo  -> import app.utils
+
+import std.list;
+import std.math;
+import app.utils;
+
+print("=== Nested Import Example ===");
+print("");
+
+// Use std.math
+print("std.math.abs(-5) = " + std.math.abs(-5));
+print("std.math.pow(2, 8) = " + std.math.pow(2, 8));
+print("std.math.sqrt(16) = " + std.math.sqrt(16));
+
+print("");
+
+// Use std.list
+var numbers = [1, 2, 3, 4, 5];
+var doubled = std.list.map(numbers, |n| { return n * 2; });
+print("Original list processed");
+
+var total = std.list.sum(numbers);
+print("Sum: " + total);
+
+print("");
+
+// Use app.utils
+var stats = app.utils.calculate_stats([10, 20, 30, 40, 50]);
+print("Stats calculated");
+
+print("");
+print("Nested import example completed!");

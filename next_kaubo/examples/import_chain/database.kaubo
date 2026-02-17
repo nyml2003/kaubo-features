@@ -1,0 +1,27 @@
+// Database module - middle of import chain
+// Imports logger, demonstrates transitive dependency
+
+import logger;
+
+pub var connect = |host, port| {
+    logger.log("Connecting to database at " + host + ":" + port);
+    return json {
+        host: host,
+        port: port,
+        connected: true
+    };
+};
+
+pub var query = |conn, sql| {
+    logger.log("Executing query: " + sql);
+    var rows = [];
+    rows.push("row1");
+    rows.push("row2");
+    rows.push("row3");
+    return rows;
+};
+
+pub var disconnect = |conn| {
+    logger.log("Disconnecting from database");
+    conn.connected = false;
+};

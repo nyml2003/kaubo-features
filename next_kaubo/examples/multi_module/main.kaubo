@@ -1,0 +1,27 @@
+// Multi-module example
+// Demonstrates importing and using multiple modules
+
+import math;
+import utils;
+
+// Use math module
+var r = 5;
+var area = math.circle_area(r);
+print("Circle with radius " + r + " has area: " + area);
+
+// Use math constants
+print("PI = " + math.PI);
+print("E = " + math.E);
+
+// Use math functions
+var sum = math.add(10, 20);
+var product = math.multiply(5, 7);
+print("10 + 20 = " + sum);
+print("5 * 7 = " + product);
+
+// Use utils module
+print("Factorial of 5 = " + utils.factorial(5));
+print("Is 10 even? " + utils.is_even(10));
+print("Is 7 even? " + utils.is_even(7));
+
+print("Multi-module example completed successfully!");
