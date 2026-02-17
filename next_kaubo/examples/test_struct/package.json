@@ -1,14 +1,12 @@
 {
-  "name": "calculator",
+  "name": "test_struct",
   "version": "0.1.0",
   "entry": "main.kaubo",
-  "description": "Simple calculator example",
+  "description": "Test struct serialization",
   "compiler": {
     "log_level": "error",
     "show_source": true,
-    "show_steps": false,
-    "dump_bytecode": false,
-    "compile_only": true,
+    "show_steps": true,
     "mode": "binary",
     "emit_binary": true
   }

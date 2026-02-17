@@ -812,6 +812,181 @@ impl Default for FunctionPool {
     }
 }
 
+// ==================== Shape Table ====================
+
+/// Shape 条目 - 描述结构体布局
+#[derive(Debug, Clone)]
+pub struct ShapeEntry {
+    /// Shape ID（唯一标识）
+    pub shape_id: u16,
+    /// 结构体名称（在字符串池中的索引）
+    pub name_idx: u32,
+    /// 字段数量
+    pub field_count: u16,
+    /// 字段名称索引（每个字段在字符串池中的索引）
+    pub field_name_indices: Vec<u32>,
+    /// 字段类型索引（可选，0 表示无类型信息）
+    pub field_type_indices: Vec<u32>,
+}
+
+impl ShapeEntry {
+    /// 序列化为字节数组
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut result = Vec::new();
+        result.extend_from_slice(&self.shape_id.to_le_bytes());
+        result.extend_from_slice(&self.name_idx.to_le_bytes());
+        result.extend_from_slice(&self.field_count.to_le_bytes());
+        
+        // 字段名称索引
+        for &idx in &self.field_name_indices {
+            result.extend_from_slice(&idx.to_le_bytes());
+        }
+        
+        // 字段类型索引（如果有）
+        for &idx in &self.field_type_indices {
+            result.extend_from_slice(&idx.to_le_bytes());
+        }
+        
+        result
+    }
+
+    /// 从字节数组反序列化
+    pub fn deserialize(bytes: &[u8], field_count: u16) -> Result<Self, SectionError> {
+        if bytes.len() < 12 {
+            return Err(SectionError::TooShort);
+        }
+
+        let shape_id = u16::from_le_bytes([bytes[0], bytes[1]]);
+        let name_idx = u32::from_le_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
+        let stored_field_count = u16::from_le_bytes([bytes[6], bytes[7]]);
+        
+        if stored_field_count != field_count {
+            return Err(SectionError::InvalidData);
+        }
+
+        let mut offset = 8;
+        let mut field_name_indices = Vec::with_capacity(field_count as usize);
+        let mut field_type_indices = Vec::with_capacity(field_count as usize);
+
+        // 读取字段名称索引
+        for _ in 0..field_count {
+            if bytes.len() < offset + 4 {
+                return Err(SectionError::TooShort);
+            }
+            let idx = u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
+            field_name_indices.push(idx);
+            offset += 4;
+        }
+
+        // 读取字段类型索引（如果存在）
+        for _ in 0..field_count {
+            if bytes.len() < offset + 4 {
+                break; // 没有类型信息
+            }
+            let idx = u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
+            field_type_indices.push(idx);
+            offset += 4;
+        }
+
+        Ok(Self {
+            shape_id,
+            name_idx,
+            field_count,
+            field_name_indices,
+            field_type_indices,
+        })
+    }
+}
+
+/// Shape 表 - 存储所有结构体布局定义
+#[derive(Debug, Clone)]
+pub struct ShapeTable {
+    pub entries: Vec<ShapeEntry>,
+}
+
+impl ShapeTable {
+    /// 创建空的 Shape 表
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    /// 添加 Shape 条目
+    pub fn add(&mut self, entry: ShapeEntry) {
+        self.entries.push(entry);
+    }
+
+    /// 通过 ID 获取 Shape
+    pub fn get_by_id(&self, shape_id: u16) -> Option<&ShapeEntry> {
+        self.entries.iter().find(|e| e.shape_id == shape_id)
+    }
+
+    /// 获取条目数量
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl SectionData for ShapeTable {
+    fn serialize(&self) -> Vec<u8> {
+        // 格式：count(4) + [shape_id(2) + name_idx(4) + field_count(2) + field_indices...]
+        let mut result = Vec::new();
+        result.extend_from_slice(&(self.entries.len() as u32).to_le_bytes());
+
+        for entry in &self.entries {
+            result.extend_from_slice(&entry.serialize());
+        }
+
+        result
+    }
+
+    fn deserialize(bytes: &[u8]) -> Result<Self, SectionError> {
+        if bytes.len() < 4 {
+            return Err(SectionError::TooShort);
+        }
+
+        let count = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+
+        let mut entries = Vec::with_capacity(count);
+        let mut offset = 4;
+
+        for _ in 0..count {
+            if bytes.len() < offset + 8 {
+                return Err(SectionError::TooShort);
+            }
+            
+            // 先读取 field_count 才能知道条目大小
+            let field_count = u16::from_le_bytes([bytes[offset + 6], bytes[offset + 7]]);
+            let entry_size = 8 + (field_count as usize) * 4 * 2; // 基础头 + 字段索引 + 类型索引
+            
+            if bytes.len() < offset + entry_size {
+                return Err(SectionError::TooShort);
+            }
+
+            let entry = ShapeEntry::deserialize(&bytes[offset..offset + entry_size], field_count)?;
+            entries.push(entry);
+            offset += entry_size;
+        }
+
+        Ok(Self { entries })
+    }
+
+    fn section_kind() -> SectionKind {
+        SectionKind::ShapeTable
+    }
+}
+
+impl Default for ShapeTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

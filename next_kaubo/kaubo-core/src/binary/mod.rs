@@ -66,7 +66,7 @@ pub use chunk::{
 };
 pub use data::{
     ExportEntry, ExportKind, ExportTable, FunctionEntry, FunctionPool, ImportEntry, ImportKind,
-    ImportTable, ModuleEntry, ModuleTable, StringPool,
+    ImportTable, ModuleEntry, ModuleTable, ShapeEntry, ShapeTable, StringPool,
 };
 pub use debug_info::{DebugInfo, LineEntry, LineTable, LocalNameEntry, LocalNameTable};
 pub use header::{Arch, BuildMode, FeatureFlags, FileHeader, HeaderError, OS, HEADER_SIZE, MAGIC};

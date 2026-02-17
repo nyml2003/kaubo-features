@@ -12,5 +12,4 @@ var main = || {
     var sum: int = [1, 2, 3, 4, 5].reduce(|acc, x| {return acc + x;}, 0);
     print(sum);
 };
-
 main();

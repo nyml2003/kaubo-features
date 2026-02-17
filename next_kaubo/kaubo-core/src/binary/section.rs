@@ -242,6 +242,8 @@ pub enum SectionError {
     InvalidKind(u8),
     /// 无效的数据大小
     InvalidSize,
+    /// 无效的数据内容
+    InvalidData,
 }
 
 impl std::fmt::Display for SectionError {
@@ -250,6 +252,7 @@ impl std::fmt::Display for SectionError {
             SectionError::TooShort => write!(f, "Section data too short"),
             SectionError::InvalidKind(k) => write!(f, "Invalid section kind: {}", k),
             SectionError::InvalidSize => write!(f, "Invalid section data size"),
+            SectionError::InvalidData => write!(f, "Invalid section data content"),
         }
     }
 }

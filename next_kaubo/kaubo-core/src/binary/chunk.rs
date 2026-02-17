@@ -9,10 +9,10 @@
 //! - 内联缓存槽位 (inline_cache_slots)
 //! - 内联缓存条目 (inline_caches)
 
-use crate::binary::data::{FunctionEntry, FunctionPool, StringPool};
+use crate::binary::data::{FunctionEntry, FunctionPool, ShapeEntry, ShapeTable, StringPool};
 use crate::core::bytecode::{InlineCacheSlot, MethodTableEntry, OperatorTableEntry};
 use crate::core::chunk::Chunk;
-use crate::core::object::{ObjFunction, ObjList, ObjString};
+use crate::core::object::{ObjFunction, ObjList, ObjShape, ObjString, ObjStruct};
 use crate::core::value::Value;
 
 /// 编码上下文 - 用于在编码过程中访问和注册到各个 Pool
@@ -21,14 +21,17 @@ pub struct EncodeContext<'a> {
     pub string_pool: &'a mut StringPool,
     /// 函数池（用于函数字面量）
     pub function_pool: &'a mut FunctionPool,
+    /// Shape 表（用于结构体定义）
+    pub shape_table: &'a mut ShapeTable,
 }
 
 impl<'a> EncodeContext<'a> {
     /// 创建新的编码上下文
-    pub fn new(string_pool: &'a mut StringPool, function_pool: &'a mut FunctionPool) -> Self {
+    pub fn new(string_pool: &'a mut StringPool, function_pool: &'a mut FunctionPool, shape_table: &'a mut ShapeTable) -> Self {
         Self {
             string_pool,
             function_pool,
+            shape_table,
         }
     }
 }
@@ -38,6 +41,7 @@ impl<'a> std::fmt::Debug for EncodeContext<'a> {
         f.debug_struct("EncodeContext")
             .field("string_pool_len", &self.string_pool.len())
             .field("function_pool_len", &self.function_pool.len())
+            .field("shape_table_len", &self.shape_table.len())
             .finish()
     }
 }
@@ -48,14 +52,17 @@ pub struct DecodeContext<'a> {
     pub string_pool: &'a StringPool,
     /// 函数池
     pub function_pool: &'a FunctionPool,
+    /// Shape 表（用于结构体实例解码）
+    pub shape_table: &'a ShapeTable,
 }
 
 impl<'a> DecodeContext<'a> {
     /// 创建新的解码上下文
-    pub fn new(string_pool: &'a StringPool, function_pool: &'a FunctionPool) -> Self {
+    pub fn new(string_pool: &'a StringPool, function_pool: &'a FunctionPool, shape_table: &'a ShapeTable) -> Self {
         Self {
             string_pool,
             function_pool,
+            shape_table,
         }
     }
 }
@@ -65,6 +72,7 @@ impl<'a> std::fmt::Debug for DecodeContext<'a> {
         f.debug_struct("DecodeContext")
             .field("string_pool_len", &self.string_pool.len())
             .field("function_pool_len", &self.function_pool.len())
+            .field("shape_table_len", &self.shape_table.len())
             .finish()
     }
 }
@@ -207,7 +215,8 @@ pub fn encode_chunk_with_context(
 pub fn encode_chunk(chunk: &Chunk) -> Result<Vec<u8>, ChunkEncodeError> {
     let mut string_pool = StringPool::new();
     let mut function_pool = FunctionPool::new();
-    let mut ctx = EncodeContext::new(&mut string_pool, &mut function_pool);
+    let mut shape_table = ShapeTable::new();
+    let mut ctx = EncodeContext::new(&mut string_pool, &mut function_pool, &mut shape_table);
     
     encode_chunk_with_context(chunk, &mut ctx)
 }
@@ -394,11 +403,46 @@ fn encode_constant_with_context(
         for elem in &list.elements {
             encode_constant_with_context(buf, *elem, ctx)?;
         }
-    } else if value.is_struct() {
+    } else if let Some(struct_ptr) = value.as_struct() {
         // 结构体实例：编码 shape_id + 字段值
+        let s = unsafe { &*struct_ptr };
+        let shape_id = s.shape_id();
+        
+        // 检查 Shape 是否已注册，如果没有则注册
+        if ctx.shape_table.get_by_id(shape_id).is_none() {
+            if !s.shape.is_null() {
+                let shape = unsafe { &*s.shape };
+                
+                // 编码结构体名称
+                let name_idx = ctx.string_pool.add(&shape.name);
+                
+                // 编码字段名
+                let field_name_indices: Vec<u32> = shape.field_names.iter()
+                    .map(|name| ctx.string_pool.add(name))
+                    .collect();
+                
+                // 编码字段类型（如果有）
+                let field_type_indices: Vec<u32> = shape.field_types.iter()
+                    .map(|ty| ctx.string_pool.add(ty))
+                    .collect();
+                
+                let entry = ShapeEntry {
+                    shape_id,
+                    name_idx,
+                    field_count: shape.field_names.len() as u16,
+                    field_name_indices,
+                    field_type_indices,
+                };
+                ctx.shape_table.add(entry);
+            }
+        }
+        
         buf.push(ConstantType::Struct as u8);
-        // TODO: 需要 ObjStruct 的访问方法
-        return Err(ChunkEncodeError::UnsupportedConstantType("struct instance"));
+        buf.extend_from_slice(&shape_id.to_le_bytes());
+        buf.extend_from_slice(&(s.fields.len() as u32).to_le_bytes());
+        for field in &s.fields {
+            encode_constant_with_context(buf, *field, ctx)?;
+        }
     } else {
         return Err(ChunkEncodeError::UnsupportedConstantType("unknown heap object"));
     }
@@ -765,8 +809,63 @@ fn decode_constant_with_context(
             Ok(Value::list(list_ptr))
         }
         ConstantType::Struct => {
-            // TODO: 解码结构体实例
-            Err(ChunkDecodeError::CorruptedData("Struct decoding not yet implemented"))
+            // 解码结构体实例：shape_id + fields
+            if bytes.len() < *offset + 6 {
+                return Err(ChunkDecodeError::TooShort);
+            }
+            
+            // 读取 shape_id
+            let shape_id = u16::from_le_bytes([bytes[*offset], bytes[*offset + 1]]);
+            *offset += 2;
+            
+            // 读取字段数量
+            let len = u32::from_le_bytes([
+                bytes[*offset],
+                bytes[*offset + 1],
+                bytes[*offset + 2],
+                bytes[*offset + 3],
+            ]) as usize;
+            *offset += 4;
+            
+            // 解码字段值
+            let mut fields = Vec::with_capacity(len);
+            for _ in 0..len {
+                let field = decode_constant_with_context(bytes, offset, ctx)?;
+                fields.push(field);
+            }
+            
+            // 从 ShapeTable 查找 ShapeEntry 并重建 ObjShape
+            let shape = if let Some(entry) = ctx.shape_table.get_by_id(shape_id) {
+                // 重建字段名数组
+                let field_names: Vec<String> = entry.field_name_indices.iter()
+                    .map(|&idx| ctx.string_pool.get(idx).unwrap_or("").to_string())
+                    .collect();
+                
+                // 重建字段类型数组（如果有）
+                let field_types: Vec<String> = entry.field_type_indices.iter()
+                    .map(|&idx| ctx.string_pool.get(idx).unwrap_or("").to_string())
+                    .collect();
+                
+                // 获取结构体名称
+                let name = ctx.string_pool.get(entry.name_idx).unwrap_or("Struct").to_string();
+                
+                // 创建 ObjShape
+                let shape = if field_types.is_empty() {
+                    ObjShape::new(shape_id, name, field_names)
+                } else {
+                    ObjShape::new_with_types(shape_id, name, field_names, field_types)
+                };
+                
+                let shape_ptr = Box::into_raw(Box::new(shape));
+                shape_ptr
+            } else {
+                return Err(ChunkDecodeError::CorruptedData("Shape not found in shape table"));
+            };
+            
+            // 创建 ObjStruct
+            let s = ObjStruct::new(shape, fields);
+            let struct_ptr = Box::into_raw(Box::new(s));
+            Ok(Value::struct_instance(struct_ptr))
         }
     }
 }

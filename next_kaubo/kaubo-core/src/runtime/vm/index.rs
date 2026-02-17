@@ -14,7 +14,7 @@ pub fn index_get_base(
     index_val: Value,
 ) -> Result<Option<Value>, String> {
     // 整数索引：列表索引或自定义类型的 operator get
-    if let Some(idx) = index_val.as_smi() {
+    if let Some(idx) = index_val.as_int() {
         let i = idx as usize;
 
         // 列表索引（内置类型）
@@ -86,7 +86,7 @@ pub fn index_set_base(
     }
 
     // 整数键：列表
-    if let Some(idx) = key_val.as_smi() {
+    if let Some(idx) = key_val.as_int() {
         let i = idx as usize;
 
         if let Some(list_ptr) = obj_val.as_list() {

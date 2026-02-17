@@ -34,12 +34,12 @@ pub fn add_values(_vm: &VM, a: Value, b: Value) -> Result<Value, String> {
         let af = if a.is_float() {
             a.as_float()
         } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            a.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
         let bf = if b.is_float() {
             b.as_float()
         } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            b.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
         return Ok(Value::float(af + bf));
     }
@@ -65,12 +65,12 @@ pub fn sub_values(_vm: &VM, a: Value, b: Value) -> Result<Value, String> {
         let af = if a.is_float() {
             a.as_float()
         } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            a.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
         let bf = if b.is_float() {
             b.as_float()
         } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            b.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
         return Ok(Value::float(af - bf));
     }
@@ -95,12 +95,12 @@ pub fn mul_values(_vm: &VM, a: Value, b: Value) -> Result<Value, String> {
         let af = if a.is_float() {
             a.as_float()
         } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            a.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
         let bf = if b.is_float() {
             b.as_float()
         } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            b.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
         return Ok(Value::float(af * bf));
     }
@@ -118,13 +118,13 @@ pub fn div_values(_vm: &VM, a: Value, b: Value) -> Result<Value, String> {
         let af = if a.is_float() {
             a.as_float()
         } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            a.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
 
         let bf = if b.is_float() {
             b.as_float()
         } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            b.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
 
         if bf == 0.0 {
@@ -159,13 +159,13 @@ pub fn mod_values(_vm: &VM, a: Value, b: Value) -> Result<Value, String> {
         let af = if a.is_float() {
             a.as_float()
         } else {
-            a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            a.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
 
         let bf = if b.is_float() {
             b.as_float()
         } else {
-            b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+            b.as_int().map(|n| n as f64).unwrap_or(0.0)
         };
 
         if bf == 0.0 {
@@ -197,7 +197,7 @@ pub fn neg_value(_vm: &VM, v: Value) -> Result<Value, String> {
     let f = if v.is_float() {
         v.as_float()
     } else {
-        v.as_smi().map(|n| n as f64).unwrap_or(0.0)
+        v.as_int().map(|n| n as f64).unwrap_or(0.0)
     };
     Ok(Value::float(-f))
 }
@@ -215,13 +215,13 @@ pub fn compare_values(_vm: &VM, a: Value, b: Value) -> Result<std::cmp::Ordering
     let af = if a.is_float() {
         a.as_float()
     } else {
-        a.as_smi().map(|n| n as f64).unwrap_or(0.0)
+        a.as_int().map(|n| n as f64).unwrap_or(0.0)
     };
 
     let bf = if b.is_float() {
         b.as_float()
     } else {
-        b.as_smi().map(|n| n as f64).unwrap_or(0.0)
+        b.as_int().map(|n| n as f64).unwrap_or(0.0)
     };
 
     Ok(af.partial_cmp(&bf).unwrap_or(std::cmp::Ordering::Equal))
@@ -659,7 +659,7 @@ pub fn call_operator_closure_varargs(
 
                 // 整数索引：仅 List 支持
                 // struct 不再支持整数索引访问，请使用 .field_name
-                if let Some(idx) = index_val.as_smi() {
+                if let Some(idx) = index_val.as_int() {
                     let i = idx as usize;
 
                     if let Some(list_ptr) = obj_val.as_list() {
@@ -893,7 +893,7 @@ pub fn call_operator_closure(
 
                 // 整数索引：仅 List 支持
                 // struct 不再支持整数索引访问，请使用 .field_name
-                if let Some(idx) = index_val.as_smi() {
+                if let Some(idx) = index_val.as_int() {
                     let i = idx as usize;
 
                     // List 索引

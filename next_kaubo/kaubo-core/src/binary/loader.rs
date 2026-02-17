@@ -6,10 +6,10 @@
 
 use super::{
     BinaryReader, ReadError, SectionKind, SectionData, decode_chunk, decode_chunk_with_context,
-    DecodeContext, ChunkDecodeError, StringPool, FunctionPool, ModuleTable, ModuleEntry, 
+    DecodeContext, ChunkDecodeError, StringPool, FunctionPool, ShapeTable, ModuleTable, ModuleEntry, 
     ExportTable, ImportTable, DebugInfo,
 };
-use crate::core::{Chunk, VM, InterpretResult};
+use crate::core::{Chunk, VM, InterpretResult, ObjShape};
 
 /// package.json 中的配置
 #[derive(Debug, Clone, Default)]
@@ -184,6 +184,7 @@ pub struct BinaryLoader {
     reader: BinaryReader,
     string_pool: StringPool,
     function_pool: FunctionPool,
+    shape_table: ShapeTable,
     module_table: ModuleTable,
     export_table: ExportTable,
     import_table: ImportTable,
@@ -222,6 +223,15 @@ impl BinaryLoader {
             FunctionPool::new()
         };
 
+        // 加载 Shape Table（可选，用于结构体序列化）
+        let shape_table = if reader.has_section(SectionKind::ShapeTable) {
+            let data = reader.read_section(SectionKind::ShapeTable)?;
+            ShapeTable::deserialize(&data)
+                .map_err(|e| LoadError::CorruptedData(format!("Shape table: {}", e)))?
+        } else {
+            ShapeTable::new()
+        };
+
         // 加载 Module Table（必需）
         let module_table = if reader.has_section(SectionKind::ModuleTable) {
             let data = reader.read_section(SectionKind::ModuleTable)?;
@@ -253,6 +263,7 @@ impl BinaryLoader {
             reader,
             string_pool,
             function_pool,
+            shape_table,
             module_table,
             export_table,
             import_table,
@@ -300,7 +311,7 @@ impl BinaryLoader {
             }
             
             // 使用 DecodeContext 支持堆对象序列化
-            let ctx = DecodeContext::new(&self.string_pool, &self.function_pool);
+            let ctx = DecodeContext::new(&self.string_pool, &self.function_pool, &self.shape_table);
             let mut offset = 0;
             decode_chunk_with_context(&data[start..end], &mut offset, &ctx)?
         } else {
@@ -367,6 +378,30 @@ impl VMExecuteBinary for VM {
         self.init_stdlib();
         
         let loader = BinaryLoader::from_bytes(bytes)?;
+        
+        // 注册 Shape Table 中的所有 Shape 到 VM
+        for entry in &loader.shape_table.entries {
+            // 重建 ObjShape
+            let name = loader.string_pool.get(entry.name_idx).unwrap_or("Struct").to_string();
+            let field_names: Vec<String> = entry.field_name_indices.iter()
+                .map(|&idx| loader.string_pool.get(idx).unwrap_or("").to_string())
+                .collect();
+            let field_types: Vec<String> = entry.field_type_indices.iter()
+                .map(|&idx| loader.string_pool.get(idx).unwrap_or("").to_string())
+                .collect();
+            
+            let shape = if field_types.is_empty() {
+                ObjShape::new(entry.shape_id, name, field_names)
+            } else {
+                ObjShape::new_with_types(entry.shape_id, name, field_names, field_types)
+            };
+            
+            let shape_ptr = Box::into_raw(Box::new(shape));
+            unsafe {
+                self.register_shape(shape_ptr);
+            }
+        }
+        
         let module = loader.load_entry_module()?;
         
         // 使用 VM 的 interpret 方法执行 Chunk

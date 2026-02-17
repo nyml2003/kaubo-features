@@ -14,7 +14,7 @@ use crate::platform::print_error_with_source;
 use kaubo_api::{compile_project_with_config, compile_with_config, init_config, run, RunConfig, Value};
 use kaubo_core::binary::{
     encode_chunk_with_context, BinaryWriter, BuildMode, DecodeContext, EncodeContext, 
-    FunctionPool, SectionData, SectionKind, StringPool, VMExecuteBinary, WriteOptions,
+    FunctionPool, SectionData, SectionKind, ShapeEntry, ShapeTable, StringPool, VMExecuteBinary, WriteOptions,
 };
 use kaubo_core::VM;
 use std::fs;
@@ -240,12 +240,33 @@ fn compile_and_emit(
         // 使用新的上下文编码来支持堆对象
         let mut string_pool = StringPool::new();
         let mut function_pool = FunctionPool::new();
+        let mut shape_table = ShapeTable::new();
         
         // 先添加模块元数据到 String Pool（确保索引稳定）
         let main_idx = string_pool.add("main");
         let main_kaubo_idx = string_pool.add("main.kaubo");
         
-        let mut ctx = EncodeContext::new(&mut string_pool, &mut function_pool);
+        // 注册编译时收集的 Shape 到 ShapeTable
+        for shape in &output.shapes {
+            let name_idx = string_pool.add(&shape.name);
+            let field_name_indices: Vec<u32> = shape.field_names.iter()
+                .map(|name| string_pool.add(name))
+                .collect();
+            let field_type_indices: Vec<u32> = shape.field_types.iter()
+                .map(|ty| string_pool.add(ty))
+                .collect();
+            
+            let entry = ShapeEntry {
+                shape_id: shape.shape_id,
+                name_idx,
+                field_count: shape.field_names.len() as u16,
+                field_name_indices,
+                field_type_indices,
+            };
+            shape_table.add(entry);
+        }
+        
+        let mut ctx = EncodeContext::new(&mut string_pool, &mut function_pool, &mut shape_table);
         
         let chunk_data = encode_chunk_with_context(&output.chunk, &mut ctx)
             .map_err(|e| format!("Failed to encode chunk: {:?}", e))?;
@@ -265,6 +286,11 @@ fn compile_and_emit(
         
         // 写入 Function Pool
         writer.write_section(SectionKind::FunctionPool, &ctx.function_pool.serialize());
+        
+        // 写入 Shape Table（如果非空）
+        if !ctx.shape_table.is_empty() {
+            writer.write_section(SectionKind::ShapeTable, &ctx.shape_table.serialize());
+        }
         
         // 写入 Module Table（简化版，单模块）
         use kaubo_core::binary::{ModuleEntry, ModuleTable};
