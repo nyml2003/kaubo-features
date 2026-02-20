@@ -160,18 +160,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kaubo-core"
-version = "0.1.0"
-dependencies = [
- "kaubo-config",
- "kaubo-log",
- "kaubo-vfs",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "kaubo-log"
 version = "0.1.0"
 dependencies = [

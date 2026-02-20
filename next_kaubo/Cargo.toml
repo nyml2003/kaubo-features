@@ -1,5 +1,5 @@
 [workspace]
-members = ["kaubo-config", "kaubo-vfs", "kaubo-core", "kaubo-cli", "kaubo-log", "kaubo-orchestrator"]
+members = ["kaubo-config", "kaubo-vfs", "kaubo-cli", "kaubo-log", "kaubo-orchestrator"]
 resolver = "2"
 
 [workspace.package]
@@ -20,14 +20,13 @@ serde_json = "1"
 
 # kaubo-vfs 依赖 (无)
 
-# kaubo-core 依赖
+# kaubo-config (无依赖)
 kaubo-config = { path = "kaubo-config" }
 kaubo-vfs = { path = "kaubo-vfs" }
 kaubo-log = { path = "kaubo-log" }
 
 # kaubo-cli 依赖
 kaubo-orchestrator = { path = "kaubo-orchestrator" }
-kaubo-core = { path = "kaubo-core" }
 clap = { version = "4", features = ["derive"] }
 
 # 虚拟包配置（满足 Cargo 要求）
