@@ -148,6 +148,8 @@ pub struct PassContext {
     pub options: PassOptions,
     /// Previous pass metadata
     pub previous_metadata: HashMap<String, Value>,
+    /// Original source path (for multi-module compilation)
+    pub source_path: Option<std::path::PathBuf>,
 }
 
 impl std::fmt::Debug for PassContext {
@@ -170,6 +172,7 @@ impl Clone for PassContext {
             output: self.output.clone(),
             options: self.options.clone(),
             previous_metadata: self.previous_metadata.clone(),
+            source_path: self.source_path.clone(),
         }
     }
 }
@@ -199,6 +202,7 @@ impl PassContext {
             output: new_output_buffer(),
             options: PassOptions::default(),
             previous_metadata: HashMap::new(),
+            source_path: None,
         }
     }
     
@@ -216,7 +220,14 @@ impl PassContext {
             output,
             options: PassOptions::default(),
             previous_metadata: HashMap::new(),
+            source_path: None,
         }
+    }
+    
+    /// Set source path
+    pub fn with_source_path(mut self, path: impl AsRef<std::path::Path>) -> Self {
+        self.source_path = Some(path.as_ref().to_path_buf());
+        self
     }
     
     /// Set options

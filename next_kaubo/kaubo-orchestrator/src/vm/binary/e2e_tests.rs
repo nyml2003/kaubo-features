@@ -8,12 +8,13 @@ mod tests {
         BinaryLoader, BinaryWriter, BuildMode, SectionKind, WriteOptions,
         VMExecuteBinary, SectionData, encode_chunk,
     };
-    use crate::pipeline::module::{MultiFileCompiler, CompileUnit};
+    use crate::pipeline::module::{CompileContext, CompileUnit};
     use crate::pipeline::parser::Parser;
     use crate::pipeline::lexer::builder::build_lexer;
     use crate::vm::core::{Chunk, VM, InterpretResult};
-    use kaubo_vfs::NativeFileSystem;
+    use kaubo_vfs::MemoryFileSystem;
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     /// 编译单个 CompileUnit 为 Chunk
     fn compile_unit_to_chunk(unit: &CompileUnit) -> Chunk {
@@ -31,19 +32,26 @@ mod tests {
     }
 
     /// 从源码编译并生成二进制
-    fn compile_to_binary(entry_path: &str, root_dir: &str) -> Vec<u8> {
-        // 1. 多文件编译（解析 AST）
-        let vfs = NativeFileSystem::new();
-        let mut compiler = MultiFileCompiler::new(Box::new(vfs), root_dir);
+    fn compile_to_binary(_entry_path: &str, _root_dir: &str) -> Vec<u8> {
+        // 使用 MemoryFileSystem 和 CompileContext 进行测试
+        // 1. 创建虚拟文件系统
+        let vfs = Arc::new(MemoryFileSystem::new());
         
-        let result = compiler.compile_entry(entry_path)
-            .expect("Failed to compile entry");
-
-        // 2. 为每个编译单元生成 Chunk
+        // 2. 创建编译上下文（使用简单的单模块编译）
+        let mut ctx = CompileContext::new(vfs.as_ref(), "/");
+        
+        // 3. 编译入口模块
+        let entry_id = crate::pipeline::module::ModuleId::parse("main").unwrap();
+        let unit = ctx.get_or_compile(&entry_id).unwrap();
+        
+        // 4. 获取拓扑排序的模块
+        let units = ctx.get_sorted_units();
+        
+        // 5. 为每个编译单元生成 Chunk
         let mut chunks = Vec::new();
-        for unit in &result.units {
+        for unit in units {
             let chunk = compile_unit_to_chunk(unit);
-            chunks.push((unit.import_path.clone(), chunk));
+            chunks.push((unit.id.to_string(), chunk));
         }
 
         // 3. 打包为二进制格式

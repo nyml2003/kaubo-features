@@ -22,10 +22,13 @@ mod memory;
 mod native;
 mod r#trait;
 
+pub mod middleware;
+
 pub use error::{VfsError, VfsResult};
 pub use memory::MemoryFileSystem;
 pub use native::NativeFileSystem;
 pub use r#trait::VirtualFileSystem;
+pub use middleware::VfsBuilder;
 
 /// Create a new memory-based file system.
 pub fn memory_fs() -> MemoryFileSystem {

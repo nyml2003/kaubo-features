@@ -1,26 +1,28 @@
-//! Multi-Module Pass - 多文件模块编译
+//! Multi-Module Pass - multi-file module compilation
 //!
-//! 使用 kaubo-core 的多文件编译器支持 import 语句。
+//! Compiles entry file and recursively compiles all imported modules.
+
+use std::path::Path;
+use std::sync::Arc;
 
 use crate::component::{Capabilities, Component, ComponentKind, ComponentMetadata};
 use crate::adaptive_parser::{DataFormat, IR};
 use crate::error::PassError;
 use crate::pass::{Input, Output, Pass, PassContext};
-use crate::pipeline::module::MultiFileCompiler;
-use kaubo_vfs::NativeFileSystem;
-use std::path::Path;
-use std::sync::Arc;
+use crate::pipeline::module::{CompileContext, ModuleId};
+use crate::pipeline::codegen::compile_with_struct_info_and_logger;
+use std::collections::HashMap;
 
-/// 多模块编译 Pass
+/// Multi-module compilation pass
 ///
-/// 输入: Source (入口文件路径)
-/// 输出: Bytecode (合并后的字节码)
+/// Input: Source (entry file path)
+/// Output: Bytecode (merged bytecode from all modules)
 pub struct MultiModulePass {
     logger: Arc<kaubo_log::Logger>,
 }
 
 impl MultiModulePass {
-    /// 创建新的多模块编译 Pass
+    /// Create a new multi-module compilation pass
     pub fn new(logger: Arc<kaubo_log::Logger>) -> Self {
         Self { logger }
     }
@@ -32,7 +34,7 @@ impl Component for MultiModulePass {
             "multi_module",
             "0.1.0",
             ComponentKind::Pass,
-            Some("多文件模块编译 (支持 import)"),
+            Some("Multi-file module compilation (supports import)"),
         )
     }
 
@@ -50,43 +52,52 @@ impl Pass for MultiModulePass {
         DataFormat::Bytecode
     }
 
-    fn run(&self, input: Input, _ctx: &PassContext) -> Result<Output, PassError> {
-        // 获取入口文件路径
-        let entry_path = input.as_source().map_err(|e| PassError::InvalidInput {
-            message: format!("MultiModulePass 需要 Source 输入 (入口路径): {}", e),
+    fn run(&self, _input: Input, ctx: &PassContext) -> Result<Output, PassError> {
+        // Get entry file path from PassContext
+        let entry_path = ctx.source_path.as_ref().ok_or_else(|| PassError::InvalidInput {
+            message: "MultiModulePass requires source_path in context".to_string(),
         })?;
-
-        // 获取入口文件的目录作为根目录
-        let entry_path = Path::new(entry_path);
+        
+        // Get entry file's directory as root
         let root_dir = entry_path.parent().unwrap_or(Path::new("."));
-
-        // 创建 VFS
-        let vfs = Box::new(NativeFileSystem::new());
-
-        // 创建多文件编译器
-        let mut compiler = MultiFileCompiler::new(vfs, root_dir);
-
-        // 编译入口文件
-        let result = compiler.compile_entry(entry_path).map_err(|e| {
-            PassError::TransformFailed(format!("多文件编译失败: {}", e))
-        })?;
-
-        // 目前我们只编译入口模块（简化版）
-        // 完整的实现应该合并所有模块的字节码
-        let entry_unit = result.units.last().ok_or_else(|| {
-            PassError::TransformFailed("没有编译单元".to_string())
-        })?;
-
-        // 编译入口模块为字节码
-        use crate::pipeline::codegen::compile_with_struct_info_and_logger;
-        use std::collections::HashMap;
-
+        
+        // Get entry file stem as module name (e.g., "main.kaubo" -> "main")
+        let entry_name = entry_path.file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| PassError::InvalidInput {
+                message: format!("Invalid entry path: {}", entry_path.display()),
+            })?;
+        
+        // Create compile context with VFS from PassContext
+        let mut compile_ctx = CompileContext::new(
+            &*ctx.vfs,
+            root_dir,
+        );
+        
+        // Parse entry module ID
+        let entry_id = ModuleId::parse(entry_name)
+            .map_err(|e| PassError::InvalidInput {
+                message: format!("Invalid module name '{}': {}", entry_name, e),
+            })?;
+        
+        // Compile entry and all dependencies
+        compile_ctx.get_or_compile(&entry_id)
+            .map_err(|e| PassError::TransformFailed(format!("Compilation failed: {}", e)))?;
+        
+        // For now, only compile the entry module (simplified version)
+        // Full implementation should merge bytecode from all modules
+        let sorted_units = compile_ctx.get_sorted_units();
+        let entry_unit = sorted_units
+            .last()
+            .ok_or_else(|| PassError::TransformFailed("No compiled units".to_string()))?;
+        
+        // Compile entry module to bytecode
         let (chunk, _) = compile_with_struct_info_and_logger(
             &entry_unit.ast,
             HashMap::new(),
             self.logger.clone(),
         )
-        .map_err(|e| PassError::TransformFailed(format!("代码生成失败: {:?}", e)))?;
+        .map_err(|e| PassError::TransformFailed(format!("Code generation failed: {:?}", e)))?;
 
         Ok(Output::new(IR::Bytecode(chunk)))
     }
@@ -95,10 +106,21 @@ impl Pass for MultiModulePass {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use kaubo_vfs::MemoryFileSystem;
+    use kaubo_config::VmConfig;
+    use kaubo_log::Logger;
+    
+    fn create_test_context() -> PassContext {
+        PassContext::new(
+            Arc::new(VmConfig::default()),
+            Arc::new(MemoryFileSystem::new()),
+            Logger::new(kaubo_log::Level::Info),
+        )
+    }
+    
     #[test]
     fn test_multi_module_pass_metadata() {
-        let logger: Arc<kaubo_log::Logger> = kaubo_log::Logger::new(kaubo_log::Level::Info);
+        let logger: Arc<Logger> = Logger::new(kaubo_log::Level::Info);
         let pass = MultiModulePass::new(logger);
 
         assert_eq!(pass.metadata().name, "multi_module");
@@ -108,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_multi_module_capabilities() {
-        let logger: Arc<kaubo_log::Logger> = kaubo_log::Logger::new(kaubo_log::Level::Info);
+        let logger: Arc<Logger> = Logger::new(kaubo_log::Level::Info);
         let pass = MultiModulePass::new(logger);
         let caps = pass.capabilities();
 
