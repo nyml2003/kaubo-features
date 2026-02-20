@@ -4,7 +4,7 @@ use crate::component::{Capabilities, Component, ComponentKind, ComponentMetadata
 use crate::adaptive_parser::{DataFormat, IR};
 use crate::error::PassError;
 use crate::pass::{Input, Output, Pass, PassContext};
-use crate::vm::core::{Chunk, InterpretResult, VM};
+use crate::vm::core::{InterpretResult, VM};
 use std::sync::Arc;
 
 /// VM Execution Pass

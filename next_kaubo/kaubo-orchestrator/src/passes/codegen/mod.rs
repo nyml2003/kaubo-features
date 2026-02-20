@@ -386,7 +386,7 @@ impl Compiler {
     }
 
     /// 查找运算符的返回类型
-    fn find_operator_return_type(&self, struct_name: &str, op: &str) -> Option<VarType> {
+    fn find_operator_return_type(&self, struct_name: &str, _op: &str) -> Option<VarType> {
         // 简化：运算符通常返回相同的 struct 类型
         // 实际应该从 impl 块定义中查找
         Some(VarType::Struct(struct_name.to_string()))

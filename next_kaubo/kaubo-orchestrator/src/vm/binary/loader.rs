@@ -5,8 +5,8 @@
 //! 支持从 package.json 加载配置，自动查找并应用编译/运行时配置。
 
 use super::{
-    BinaryReader, ReadError, SectionKind, SectionData, decode_chunk, decode_chunk_with_context,
-    DecodeContext, ChunkDecodeError, StringPool, FunctionPool, ShapeTable, ModuleTable, ModuleEntry, 
+    BinaryReader, ReadError, SectionKind, SectionData, decode_chunk_with_context,
+    DecodeContext, ChunkDecodeError, StringPool, FunctionPool, ShapeTable, ModuleTable,
     ExportTable, ImportTable, DebugInfo,
 };
 use crate::vm::core::{Chunk, VM, InterpretResult, ObjShape};
@@ -456,7 +456,7 @@ pub fn load_module(bytes: Vec<u8>) -> Result<LoadedModule, LoadError> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{BinaryWriter, WriteOptions, BuildMode, SectionKind, SectionData};
+    use super::super::{BinaryWriter, WriteOptions, BuildMode, SectionKind, SectionData, ModuleEntry};
     use super::*;
     use crate::vm::core::Chunk;
     use crate::vm::core::bytecode::OpCode;

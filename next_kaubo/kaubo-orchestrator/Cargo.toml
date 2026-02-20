@@ -6,6 +6,12 @@ license.workspace = true
 authors.workspace = true
 description = "Kaubo language orchestrator - pipeline execution and component management"
 
+[features]
+default = []
+trace_execution = []
+zstd = []
+blake3 = []
+
 [dependencies]
 thiserror = { workspace = true }
 serde = { workspace = true }

@@ -74,15 +74,15 @@ impl Context {
     }
     
     /// Get config value
-    pub fn config_val(&self, key: &str) -> Option<&Value> {
+    pub fn config_val(&self, _key: &str) -> Option<&Value> {
         // TODO: implement config value access
         None
     }
     
     /// Log a message
     pub fn log(&self, level: kaubo_log::Level, message: &str) {
-        // TODO: implement logging
-        let _ = (level, message);
+        // Log the message using the logger (target: "orchestrator")
+        self.log.log(level, "orchestrator", message);
     }
 }
 

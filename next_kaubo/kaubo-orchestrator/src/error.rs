@@ -1,7 +1,7 @@
 //! Error types for the orchestrator
 
 use thiserror::Error;
-use std::fmt;
+
 
 /// Main orchestrator error type
 #[derive(Error, Debug)]

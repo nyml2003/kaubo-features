@@ -50,7 +50,7 @@ impl Pass for MultiModulePass {
         DataFormat::Bytecode
     }
 
-    fn run(&self, input: Input, ctx: &PassContext) -> Result<Output, PassError> {
+    fn run(&self, input: Input, _ctx: &PassContext) -> Result<Output, PassError> {
         // 获取入口文件路径
         let entry_path = input.as_source().map_err(|e| PassError::InvalidInput {
             message: format!("MultiModulePass 需要 Source 输入 (入口路径): {}", e),
@@ -95,7 +95,6 @@ impl Pass for MultiModulePass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_multi_module_pass_metadata() {

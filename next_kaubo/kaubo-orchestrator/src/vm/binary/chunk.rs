@@ -12,7 +12,7 @@
 use crate::vm::binary::data::{FunctionEntry, FunctionPool, ShapeEntry, ShapeTable, StringPool};
 use crate::vm::core::bytecode::{InlineCacheSlot, MethodTableEntry, OperatorTableEntry};
 use crate::vm::core::chunk::Chunk;
-use crate::vm::core::object::{ObjFunction, ObjList, ObjShape, ObjString, ObjStruct};
+use crate::vm::core::object::{ObjFunction, ObjShape, ObjStruct};
 use crate::vm::core::value::Value;
 
 /// 编码上下文 - 用于在编码过程中访问和注册到各个 Pool

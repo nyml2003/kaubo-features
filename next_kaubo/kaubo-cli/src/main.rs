@@ -13,7 +13,7 @@ use std::sync::Arc;
 use kaubo_orchestrator::{
     FileLoader, FileEmitter, StdoutEmitter, BytecodeEmitter, SourceParser,
     CompilePass, MultiModulePass,
-    Orchestrator, Source, Target, OutputBuffer, OutputEntry, new_output_buffer,
+    Orchestrator, Source, Target, OutputEntry,
     ExecutionRequest, DataFormat, IR,
 };
 use kaubo_config::VmConfig;

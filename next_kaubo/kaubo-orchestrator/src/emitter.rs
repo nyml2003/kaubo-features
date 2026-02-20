@@ -2,7 +2,7 @@
 //!
 //! Emitters write output to targets such as files, stdout, or network.
 
-use crate::component::{Component, ComponentKind, ComponentMetadata, Capabilities};
+use crate::component::Component;
 use crate::pass::Output;
 use crate::error::EmitterError;
 use std::path::PathBuf;

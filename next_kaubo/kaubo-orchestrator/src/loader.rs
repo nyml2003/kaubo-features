@@ -3,7 +3,7 @@
 //! Loaders are responsible for reading input data from external sources
 //! such as files, stdin, or network.
 
-use crate::component::{Component, ComponentKind, ComponentMetadata, Capabilities};
+use crate::component::Component;
 use crate::error::LoaderError;
 use std::path::PathBuf;
 

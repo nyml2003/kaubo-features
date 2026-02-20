@@ -2,7 +2,7 @@
 //!
 //! This module provides registries for managing different types of components.
 
-use crate::component::{Component, ComponentKind};
+use crate::component::Component;
 use crate::loader::Loader;
 use crate::adaptive_parser::{AdaptiveParser, DataFormat};
 use crate::pass::Pass;

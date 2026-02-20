@@ -3,10 +3,10 @@
 //! Passes are compilation stages that transform intermediate representation (IR).
 //! Examples include parser, type checker, and code generator.
 
-use crate::component::{Component, ComponentKind, ComponentMetadata, Capabilities};
+use crate::component::Component;
 use crate::adaptive_parser::{IR, DataFormat};
 use crate::error::PassError;
-use crate::output::{OutputHandle, new_output_buffer, OutputEntry};
+use crate::output::{OutputHandle, new_output_buffer};
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde_json::Value;
@@ -226,7 +226,7 @@ impl PassContext {
     }
     
     /// Get a config value
-    pub fn config_val(&self, key: &str) -> Option<&Value> {
+    pub fn config_val(&self, _key: &str) -> Option<&Value> {
         // TODO: implement config access
         None
     }
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(input.as_source().unwrap(), "hello");
         
         // 测试非 Source 类型的输入返回错误
-        use crate::passes::parser::{Module, ModuleKind};
+        use crate::passes::parser::ModuleKind;
         let module = Box::new(ModuleKind { statements: vec![] });
         let input = Input::new(IR::Ast(module));
         assert!(input.as_source().is_err());

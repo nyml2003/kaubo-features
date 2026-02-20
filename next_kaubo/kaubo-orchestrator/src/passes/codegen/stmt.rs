@@ -10,7 +10,7 @@ use crate::vm::core::{
 use kaubo_log::trace;
 
 use super::{
-    context::{Export, ModuleInfo, VarType},
+    context::{Export, VarType},
     var, CompileError, Compiler, StructInfo,
 };
 

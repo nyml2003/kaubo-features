@@ -3,13 +3,13 @@
 //! 支持从入口文件开始，递归编译所有依赖的模块。
 
 use kaubo_vfs::VirtualFileSystem;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use crate::passes::lexer::builder::build_lexer;
-use crate::passes::module::resolver::{ModuleResolver, ResolveError, ResolvedModule};
+
+use crate::passes::module::resolver::{ModuleResolver, ResolveError};
 use crate::passes::parser::module::Module;
-use crate::passes::parser::parser::Parser;
+
 use crate::passes::parser::stmt::{ImportStmt, StmtKind};
 
 /// 多文件编译错误
@@ -285,6 +285,8 @@ fn extract_imports(ast: &Module) -> Vec<String> {
 mod tests {
     use super::*;
     use kaubo_vfs::MemoryFileSystem;
+    use crate::passes::lexer::builder::build_lexer;
+    use crate::passes::parser::parser::Parser;
 
     fn create_test_fs() -> MemoryFileSystem {
         MemoryFileSystem::with_files([

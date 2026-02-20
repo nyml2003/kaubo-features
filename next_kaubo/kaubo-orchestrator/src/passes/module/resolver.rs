@@ -7,7 +7,7 @@
 //! - `import std.list;` → 查找 `std/list.kaubo`
 //! - `from math import add;` → 查找 `math.kaubo`，提取 `add` 导出
 
-use kaubo_vfs::{VirtualFileSystem, VfsError};
+use kaubo_vfs::VirtualFileSystem;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -154,7 +154,7 @@ impl ModuleResolver {
             self.cache.insert(import_path.to_string(), module.clone());
         }
 
-        result.map(|m| self.cache.get(import_path).unwrap())
+        result.map(|_| self.cache.get(import_path).unwrap())
     }
 
     /// 解析模块（无缓存）
