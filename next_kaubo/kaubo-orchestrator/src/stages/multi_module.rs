@@ -6,7 +6,7 @@ use crate::component::{Capabilities, Component, ComponentKind, ComponentMetadata
 use crate::adaptive_parser::{DataFormat, IR};
 use crate::error::PassError;
 use crate::pass::{Input, Output, Pass, PassContext};
-use crate::passes::module::MultiFileCompiler;
+use crate::pipeline::module::MultiFileCompiler;
 use kaubo_vfs::NativeFileSystem;
 use std::path::Path;
 use std::sync::Arc;
@@ -78,7 +78,7 @@ impl Pass for MultiModulePass {
         })?;
 
         // 编译入口模块为字节码
-        use crate::passes::codegen::compile_with_struct_info_and_logger;
+        use crate::pipeline::codegen::compile_with_struct_info_and_logger;
         use std::collections::HashMap;
 
         let (chunk, _) = compile_with_struct_info_and_logger(

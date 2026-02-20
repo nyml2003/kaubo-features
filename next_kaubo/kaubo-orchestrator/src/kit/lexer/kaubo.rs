@@ -12,7 +12,7 @@ use super::scanner::{
 };
 
 // 暂时复用现有的 TokenKind，后续可以独立定义
-use crate::passes::lexer::token_kind::KauboTokenKind;
+use crate::pipeline::lexer::token_kind::KauboTokenKind;
 
 use kaubo_log::{debug, trace, Logger};
 use std::sync::Arc;

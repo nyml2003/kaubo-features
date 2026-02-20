@@ -21,7 +21,7 @@ use kaubo_log::{debug, trace, warn, Logger};
 use std::sync::Arc;
 
 // 复用现有的 TokenKind
-use crate::passes::lexer::token_kind::KauboTokenKind;
+use crate::pipeline::lexer::token_kind::KauboTokenKind;
 
 /// 新的 Lexer 实现
 ///

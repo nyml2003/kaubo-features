@@ -34,4 +34,4 @@ pub mod vm;
 pub mod value_ext;
 
 // ==================== 向后兼容导出 ====================
-// Note: compiler moved to crate::passes::codegen
+// Note: compiler moved to crate::pipeline::codegen

@@ -635,10 +635,10 @@ mod tests {
     fn test_inline_cache_integration() {
         // 测试 Level 2 内联缓存集成
         // 创建一个 Chunk，使用内联缓存进行运算符重载
-        use crate::passes::lexer::builder::build_lexer;
-        use crate::passes::parser::Parser;
+        use crate::pipeline::lexer::builder::build_lexer;
+        use crate::pipeline::parser::Parser;
         use crate::vm::core::ObjShape;
-        use crate::passes::codegen::compile_with_struct_info;
+        use crate::pipeline::codegen::compile_with_struct_info;
         use std::collections::HashMap;
 
         // 编译包含 operator add 的代码
@@ -725,9 +725,9 @@ mod tests {
     #[test]
     fn test_inline_cache_multiple_calls() {
         // 测试多次调用时缓存命中的情况
-        use crate::passes::lexer::builder::build_lexer;
-        use crate::passes::parser::Parser;
-        use crate::passes::codegen::compile_with_struct_info;
+        use crate::pipeline::lexer::builder::build_lexer;
+        use crate::pipeline::parser::Parser;
+        use crate::pipeline::codegen::compile_with_struct_info;
         use std::collections::HashMap;
 
         let code = r#"
@@ -806,9 +806,9 @@ mod tests {
     #[test]
     fn test_list_builtin_methods_integration() {
         // 集成测试：通过 parser 和 compiler 测试内置方法
-        use crate::passes::lexer::builder::build_lexer;
-        use crate::passes::parser::Parser;
-        use crate::passes::codegen::compile_with_struct_info;
+        use crate::pipeline::lexer::builder::build_lexer;
+        use crate::pipeline::parser::Parser;
+        use crate::pipeline::codegen::compile_with_struct_info;
         use std::collections::HashMap;
 
         // 测试 1: list.len()
@@ -878,9 +878,9 @@ mod tests {
     #[test]
     fn test_list_method_chain() {
         // 测试 List 方法链式调用：list.push(1).push(2)
-        use crate::passes::lexer::builder::build_lexer;
-        use crate::passes::parser::Parser;
-        use crate::passes::codegen::compile_with_struct_info;
+        use crate::pipeline::lexer::builder::build_lexer;
+        use crate::pipeline::parser::Parser;
+        use crate::pipeline::codegen::compile_with_struct_info;
         use std::collections::HashMap;
 
         let code = r#"
@@ -917,9 +917,9 @@ mod tests {
     #[test]
     fn test_list_remove_and_clear() {
         // 测试 List remove 和 clear 方法
-        use crate::passes::lexer::builder::build_lexer;
-        use crate::passes::parser::Parser;
-        use crate::passes::codegen::compile_with_struct_info;
+        use crate::pipeline::lexer::builder::build_lexer;
+        use crate::pipeline::parser::Parser;
+        use crate::pipeline::codegen::compile_with_struct_info;
         use std::collections::HashMap;
 
         let code = r#"
@@ -959,9 +959,9 @@ mod tests {
     #[test]
     fn test_string_builtin_methods() {
         // 测试 String 内置方法
-        use crate::passes::lexer::builder::build_lexer;
-        use crate::passes::parser::Parser;
-        use crate::passes::codegen::compile_with_struct_info;
+        use crate::pipeline::lexer::builder::build_lexer;
+        use crate::pipeline::parser::Parser;
+        use crate::pipeline::codegen::compile_with_struct_info;
         use std::collections::HashMap;
 
         // 测试 string.len()
@@ -994,9 +994,9 @@ mod tests {
     #[test]
     fn test_json_builtin_methods() {
         // 测试 Json 内置方法
-        use crate::passes::lexer::builder::build_lexer;
-        use crate::passes::parser::Parser;
-        use crate::passes::codegen::compile_with_struct_info;
+        use crate::pipeline::lexer::builder::build_lexer;
+        use crate::pipeline::parser::Parser;
+        use crate::pipeline::codegen::compile_with_struct_info;
         use std::collections::HashMap;
 
         // 测试 json.len()

@@ -1,8 +1,8 @@
 //! 表达式编译
 
-use crate::passes::lexer::token_kind::KauboTokenKind;
-use crate::passes::parser::expr::{FunctionCall, Lambda};
-use crate::passes::parser::{Binary, Expr, ExprKind, TypeExpr};
+use crate::pipeline::lexer::token_kind::KauboTokenKind;
+use crate::pipeline::parser::expr::{FunctionCall, Lambda};
+use crate::pipeline::parser::{Binary, Expr, ExprKind, TypeExpr};
 use crate::vm::core::{
     object::{ObjFunction, ObjString},
     OpCode, Value,

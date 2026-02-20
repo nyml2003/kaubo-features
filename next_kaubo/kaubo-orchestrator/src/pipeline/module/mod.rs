@@ -9,7 +9,7 @@ pub mod resolver;
 pub use multi_file::{MultiFileCompiler, MultiFileCompileResult, CompileUnit, MultiFileError};
 pub use resolver::{ModuleResolver, ResolvedModule, ResolveError};
 
-use crate::passes::parser::module::Module;
+use crate::pipeline::parser::module::Module;
 
 /// 模块缓存项
 #[derive(Debug, Clone)]

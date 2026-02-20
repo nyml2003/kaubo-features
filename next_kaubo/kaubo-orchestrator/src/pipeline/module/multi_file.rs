@@ -7,10 +7,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 
-use crate::passes::module::resolver::{ModuleResolver, ResolveError};
-use crate::passes::parser::module::Module;
+use crate::pipeline::module::resolver::{ModuleResolver, ResolveError};
+use crate::pipeline::parser::module::Module;
 
-use crate::passes::parser::stmt::{ImportStmt, StmtKind};
+use crate::pipeline::parser::stmt::{ImportStmt, StmtKind};
 
 /// 多文件编译错误
 #[derive(Debug, Clone)]
@@ -285,8 +285,8 @@ fn extract_imports(ast: &Module) -> Vec<String> {
 mod tests {
     use super::*;
     use kaubo_vfs::MemoryFileSystem;
-    use crate::passes::lexer::builder::build_lexer;
-    use crate::passes::parser::parser::Parser;
+    use crate::pipeline::lexer::builder::build_lexer;
+    use crate::pipeline::parser::parser::Parser;
 
     fn create_test_fs() -> MemoryFileSystem {
         MemoryFileSystem::with_files([

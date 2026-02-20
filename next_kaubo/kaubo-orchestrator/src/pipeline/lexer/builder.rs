@@ -52,7 +52,7 @@ pub fn build_lexer_with_config(config: &LexerConfig, logger: Arc<Logger>) -> Lex
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::passes::lexer::token_kind::KauboTokenKind;
+    use crate::pipeline::lexer::token_kind::KauboTokenKind;
 
     fn lex_all(input: &str) -> Vec<(KauboTokenKind, Option<String>)> {
         let mut lexer = build_lexer();

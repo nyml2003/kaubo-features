@@ -1,4 +1,4 @@
-use super::super::lexer::token_kind::KauboTokenKind;
+use crate::pipeline::lexer::token_kind::KauboTokenKind;
 use super::error::{ErrorLocation, ParseResult, ParserError, ParserErrorKind};
 use super::expr::{
     Binary, Expr, ExprKind, FunctionCall, Grouping, IndexAccess, JsonLiteral, Lambda, LiteralFalse,
@@ -1128,7 +1128,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::passes::lexer::builder::build_lexer;
+    use crate::pipeline::lexer::builder::build_lexer;
 
     fn parse_code(code: &str) -> ParseResult<Module> {
         let mut lexer = build_lexer();

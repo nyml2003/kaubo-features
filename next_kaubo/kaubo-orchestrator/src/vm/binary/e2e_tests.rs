@@ -8,16 +8,16 @@ mod tests {
         BinaryLoader, BinaryWriter, BuildMode, SectionKind, WriteOptions,
         VMExecuteBinary, SectionData, encode_chunk,
     };
-    use crate::passes::module::{MultiFileCompiler, CompileUnit};
-    use crate::passes::parser::Parser;
-    use crate::passes::lexer::builder::build_lexer;
+    use crate::pipeline::module::{MultiFileCompiler, CompileUnit};
+    use crate::pipeline::parser::Parser;
+    use crate::pipeline::lexer::builder::build_lexer;
     use crate::vm::core::{Chunk, VM, InterpretResult};
     use kaubo_vfs::NativeFileSystem;
     use std::collections::HashMap;
 
     /// 编译单个 CompileUnit 为 Chunk
     fn compile_unit_to_chunk(unit: &CompileUnit) -> Chunk {
-        use crate::passes::codegen::compile_with_struct_info;
+        use crate::pipeline::codegen::compile_with_struct_info;
 
         // 提取 struct 信息用于编译器
         let struct_infos = HashMap::new();
@@ -142,7 +142,7 @@ var result = x + y;
         let ast = parser.parse().expect("Failed to parse");
 
         // 2. 编译
-        use crate::passes::codegen::compile;
+        use crate::pipeline::codegen::compile;
         let (chunk, _) = compile(&ast).expect("Failed to compile");
 
         // 3. 编码为二进制

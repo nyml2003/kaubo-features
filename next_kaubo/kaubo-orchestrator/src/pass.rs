@@ -67,7 +67,7 @@ impl Input {
     }
     
     /// Try to get as AST (kaubo-core Module)
-    pub fn as_ast(&self) -> Result<&crate::passes::parser::Module, PassError> {
+    pub fn as_ast(&self) -> Result<&crate::pipeline::parser::Module, PassError> {
         match &self.data {
             IR::Ast(a) => Ok(a),
             _ => Err(PassError::InvalidInput {
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(input.as_source().unwrap(), "hello");
         
         // 测试非 Source 类型的输入返回错误
-        use crate::passes::parser::ModuleKind;
+        use crate::pipeline::parser::ModuleKind;
         let module = Box::new(ModuleKind { statements: vec![] });
         let input = Input::new(IR::Ast(module));
         assert!(input.as_source().is_err());

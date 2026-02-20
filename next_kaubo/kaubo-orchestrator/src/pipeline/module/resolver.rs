@@ -11,9 +11,9 @@ use kaubo_vfs::VirtualFileSystem;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::passes::lexer::builder::build_lexer;
-use crate::passes::parser::module::Module;
-use crate::passes::parser::parser::Parser;
+use crate::pipeline::lexer::builder::build_lexer;
+use crate::pipeline::parser::module::Module;
+use crate::pipeline::parser::parser::Parser;
 
 /// 模块解析错误
 #[derive(Debug, Clone, PartialEq)]

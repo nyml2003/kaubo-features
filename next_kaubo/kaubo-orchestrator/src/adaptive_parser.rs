@@ -10,7 +10,7 @@ use serde::{Serialize, Deserialize};
 
 // 引入 kaubo-core 类型用于 IR
 use crate::vm::core::Chunk;
-use crate::passes::parser::Module;
+use crate::pipeline::parser::Module;
 
 /// The format of data
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

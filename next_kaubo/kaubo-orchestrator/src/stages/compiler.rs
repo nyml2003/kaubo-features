@@ -56,7 +56,7 @@ impl Pass for ParserPass {
 
         // 使用 kaubo-core 进行解析
         use crate::kit::lexer::Lexer;
-        use crate::passes::parser::Parser;
+        use crate::pipeline::parser::Parser;
 
         // 创建 lexer
         let mut lexer = Lexer::with_logger(4096, self.logger.clone());
@@ -127,7 +127,7 @@ impl Pass for CodeGenPass {
         })?;
 
         // 使用 kaubo-core 进行编译
-        use crate::passes::codegen::compile_with_struct_info_and_logger;
+        use crate::pipeline::codegen::compile_with_struct_info_and_logger;
         use std::collections::HashMap;
 
         match compile_with_struct_info_and_logger(

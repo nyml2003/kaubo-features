@@ -1,8 +1,8 @@
 //! 语句编译
 
-use crate::passes::parser::expr::{VarRef};
-use crate::passes::parser::stmt::{ForStmt, IfStmt, WhileStmt};
-use crate::passes::parser::{ExprKind, Stmt, StmtKind};
+use crate::pipeline::parser::expr::{VarRef};
+use crate::pipeline::parser::stmt::{ForStmt, IfStmt, WhileStmt};
+use crate::pipeline::parser::{ExprKind, Stmt, StmtKind};
 use crate::vm::core::{
     object::ObjString,
     MethodTableEntry, OperatorTableEntry, OpCode, Value,
@@ -116,7 +116,7 @@ pub fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileE
 /// 将每个方法编译为函数，并记录到 Chunk.method_table 供 VM 初始化时使用
 fn compile_impl_block(
     compiler: &mut Compiler,
-    impl_stmt: &crate::passes::parser::stmt::ImplStmt,
+    impl_stmt: &crate::pipeline::parser::stmt::ImplStmt,
 ) -> Result<(), CompileError> {
 
     // 获取 shape_id（必须在 struct_infos 中存在）
@@ -172,7 +172,7 @@ fn compile_impl_block(
                         param_name.clone(),
                         VarType::Struct(impl_stmt.struct_name.clone()),
                     );
-                } else if let Some(crate::passes::parser::type_expr::TypeExpr::Named(named_type)) = param_type {
+                } else if let Some(crate::pipeline::parser::type_expr::TypeExpr::Named(named_type)) = param_type {
                     method_compiler.var_types.insert(
                         param_name.clone(),
                         VarType::Struct(named_type.name.clone()),
@@ -382,7 +382,7 @@ fn compile_for(compiler: &mut Compiler, for_stmt: &ForStmt) -> Result<(), Compil
 /// import module; 或 from module import item;
 fn compile_import(
     compiler: &mut Compiler,
-    import_stmt: &crate::passes::parser::stmt::ImportStmt,
+    import_stmt: &crate::pipeline::parser::stmt::ImportStmt,
 ) -> Result<(), CompileError> {
     // 检查模块是否存在（同文件内模块或标准库模块）
     let module_name = &import_stmt.module_path;

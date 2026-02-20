@@ -8,16 +8,15 @@ pub mod adaptive_parser;
 pub mod pass;
 pub mod emitter;
 pub mod registry;
-pub mod pipeline;
 pub mod context;
 pub mod error;
 pub mod output;
 
 // Component implementations
-pub mod adapters;
+pub mod stages;      // Pass 组件（流水线阶段）
+pub mod pipeline;    // 底层实现（lexer/parser/codegen 等）
 pub mod loaders;
 pub mod emitters;
-pub mod passes;
 
 // VM runtime and kit (migrated from kaubo-core)
 pub mod vm;
@@ -35,10 +34,10 @@ pub use error::{OrchestratorError, PassError, LoaderError, AdaptiveParserError, 
 pub use output::{OutputHandle, OutputEntry, OutputBuffer, new_output_buffer};
 
 // Re-export component implementations
-pub use adapters::{CodeGenPass, CompilePass, MultiModulePass, ParserPass};
+pub use stages::{CodeGenPass, CompilePass, MultiModulePass, ParserPass, VmExecutionPass};
 pub use loaders::FileLoader;
 pub use emitters::{BytecodeEmitter, FileEmitter, StdoutEmitter};
-pub use passes::NoOpPass;
+pub use pipeline::NoOpPass;
 pub use adaptive_parser::SourceParser;
 
 use std::sync::Arc;

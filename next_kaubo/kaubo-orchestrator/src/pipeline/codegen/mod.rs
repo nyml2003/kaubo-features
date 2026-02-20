@@ -11,7 +11,7 @@ pub use context::{ModuleInfo, StructInfo, VarType};
 pub use error::CompileError;
 pub use var::{Local, Upvalue, Variable};
 
-use crate::passes::parser::{Expr, ExprKind, Module, Stmt};
+use crate::pipeline::parser::{Expr, ExprKind, Module, Stmt};
 use crate::vm::core::{Chunk, OpCode};
 use kaubo_log::{trace, Logger};
 use std::collections::HashMap;
@@ -337,9 +337,9 @@ impl Compiler {
     }
 
     /// 推断 unary 运算符的返回类型
-    fn infer_unary_return_type(&self, unary: &crate::passes::parser::expr::Unary) -> Option<VarType> {
+    fn infer_unary_return_type(&self, unary: &crate::pipeline::parser::expr::Unary) -> Option<VarType> {
         match unary.op {
-            crate::passes::lexer::token_kind::KauboTokenKind::Minus => {
+            crate::pipeline::lexer::token_kind::KauboTokenKind::Minus => {
                 // 取负运算符：返回类型与操作数相同
                 self.get_expr_type(&unary.operand)
             }
@@ -348,7 +348,7 @@ impl Compiler {
     }
 
     /// 推断函数调用的返回类型
-    fn infer_call_return_type(&self, call: &crate::passes::parser::expr::FunctionCall) -> Option<VarType> {
+    fn infer_call_return_type(&self, call: &crate::pipeline::parser::expr::FunctionCall) -> Option<VarType> {
         // 检查是否是方法调用：obj.method(args)
         if let ExprKind::MemberAccess(member) = call.function_expr.as_ref() {
             if let Some(obj_type) = self.get_expr_type(&member.object) {
@@ -393,24 +393,24 @@ impl Compiler {
     }
 
     /// 推断 binary 运算符的返回类型
-    fn infer_binary_return_type(&self, binary: &crate::passes::parser::expr::Binary) -> Option<VarType> {
+    fn infer_binary_return_type(&self, binary: &crate::pipeline::parser::expr::Binary) -> Option<VarType> {
         let left_type = self.get_expr_type(&binary.left)?;
         let right_type = self.get_expr_type(&binary.right)?;
         
         // 获取运算符名称
         let op_name = match binary.op {
-            crate::passes::lexer::token_kind::KauboTokenKind::Plus => "add",
-            crate::passes::lexer::token_kind::KauboTokenKind::Minus => "sub",
-            crate::passes::lexer::token_kind::KauboTokenKind::Asterisk => "mul",
-            crate::passes::lexer::token_kind::KauboTokenKind::Slash => "div",
-            crate::passes::lexer::token_kind::KauboTokenKind::Percent => "mod",
+            crate::pipeline::lexer::token_kind::KauboTokenKind::Plus => "add",
+            crate::pipeline::lexer::token_kind::KauboTokenKind::Minus => "sub",
+            crate::pipeline::lexer::token_kind::KauboTokenKind::Asterisk => "mul",
+            crate::pipeline::lexer::token_kind::KauboTokenKind::Slash => "div",
+            crate::pipeline::lexer::token_kind::KauboTokenKind::Percent => "mod",
             // 比较运算符返回 bool，但我们不跟踪 bool 类型，返回 None
-            crate::passes::lexer::token_kind::KauboTokenKind::LessThan => return None,
-            crate::passes::lexer::token_kind::KauboTokenKind::LessThanEqual => return None,
-            crate::passes::lexer::token_kind::KauboTokenKind::GreaterThan => return None,
-            crate::passes::lexer::token_kind::KauboTokenKind::GreaterThanEqual => return None,
-            crate::passes::lexer::token_kind::KauboTokenKind::DoubleEqual => return None,
-            crate::passes::lexer::token_kind::KauboTokenKind::ExclamationEqual => return None,
+            crate::pipeline::lexer::token_kind::KauboTokenKind::LessThan => return None,
+            crate::pipeline::lexer::token_kind::KauboTokenKind::LessThanEqual => return None,
+            crate::pipeline::lexer::token_kind::KauboTokenKind::GreaterThan => return None,
+            crate::pipeline::lexer::token_kind::KauboTokenKind::GreaterThanEqual => return None,
+            crate::pipeline::lexer::token_kind::KauboTokenKind::DoubleEqual => return None,
+            crate::pipeline::lexer::token_kind::KauboTokenKind::ExclamationEqual => return None,
             _ => return None,
         };
         
@@ -536,8 +536,8 @@ pub fn compile_with_struct_info_and_logger(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::passes::lexer::builder::build_lexer;
-    use crate::passes::parser::parser::Parser;
+    use crate::pipeline::lexer::builder::build_lexer;
+    use crate::pipeline::parser::parser::Parser;
     use crate::vm::core::{InterpretResult, Value, VM};
     use crate::vm::core::object::ObjShape;
 
@@ -557,7 +557,7 @@ mod tests {
         let mut next_shape_id: u16 = 100;
         
         for stmt in &ast.statements {
-            if let crate::passes::parser::StmtKind::Struct(struct_stmt) = stmt.as_ref() {
+            if let crate::pipeline::parser::StmtKind::Struct(struct_stmt) = stmt.as_ref() {
                 let field_names: Vec<String> = struct_stmt
                     .fields
                     .iter()

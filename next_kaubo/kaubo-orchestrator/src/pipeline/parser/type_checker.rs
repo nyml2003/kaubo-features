@@ -7,7 +7,7 @@ use super::expr::{
     Binary, Expr, ExprKind, FunctionCall, IndexAccess, Lambda, MemberAccess, StructLiteral, Unary,
     VarRef,
 };
-use crate::passes::lexer::token_kind::KauboTokenKind;
+use crate::pipeline::lexer::token_kind::KauboTokenKind;
 use super::stmt::{
     BlockStmt, ForStmt, IfStmt, ImplStmt, ReturnStmt, Stmt, StmtKind, StructStmt, VarDeclStmt,
     WhileStmt,
@@ -945,8 +945,8 @@ impl Default for TypeChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::passes::lexer::builder::build_lexer;
-    use crate::passes::parser::parser::Parser;
+    use crate::pipeline::lexer::builder::build_lexer;
+    use crate::pipeline::parser::parser::Parser;
 
     fn parse_and_check(code: &str) -> TypeCheckResult<Option<TypeExpr>> {
         let mut lexer = build_lexer();
