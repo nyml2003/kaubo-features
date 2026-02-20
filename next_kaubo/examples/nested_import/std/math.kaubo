@@ -1,39 +1,5 @@
-// std.math - Math operations module
-// Part of the standard library
+// Math utilities (std module)
 
-pub var abs = |n| {
-    if n < 0 {
-        return -n;
-    }
-    return n;
-};
-
-pub var pow = |base, exp| {
-    if exp == 0 {
-        return 1;
-    }
-    var result = 1;
-    var i = 0;
-    while i < exp {
-        result = result * base;
-        i = i + 1;
-    }
-    return result;
-};
-
-pub var sqrt = |n| {
-    // Simple square root approximation
-    if n < 0 {
-        return null;
-    }
-    if n == 0 {
-        return 0;
-    }
-    var x = n;
-    var y = 1;
-    while x - y > 0.001 {
-        x = (x + y) / 2;
-        y = n / x;
-    }
-    return x;
+pub var max = |a, b| -> int {
+    if a > b { return a; } else { return b; }
 };

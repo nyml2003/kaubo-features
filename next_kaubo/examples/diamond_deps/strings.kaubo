@@ -1,16 +1,6 @@
-// Strings module - other branch of the diamond
-// Also imports common (shared with math module)
-
+// Strings module (right of diamond)
 import common;
 
-pub var pad_left = |str, length, pad_char| {
-    if str.len() >= length {
-        return str;
-    }
-    var padding = common.repeat(pad_char, length - str.len());
-    return padding + str;
-};
-
-pub var version_info = || {
-    return "Strings module v" + common.VERSION;
+pub var concat = |a, b| -> string {
+    return a + b;
 };

@@ -3,8 +3,9 @@
 # 使用: cargo make <task>
 #
 # 常用任务:
-#   cargo make run                      # 运行默认项目 (examples/hello)
-#   cargo make run PROJECT=examples/fib # 运行指定项目
+#   cargo make run                      # 运行默认项目 (examples/01_hello_world)
+#   cargo make run-hello                # 运行 Hello World 示例
+#   cargo make run-vars                 # 运行变量示例
 #   cargo make test                     # 运行所有测试
 #   cargo make build                    # 构建 release 版本
 #   cargo make check                    # 检查代码
@@ -45,10 +46,10 @@ description = "运行 kaubo-core 测试"
 command = "cargo"
 args = ["test", "-p", "kaubo-core"]
 
-[tasks.test-api]
-description = "运行 kaubo-api 测试"
+[tasks.test-orchestrator]
+description = "运行 kaubo-orchestrator 测试"
 command = "cargo"
-args = ["test", "-p", "kaubo-api"]
+args = ["test", "-p", "kaubo-orchestrator"]
 
 [tasks.test-log]
 description = "运行 kaubo-log 测试"
@@ -131,19 +132,39 @@ script = "rustup run nightly cargo llvm-cov -p kaubo-log --branch --all-features
 # 项目配置通过 package.json 控制
 
 [tasks.run]
-description = "运行项目 (默认 examples/hello)"
+description = "运行项目 (默认 examples/01_hello_world)"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "examples/hello/package.json"]
+args = ["run", "-p", "kaubo-cli", "--", "examples/01_hello_world/package.json"]
 
-[tasks.run-fib]
-description = "运行斐波那契示例"
+[tasks.run-hello]
+description = "运行 Hello World 示例"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "examples/fib/package.json"]
+args = ["run", "-p", "kaubo-cli", "--", "examples/01_hello_world/package.json"]
 
-[tasks.run-calc]
-description = "运行计算器示例"
+[tasks.run-vars]
+description = "运行变量示例"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--", "examples/calc/package.json"]
+args = ["run", "-p", "kaubo-cli", "--", "examples/02_variables/package.json"]
+
+[tasks.run-flow]
+description = "运行控制流示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/04_control_flow/package.json"]
+
+[tasks.run-func]
+description = "运行函数示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/05_functions/package.json"]
+
+[tasks.run-struct]
+description = "运行结构体示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/06_structs/package.json"]
+
+[tasks.run-list]
+description = "运行列表示例"
+command = "cargo"
+args = ["run", "-p", "kaubo-cli", "--", "examples/07_lists/package.json"]
 
 [tasks.run-multi]
 description = "运行多模块示例（编译解析测试）"
@@ -166,9 +187,9 @@ command = "cargo"
 args = ["run", "-p", "kaubo-cli", "--", "examples/nested_import/package.json"]
 
 [tasks.run-release]
-description = "Release 模式运行 (默认 examples/hello)"
+description = "Release 模式运行 (默认 examples/01_hello_world)"
 command = "cargo"
-args = ["run", "-p", "kaubo-cli", "--release", "--", "examples/hello/package.json"]
+args = ["run", "-p", "kaubo-cli", "--release", "--", "examples/01_hello_world/package.json"]
 
 # ============== 文档任务 ==============
 

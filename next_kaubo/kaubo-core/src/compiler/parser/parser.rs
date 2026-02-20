@@ -8,7 +8,7 @@ use super::expr::{
 use super::module::{Module, ModuleKind};
 use super::stmt::{
     BlockStmt, EmptyStmt, ExprStmt, FieldDef, ForStmt, IfStmt, ImplStmt, ImportStmt, MethodDef,
-    ReturnStmt, Stmt, StmtKind, StructStmt, VarDeclStmt, WhileStmt,
+    PrintStmt, ReturnStmt, Stmt, StmtKind, StructStmt, VarDeclStmt, WhileStmt,
 };
 use super::type_expr::TypeExpr;
 use super::utils::{get_associativity, get_precedence};
@@ -231,6 +231,8 @@ impl Parser {
                     expected: vec!["var".to_string()],
                 }))
             }
+        } else if self.check(KauboTokenKind::Print) {
+            self.parse_print_statement()
         } else {
             // 表达式语句
             let expr = self.parse_expression(0)?;
@@ -757,6 +759,39 @@ impl Parser {
         Ok(Box::new(StmtKind::Return(ReturnStmt { value, span })))
     }
 
+    /// 解析 print 语句
+    /// print expression;
+    fn parse_print_statement(&mut self) -> ParseResult<Stmt> {
+        trace!(self.logger, "parse_print_statement");
+        self.consume(); // 消费 'print'
+
+        let expression = self.parse_expression(0)?;
+        self.expect(KauboTokenKind::Semicolon)?;
+
+        Ok(Box::new(StmtKind::Print(PrintStmt { expression })))
+    }
+
+    /// 解析导入项（允许关键字作为导入项）
+    fn parse_import_item(&mut self) -> ParseResult<String> {
+        let token = self
+            .current_token
+            .as_ref()
+            .ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
+
+        // 允许标识符或关键字作为导入项
+        if token.kind == KauboTokenKind::Identifier 
+            || token.kind == KauboTokenKind::Print  // print 也可以作为导入项
+        {
+            let name = token.text.clone().unwrap_or_default();
+            self.consume();
+            Ok(name)
+        } else {
+            Err(self.error_here(ParserErrorKind::ExpectedIdentifier {
+                found: self.current_token_text(),
+            }))
+        }
+    }
+
     /// 解析导入语句
     /// import module;
     /// import module as alias;
@@ -773,7 +808,7 @@ impl Parser {
             // 解析导入的项列表
             let mut items = Vec::new();
             loop {
-                let item = self.expect_identifier()?;
+                let item = self.parse_import_item()?;
                 items.push(item);
 
                 if self.match_token(KauboTokenKind::Comma) {

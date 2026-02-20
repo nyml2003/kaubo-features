@@ -139,26 +139,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "kaubo-api"
-version = "0.1.0"
-dependencies = [
- "kaubo-config",
- "kaubo-core",
- "kaubo-log",
- "kaubo-vfs",
- "once_cell",
- "thiserror",
-]
-
-[[package]]
 name = "kaubo-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "kaubo-api",
  "kaubo-config",
- "kaubo-core",
  "kaubo-log",
+ "kaubo-orchestrator",
+ "kaubo-vfs",
  "serde",
  "serde_json",
 ]
@@ -192,12 +180,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaubo-orchestrator"
+version = "0.1.0"
+dependencies = [
+ "kaubo-config",
+ "kaubo-log",
+ "kaubo-vfs",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "kaubo-vfs"
 version = "0.1.0"
 
 [[package]]
 name = "kaubo-workspace"
 version = "0.1.0"
+dependencies = [
+ "kaubo-config",
+ "kaubo-log",
+ "kaubo-orchestrator",
+]
 
 [[package]]
 name = "memchr"

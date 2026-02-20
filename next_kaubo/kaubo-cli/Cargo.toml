@@ -4,17 +4,19 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Kaubo language CLI - command line interface"
+description = "Kaubo language CLI - Command line interface"
 
 [[bin]]
 name = "kaubo"
 path = "src/main.rs"
 
 [dependencies]
-kaubo-config = { workspace = true }
-kaubo-core = { workspace = true }
-kaubo-api = { workspace = true }
-kaubo-log = { workspace = true, features = ["alloc", "stdout"] }
 clap = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
+
+# 内部依赖
+kaubo-orchestrator = { path = "../kaubo-orchestrator" }
+kaubo-config = { path = "../kaubo-config" }
+kaubo-log = { path = "../kaubo-log" }
+kaubo-vfs = { path = "../kaubo-vfs" }

@@ -1,0 +1,30 @@
+// 06. Structs - 结构体定义（结构体实例化正在开发中）
+
+// 定义 Point 结构体
+struct Point {
+    x: int,
+    y: int
+}
+
+// 定义 Rectangle 结构体
+struct Rectangle {
+    width: int,
+    height: int
+}
+
+// 结构体实例化正在开发中
+// 现在使用普通变量演示
+var x = 10;
+var y = 20;
+var width = 100;
+var height = 50;
+
+// 计算两点距离
+var distance = x + y;
+print distance;
+
+// 计算矩形面积
+var area = width * height;
+print area;
+
+return area;

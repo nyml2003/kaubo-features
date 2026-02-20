@@ -2,14 +2,28 @@
 
 > 本文档描述当前实际实现的语法。状态：稳定，随时可能扩展。
 
+## 核心设计理念
+
+> **默认静态，显式动态。**
+> 
+> 类似 Rust `mut` 默认不可变：  
+> - `let x = 5;`      // 不可变  
+> - `let mut x = 5;`  // 可变  
+>
+> Kaubo 默认编译期确定：  
+> - `var x = 5;`           // 编译期常量  
+> - `runtime var x = 5;`   // 运行时变量
+
+---
+
 ## 词法元素
 
 ### 关键字
 
 ```
-var, if, else, elif, while, for, return, in, yield
+var, val, runtime, if, else, elif, while, for, return, in, yield
 break, continue, struct, impl, import, as, from
-module, pub, json
+module, pub, json, cfg
 true, false, null
 and, or, not
 ```
@@ -60,15 +74,28 @@ and, or, not
 ### 变量声明
 
 ```kaubo
-var x = 1;                    // 自动推导类型
+// 默认编译期变量（值必须在编译期可确定）
+var x = 1;                    // x 是编译期常量
 var y: int = 2;               // 显式类型标注
-var z: float = 1.0;           // 浮点数
-var name: string = "kaubo";   // 字符串
-var flag: bool = true;        // 布尔值
+val z = 3.14;                 // val 也是编译期常量
 
-// pub 导出
-pub var public_var = 42;
+// 运行时变量（显式标记）
+runtime var user_input = read_line();   // 运行时才能确定
+runtime var timestamp = std.now();      // 运行时获取时间
+
+// 编译期变量可以用编译期表达式初始化
+var size = 100;
+var double_size = size * 2;     // 编译期计算
+
+// 编译期变量不能用运行时值初始化
+runtime var dynamic = get_random();  // OK
+var static_val = dynamic;            // ERROR: 不能用运行时值初始化编译期变量
 ```
+
+**规则：**
+- `var` / `val`：编译期变量，值必须在编译期可确定
+- `runtime var` / `runtime val`：运行时变量，值在运行时确定
+- 习惯上编译期常量用大写（`MAX_SIZE`），运行时变量用小写（`user_input`）
 
 ### 表达式语句
 
@@ -112,6 +139,19 @@ if a > 0 {
 } else {
     // ...
 }
+
+// 编译期条件（条件是编译期常量，分支可能完全消除）
+if (cfg.DEBUG) {
+    // 只在 debug 模式编译的代码
+}
+
+// 运行时条件（显式标记）
+runtime if (user_input == "yes") {
+    // 运行时决定的代码路径
+}
+
+// if 表达式（返回值）
+var log_level = if (cfg.DEBUG) { "verbose" } else { "error" };
 ```
 
 ### 循环语句
@@ -153,32 +193,57 @@ return value;     // 返回表达式值
 ### 结构体定义
 
 ```kaubo
+// 编译期结构体（默认）
+// 所有字段必须是编译期可确定的
 struct Point {
     x: float,
     y: float
 }
 
-struct Person {
-    name: string,
-    age: int,
-    tags: List<string>
+struct Config {
+    max_size: int,
+    debug: bool
+}
+
+// 使用编译期常量定义数组大小
+val SIZE = cfg.BUFFER_SIZE;
+struct Buffer {
+    data: [int; SIZE],    // 编译期确定的数组大小
+    len: int
+}
+
+// 运行时结构体（显式标记）
+runtime struct UserSession {
+    id: string,                 // 字段可以是运行时值
+    created_at: int,
+    token: string
+}
+
+// 编译期结构体不能包含运行时字段
+struct BadConfig {
+    value: int,
+    timestamp: std.now()        // ERROR：std.now() 是运行时函数
 }
 ```
 
 ### 方法实现
 
 ```kaubo
+// 编译期 impl（默认）
 impl Point {
-    // 方法：第一个参数是 self
-    distance: |self, other: Point| -> float {
-        var dx: float = self.x - other.x;
-        var dy: float = self.y - other.y;
+    // 方法必须是编译期函数
+    distance: |self: Point, other: Point| -> float {
+        var dx = self.x - other.x;
+        var dy = self.y - other.y;
         return std.sqrt(dx * dx + dy * dy);
-    },
-    
-    // 无参数方法
-    to_string: |self| -> string {
-        return "(" + self.x as string + ", " + self.y as string + ")";
+    }
+}
+
+// 运行时 impl（显式标记）
+runtime impl HttpServer {
+    handle: |self: HttpServer, req: HttpRequest| -> HttpResponse {
+        runtime var result = process(req);   // 可以调用运行时函数
+        return result;
     }
 }
 ```
@@ -186,26 +251,34 @@ impl Point {
 ### 模块系统
 
 ```kaubo
-// 定义模块
+// 编译期模块（默认）
 module math {
-    pub var pi = 3.14159;
+    pub val pi = 3.14159;
     
-    pub add = |a: int, b: int| -> int {
+    pub val add = |a: int, b: int| -> int {
         return a + b;
     }
 }
 
-// 导入整个模块
+// 运行时模块（显式标记）
+runtime module io {
+    pub runtime val read_file = |path: string| -> string {
+        return std.read_file(path);     // 可以 IO
+    };
+}
+
+// 导入
 import math;
 var x = math.pi;
 
-// 导入并起别名
-import math as m;
-var y = m.add(1, 2);
-
-// 从模块导入特定项
-from std import sqrt, sin, cos;
-var z = sqrt(16.0);
+// 条件导入（编译期 if）
+if (cfg.ENABLE_NETWORKING) {
+    import http;
+    
+    runtime val fetch = |url: string| -> string {
+        return http.get(url);
+    };
+}
 ```
 
 ---
@@ -230,6 +303,10 @@ null;             // 空值
 [1, 2, 3];                    // 整数列表
 ["a", "b", "c"];              // 字符串列表
 [1, "mixed", true];           // 混合类型（推导为 List<any>）
+
+// 使用编译期常量定义大小
+val SIZE = cfg.MAX_ITEMS;
+var arr = [0; SIZE];          // SIZE 个 0
 ```
 
 ### JSON 字面量
@@ -258,6 +335,11 @@ var person = Person {
 ```kaubo
 x;                // 变量 x
 std;              // 标准库模块
+
+// 配置访问（编译期常量）
+cfg.DEBUG;        // 访问编译期配置
+cfg.PLATFORM;
+cfg.MAX_SIZE;
 ```
 
 ### 二元运算
@@ -316,27 +398,50 @@ std.sqrt(add(9, 16) as float);
 ### Lambda（匿名函数）
 
 ```kaubo
-// 基本形式
-|x| x + 1;
+// 编译期 lambda（默认）
+// 约束：函数体必须是纯计算，不能 IO、不能网络
+val add = |a: int, b: int| -> int {
+    return a + b;
+};
 
-// 多参数
-|a, b| a + b;
+val get_config = | | -> int {
+    return cfg.MAX_SIZE;    // OK：读取编译期配置
+};
 
-// 带参数类型标注
-|x: int, y: int| x + y;
+// 运行时 lambda（显式标记）
+runtime val fetch_url = |url: string| -> string {
+    return http.get(url);       // OK：可以网络请求
+};
 
-// 带返回类型
-|x: int| -> int { x * 2 };
+runtime val read_file = |path: string| -> string {
+    return std.read_file(path); // OK：可以 IO
+};
+
+// 编译期 lambda 不能调用运行时函数
+val bad_fn = |url: string| -> string {
+    return fetch_url(url);  // ERROR：编译期函数不能调用运行时函数
+};
+
+// 运行时 lambda 可以调用编译期函数
+runtime val good_fn = |a: int, b: int| -> int {
+    return add(a, b);       // OK：运行时函数可以调用编译期函数
+};
 
 // 多行函数体
-|a: float, b: float| -> float {
+val average = |a: float, b: float| -> float {
     var sum = a + b;
     return sum / 2.0;
 };
 
-// 赋值给变量
-var add = |a: int, b: int| -> int {
-    return a + b;
+// 条件 lambda
+val log = if (cfg.DEBUG) {
+    |msg: string| -> void {
+        print(msg);
+    }
+} else {
+    |msg: string| -> void {
+        // 空实现
+    }
 };
 ```
 
@@ -350,6 +455,9 @@ point.y;
 // 模块函数
 std.sqrt(16.0);
 std.sin(angle);
+
+// 配置嵌套访问
+cfg.FEATURES.networking;
 ```
 
 ### 索引访问
@@ -373,12 +481,19 @@ true as string;           // bool -> string
 ### Yield（协程）
 
 ```kaubo
-// 生成器函数
-var counter = || {
+// 编译期生成器
+val counter = | | -> int {
     var i = 0;
     while true {
         yield i;
         i = i + 1;
+    }
+};
+
+// 运行时生成器
+runtime val async_counter = | | -> int {
+    while true {
+        yield std.now();    // 运行时获取时间
     }
 };
 
@@ -411,6 +526,10 @@ List<any>                     // 任意类型列表
 Tuple<int, string>            // 元组
 |int, int| -> int             // 函数类型（参数 -> 返回）
 |int| -> void                 // 无返回值函数
+
+// 编译期数组大小
+val SIZE = 100;
+[int; SIZE]                   // 编译期确定大小的数组
 ```
 
 ### 类型标注位置
@@ -423,17 +542,68 @@ var x: int = 42;
 |x: int, y: float| -> string { ... }
 
 // 返回类型
-var add: |int, int| -> int = |a, b| a + b;
+val add: |int, int| -> int = |a: int, b: int| -> int {
+    return a + b;
+};
 
 // Struct 字段
 struct Point { x: float, y: float }
+
+// 编译期常量
+val MAX: int = 100;
+```
+
+---
+
+## 编译期计算
+
+### 编译期表达式
+
+以下表达式在**编译期求值**：
+
+```kaubo
+// 1. 字面量
+42
+3.14
+"hello"
+true
+
+// 2. val 绑定
+val MAX = 100;
+MAX
+
+// 3. cfg 访问
+cfg.DEBUG
+cfg.MAX_SIZE
+cfg.PLATFORM
+
+// 4. 由以上构成的表达式
+val SIZE = cfg.MAX_SIZE * 2;
+val IS_BIG = cfg.MAX_SIZE > 1000;
+val PLATFORM_IS_UNIX = cfg.PLATFORM == "linux" or cfg.PLATFORM == "macos";
+```
+
+### 编译期条件分支
+
+```kaubo
+// 如果条件是编译期常量，整个分支可能完全消除
+
+// 编译期条件（代码可能完全消除）
+if (cfg.DEBUG) {
+    val x = expensive_operation();  // release 模式下不存在
+}
+
+// 运行时条件（代码始终存在）
+runtime if (user_input == "yes") {
+    runtime var x = expensive_operation();  // 始终编译，运行时决定
+}
 ```
 
 ---
 
 ## 标准库（std）
 
-### 数学函数
+### 数学函数（编译期）
 
 ```kaubo
 std.sqrt(x: float) -> float       // 平方根
@@ -448,12 +618,12 @@ std.e                             // 自然对数底
 ### 实用函数
 
 ```kaubo
-print(value: any) -> void         // 打印
-assert(cond: bool, msg?: string)  // 断言
-type(value: any) -> string        // 获取类型名
+print(value: any) -> void         // 打印（运行时）
+assert(cond: bool, msg?: string)  // 断言（编译期）
+type(value: any) -> string        // 获取类型名（编译期）
 to_string(value: any) -> string   // 转为字符串
-len(container: any) -> int        // 获取长度
-range(start: int, end: int) -> List<int>  // 生成范围
+len(container: any) -> int        // 获取长度（编译期）
+range(start: int, end: int) -> List<int>  // 生成范围（编译期）
 clone(value: any) -> any          // 深拷贝
 ```
 
@@ -477,14 +647,21 @@ str.starts_with(prefix: string) -> bool
 str.ends_with(suffix: string) -> bool
 ```
 
-### 文件操作
+### 文件操作（运行时）
 
 ```kaubo
-std.read_file(path: string) -> string
-std.write_file(path: string, content: string) -> void
-std.exists(path: string) -> bool
-std.is_file(path: string) -> bool
-std.is_dir(path: string) -> bool
+runtime std.read_file(path: string) -> string
+runtime std.write_file(path: string, content: string) -> void
+runtime std.exists(path: string) -> bool
+runtime std.is_file(path: string) -> bool
+runtime std.is_dir(path: string) -> bool
+```
+
+### 环境访问（运行时）
+
+```kaubo
+runtime std.env(name: string) -> string   // 获取环境变量
+runtime std.now() -> int                  // 获取当前时间戳
 ```
 
 ---
@@ -492,6 +669,26 @@ std.is_dir(path: string) -> bool
 ## 完整示例
 
 ```kaubo
+// 编译期常量
+val DEBUG = cfg.DEBUG;
+val PLATFORM = cfg.PLATFORM;
+val MAX_SIZE = cfg.MAX_SIZE;
+
+// 平台适配（编译期）
+val get_config_path = if (PLATFORM == "linux") {
+    | | -> string {
+        return "/home/user/.config/myapp";
+    }
+} elif (PLATFORM == "windows") {
+    | | -> string {
+        return "C:\\Users\\user\\AppData\\myapp";
+    }
+} else {
+    | | -> string {
+        return "/tmp/myapp";
+    }
+};
+
 // 计算两点距离
 struct Point {
     x: float,
@@ -499,7 +696,7 @@ struct Point {
 }
 
 impl Point {
-    distance: |self, other: Point| -> float {
+    distance: |self: Point, other: Point| -> float {
         var dx = self.x - other.x;
         var dy = self.y - other.y;
         return std.sqrt(dx * dx + dy * dy);
@@ -511,16 +708,40 @@ var p2 = Point { x: 3.0, y: 4.0 };
 
 print(p1.distance(p2));  // 5.0
 
+// 调试日志（编译期条件）
+val debug_log = if (DEBUG) {
+    |msg: string| -> void {
+        print("[DEBUG] " + msg);
+    }
+} else {
+    |msg: string| -> void {
+        // 空实现，release 模式下编译期消除
+    }
+};
+
+debug_log("starting app");
+
+// 使用编译期常量定义数组
+val BUFFER_SIZE = MAX_SIZE * 2;
+var buffer = [0; BUFFER_SIZE];
+
 // 列表操作
 var numbers = [1, 2, 3, 4, 5];
-var doubled = numbers.map(|n| n * 2);
+var doubled = numbers.map(|n: int| -> int {
+    return n * 2;
+});
 
 // 类型转换
 var avg = (1 + 2 + 3) as float / 3.0;
 print("Average: " + avg as string);
 
-// 协程生成器
-var fib = || {
+// 运行时文件读取
+runtime var config_content = std.read_file("app.config");
+runtime var port = parse_port(config_content);
+print("Server will start on port: " + port as string);
+
+// 协程生成器（编译期）
+val fib = | | -> int {
     var a = 0;
     var b = 1;
     while true {
@@ -546,3 +767,4 @@ print(fib_gen.next());  // 2
 |------|------|
 | 2025-02-14 | 初始语法设计 |
 | 2026-02-14 | 添加 `as` 类型转换、impl 方法、yield 协程、json 字面量 |
+| 2026-02-19 | 添加 `runtime` 关键字，默认静态、显式动态的设计 |

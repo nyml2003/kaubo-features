@@ -1,5 +1,5 @@
 [workspace]
-members = ["kaubo-config", "kaubo-vfs", "kaubo-core", "kaubo-api", "kaubo-cli", "kaubo-log"]
+members = ["kaubo-config", "kaubo-vfs", "kaubo-core", "kaubo-cli", "kaubo-log", "kaubo-orchestrator"]
 resolver = "2"
 
 [workspace.package]
@@ -25,11 +25,9 @@ kaubo-config = { path = "kaubo-config" }
 kaubo-vfs = { path = "kaubo-vfs" }
 kaubo-log = { path = "kaubo-log" }
 
-# kaubo-api 依赖
-kaubo-core = { path = "kaubo-core" }
-
 # kaubo-cli 依赖
-kaubo-api = { path = "kaubo-api" }
+kaubo-orchestrator = { path = "kaubo-orchestrator" }
+kaubo-core = { path = "kaubo-core" }
 clap = { version = "4", features = ["derive"] }
 
 # 虚拟包配置（满足 Cargo 要求）
@@ -38,4 +36,9 @@ name = "kaubo-workspace"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+
+[dev-dependencies]
+kaubo-config = { path = "kaubo-config" }
+kaubo-log = { path = "kaubo-log" }
+kaubo-orchestrator = { path = "kaubo-orchestrator" }
 

@@ -1,141 +1,91 @@
-# Kaubo Examples
+# Kaubo 示例程序
 
-This directory contains example programs demonstrating various features of the Kaubo language.
+本目录包含 Kaubo 编程语言的核心示例。
 
-## Single-File Examples
+## 示例列表
 
-### `hello/`
-Basic "Hello World" program.
+| 目录 | 说明 | 主要特性 |
+|------|------|----------|
+| `01_hello_world` | Hello World | `print` 语句, `return` |
+| `02_variables` | 变量和基本类型 | `var`, `int`, `float`, `string`, `bool`, `null` |
+| `04_control_flow` | 控制流 | `if-elif-else`, `while`, `for` |
+| `05_functions` | Lambda 函数 | 函数定义、调用、闭包 |
+| `06_structs` | 结构体 | `struct`, `impl`, 操作符重载 |
+| `07_lists` | 列表 | 列表字面量、索引访问、遍历 |
 
-### `calc/`
-Simple calculator demonstrating arithmetic operations.
+## 运行示例
 
-### `fib/`
-Fibonacci sequence implementation.
+```bash
+# 运行示例
+cargo run -p kaubo-cli -- examples/01_hello_world/package.json
 
-### `builtin_methods.kaubo`
-Demonstrates built-in methods for strings and lists.
+# 详细模式
+cargo run -p kaubo-cli -- examples/02_variables/package.json --verbose
 
-## Multi-Module Examples
+# 只编译不执行
+cargo run -p kaubo-cli -- examples/05_functions/package.json --compile-only
 
-### `multi_module/`
-Demonstrates basic multi-file project structure.
-
-**Files:**
-- `main.kaubo` - Entry point, imports and uses math and utils
-- `math.kaubo` - Math constants and functions (exports PI, E, add, multiply, circle_area)
-- `utils.kaubo` - General utilities (exports format_number, is_even, factorial)
-
-**Key Concepts:**
-- `import math;` - Import a module
-- `pub var` - Export a variable/function from a module
-- Accessing exports: `math.PI`, `math.add(1, 2)`
-
----
-
-### `import_chain/`
-Demonstrates transitive dependencies (A → B → C chain).
-
-**Files:**
-- `main.kaubo` - Imports app
-- `app.kaubo` - Imports database, provides run()
-- `database.kaubo` - Imports logger, provides database operations
-- `logger.kaubo` - Base module, provides logging functions
-
-**Dependency Chain:**
-```
-main → app → database → logger
+# 生成二进制文件
+cargo run -p kaubo-cli -- examples/01_hello_world/package.json --emit-binary
 ```
 
-**Key Concepts:**
-- Transitive dependencies are automatically resolved
-- Dependencies are loaded in the correct order (topological sort)
+## 语言特性速查
 
----
-
-### `diamond_deps/`
-Demonstrates diamond dependency resolution.
-
-**Files:**
-- `main.kaubo` - Imports both math and strings
-- `math.kaubo` - Imports common
-- `strings.kaubo` - Also imports common
-- `common.kaubo` - Shared utilities (VERSION, assert, repeat)
-
-**Dependency Structure:**
-```
-      main
-     /    \
-  math    strings
-    \      /
-     common
-```
-
-**Key Concepts:**
-- Shared dependencies (common) are loaded only once
-- No duplicate loading or circular reference issues
-
----
-
-### `nested_import/`
-Demonstrates nested path imports (e.g., `import std.list`).
-
-**Files:**
-- `main.kaubo` - Entry point
-- `std/list.kaubo` - List operations (map, filter, reduce, sum)
-- `std/math.kaubo` - Math operations (abs, pow, sqrt)
-- `app/utils.kaubo` - Application utilities, imports std.math
-
-**Import Syntax:**
+### 变量声明
 ```kaubo
-import std.list;    // Resolves to std/list.kaubo
-import std.math;    // Resolves to std/math.kaubo
-import app.utils;   // Resolves to app/utils.kaubo
+var x = 10;           // 整数
+var y = 3.14;         // 浮点数
+var s = "hello";      // 字符串
+var b = true;         // 布尔值
+var n = null;         // null
 ```
 
-**Key Concepts:**
-- Dot notation maps to directory structure
-- `import a.b.c` → `a/b/c.kaubo`
-- Nested modules can import other nested modules
-
----
-
-## Module System Overview
-
-In Kaubo:
-
-1. **Single File = Single Module**: Each `.kaubo` file is its own module
-2. **No `module` Keyword**: The `module` keyword is deprecated; file organization determines modules
-3. **Exports**: Use `pub var` to export values from a module
-4. **Imports**: Use `import path.to.module;` to import other modules
-5. **Resolution**: Import paths use dots to represent directory structure
-6. **Caching**: Modules are loaded only once, even if imported multiple times
-
-### Example Module Structure
-
-```
-my_project/
-├── main.kaubo          # Entry point
-├── math.kaubo          # Math utilities
-├── utils/
-│   ├── string.kaubo    # String utilities
-│   └── io.kaubo        # I/O utilities
-└── std/
-    ├── list.kaubo      # List operations
-    └── json.kaubo      # JSON handling
-```
-
-### Import Examples
-
+### 控制流
 ```kaubo
-// Simple import
-import math;
+if x > 0 {
+    print "positive";
+} elif x < 0 {
+    print "negative";
+} else {
+    print "zero";
+}
 
-// Nested path import  
-import utils.string;
-import std.list;
+while i < 10 {
+    i = i + 1;
+}
 
-// Using imported modules
-var result = math.add(1, 2);
-var doubled = std.list.map([1, 2, 3], |x| { return x * 2; });
+for var item in list {
+    print item;
+}
+```
+
+### 函数
+```kaubo
+var add = |a, b| -> int {
+    return a + b;
+};
+var result = add(1, 2);
+```
+
+### 结构体
+```kaubo
+struct Point {
+    x: int,
+    y: int
+}
+
+impl Point {
+    operator add: |this, other| -> Point {
+        return Point { x: this.x + other.x, y: this.y + other.y };
+    }
+};
+
+var p = Point { x: 1, y: 2 };
+```
+
+### 列表
+```kaubo
+var list = [1, 2, 3];
+var first = list[0];
+list[0] = 10;
 ```

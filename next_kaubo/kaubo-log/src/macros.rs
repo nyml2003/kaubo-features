@@ -46,7 +46,7 @@ macro_rules! log {
     ($logger:expr, $level:expr, $($arg:tt)*) => {{
         // 惰性求值：先检查级别，只有启用时才格式化消息
         if $logger.is_enabled($level) {
-            let message = alloc::format!($($arg)*);
+            let message = format!($($arg)*);
             $logger.log($level, module_path!(), message);
         }
     }};

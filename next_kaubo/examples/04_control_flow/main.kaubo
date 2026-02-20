@@ -1,0 +1,46 @@
+// 04. Control Flow - 条件语句和循环
+
+var result = 0;
+
+// if-else 语句
+var age = 18;
+if age >= 18 {
+    print "Adult";
+    result = result + 1;
+} else {
+    print "Minor";
+}
+
+// if-elif-else 链
+var score = 85;
+if score >= 90 {
+    print "A";
+} elif score >= 80 {
+    print "B";
+    result = result + 10;
+} elif score >= 70 {
+    print "C";
+} else {
+    print "F";
+}
+
+// while 循环
+var counter = 0;
+var sum = 0;
+while counter < 5 {
+    sum = sum + counter;
+    counter = counter + 1;
+}
+print sum;
+result = result + sum;
+
+// for 循环遍历列表
+var items = [1, 2, 3, 4, 5];
+var total = 0;
+for var item in items {
+    total = total + item;
+}
+print total;
+result = result + total;
+
+return result;

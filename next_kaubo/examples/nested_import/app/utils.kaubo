@@ -1,29 +1,6 @@
-// app.utils - Application utilities
-// Nested under app/ directory
-
+// App utilities
 import std.math;
 
-pub var calculate_stats = |numbers| {
-    var sum = 0;
-    var i = 0;
-    while i < numbers.len() {
-        sum = sum + numbers[i];
-        i = i + 1;
-    }
-    var avg = sum / numbers.len();
-    
-    // Use std.math for calculations
-    var variance_sum = 0;
-    i = 0;
-    while i < numbers.len() {
-        var diff = numbers[i] - avg;
-        variance_sum = variance_sum + std.math.pow(diff, 2);
-        i = i + 1;
-    }
-    
-    return json {
-        sum: sum,
-        average: avg,
-        variance: variance_sum / numbers.len()
-    };
+pub var calculate = |a, b| -> int {
+    return std.math.max(a, b) * 2;
 };

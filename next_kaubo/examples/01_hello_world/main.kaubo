@@ -1,0 +1,7 @@
+// 01. Hello World - 第一个 Kaubo 程序
+
+// 打印 "Hello, World!"
+print "Hello, World!";
+
+// 返回一个值（在解释器中可见）
+return 42;

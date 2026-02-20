@@ -37,6 +37,7 @@ pub enum KauboTokenKind {
     Module,
     Operator,
     Pub,
+    Print,
     Json,
 
     // 字面量 (100-102)

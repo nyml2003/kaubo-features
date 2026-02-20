@@ -1,0 +1,49 @@
+// 05. Functions - Lambda 函数
+
+// 定义一个简单的 lambda 函数
+var add = |a, b| -> int {
+    return a + b;
+};
+
+// 定义一个无参数的 lambda
+var greet = || -> string {
+    return "Hello!";
+};
+
+// 定义一个单参数 lambda
+var square = |x| -> int {
+    return x * x;
+};
+
+// 调用函数
+var result1 = add(3, 5);
+var result2 = greet();
+var result3 = square(4);
+
+print result1;
+print result2;
+print result3;
+
+// 函数作为参数
+var apply = |f, x| -> int {
+    return f(x);
+};
+
+var doubled = apply(|n| { return n * 2; }, 5);
+print doubled;
+
+// 闭包 - 捕获外部变量
+var make_counter = || {
+    var count = 0;
+    return || {
+        count = count + 1;
+        return count;
+    };
+};
+
+var counter = make_counter();
+print counter();
+print counter();
+print counter();
+
+return result1 + result3 + doubled;

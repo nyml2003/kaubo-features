@@ -1,0 +1,29 @@
+// 02. Variables - 变量和基本类型
+
+// 整数
+var age = 25;
+var negative = -10;
+
+// 浮点数
+var pi = 3.14159;
+var price = 19.99;
+
+// 字符串
+var name = "Kaubo";
+var message = "Hello, World!";
+
+// 布尔值
+var is_valid = true;
+var is_empty = false;
+
+// null
+var nothing = null;
+
+// 打印变量
+print name;
+print age;
+print pi;
+print is_valid;
+
+// 返回值
+return age;

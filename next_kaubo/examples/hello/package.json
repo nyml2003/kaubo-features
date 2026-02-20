@@ -1,13 +1,5 @@
 {
   "name": "hello",
-  "version": "0.1.0",
-  "entry": "main.kaubo",
-  "description": "Hello World example with struct and operator overloading",
-  "compiler": {
-    "log_level": "warn",
-    "show_source": false,
-    "show_steps": false,
-    "dump_bytecode": true,
-    "compile_only": false
-  }
+  "version": "1.0.0",
+  "entry": "main.kaubo"
 }

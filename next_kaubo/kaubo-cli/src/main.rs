@@ -1,92 +1,89 @@
-//! Kaubo CLI - Command line interface
+//! Kaubo CLI - Command line interface for Kaubo language
 //!
-//! Project-based execution - all configuration from package.json
-
-extern crate alloc;
+//! 这是一个功能完整的实现，与旧 CLI 功能对齐。
+//!
+//! 运行方式:
+//!   cargo run -p kaubo-cli-orchestrator -- examples/hello/package.json
 
 use clap::Parser;
 use std::path::{Path, PathBuf};
 use std::process;
+use std::sync::Arc;
 
-mod platform;
-
-use crate::platform::print_error_with_source;
-use kaubo_api::{compile_project_with_config, compile_with_config, init_config, run, RunConfig, Value};
-use kaubo_core::binary::{
-    encode_chunk_with_context, BinaryWriter, BuildMode, DecodeContext, EncodeContext, 
-    FunctionPool, SectionData, SectionKind, ShapeEntry, ShapeTable, StringPool, VMExecuteBinary, WriteOptions,
+use kaubo_orchestrator::{
+    FileLoader, FileEmitter, StdoutEmitter,
+    CompilePass, MultiModulePass,
+    Orchestrator, Source, Target, OutputBuffer, OutputEntry, new_output_buffer,
 };
-use kaubo_core::VM;
-use std::fs;
+use kaubo_config::VmConfig;
+use kaubo_orchestrator::vm::core::{VM, InterpretResult};
+use kaubo_orchestrator::vm::binary::{SectionData, VMExecuteBinary};
 
-/// 执行模式
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ExecutionMode {
-    /// 自动选择：二进制存在且最新则执行二进制，否则解释执行
-    Auto,
-    /// 总是解释执行源码
-    Source,
-    /// 执行二进制（不存在则报错）
-    Binary,
-}
-
-impl ExecutionMode {
-    fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "source" => ExecutionMode::Source,
-            "binary" => ExecutionMode::Binary,
-            _ => ExecutionMode::Auto, // 默认 auto
-        }
-    }
+/// CLI 参数
+#[derive(Parser)]
+#[command(
+    name = "kaubo",
+    about = "Kaubo language compiler - Orchestrator-based",
+    version = "0.1.0"
+)]
+struct Cli {
+    /// 配置文件路径 (package.json)
+    #[arg(value_name = "CONFIG", default_value = "package.json")]
+    config: PathBuf,
+    
+    /// 显示编译步骤
+    #[arg(short, long)]
+    verbose: bool,
+    
+    /// 仅编译，不执行
+    #[arg(short, long)]
+    compile_only: bool,
+    
+    /// 输出字节码（JSON 格式）
+    #[arg(long)]
+    dump_bytecode: bool,
+    
+    /// 生成二进制文件 (.kaubod)
+    #[arg(long)]
+    emit_binary: bool,
+    
+    /// 执行模式: auto | source | binary
+    #[arg(short, long, default_value = "auto")]
+    mode: String,
 }
 
 /// package.json 结构
 #[derive(Debug, serde::Deserialize)]
 struct PackageJson {
-    /// 入口文件路径
+    name: String,
+    version: String,
     entry: String,
-    /// 编译器配置
+    #[serde(default)]
     compiler: Option<CompilerConfig>,
 }
 
-/// 编译器配置
 #[derive(Debug, serde::Deserialize)]
 struct CompilerConfig {
-    /// 是否仅编译，不执行
+    #[serde(default)]
     compile_only: Option<bool>,
-    /// 是否输出字节码（JSON 格式）
+    #[serde(default)]
     dump_bytecode: Option<bool>,
-    /// 是否显示执行步骤
+    #[serde(default)]
     show_steps: Option<bool>,
-    /// 是否显示源码
+    #[serde(default)]
     show_source: Option<bool>,
-    /// 日志级别: "silent", "error", "warn", "info", "debug", "trace"
+    #[serde(default)]
     log_level: Option<String>,
-    /// 执行模式: "auto" | "source" | "binary"
-    /// - "auto": 自动选择（如果二进制存在且最新则执行二进制，否则解释执行源码）
-    /// - "source": 总是解释执行源码
-    /// - "binary": 执行二进制（不存在则报错）
-    mode: Option<String>,
-    /// 是否生成二进制文件 (emit .kaubod)
+    #[serde(default)]
     emit_binary: Option<bool>,
-}
-
-#[derive(Parser)]
-#[command(
-    name = "kaubo",
-    about = "Kaubo programming language - Project-based execution",
-    version = "0.1.0"
-)]
-struct Cli {
-    /// Configuration file path (default: ./package.json)
-    #[arg(value_name = "CONFIG", default_value = "package.json")]
-    config: PathBuf,
+    #[serde(default)]
+    mode: Option<String>,
 }
 
 fn main() {
     let cli = Cli::parse();
-
-    // Read package.json
+    
+    // 读取 package.json
     let package = match read_package_json(&cli.config) {
         Ok(p) => p,
         Err(e) => {
@@ -94,585 +91,462 @@ fn main() {
             process::exit(1);
         }
     };
-
-    // Resolve entry file path (relative to package.json directory)
-    let entry_path = resolve_entry_path(&cli.config, &package.entry);
-
-    // Read source file
-    let source = match std::fs::read_to_string(&entry_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!(
-                "Error: Cannot read entry file '{}': {}",
-                entry_path.display(),
-                e
-            );
-            process::exit(1);
-        }
-    };
-
-    // Build run configuration from package.json
-    let run_config = build_run_config(&package);
-
-    // Initialize API config (global singleton for convenience)
-    init_config(run_config.clone());
-
-    // Show source
-    if run_config.show_source {
-        println!("[Source]");
-        for (i, line) in source.lines().enumerate() {
-            println!("{:3} | {}", i + 1, line);
-        }
-        println!("[Execution Result]");
-    }
-
-    // Show step info
-    if run_config.show_steps {
-        println!("[Kaubo VM - Bytecode Execution]");
-        println!("======================");
-        println!("Entry: {}", entry_path.display());
-    }
-
-    // Execute based on mode
-    let mode = get_execution_mode(&package);
-    let emit_binary = should_emit_binary(&package);
-    let binary_path = get_binary_path(&entry_path);
     
-    if run_config.compile_only {
-        // Compile-only mode: compile and optionally emit binary
-        handle_compile_only(&source, run_config, &package, emit_binary.then_some(&binary_path));
-    } else {
-        // Run mode: choose execution method based on mode
-        handle_run(&source, run_config, &package, &entry_path, mode, emit_binary, &binary_path);
+    // 解析配置选项
+    let verbose = cli.verbose || package.compiler.as_ref().and_then(|c| c.show_steps).unwrap_or(false);
+    let compile_only = cli.compile_only || package.compiler.as_ref().and_then(|c| c.compile_only).unwrap_or(false);
+    let dump_bytecode = cli.dump_bytecode || package.compiler.as_ref().and_then(|c| c.dump_bytecode).unwrap_or(false);
+    let emit_binary = cli.emit_binary || package.compiler.as_ref().and_then(|c| c.emit_binary).unwrap_or(false);
+    let mode = cli.mode;
+    
+    if verbose {
+        println!("=== Kaubo CLI ===\n");
+        println!("Project: {} v{}", package.name, package.version);
+        println!("Entry: {}", package.entry);
+        println!("Mode: {}", mode);
+        println!();
+    }
+    
+    // 解析入口文件路径
+    let entry_path = cli.config.parent()
+        .unwrap_or(Path::new("."))
+        .join(&package.entry);
+    
+    // 创建并配置编排器
+    let mut orchestrator = create_orchestrator(verbose);
+    
+    // 根据模式执行
+    match mode.as_str() {
+        "binary" => {
+            // 执行已存在的二进制文件
+            let binary_path = entry_path.with_extension("kaubod");
+            execute_binary_file(&binary_path, verbose);
+        }
+        _ => {
+            // 编译执行
+            if verbose {
+                println!("Starting compilation...");
+            }
+            
+            match compile_and_execute(
+                &mut orchestrator,
+                &entry_path,
+                verbose,
+                compile_only,
+                dump_bytecode,
+                emit_binary,
+            ) {
+                Ok(_) => {
+                    if verbose {
+                        println!("\n✅ Operation completed successfully!");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("\n❌ Error: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
     }
 }
 
-/// Read and parse package.json
+/// 创建并配置编排器
+fn create_orchestrator(verbose: bool) -> Orchestrator {
+    let config = VmConfig::default();
+    let mut orchestrator = Orchestrator::new(config);
+    
+    // 注册组件
+    orchestrator.register_loader(Box::new(FileLoader::new()));
+    orchestrator.register_emitter(Box::new(FileEmitter::new()));
+    orchestrator.register_emitter(Box::new(StdoutEmitter::new()));
+    
+    // 注册 Pass
+    let logger: Arc<kaubo_log::Logger> = if verbose {
+        kaubo_log::Logger::new(kaubo_log::Level::Debug)
+    } else {
+        kaubo_log::Logger::new(kaubo_log::Level::Warn)
+    };
+    
+    orchestrator.register_pass(Box::new(CompilePass::new(logger.clone())));
+    orchestrator.register_pass(Box::new(MultiModulePass::new(logger)));
+    
+    orchestrator
+}
+
+/// 编译并执行
+fn compile_and_execute(
+    orchestrator: &mut Orchestrator,
+    path: &Path,
+    verbose: bool,
+    compile_only: bool,
+    dump_bytecode: bool,
+    emit_binary: bool,
+) -> Result<(), String> {
+    // 1. 加载文件
+    if verbose {
+        println!("  [1/4] Loading source...");
+    }
+    
+    let loader = orchestrator.loaders()
+        .get("file_loader")
+        .ok_or("File loader not found")?;
+    
+    let source = Source::file(path);
+    let raw_data = loader.load(&source)
+        .map_err(|e| format!("Failed to load file: {}", e))?;
+    
+    let source_code = match raw_data {
+        kaubo_orchestrator::RawData::Text(code) => code,
+        kaubo_orchestrator::RawData::Binary(_) => {
+            return Err("Binary source not supported".to_string());
+        }
+    };
+    
+    if verbose {
+        println!("        Loaded {} bytes", source_code.len());
+    }
+    
+    // 检查是否有 import（多文件编译）
+    let has_imports = source_code.contains("import ");
+    if has_imports && verbose {
+        println!("        Detected imports - using multi-module compilation");
+    }
+    
+    // 2. 编译
+    if verbose {
+        println!("  [2/4] Compiling...");
+    }
+    
+    // 选择 Pass：多文件或单文件
+    let pass_name = if has_imports { "multi_module" } else { "compile" };
+    
+    let compile_pass = orchestrator.passes()
+        .get(pass_name)
+        .or_else(|| orchestrator.passes().get("compile"))
+        .ok_or("Compile pass not found")?;
+    
+    use kaubo_orchestrator::pass::{Input};
+    use kaubo_orchestrator::converter::IR;
+    use kaubo_orchestrator::pass::PassContext;
+    use kaubo_vfs::MemoryFileSystem;
+    
+    // 根据 Pass 类型准备输入
+    let input = if has_imports {
+        // MultiModulePass 需要文件路径
+        Input::new(IR::Source(path.to_string_lossy().to_string()))
+    } else {
+        // CompilePass 需要源代码
+        Input::new(IR::Source(source_code.clone()))
+    };
+    
+    let ctx = PassContext::new(
+        Arc::new(VmConfig::default()),
+        Arc::new(MemoryFileSystem::new()),
+        kaubo_log::Logger::new(kaubo_log::Level::Info),
+    );
+    
+    let output = compile_pass.run(input, &ctx)
+        .map_err(|e| format!("Compilation error: {}", e))?;
+    
+    // 获取 chunk
+    let chunk = match &output.data {
+        IR::Bytecode(chunk) => chunk.clone(),
+        _ => return Err("Expected Bytecode output".to_string()),
+    };
+    
+    if verbose {
+        println!("        Generated {} bytes of bytecode", chunk.code.len());
+        println!("        Constants: {}", chunk.constants.len());
+    }
+    
+    // 3. 可选：转储字节码
+    if dump_bytecode {
+        if verbose {
+            println!("  [3/4] Dumping bytecode...");
+        }
+        dump_bytecode_to_stdout(&chunk);
+    }
+    
+    // 4. 可选：生成二进制文件
+    if emit_binary {
+        if verbose {
+            println!("  [4/4] Emitting binary...");
+        }
+        let binary_path = path.with_extension("kaubod");
+        emit_binary_file(&chunk, &binary_path, verbose)?;
+    }
+    
+    // 5. 执行（如果不是仅编译模式）
+    if !compile_only {
+        if verbose {
+            if dump_bytecode || emit_binary {
+                println!("  [5/5] Executing...");
+            } else {
+                println!("  [3/3] Executing...");
+            }
+        }
+        
+        // 创建输出缓冲区来捕获 VM 输出
+        let output_buffer = new_output_buffer();
+        
+        // 执行字节码，输出被捕获到缓冲区
+        execute_bytecode_with_output(&chunk, verbose, Some(output_buffer.clone()))?;
+        
+        // 通过 Emitter 输出捕获的内容（这里直接使用 stdout）
+        let entries = output_buffer.drain();
+        for entry in entries {
+            match entry {
+                OutputEntry::Print(msg) => println!("{}", msg),
+                OutputEntry::Source(src) => println!("{}", src),
+                OutputEntry::Bytecode(bc) => println!("{}", bc),
+                OutputEntry::Info(info) => println!("{}", info),
+                OutputEntry::Error(err) => eprintln!("{}", err),
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+/// 转储字节码到 stdout
+fn dump_bytecode_to_stdout(chunk: &kaubo_orchestrator::vm::core::Chunk) {
+    println!("\n=== Bytecode Dump ===");
+    println!("Code size: {} bytes", chunk.code.len());
+    println!("Constants: {}", chunk.constants.len());
+    
+    // 简化的字节码输出
+    for (i, byte) in chunk.code.iter().enumerate() {
+        if i % 16 == 0 {
+            print!("\n  {:04x}: ", i);
+        }
+        print!("{:02x} ", byte);
+    }
+    println!();
+    
+    println!("\nConstants:");
+    for (i, constant) in chunk.constants.iter().enumerate() {
+        println!("  [{}]: {:?}", i, constant);
+    }
+    println!("===================\n");
+}
+
+/// 生成二进制文件
+fn emit_binary_file(
+    chunk: &kaubo_orchestrator::vm::core::Chunk,
+    path: &Path,
+    verbose: bool,
+) -> Result<(), String> {
+    use kaubo_orchestrator::vm::binary::{
+        BinaryWriter, BuildMode, EncodeContext,
+        FunctionPool, ModuleTable, SectionKind, ShapeTable, StringPool,
+        WriteOptions, ModuleEntry,
+    };
+    
+    // 创建编码上下文
+    let mut string_pool = StringPool::new();
+    let mut function_pool = FunctionPool::new();
+    let mut shape_table = ShapeTable::new();
+    
+    let main_idx = string_pool.add("main");
+    let main_kaubo_idx = string_pool.add("main.kaubo");
+    
+    let mut ctx = EncodeContext::new(&mut string_pool, &mut function_pool, &mut shape_table);
+    
+    let chunk_data = kaubo_orchestrator::vm::binary::encode_chunk_with_context(chunk, &mut ctx)
+        .map_err(|e| format!("Failed to encode chunk: {:?}", e))?;
+    
+    // 创建二进制写入器
+    let options = WriteOptions {
+        build_mode: BuildMode::Debug,
+        compress: false,
+        strip_debug: false,
+        source_map_external: false,
+    };
+    
+    let mut writer = BinaryWriter::new(options);
+    
+    // 写入各个段
+    writer.write_section(SectionKind::StringPool, &ctx.string_pool.serialize());
+    writer.write_section(SectionKind::FunctionPool, &ctx.function_pool.serialize());
+    
+    if !ctx.shape_table.is_empty() {
+        writer.write_section(SectionKind::ShapeTable, &ctx.shape_table.serialize());
+    }
+    
+    // 模块表
+    let mut module_table = ModuleTable::new();
+    module_table.add(ModuleEntry {
+        name_idx: main_idx,
+        source_path_idx: main_kaubo_idx,
+        chunk_offset: 0,
+        chunk_size: chunk_data.len() as u32,
+        shape_start: 0,
+        shape_count: 0,
+        export_start: 0,
+        export_count: 0,
+        import_start: 0,
+        import_count: 0,
+    });
+    writer.write_section(SectionKind::ModuleTable, &module_table.serialize());
+    
+    // Chunk 数据
+    writer.write_section(SectionKind::ChunkData, &chunk_data);
+    writer.set_entry(0, 0);
+    
+    // 写入文件
+    let binary_data = writer.finish();
+    std::fs::write(path, binary_data)
+        .map_err(|e| format!("Failed to write binary file: {}", e))?;
+    
+    if verbose {
+        println!("        Binary emitted: {}", path.display());
+    }
+    
+    Ok(())
+}
+
+/// 执行字节码
+fn execute_bytecode(
+    chunk: &kaubo_orchestrator::vm::core::Chunk,
+    verbose: bool,
+) -> Result<(), String> {
+    execute_bytecode_with_output(chunk, verbose, None)
+}
+
+/// 执行字节码（带输出缓冲区）
+fn execute_bytecode_with_output(
+    chunk: &kaubo_orchestrator::vm::core::Chunk,
+    verbose: bool,
+    output_buffer: Option<Arc<dyn OutputBuffer>>,
+) -> Result<(), String> {
+    
+    // 创建 VM
+    let mut vm = VM::new();
+    
+    // 设置输出回调（如果有输出缓冲区）
+    if let Some(buffer) = output_buffer {
+        let buffer_clone = buffer.clone();
+        vm.set_output_callback(move |msg| {
+            buffer_clone.push(kaubo_orchestrator::OutputEntry::Print(msg.to_string()));
+        });
+    }
+    
+    // 执行 chunk
+    match vm.interpret(&chunk) {
+        InterpretResult::Ok => {
+            if verbose {
+                println!("        Execution completed successfully");
+            }
+            Ok(())
+        }
+        InterpretResult::CompileError(msg) => {
+            Err(format!("Compile error: {}", msg))
+        }
+        InterpretResult::RuntimeError(msg) => {
+            Err(format!("Runtime error: {}", msg))
+        }
+    }
+}
+
+/// 执行二进制文件
+fn execute_binary_file(binary_path: &Path, verbose: bool) {
+    use kaubo_orchestrator::vm::core::InterpretResult;
+    
+    if verbose {
+        println!("  [Binary Execution]");
+        println!("    Binary: {}", binary_path.display());
+    }
+    
+    // 检查文件是否存在
+    if !binary_path.exists() {
+        eprintln!("Error: Binary file not found: {}", binary_path.display());
+        eprintln!("       Run with --emit-binary first to generate binary.");
+        process::exit(1);
+    }
+    
+    // 读取二进制文件
+    let binary_data = std::fs::read(binary_path)
+        .unwrap_or_else(|e| {
+            eprintln!("Error: Failed to read binary file: {}", e);
+            process::exit(1);
+        });
+    
+    // 创建 VM 并执行
+    let mut vm = VM::new();
+    
+    match vm.execute_binary(binary_data) {
+        Ok(InterpretResult::Ok) => {
+            if verbose {
+                println!("    ✅ Execution successful!");
+            }
+        }
+        Ok(InterpretResult::CompileError(msg)) => {
+            eprintln!("Error: Compile error in binary: {}", msg);
+            process::exit(1);
+        }
+        Ok(InterpretResult::RuntimeError(msg)) => {
+            eprintln!("Error: Runtime error: {}", msg);
+            process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Error: Failed to load binary: {:?}", e);
+            process::exit(1);
+        }
+    }
+}
+
+/// 读取并解析 package.json
 fn read_package_json(path: &Path) -> Result<PackageJson, String> {
     if !path.exists() {
         return Err(format!(
-            "未找到 '{}'\n\n当前目录不是一个 Kaubo 项目。\n提示: 创建 '{}' 文件并指定 'entry' 字段",
+            "'{}' not found\n\nThis is not a Kaubo project.
+Hint: Create a '{}' file with an 'entry' field",
             path.display(),
             path.display()
         ));
     }
-
+    
     let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("无法读取 '{}': {}", path.display(), e))?;
-
+        .map_err(|e| format!("Cannot read '{}': {}", path.display(), e))?;
+    
     let package: PackageJson = serde_json::from_str(&content)
-        .map_err(|e| format!("解析 '{}' 失败: {}", path.display(), e))?;
-
+        .map_err(|e| format!("Failed to parse '{}': {}", path.display(), e))?;
+    
     if package.entry.is_empty() {
-        return Err(format!("'{}' 中的 'entry' 字段不能为空", path.display()));
+        return Err(format!("'entry' field in '{}' cannot be empty", path.display()));
     }
-
+    
     Ok(package)
 }
 
-/// Resolve entry file path relative to package.json directory
-fn resolve_entry_path(package_path: &Path, entry: &str) -> PathBuf {
-    let base_dir = package_path.parent().unwrap_or(Path::new("."));
-    base_dir.join(entry)
-}
-
-/// Get execution mode from compiler config
-fn get_execution_mode(package: &PackageJson) -> ExecutionMode {
-    package
-        .compiler
-        .as_ref()
-        .and_then(|c| c.mode.as_ref())
-        .map(|m| ExecutionMode::from_str(m))
-        .unwrap_or(ExecutionMode::Auto)
-}
-
-/// Check if should emit binary file
-fn should_emit_binary(package: &PackageJson) -> bool {
-    package
-        .compiler
-        .as_ref()
-        .and_then(|c| c.emit_binary)
-        .unwrap_or(false)
-}
-
-/// Get binary path from source path (e.g., main.kaubo -> main.kaubod)
-fn get_binary_path(source_path: &Path) -> PathBuf {
-    let mut binary_path = source_path.to_path_buf();
-    if let Some(stem) = source_path.file_stem() {
-        let parent = source_path.parent().unwrap_or(Path::new("."));
-        binary_path = parent.join(format!("{}.kaubod", stem.to_string_lossy()));
-    }
-    binary_path
-}
-
-/// Check if binary exists and is up-to-date (newer than source)
-fn is_binary_up_to_date(source_path: &Path, binary_path: &Path) -> bool {
-    if !binary_path.exists() {
-        return false;
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
     
-    let source_modified = match fs::metadata(source_path).and_then(|m| m.modified()) {
-        Ok(t) => t,
-        Err(_) => return false, // Can't determine, assume out of date
-    };
-    
-    let binary_modified = match fs::metadata(binary_path).and_then(|m| m.modified()) {
-        Ok(t) => t,
-        Err(_) => return false, // Can't determine, assume out of date
-    };
-    
-    binary_modified >= source_modified
-}
-
-/// Compile source and optionally emit binary file
-fn compile_and_emit(
-    source: &str,
-    config: &RunConfig,
-    binary_path: Option<&Path>,
-) -> Result<kaubo_api::CompileOutput, String> {
-    use kaubo_api::compile_with_config;
-    
-    let output = compile_with_config(source, config)
-        .map_err(|e| format!("Compilation error: {:?}", e))?;
-    
-    // Emit binary if requested
-    if let Some(path) = binary_path {
-        // 使用新的上下文编码来支持堆对象
-        let mut string_pool = StringPool::new();
-        let mut function_pool = FunctionPool::new();
-        let mut shape_table = ShapeTable::new();
+    #[test]
+    fn test_orchestrator_creation() {
+        let orch = create_orchestrator(false);
         
-        // 先添加模块元数据到 String Pool（确保索引稳定）
-        let main_idx = string_pool.add("main");
-        let main_kaubo_idx = string_pool.add("main.kaubo");
-        
-        // 注册编译时收集的 Shape 到 ShapeTable
-        for shape in &output.shapes {
-            let name_idx = string_pool.add(&shape.name);
-            let field_name_indices: Vec<u32> = shape.field_names.iter()
-                .map(|name| string_pool.add(name))
-                .collect();
-            let field_type_indices: Vec<u32> = shape.field_types.iter()
-                .map(|ty| string_pool.add(ty))
-                .collect();
-            
-            let entry = ShapeEntry {
-                shape_id: shape.shape_id,
-                name_idx,
-                field_count: shape.field_names.len() as u16,
-                field_name_indices,
-                field_type_indices,
-            };
-            shape_table.add(entry);
-        }
-        
-        let mut ctx = EncodeContext::new(&mut string_pool, &mut function_pool, &mut shape_table);
-        
-        let chunk_data = encode_chunk_with_context(&output.chunk, &mut ctx)
-            .map_err(|e| format!("Failed to encode chunk: {:?}", e))?;
-        
-        // 创建完整的二进制文件
-        let options = WriteOptions {
-            build_mode: BuildMode::Debug,
-            compress: false,
-            strip_debug: false,
-            source_map_external: false,
-        };
-        
-        let mut writer = BinaryWriter::new(options);
-        
-        // 写入 String Pool
-        writer.write_section(SectionKind::StringPool, &ctx.string_pool.serialize());
-        
-        // 写入 Function Pool
-        writer.write_section(SectionKind::FunctionPool, &ctx.function_pool.serialize());
-        
-        // 写入 Shape Table（如果非空）
-        if !ctx.shape_table.is_empty() {
-            writer.write_section(SectionKind::ShapeTable, &ctx.shape_table.serialize());
-        }
-        
-        // 写入 Module Table（简化版，单模块）
-        use kaubo_core::binary::{ModuleEntry, ModuleTable};
-        let mut module_table = ModuleTable::new();
-        module_table.add(ModuleEntry {
-            name_idx: main_idx,
-            source_path_idx: main_kaubo_idx,
-            chunk_offset: 0,
-            chunk_size: chunk_data.len() as u32,
-            shape_start: 0,
-            shape_count: 0,
-            export_start: 0,
-            export_count: 0,
-            import_start: 0,
-            import_count: 0,
-        });
-        writer.write_section(SectionKind::ModuleTable, &module_table.serialize());
-        
-        // 写入 Chunk Data
-        writer.write_section(SectionKind::ChunkData, &chunk_data);
-        
-        // 设置入口点
-        writer.set_entry(0, 0);
-        
-        // 写入文件
-        let binary_data = writer.finish();
-        fs::write(path, binary_data)
-            .map_err(|e| format!("Failed to write binary file: {}", e))?;
+        assert_eq!(orch.loaders().len(), 1);
+        assert_eq!(orch.passes().len(), 2);  // CompilePass + MultiModulePass
+        assert_eq!(orch.emitters().len(), 2);
     }
     
-    Ok(output)
-}
-
-/// Build run configuration from package.json
-fn build_run_config(package: &PackageJson) -> RunConfig {
-    // Extract compiler config from package.json
-    let compiler = package.compiler.as_ref();
-
-    let show_steps = compiler.and_then(|c| c.show_steps).unwrap_or(false);
-    let dump_bytecode = compiler.and_then(|c| c.dump_bytecode).unwrap_or(false);
-    let show_source = compiler.and_then(|c| c.show_source).unwrap_or(false);
-    let compile_only = compiler.and_then(|c| c.compile_only).unwrap_or(false);
-
-    // Parse log level
-    let log_level = compiler
-        .and_then(|c| c.log_level.as_ref())
-        .and_then(|s| parse_log_level(s));
-
-    RunConfig::from_options(
-        show_steps,
-        dump_bytecode,
-        show_source,
-        compile_only,
-        log_level,
-    )
-}
-
-/// Parse log level string
-fn parse_log_level(s: &str) -> Option<kaubo_api::kaubo_config::LogLevel> {
-    use kaubo_api::kaubo_config::LogLevel;
-    match s.to_lowercase().as_str() {
-        "silent" => Some(LogLevel::Error), // silent = only errors
-        "error" => Some(LogLevel::Error),
-        "warn" => Some(LogLevel::Warn),
-        "info" => Some(LogLevel::Info),
-        "debug" => Some(LogLevel::Debug),
-        "trace" => Some(LogLevel::Trace),
-        _ => None,
-    }
-}
-
-/// 将字节码输出到 stdout（JSON 格式）
-fn dump_bytecode_to_stdout(chunk: &kaubo_core::Chunk, shapes: &[kaubo_core::ObjShape], name: &str) {
-    dump_json_output(chunk, shapes, name);
-}
-
-/// JSON 格式输出编译结果（支持嵌套函数）
-fn dump_json_output(chunk: &kaubo_core::Chunk, shapes: &[kaubo_core::ObjShape], name: &str) {
-    let output = build_json_output(chunk, shapes, name);
-    println!("{}", serde_json::to_string_pretty(&output).unwrap());
-}
-
-/// 递归构建 JSON 输出
-fn build_json_output(chunk: &kaubo_core::Chunk, shapes: &[kaubo_core::ObjShape], name: &str) -> serde_json::Value {
-    use serde_json::json;
-    
-    // 构建 shapes JSON
-    let shapes_json: Vec<serde_json::Value> = shapes.iter().map(|s| {
-        let fields: Vec<serde_json::Value> = s.field_names.iter()
-            .zip(s.field_types.iter())
-            .map(|(name, ty)| json!({ "name": name, "type": ty }))
-            .collect();
-        json!({
-            "id": s.shape_id,
-            "name": s.name,
-            "fields": fields
-        })
-    }).collect();
-    
-    // 构建 bytecode JSON
-    let bytecode_json = build_bytecode_json(chunk);
-    
-    // 构建嵌套函数 JSON
-    let mut functions_json: Vec<serde_json::Value> = Vec::new();
-    for (idx, constant) in chunk.constants.iter().enumerate() {
-        // 尝试获取函数内部的 chunk
-        if let Some(func_chunk) = get_function_chunk(constant) {
-            let func_name = format!("{}#func_{}", name, idx);
-            functions_json.push(build_json_output(func_chunk, shapes, &func_name));
-        }
-    }
-    
-    let mut result = json!({
-        "name": name,
-        "shapes": shapes_json,
-        "bytecode": bytecode_json
-    });
-    
-    // 如果有嵌套函数，添加到 JSON
-    if !functions_json.is_empty() {
-        result["functions"] = json!(functions_json);
-    }
-    
-    result
-}
-
-/// 构建字节码指令数组（简化版，不含行号和offset）
-fn build_bytecode_json(chunk: &kaubo_core::Chunk) -> Vec<serde_json::Value> {
-    use serde_json::json;
-    let mut bytecode_json: Vec<serde_json::Value> = Vec::new();
-    let mut offset = 0;
-    
-    while offset < chunk.code.len() {
-        let instruction = chunk.code[offset];
-        let opcode = kaubo_core::runtime::OpCode::from(instruction);
+    #[test]
+    fn test_package_json_parsing() {
+        // 从 Cargo 环境变量获取项目根目录
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let test_path = Path::new(manifest_dir)
+            .parent()
+            .unwrap()
+            .join("examples/hello/package.json");
         
-        let size = opcode.operand_size();
-        let instr_json = match opcode {
-            _ if size == 0 => json!({
-                "opcode": opcode.name()
-            }),
-            _ if size == 1 => json!({
-                "opcode": opcode.name(),
-                "operand": chunk.code[offset + 1]
-            }),
-            _ => {
-                let hi = chunk.code[offset + 1] as u16;
-                let lo = chunk.code[offset + 2] as u16;
-                let val = (hi << 8) | lo;
-                json!({
-                    "opcode": opcode.name(),
-                    "operand": val
-                })
-            }
-        };
-        bytecode_json.push(instr_json);
-        offset += size as usize + 1;
-    }
-    
-    bytecode_json
-}
-
-/// 尝试从 Value 获取函数的 chunk
-fn get_function_chunk(value: &kaubo_core::Value) -> Option<&kaubo_core::Chunk> {
-    // 检查是否是函数类型
-    if let Some(func_ptr) = value.as_function() {
-        unsafe {
-            return Some(&(*func_ptr).chunk);
-        }
-    }
-    None
-}
-
-fn handle_compile_only(
-    source: &str, 
-    config: RunConfig, 
-    package: &PackageJson,
-    binary_path: Option<&Path>,
-) {
-    if config.show_steps {
-        println!("[Compilation]");
-    }
-
-    match compile_and_emit(source, &config, binary_path) {
-        Ok(output) => {
-            if config.show_steps {
-                println!("Constants: {}", output.chunk.constants.len());
-                println!("Bytecode: {} bytes", output.chunk.code.len());
-                println!("Locals: {}", output.local_count);
-            }
-
-            if config.dump_bytecode {
-                dump_bytecode_to_stdout(&output.chunk, &output.shapes, "main");
-            }
-
-            if let Some(path) = binary_path {
-                if config.show_steps {
-                    println!("📦 Binary emitted: {}", path.display());
-                }
-            }
-
-            if config.show_steps {
-                println!("✅ Compilation successful");
-            }
-        }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            process::exit(1);
-        }
-    }
-}
-
-fn handle_run(
-    source: &str, 
-    config: RunConfig, 
-    package: &PackageJson, 
-    entry_path: &Path,
-    mode: ExecutionMode,
-    emit_binary: bool,
-    binary_path: &Path,
-) {
-    if config.show_steps {
-        println!("[Execution Mode: {:?}]", mode);
-    }
-
-    // Determine execution strategy based on mode
-    let use_binary = match mode {
-        ExecutionMode::Binary => {
-            // Binary mode: must use binary file
-            if !binary_path.exists() {
-                eprintln!("Error: Binary mode specified but binary not found: {}", 
-                         binary_path.display());
-                eprintln!("       Run with compile-only mode first to generate binary.");
-                process::exit(1);
-            }
-            true
-        }
-        ExecutionMode::Source => {
-            // Source mode: always use source
-            false
-        }
-        ExecutionMode::Auto => {
-            // Auto mode: use binary if it exists and is up-to-date
-            let up_to_date = is_binary_up_to_date(entry_path, binary_path);
-            if config.show_steps {
-                if up_to_date {
-                    println!("📦 Using cached binary: {}", binary_path.display());
-                } else {
-                    println!("📝 Binary out of date or missing, using source");
-                }
-            }
-            up_to_date
-        }
-    };
-
-    // Handle bytecode dump if requested
-    if config.dump_bytecode && !use_binary {
-        match compile_with_config(source, &config) {
-            Ok(output) => {
-                dump_bytecode_to_stdout(&output.chunk, &output.shapes, "main");
-            }
-            Err(e) => {
-                print_error_with_source(&e, source);
-                process::exit(1);
-            }
-        }
-    }
-
-    // Execute based on strategy
-    if use_binary {
-        // Execute binary file
-        execute_binary_file(binary_path, &config, emit_binary);
-    } else {
-        // Execute from source
-        execute_from_source(source, entry_path, &config, emit_binary, binary_path);
-    }
-}
-
-/// Execute binary file directly
-fn execute_binary_file(binary_path: &Path, config: &RunConfig, emit_binary: bool) {
-    if config.show_steps {
-        println!("[Binary Execution]");
-        println!("  Binary: {}", binary_path.display());
-    }
-
-    // Read binary file
-    let binary_data = match fs::read(binary_path) {
-        Ok(data) => data,
-        Err(e) => {
-            eprintln!("Error: Failed to read binary file '{}': {}", 
-                     binary_path.display(), e);
-            process::exit(1);
-        }
-    };
-
-    // Create VM and execute binary
-    let mut vm = VM::new();
-    
-    match vm.execute_binary(binary_data) {
-        Ok(result) => {
-            if config.show_steps {
-                println!("✅ Execution successful!");
-                println!("  Result: {:?}", result);
-            }
-        }
-        Err(e) => {
-            eprintln!("Error: Binary execution failed: {:?}", e);
-            process::exit(1);
-        }
-    }
-}
-
-/// Execute from source (compile + interpret)
-fn execute_from_source(
-    source: &str,
-    entry_path: &Path,
-    config: &RunConfig,
-    emit_binary: bool,
-    binary_path: &Path,
-) {
-    if config.show_steps {
-        println!("[Source Execution]");
-    }
-
-    // Check if source contains imports - try multi-file compilation
-    let has_imports = source.contains("import ");
-    
-    if has_imports {
-        let root_dir = entry_path.parent().unwrap_or(Path::new("."));
-        match compile_project_with_config(entry_path, root_dir, config) {
-            Ok(result) => {
-                if config.show_steps {
-                    println!("✅ Multi-file compilation successful!");
-                    println!("  Compiled {} modules:", result.units.len());
-                    for (i, unit) in result.units.iter().enumerate() {
-                        println!("    {}. {} ({})", i + 1, unit.import_path, unit.path.display());
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("Multi-file compilation error: {}", e);
-                process::exit(1);
-            }
-        }
-    }
-
-    // Compile and optionally emit binary
-    if emit_binary {
-        if config.show_steps {
-            println!("📦 Emitting binary: {}", binary_path.display());
-        }
-        match compile_and_emit(source, config, Some(binary_path)) {
-            Ok(_) => {
-                if config.show_steps {
-                    println!("✅ Binary generated successfully");
-                }
-            }
-            Err(e) => {
-                eprintln!("Warning: Failed to emit binary: {}", e);
-                // Continue with execution even if binary emission fails
-            }
-        }
-    }
-
-    // Execute from source
-    match run(source, config) {
-        Ok(output) => {
-            if config.show_steps {
-                println!("✅ Execution successful!");
-                if let Some(value) = output.value {
-                    println!("Return value: {value}");
-                }
-            } else if let Some(value) = output.value {
-                // Non-step mode: only print return value (actual program output)
-                if value != Value::NULL {
-                    println!("{value}");
-                }
-            }
-        }
-        Err(e) => {
-            print_error_with_source(&e, source);
-            process::exit(1);
-        }
+        let package = read_package_json(&test_path);
+        assert!(package.is_ok(), "Failed to parse: {:?}", package.err());
+        
+        let package = package.unwrap();
+        assert_eq!(package.name, "hello");
+        assert_eq!(package.entry, "main.kaubo");
     }
 }

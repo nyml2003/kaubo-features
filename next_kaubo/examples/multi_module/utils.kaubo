@@ -1,20 +1,6 @@
-// Utils module - general utility functions
+// Utils module
+import math;
 
-// Format a number with fixed precision
-pub var format_number = |num, decimals| {
-    // Simple implementation - just return the number for now
-    return num;
-};
-
-// Check if a number is even
-pub var is_even = |n| {
-    return n % 2 == 0;
-};
-
-// Calculate factorial
-pub var factorial = |n| {
-    if n <= 1 {
-        return 1;
-    }
-    return n * factorial(n - 1);
+pub var calculate = |x, y| -> int {
+    return math.add(x, y) * 2;
 };

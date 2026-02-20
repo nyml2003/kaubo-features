@@ -36,7 +36,8 @@ kaubo examples/hello/package.json
 |------|------|
 | `cargo make test` | 运行所有测试 (486 个) |
 | `cargo make test-core` | 运行 kaubo-core 测试 |
-| `cargo make test-api` | 运行 kaubo-api 测试 |
+| `cargo make test-orchestrator` | 运行 kaubo-orchestrator 测试 |
+| `cargo make test-orchestrator` | 运行 kaubo-orchestrator 测试 |
 | `cargo make test-log` | 运行 kaubo-log 测试 |
 | `cargo make test-cli` | 运行 kaubo-cli 测试 |
 | `cargo make test-watch` | 持续测试 (需 cargo-watch) |
@@ -51,6 +52,17 @@ kaubo examples/hello/package.json
 | `cargo make run-chain` | 运行导入链示例 |
 | `cargo make run-nested` | 运行嵌套导入示例 |
 | `cargo make run-release` | Release 模式运行 |
+
+### CLI 命令
+
+| 命令 | 说明 |
+|------|------|
+| `cargo run -p kaubo-cli -- <package.json>` | 编译并执行 |
+| `cargo run -p kaubo-cli -- <package.json> --verbose` | 显示详细步骤 |
+| `cargo run -p kaubo-cli -- <package.json> --emit-binary` | 生成 .kaubod |
+| `cargo run -p kaubo-cli -- <package.json> --mode binary` | 执行二进制 |
+| `cargo run -p kaubo-cli -- <package.json> --dump-bytecode` | 转储字节码 |
+| `cargo run -p kaubo-cli -- <package.json> --compile-only` | 仅编译 |
 
 每个项目的行为（日志级别、显示源码等）通过 `package.json` 中的 `compiler` 字段配置。
 
@@ -109,6 +121,8 @@ my_project/
 
 ### package.json
 
+项目配置示例：
+
 ```json
 {
   "name": "my-app",
@@ -125,6 +139,8 @@ my_project/
   }
 }
 ```
+
+📖 **完整配置文档**: [docs/package-json.md](docs/package-json.md)
 
 ### 命令行用法
 
@@ -190,7 +206,7 @@ kaubo examples/calc/package.json
 
 当设置为 `true` 时，编译成功后会生成 `.kaubod` 文件（与源码同名，扩展名改为 `.kaubod`）。
 
-**限制**: 当前 Chunk 编码器仅支持纯数值运算的程序。包含字符串、函数或结构体的程序无法生成二进制文件。
+**支持的特性**: 当前二进制格式支持整数、浮点数、字符串、列表、结构体、函数和闭包。大部分程序都可以生成二进制文件。
 
 ```bash
 # 示例: 启用二进制缓存
@@ -210,13 +226,22 @@ kaubo examples/calc/package.json
 
 ```
 kaubo/
-├── kaubo-cli/       # CLI 入口
-├── kaubo-api/       # API 层 (执行编排)
-├── kaubo-core/      # 核心 (编译器 + VM)
-├── kaubo-log/       # 日志系统
-├── kaubo-config/    # 配置数据
-├── kaubo-vfs/       # 虚拟文件系统
-├── examples/        # 示例程序
+├── kaubo-cli/           # CLI 入口
+├── kaubo-orchestrator/  # 编排引擎 (组件管理 + 流水线执行)
+│   ├── component/       # 组件 trait 定义
+│   ├── loader/          # 加载器组件
+│   ├── converter/       # 转换器组件
+│   ├── pass/            # 处理阶段组件
+│   ├── emitter/         # 输出器组件
+│   ├── registry/        # 组件注册表
+│   ├── pipeline/        # 流水线引擎
+│   └── context/         # 执行上下文
+├── kaubo-core/          # 核心编译器 (将被拆分为独立 pass crates)
+├── kaubo-log/           # 日志系统
+├── kaubo-config/        # 配置数据
+├── kaubo-vfs/           # 虚拟文件系统
+├── kaubo-api/           # 旧 API 层 (将被 orchestrator 取代)
+├── examples/            # 示例程序
 │   ├── hello/
 │   ├── fib/
 │   ├── calc/
@@ -224,9 +249,35 @@ kaubo/
 │   ├── import_chain/      # 传递依赖示例
 │   ├── diamond_deps/      # 菱形依赖示例
 │   └── nested_import/     # 嵌套导入示例
-├── package.json     # 项目配置
-├── scripts/         # 辅助脚本
-└── docs/            # 文档
+├── package.json         # 项目配置
+├── scripts/             # 辅助脚本
+└── docs/                # 文档
+```
+
+#### 组件架构 (New)
+
+Kaubo 正在迁移到组件化架构，通过 `kaubo-orchestrator` 管理：
+
+| 组件类型 | 职责 | 示例 |
+|----------|------|------|
+| **Loader** | 从各种来源加载源代码 | FileLoader, HttpLoader |
+| **Converter** | 在不同 IR 格式间转换 | Source→Tokens, AST→Bytecode |
+| **Pass** | 编译处理阶段 | Lexer, Parser, TypeChecker, CodeGen |
+| **Emitter** | 输出结果到目标 | FileEmitter, StdoutEmitter |
+
+流水线通过 `package.json` 中的 `pipeline` 字段配置：
+
+```json
+{
+  "pipeline": {
+    "stages": [
+      { "name": "lex", "pass": "lexer" },
+      { "name": "parse", "pass": "parser" },
+      { "name": "typecheck", "pass": "type_checker" },
+      { "name": "codegen", "pass": "codegen" }
+    ]
+  }
+}
 ```
 
 ### 多模块项目结构

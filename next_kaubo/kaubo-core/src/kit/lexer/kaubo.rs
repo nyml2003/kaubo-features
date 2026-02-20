@@ -572,6 +572,7 @@ static KEYWORD_TABLE: &[(&str, KauboTokenKind)] = &[
     ("await", KauboTokenKind::Await),
     ("module", KauboTokenKind::Module),
     ("pub", KauboTokenKind::Pub),
+    ("print", KauboTokenKind::Print),
     ("json", KauboTokenKind::Json),
     ("operator", KauboTokenKind::Operator),
 ];

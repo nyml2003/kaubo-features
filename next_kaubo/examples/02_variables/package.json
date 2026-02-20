@@ -1,0 +1,6 @@
+{
+  "name": "variables",
+  "version": "1.0.0",
+  "entry": "main.kaubo",
+  "description": "Variables example"
+}

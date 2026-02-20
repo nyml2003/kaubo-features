@@ -79,6 +79,7 @@ pub mod parser {
     //! Parser（高级用户）
     pub use crate::compiler::parser::parser::Parser;
     pub use crate::compiler::parser::Module;
+    pub use crate::compiler::parser::ModuleKind;
     pub use crate::compiler::parser::TypeChecker;
 }
 

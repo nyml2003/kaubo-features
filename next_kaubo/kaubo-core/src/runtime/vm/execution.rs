@@ -1373,7 +1373,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             // ===== 调试 =====
             Print => {
                 let v = vm.stack.pop().expect("Stack underflow");
-                println!("{v}");
+                vm.output(&format!("{v}"));
             }
 
             Invalid => {

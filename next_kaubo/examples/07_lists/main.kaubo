@@ -1,0 +1,29 @@
+// 07. Lists - 列表操作
+
+// 创建列表
+var numbers = [1, 2, 3, 4, 5];
+var fruits = ["apple", "banana", "cherry"];
+
+// 访问元素
+var first = numbers[0];
+var second = fruits[1];
+
+print first;
+print second;
+
+// 修改元素
+numbers[0] = 10;
+print numbers[0];
+
+// 嵌套列表
+var matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+print matrix[1][2];
+
+// 计算列表和
+var sum = 0;
+for var n in numbers {
+    sum = sum + n;
+}
+print sum;
+
+return sum;

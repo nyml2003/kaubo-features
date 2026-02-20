@@ -1,38 +1,5 @@
-// std.list - List operations module
-// Part of the standard library
+// List utilities (std module)
 
-pub var map = |list, fn| {
-    var result = [];
-    var i = 0;
-    while i < list.len() {
-        result.push(fn(list[i]));
-        i = i + 1;
-    }
-    return result;
-};
-
-pub var filter = |list, predicate| {
-    var result = [];
-    var i = 0;
-    while i < list.len() {
-        if predicate(list[i]) {
-            result.push(list[i]);
-        }
-        i = i + 1;
-    }
-    return result;
-};
-
-pub var reduce = |list, fn, initial| {
-    var acc = initial;
-    var i = 0;
-    while i < list.len() {
-        acc = fn(acc, list[i]);
-        i = i + 1;
-    }
-    return acc;
-};
-
-pub var sum = |list| {
-    return reduce(list, |a, b| { return a + b; }, 0);
+pub var length = |list| -> int {
+    return list.length();
 };

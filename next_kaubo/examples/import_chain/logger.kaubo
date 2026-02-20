@@ -1,14 +1,5 @@
-// Logger module - base of the import chain
-// Provides basic logging functionality
+// Logger module
 
-pub var log_level = "INFO";
-
-pub var log = |message| {
-    print("[" + log_level + "] " + message);
-};
-
-pub var debug = |message| {
-    if log_level == "DEBUG" {
-        print("[DEBUG] " + message);
-    }
+pub var log = |msg| {
+    print msg;
 };

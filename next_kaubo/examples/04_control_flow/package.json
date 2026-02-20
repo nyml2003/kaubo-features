@@ -1,0 +1,6 @@
+{
+  "name": "control-flow",
+  "version": "1.0.0",
+  "entry": "main.kaubo",
+  "description": "Control flow example"
+}

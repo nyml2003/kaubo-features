@@ -51,13 +51,34 @@ cargo run -p kaubo-cli -- examples/hello/package.json
 
 ```
 kaubo/
-├── kaubo-cli/       # CLI 入口
-├── kaubo-api/       # API 层 (执行编排)
-├── kaubo-core/      # 核心 (编译器 + VM)
-├── kaubo-log/       # 日志系统
-├── kaubo-config/    # 配置数据
-├── kaubo-vfs/       # 虚拟文件系统
-└── examples/        # 示例程序
+├── kaubo-cli/           # CLI 入口 (基于 Orchestrator)
+├── kaubo-orchestrator/  # 编排引擎 (组件管理 + 流水线执行)
+├── kaubo-core/          # 核心 (编译器 + VM)
+├── kaubo-log/           # 日志系统
+├── kaubo-config/        # 配置数据
+├── kaubo-vfs/           # 虚拟文件系统
+└── examples/            # 示例程序
+```
+
+### 新架构：组件化编排器
+
+Kaubo 正在迁移到组件化架构 (`kaubo-orchestrator`)：
+
+| 组件类型 | 职责 | 示例 |
+|----------|------|------|
+| **Loader** | 加载源代码 | `FileLoader` |
+| **Converter** | IR 格式转换 | `Source→Tokens` |
+| **Pass** | 编译阶段 | `Lexer`, `Parser`, `CodeGen` |
+| **Emitter** | 输出结果 | `FileEmitter`, `StdoutEmitter` |
+
+流水线通过 `package.json` 中的 `pipeline` 字段配置。
+
+```rust
+// 使用示例
+use kaubo_orchestrator::{Orchestrator, FileLoader, VmConfig};
+
+let mut orch = Orchestrator::new(VmConfig::default());
+orch.register_loader(Box::new(FileLoader::new()));
 ```
 
 ## 开发状态
@@ -66,9 +87,10 @@ kaubo/
 |------|------|------|
 | Phase 0 | 基础设施 | ✅ 完成 |
 | Phase 1 | 模块系统与二进制格式 | 🚧 进行中 |
-| Phase 2 | 泛型类型系统 | 📋 规划中 |
-| Phase 3 | JIT 编译器 | 📋 规划中 |
-| Phase 4 | 热重载 | 📋 规划中 |
+| Phase 2 | 组件化架构迁移 | 🚧 进行中 |
+| Phase 3 | 泛型类型系统 | 📋 规划中 |
+| Phase 4 | JIT 编译器 | 📋 规划中 |
+| Phase 5 | 热重载 | 📋 规划中 |
 
 ### Phase 1 详情
 
@@ -80,8 +102,25 @@ kaubo/
 | 1.4 | 运行时加载器 | 📋 待开始 |
 | 1.5 | 动态链接预留 | 📋 待开始 |
 
+### Phase 2 详情 (组件化架构) ✅ 完成
+
+| 子阶段 | 内容 | 状态 |
+|--------|------|------|
+| 2.1 | Orchestrator 基础架构 | ✅ 完成 |
+| 2.2 | 组件 trait 系统 | ✅ 完成 |
+| 2.3 | Loader/Emitter 实现 | ✅ 完成 |
+| 2.4 | Core→Passes 迁移 | ✅ 完成 |
+| 2.5 | CLI 迁移 | ✅ 完成 |
+| 2.6 | 删除旧 API | ✅ 完成 |
+
+**架构特点：**
+- 组件化：Loader、Converter、Pass、Emitter 四大组件类型
+- 流水线：通过 JSON 配置定义编译流程
+- 可扩展：动态注册组件，支持插件
+
 ## 文档
 
+- [package.json 配置](docs/package-json.md) - 项目配置完整指南
 - [开发指南](DEVELOPMENT.md) - 构建、测试、命令参考
 - [模块系统设计](docs/30-implementation/design/module-system.md)
 - [泛型类型系统设计](docs/30-implementation/design/generic-type-system.md)
