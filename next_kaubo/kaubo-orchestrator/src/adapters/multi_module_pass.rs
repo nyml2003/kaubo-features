@@ -3,7 +3,7 @@
 //! 使用 kaubo-core 的多文件编译器支持 import 语句。
 
 use crate::component::{Capabilities, Component, ComponentKind, ComponentMetadata};
-use crate::converter::{DataFormat, IR};
+use crate::adaptive_parser::{DataFormat, IR};
 use crate::error::PassError;
 use crate::pass::{Input, Output, Pass, PassContext};
 use crate::passes::module::MultiFileCompiler;

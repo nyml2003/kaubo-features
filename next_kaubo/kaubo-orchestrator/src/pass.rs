@@ -4,7 +4,7 @@
 //! Examples include parser, type checker, and code generator.
 
 use crate::component::{Component, ComponentKind, ComponentMetadata, Capabilities};
-use crate::converter::{IR, DataFormat};
+use crate::adaptive_parser::{IR, DataFormat};
 use crate::error::PassError;
 use crate::output::{OutputHandle, new_output_buffer, OutputEntry};
 use std::sync::Arc;
@@ -57,7 +57,7 @@ impl Input {
     }
     
     /// Try to get as tokens
-    pub fn as_tokens(&self) -> Result<&Vec<crate::converter::Token>, PassError> {
+    pub fn as_tokens(&self) -> Result<&Vec<crate::adaptive_parser::Token>, PassError> {
         match &self.data {
             IR::Tokens(t) => Ok(t),
             _ => Err(PassError::InvalidInput {
@@ -77,7 +77,7 @@ impl Input {
     }
     
     /// Try to get as Typed AST
-    pub fn as_typed_ast(&self) -> Result<&crate::converter::TypedAstNode, PassError> {
+    pub fn as_typed_ast(&self) -> Result<&crate::adaptive_parser::TypedAstNode, PassError> {
         match &self.data {
             IR::TypedAst(t) => Ok(t),
             _ => Err(PassError::InvalidInput {

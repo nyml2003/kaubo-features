@@ -16,11 +16,11 @@ pub enum OrchestratorError {
         source: LoaderError,
     },
     
-    #[error("converter error [{name}]: {source}")]
-    ConverterError {
+    #[error("adaptive parser error [{name}]: {source}")]
+    AdaptiveParserError {
         name: String,
         #[source]
-        source: ConverterError,
+        source: AdaptiveParserError,
     },
     
     #[error("pass error [{name}]: {source}")]
@@ -80,9 +80,9 @@ pub enum LoaderError {
     Io(#[from] std::io::Error),
 }
 
-/// Error type for converter components
+/// Error type for adaptive parser components
 #[derive(Error, Debug)]
-pub enum ConverterError {
+pub enum AdaptiveParserError {
     #[error("invalid input format: expected {expected}, got {actual}")]
     InvalidInputFormat {
         expected: String,
@@ -92,8 +92,8 @@ pub enum ConverterError {
     #[error("parse error: {0}")]
     ParseError(String),
     
-    #[error("conversion failed: {0}")]
-    ConversionFailed(String),
+    #[error("parsing failed: {0}")]
+    ParsingFailed(String),
 }
 
 /// Error type for pass components

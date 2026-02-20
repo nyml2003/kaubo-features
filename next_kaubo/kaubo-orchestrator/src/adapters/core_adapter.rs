@@ -4,7 +4,7 @@
 //! 随着迁移进行，这些适配器将被原生 Pass 实现取代。
 
 use crate::component::{Capabilities, Component, ComponentKind, ComponentMetadata};
-use crate::converter::{DataFormat, IR};
+use crate::adaptive_parser::{DataFormat, IR};
 use crate::error::PassError;
 use crate::pass::{Input, Output, Pass, PassContext};
 use std::sync::Arc;

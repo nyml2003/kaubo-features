@@ -1,7 +1,7 @@
 //! File Loader - 从文件系统加载源代码
 
 use crate::component::{Capabilities, Component, ComponentKind, ComponentMetadata};
-use crate::converter::DataFormat;
+use crate::adaptive_parser::DataFormat;
 use crate::error::LoaderError;
 use crate::loader::{Loader, RawData, Source, SourceKind};
 

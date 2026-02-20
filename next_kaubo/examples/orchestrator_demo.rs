@@ -3,9 +3,9 @@
 //! 运行: cargo run --example orchestrator_demo
 
 use kaubo_orchestrator::{
-    FileLoader, FileEmitter, StdoutEmitter, NoOpPass,
+    FileLoader, FileEmitter, StdoutEmitter, BytecodeEmitter, SourceParser, NoOpPass,
     ParserPass, CodeGenPass, CompilePass,
-    Orchestrator, Source,
+    Orchestrator, Source, DataFormat,
 };
 use kaubo_config::VmConfig;
 use std::sync::Arc;
@@ -23,12 +23,14 @@ fn main() {
 
     // 3. 注册组件
     orchestrator.register_loader(Box::new(FileLoader::new()));
+    orchestrator.register_adaptive_parser(Box::new(SourceParser::new()));
     orchestrator.register_emitter(Box::new(FileEmitter::new()));
     orchestrator.register_emitter(Box::new(StdoutEmitter::new()));
+    orchestrator.register_emitter(Box::new(BytecodeEmitter::new()));
     orchestrator.register_pass(Box::new(NoOpPass::new(
         "noop",
-        kaubo_orchestrator::converter::DataFormat::Source,
-        kaubo_orchestrator::converter::DataFormat::Source,
+        DataFormat::Source,
+        DataFormat::Source,
     )));
     
     // 注册 Core 适配器 Pass

@@ -1,7 +1,7 @@
 //! File Emitter - 输出到文件
 
 use crate::component::{Capabilities, Component, ComponentKind, ComponentMetadata};
-use crate::converter::DataFormat;
+use crate::adaptive_parser::DataFormat;
 use crate::emitter::{Emitter, SerializedOutput, Target, TargetKind};
 use crate::error::EmitterError;
 use crate::pass::Output;

@@ -1,11 +1,11 @@
-//! Converter trait and types
+//! AdaptiveParser trait and types
 //!
-//! Converters transform data between different formats,
-//! such as parsing source code into AST, or deserializing JSON.
+//! AdaptiveParsers parse raw input data into initial IR format.
+//! This is the entry point of the pipeline: RawData → IR
 
 use crate::component::{Component, ComponentKind, ComponentMetadata, Capabilities};
 use crate::loader::RawData;
-use crate::error::ConverterError;
+use crate::error::AdaptiveParserError;
 use serde::{Serialize, Deserialize};
 
 // 引入 kaubo-core 类型用于 IR
@@ -13,7 +13,7 @@ use crate::vm::core::Chunk;
 use crate::passes::parser::Module;
 
 /// The format of data
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataFormat {
     /// Raw source text
@@ -128,53 +128,81 @@ pub struct ExecutionResult {
     pub stderr: String,
 }
 
-/// The Converter trait for transforming data between formats
+/// The AdaptiveParser trait for parsing raw data into initial IR
 ///
-/// Implementors convert raw data or IR from one format to another.
-pub trait Converter: Component {
-    /// Get the input format this converter accepts
-    fn input_format(&self) -> DataFormat;
-    
-    /// Get the output format this converter produces
+/// Implementors parse raw input data (from Loader) into the initial IR format.
+/// This is the first stage of the pipeline: RawData → IR
+pub trait AdaptiveParser: Component {
+    /// Get the output IR format this parser produces
     fn output_format(&self) -> DataFormat;
     
-    /// Convert raw data to IR
+    /// Parse raw data to IR
     ///
-    /// Default implementation returns an error.
-    /// Override this if your converter accepts raw data.
-    fn convert_raw(&self, _input: RawData) -> Result<IR, ConverterError> {
-        Err(ConverterError::InvalidInputFormat {
-            expected: "IR".to_string(),
-            actual: "RawData".to_string(),
-        })
-    }
-    
-    /// Convert IR to IR
+    /// # Arguments
+    /// * `input` - The raw data loaded from source
     ///
-    /// Default implementation returns an error.
-    /// Override this if your converter transforms IR.
-    fn convert_ir(&self, _input: IR) -> Result<IR, ConverterError> {
-        Err(ConverterError::InvalidInputFormat {
-            expected: "RawData".to_string(),
-            actual: "IR".to_string(),
-        })
-    }
+    /// # Returns
+    /// The parsed IR
+    fn parse(&self, input: RawData) -> Result<IR, AdaptiveParserError>;
 }
 
-/// Helper methods for Converters
-pub trait ConverterExt: Converter {
-    /// Check if this converter can convert from the given format
-    fn can_convert_from(&self, format: &DataFormat) -> bool {
-        &self.input_format() == format
-    }
-    
-    /// Check if this converter can convert to the given format
-    fn can_convert_to(&self, format: &DataFormat) -> bool {
+/// Helper methods for AdaptiveParsers
+pub trait AdaptiveParserExt: AdaptiveParser {
+    /// Check if this parser can produce the given format
+    fn can_parse_to(&self, format: &DataFormat) -> bool {
         &self.output_format() == format
     }
 }
 
-impl<T: Converter + ?Sized> ConverterExt for T {}
+impl<T: AdaptiveParser + ?Sized> AdaptiveParserExt for T {}
+
+/// SourceParser - 将原始数据直接转换为 Source IR
+/// 
+/// 这是一个简单的适配器，不做实际解析，只是将 RawData 包装为 IR::Source
+pub struct SourceParser;
+
+impl SourceParser {
+    /// Create a new SourceParser
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for SourceParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Component for SourceParser {
+    fn metadata(&self) -> ComponentMetadata {
+        ComponentMetadata::new(
+            "source_parser",
+            "0.1.0",
+            ComponentKind::AdaptiveParser,
+            Some("将原始数据直接转换为 Source IR"),
+        )
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities::new(vec![], vec![DataFormat::Source])
+    }
+}
+
+impl AdaptiveParser for SourceParser {
+    fn output_format(&self) -> DataFormat {
+        DataFormat::Source
+    }
+
+    fn parse(&self, input: RawData) -> Result<IR, AdaptiveParserError> {
+        // 直接将 RawData 转换为 IR::Source
+        let text = match input {
+            RawData::Text(s) => s,
+            RawData::Binary(b) => String::from_utf8_lossy(&b).to_string(),
+        };
+        Ok(IR::Source(text))
+    }
+}
 
 #[cfg(test)]
 mod tests {

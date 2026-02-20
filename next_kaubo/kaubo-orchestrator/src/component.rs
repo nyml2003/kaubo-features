@@ -1,15 +1,15 @@
 //! Component trait definitions
 //!
 //! This module defines the base `Component` trait and related types
-//! that all orchestrator components (Loaders, Converters, Passes, Emitters) implement.
+//! that all orchestrator components (Loaders, AdaptiveParsers, Passes, Emitters) implement.
 
 /// The kind of component
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComponentKind {
     /// Loader: reads input from external sources
     Loader,
-    /// Converter: transforms data between formats
-    Converter,
+    /// AdaptiveParser: parses raw data into initial IR
+    AdaptiveParser,
     /// Pass: transforms intermediate representation (IR)
     Pass,
     /// Emitter: writes output to targets
@@ -20,7 +20,7 @@ impl fmt::Display for ComponentKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ComponentKind::Loader => write!(f, "loader"),
-            ComponentKind::Converter => write!(f, "converter"),
+            ComponentKind::AdaptiveParser => write!(f, "adaptive_parser"),
             ComponentKind::Pass => write!(f, "pass"),
             ComponentKind::Emitter => write!(f, "emitter"),
         }
@@ -28,7 +28,7 @@ impl fmt::Display for ComponentKind {
 }
 
 use std::fmt;
-use crate::converter::DataFormat;
+use crate::adaptive_parser::DataFormat;
 
 /// Metadata about a component
 #[derive(Debug, Clone)]
@@ -88,7 +88,7 @@ impl Capabilities {
 
 /// The base trait for all orchestrator components
 ///
-/// All components (Loaders, Converters, Passes, Emitters) implement this trait.
+/// All components (Loaders, AdaptiveParsers, Passes, Emitters) implement this trait.
 pub trait Component: Send + Sync {
     /// Get the component metadata
     fn metadata(&self) -> ComponentMetadata;

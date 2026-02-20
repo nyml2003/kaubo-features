@@ -1,9 +1,9 @@
 //! Kaubo CLI - Command line interface for Kaubo language
 //!
-//! 这是一个功能完整的实现，与旧 CLI 功能对齐。
+//! Uses Orchestrator for all operations.
 //!
 //! 运行方式:
-//!   cargo run -p kaubo-cli-orchestrator -- examples/hello/package.json
+//!   cargo run -p kaubo-cli -- examples/hello/package.json
 
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -11,9 +11,10 @@ use std::process;
 use std::sync::Arc;
 
 use kaubo_orchestrator::{
-    FileLoader, FileEmitter, StdoutEmitter,
+    FileLoader, FileEmitter, StdoutEmitter, BytecodeEmitter, SourceParser,
     CompilePass, MultiModulePass,
     Orchestrator, Source, Target, OutputBuffer, OutputEntry, new_output_buffer,
+    ExecutionRequest, DataFormat, IR,
 };
 use kaubo_config::VmConfig;
 use kaubo_orchestrator::vm::core::{VM, InterpretResult};
@@ -112,9 +113,6 @@ fn main() {
         .unwrap_or(Path::new("."))
         .join(&package.entry);
     
-    // 创建并配置编排器
-    let mut orchestrator = create_orchestrator(verbose);
-    
     // 根据模式执行
     match mode.as_str() {
         "binary" => {
@@ -129,7 +127,6 @@ fn main() {
             }
             
             match compile_and_execute(
-                &mut orchestrator,
                 &entry_path,
                 verbose,
                 compile_only,
@@ -150,15 +147,59 @@ fn main() {
     }
 }
 
-/// 创建并配置编排器
-fn create_orchestrator(verbose: bool) -> Orchestrator {
+/// 读取源代码并判断是否为多文件模式
+fn detect_mode(entry_path: &Path) -> Result<(String, bool), String> {
+    // 读取入口文件内容
+    let content = std::fs::read_to_string(entry_path)
+        .map_err(|e| format!("Failed to read entry file: {}", e))?;
+    
+    // 检测是否有 import 语句
+    let has_imports = content.contains("import ");
+    
+    Ok((content, has_imports))
+}
+
+/// 编译并执行 - 使用 Orchestrator::run()
+fn compile_and_execute(
+    entry_path: &Path,
+    verbose: bool,
+    compile_only: bool,
+    dump_bytecode: bool,
+    emit_binary: bool,
+) -> Result<(), String> {
+    // 1. 检测编译模式
+    if verbose {
+        println!("  [1/4] Detecting compilation mode...");
+    }
+    
+    let (_source_code, has_imports) = detect_mode(entry_path)?;
+    let pass_name = if has_imports { "multi_module" } else { "compile" };
+    
+    if verbose {
+        if has_imports {
+            println!("        Detected imports - using multi-module compilation");
+        } else {
+            println!("        Single file compilation");
+        }
+        println!("        Selected pass: {}", pass_name);
+    }
+    
+    // 2. 创建并配置编排器
+    if verbose {
+        println!("  [2/4] Setting up orchestrator...");
+    }
+    
     let config = VmConfig::default();
     let mut orchestrator = Orchestrator::new(config);
     
-    // 注册组件
+    // 注册 Loader 和 Emitter
     orchestrator.register_loader(Box::new(FileLoader::new()));
     orchestrator.register_emitter(Box::new(FileEmitter::new()));
     orchestrator.register_emitter(Box::new(StdoutEmitter::new()));
+    orchestrator.register_emitter(Box::new(BytecodeEmitter::new()));
+    
+    // 注册 AdaptiveParser - 将 RawData 转换为 IR::Source
+    orchestrator.register_adaptive_parser(Box::new(SourceParser::new()));
     
     // 注册 Pass
     let logger: Arc<kaubo_log::Logger> = if verbose {
@@ -170,87 +211,27 @@ fn create_orchestrator(verbose: bool) -> Orchestrator {
     orchestrator.register_pass(Box::new(CompilePass::new(logger.clone())));
     orchestrator.register_pass(Box::new(MultiModulePass::new(logger)));
     
-    orchestrator
-}
-
-/// 编译并执行
-fn compile_and_execute(
-    orchestrator: &mut Orchestrator,
-    path: &Path,
-    verbose: bool,
-    compile_only: bool,
-    dump_bytecode: bool,
-    emit_binary: bool,
-) -> Result<(), String> {
-    // 1. 加载文件
+    // 3. 执行编译
     if verbose {
-        println!("  [1/4] Loading source...");
+        println!("  [3/4] Compiling...");
     }
     
-    let loader = orchestrator.loaders()
-        .get("file_loader")
-        .ok_or("File loader not found")?;
+    // 准备执行请求
+    // 注意：对于多文件模式，MultiModulePass 期望输入是文件路径字符串
+    // 对于单文件模式，CompilePass 期望输入是源代码字符串
+    let source = Source::file(entry_path);
     
-    let source = Source::file(path);
-    let raw_data = loader.load(&source)
-        .map_err(|e| format!("Failed to load file: {}", e))?;
+    let request = ExecutionRequest::new(source)
+        .from_to(DataFormat::Source, DataFormat::Bytecode)
+        .with_target(Target::memory())
+        .with_preferred_pass(pass_name);
     
-    let source_code = match raw_data {
-        kaubo_orchestrator::RawData::Text(code) => code,
-        kaubo_orchestrator::RawData::Binary(_) => {
-            return Err("Binary source not supported".to_string());
-        }
-    };
-    
-    if verbose {
-        println!("        Loaded {} bytes", source_code.len());
-    }
-    
-    // 检查是否有 import（多文件编译）
-    let has_imports = source_code.contains("import ");
-    if has_imports && verbose {
-        println!("        Detected imports - using multi-module compilation");
-    }
-    
-    // 2. 编译
-    if verbose {
-        println!("  [2/4] Compiling...");
-    }
-    
-    // 选择 Pass：多文件或单文件
-    let pass_name = if has_imports { "multi_module" } else { "compile" };
-    
-    let compile_pass = orchestrator.passes()
-        .get(pass_name)
-        .or_else(|| orchestrator.passes().get("compile"))
-        .ok_or("Compile pass not found")?;
-    
-    use kaubo_orchestrator::pass::{Input};
-    use kaubo_orchestrator::converter::IR;
-    use kaubo_orchestrator::pass::PassContext;
-    use kaubo_vfs::MemoryFileSystem;
-    
-    // 根据 Pass 类型准备输入
-    let input = if has_imports {
-        // MultiModulePass 需要文件路径
-        Input::new(IR::Source(path.to_string_lossy().to_string()))
-    } else {
-        // CompilePass 需要源代码
-        Input::new(IR::Source(source_code.clone()))
-    };
-    
-    let ctx = PassContext::new(
-        Arc::new(VmConfig::default()),
-        Arc::new(MemoryFileSystem::new()),
-        kaubo_log::Logger::new(kaubo_log::Level::Info),
-    );
-    
-    let output = compile_pass.run(input, &ctx)
+    let result = orchestrator.run(request)
         .map_err(|e| format!("Compilation error: {}", e))?;
     
-    // 获取 chunk
-    let chunk = match &output.data {
-        IR::Bytecode(chunk) => chunk.clone(),
+    // 获取编译结果 (chunk)
+    let chunk = match &result.final_ir {
+        Some(IR::Bytecode(chunk)) => chunk.clone(),
         _ => return Err("Expected Bytecode output".to_string()),
     };
     
@@ -259,42 +240,38 @@ fn compile_and_execute(
         println!("        Constants: {}", chunk.constants.len());
     }
     
-    // 3. 可选：转储字节码
+    // 4. 可选：转储字节码
     if dump_bytecode {
         if verbose {
-            println!("  [3/4] Dumping bytecode...");
+            println!("  [4/4] Dumping bytecode...");
         }
         dump_bytecode_to_stdout(&chunk);
     }
     
-    // 4. 可选：生成二进制文件
+    // 5. 可选：生成二进制文件
     if emit_binary {
         if verbose {
-            println!("  [4/4] Emitting binary...");
+            println!("  Emitting binary...");
         }
-        let binary_path = path.with_extension("kaubod");
+        let binary_path = entry_path.with_extension("kaubod");
         emit_binary_file(&chunk, &binary_path, verbose)?;
     }
     
-    // 5. 执行（如果不是仅编译模式）
+    // 6. 执行（如果不是仅编译模式）
     if !compile_only {
         if verbose {
             if dump_bytecode || emit_binary {
                 println!("  [5/5] Executing...");
             } else {
-                println!("  [3/3] Executing...");
+                println!("  [4/4] Executing...");
             }
         }
         
-        // 创建输出缓冲区来捕获 VM 输出
-        let output_buffer = new_output_buffer();
+        // 输出捕获的内容（克隆以避免 borrow 问题）
+        let output_entries = result.output_entries.clone();
+        let has_real_output = output_entries.iter().any(|e| matches!(e, OutputEntry::Print(_) | OutputEntry::Error(_)));
         
-        // 执行字节码，输出被捕获到缓冲区
-        execute_bytecode_with_output(&chunk, verbose, Some(output_buffer.clone()))?;
-        
-        // 通过 Emitter 输出捕获的内容（这里直接使用 stdout）
-        let entries = output_buffer.drain();
-        for entry in entries {
+        for entry in output_entries {
             match entry {
                 OutputEntry::Print(msg) => println!("{}", msg),
                 OutputEntry::Source(src) => println!("{}", src),
@@ -302,6 +279,11 @@ fn compile_and_execute(
                 OutputEntry::Info(info) => println!("{}", info),
                 OutputEntry::Error(err) => eprintln!("{}", err),
             }
+        }
+        
+        // 如果没有输出条目，直接执行字节码
+        if !has_real_output {
+            execute_bytecode(&chunk, verbose)?;
         }
     }
     
@@ -410,26 +392,8 @@ fn execute_bytecode(
     chunk: &kaubo_orchestrator::vm::core::Chunk,
     verbose: bool,
 ) -> Result<(), String> {
-    execute_bytecode_with_output(chunk, verbose, None)
-}
-
-/// 执行字节码（带输出缓冲区）
-fn execute_bytecode_with_output(
-    chunk: &kaubo_orchestrator::vm::core::Chunk,
-    verbose: bool,
-    output_buffer: Option<Arc<dyn OutputBuffer>>,
-) -> Result<(), String> {
-    
     // 创建 VM
     let mut vm = VM::new();
-    
-    // 设置输出回调（如果有输出缓冲区）
-    if let Some(buffer) = output_buffer {
-        let buffer_clone = buffer.clone();
-        vm.set_output_callback(move |msg| {
-            buffer_clone.push(kaubo_orchestrator::OutputEntry::Print(msg.to_string()));
-        });
-    }
     
     // 执行 chunk
     match vm.interpret(&chunk) {
@@ -523,15 +487,6 @@ Hint: Create a '{}' file with an 'entry' field",
 mod tests {
     use super::*;
     use std::path::Path;
-    
-    #[test]
-    fn test_orchestrator_creation() {
-        let orch = create_orchestrator(false);
-        
-        assert_eq!(orch.loaders().len(), 1);
-        assert_eq!(orch.passes().len(), 2);  // CompilePass + MultiModulePass
-        assert_eq!(orch.emitters().len(), 2);
-    }
     
     #[test]
     fn test_package_json_parsing() {

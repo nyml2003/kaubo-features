@@ -4,7 +4,7 @@
 
 use crate::component::{Component, ComponentKind};
 use crate::loader::Loader;
-use crate::converter::{Converter, DataFormat};
+use crate::adaptive_parser::{AdaptiveParser, DataFormat};
 use crate::pass::Pass;
 use crate::emitter::Emitter;
 use std::collections::HashMap;
@@ -103,8 +103,8 @@ impl<T: Component + ?Sized> Registry<T> {
 /// Registry for Loader components
 pub type LoaderRegistry = Registry<dyn Loader>;
 
-/// Registry for Converter components
-pub type ConverterRegistry = Registry<dyn Converter>;
+/// Registry for AdaptiveParser components
+pub type AdaptiveParserRegistry = Registry<dyn AdaptiveParser>;
 
 /// Registry for Pass components
 pub type PassRegistry = Registry<dyn Pass>;
@@ -116,7 +116,7 @@ pub type EmitterRegistry = Registry<dyn Emitter>;
 #[derive(Default)]
 pub struct ComponentRegistry {
     pub loaders: LoaderRegistry,
-    pub converters: ConverterRegistry,
+    pub adaptive_parsers: AdaptiveParserRegistry,
     pub passes: PassRegistry,
     pub emitters: EmitterRegistry,
 }
@@ -125,7 +125,7 @@ impl std::fmt::Debug for ComponentRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ComponentRegistry")
             .field("loaders_count", &self.loaders.len())
-            .field("converters_count", &self.converters.len())
+            .field("adaptive_parsers_count", &self.adaptive_parsers.len())
             .field("passes_count", &self.passes.len())
             .field("emitters_count", &self.emitters.len())
             .finish()
@@ -137,7 +137,7 @@ impl ComponentRegistry {
     pub fn new() -> Self {
         Self {
             loaders: LoaderRegistry::new(),
-            converters: ConverterRegistry::new(),
+            adaptive_parsers: AdaptiveParserRegistry::new(),
             passes: PassRegistry::new(),
             emitters: EmitterRegistry::new(),
         }
@@ -145,7 +145,7 @@ impl ComponentRegistry {
     
     /// Get total component count
     pub fn total_count(&self) -> usize {
-        self.loaders.len() + self.converters.len() + self.passes.len() + self.emitters.len()
+        self.loaders.len() + self.adaptive_parsers.len() + self.passes.len() + self.emitters.len()
     }
     
     /// Print registry info
@@ -155,8 +155,8 @@ impl ComponentRegistry {
         for name in self.loaders.names() {
             println!("    - {}", name);
         }
-        println!("  Converters: {}", self.converters.len());
-        for name in self.converters.names() {
+        println!("  Adaptive Parsers: {}", self.adaptive_parsers.len());
+        for name in self.adaptive_parsers.names() {
             println!("    - {}", name);
         }
         println!("  Passes: {}", self.passes.len());
@@ -228,6 +228,7 @@ mod tests {
         registry.passes.register(Box::new(TestPass { name: "parser" }));
         
         assert_eq!(registry.total_count(), 2);
+        
     }
 
     struct TestPass {
@@ -250,16 +251,16 @@ mod tests {
     }
 
     impl Pass for TestPass {
-        fn input_format(&self) -> crate::converter::DataFormat {
-            crate::converter::DataFormat::Source
+        fn input_format(&self) -> crate::adaptive_parser::DataFormat {
+            crate::adaptive_parser::DataFormat::Source
         }
         
-        fn output_format(&self) -> crate::converter::DataFormat {
-            crate::converter::DataFormat::Ast
+        fn output_format(&self) -> crate::adaptive_parser::DataFormat {
+            crate::adaptive_parser::DataFormat::Ast
         }
         
         fn run(&self, _input: crate::pass::Input, _ctx: &crate::pass::PassContext) -> Result<crate::pass::Output, crate::error::PassError> {
-            Ok(crate::pass::Output::new(crate::converter::IR::Source("".to_string())))
+            Ok(crate::pass::Output::new(crate::adaptive_parser::IR::Source("".to_string())))
         }
     }
 }

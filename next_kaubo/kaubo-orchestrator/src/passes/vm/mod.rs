@@ -1,7 +1,7 @@
 //! VM Execution Pass
 
 use crate::component::{Capabilities, Component, ComponentKind, ComponentMetadata};
-use crate::converter::{DataFormat, IR};
+use crate::adaptive_parser::{DataFormat, IR};
 use crate::error::PassError;
 use crate::pass::{Input, Output, Pass, PassContext};
 use crate::vm::core::{Chunk, InterpretResult, VM};
@@ -52,17 +52,17 @@ impl Pass for VmExecutionPass {
 
         // Convert VM result to ExecutionResult
         let exec_result = match result {
-            InterpretResult::Ok => crate::converter::ExecutionResult {
+            InterpretResult::Ok => crate::adaptive_parser::ExecutionResult {
                 exit_code: 0,
                 stdout: String::new(),
                 stderr: String::new(),
             },
-            InterpretResult::CompileError(msg) => crate::converter::ExecutionResult {
+            InterpretResult::CompileError(msg) => crate::adaptive_parser::ExecutionResult {
                 exit_code: 1,
                 stdout: String::new(),
                 stderr: format!("Compile error: {}", msg),
             },
-            InterpretResult::RuntimeError(msg) => crate::converter::ExecutionResult {
+            InterpretResult::RuntimeError(msg) => crate::adaptive_parser::ExecutionResult {
                 exit_code: 1,
                 stdout: String::new(),
                 stderr: format!("Runtime error: {}", msg),
