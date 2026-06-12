@@ -8,9 +8,10 @@
 
 | 文档 | 内容 | 优先级 | 预计阶段 |
 |------|------|--------|----------|
-| [generic-type-system.md](generic-type-system.md) | 编译时泛型系统 | P0 | Phase 3+ |
-| [module-system.md](module-system.md) | 单文件单模块 + 插件化 Std | P1 | Phase 3+ |
-| [method-type-inference.md](method-type-inference.md) | 链式调用类型推断 | P1 | Phase 3+ |
+| [module-system.md](module-system.md) | 单文件单模块 + 插件化 Std | P1 | post-MVP |
+| [method-type-inference.md](method-type-inference.md) | 链式调用类型推断 | P1 | post-MVP |
+
+> 泛型系统设计已归档至 [90-archive/generic-type-system.md](../../90-archive/generic-type-system.md)
 
 ---
 
@@ -31,4 +32,4 @@
 
 ---
 
-*最后更新：2026-02-17*
+*最后更新：2026-06-11*

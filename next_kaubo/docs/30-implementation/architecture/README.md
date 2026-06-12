@@ -36,7 +36,7 @@
 ## 组件边界
 
 ```
-kaubo-core/
+kaubo-orchestrator/
 ├── kit/lexer/      # 流式Lexer
 ├── compiler/
 │   ├── parser/     # Parser

@@ -73,10 +73,11 @@ impl Context {
         self.data.remove(key)
     }
     
-    /// Get config value
-    pub fn config_val(&self, _key: &str) -> Option<&Value> {
-        // TODO: implement config value access
-        None
+    /// Get config value by key (from VmConfig serialized as JSON)
+    pub fn config_val(&self, key: &str) -> Option<Value> {
+        serde_json::to_value(&*self.config)
+            .ok()
+            .and_then(|v| v.get(key).cloned())
     }
     
     /// Log a message
@@ -132,11 +133,6 @@ impl StageContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Mock types for testing
-    struct MockConfig;
-    struct MockVfs;
-    struct MockLogger;
 
     #[test]
     fn test_context_data() {

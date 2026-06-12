@@ -1,7 +1,7 @@
-﻿# Tracing 到 kaubo-log 迁移记录
+# Tracing 到 kaubo-log 迁移记录
 
 > 迁移时间：2026-02-14  
-> 涉及范围：全仓库（kaubo-core, kaubo-api, kaubo-cli）  
+> 涉及范围：全仓库（kaubo-orchestrator, kaubo-cli）  
 > 目标：移除 tracing 依赖，统一使用显式 logger
 
 ## 背景
@@ -47,10 +47,10 @@ let (logger, _) = LogConfig::dev().init();
 │  ├─ tracing-subscriber (全局配置)        │
 │  └─ tracing::info! (全局日志)            │
 ├─────────────────────────────────────────┤
-│  kaubo-api                              │
+│  kaubo-orchestrator                              │
 │  └─ tracing::instrument (自动 span)      │
 ├─────────────────────────────────────────┤
-│  kaubo-core                             │
+│  kaubo-orchestrator                             │
 │  ├─ kit::lexer: tracing::trace          │
 │  ├─ parser: tracing::debug              │
 │  ├─ compiler: 无日志                     │
@@ -66,10 +66,10 @@ let (logger, _) = LogConfig::dev().init();
 │  ├─ kaubo-log (LogConfig::dev())        │
 │  └─ println! (步骤输出)                  │
 ├─────────────────────────────────────────┤
-│  kaubo-api                              │
+│  kaubo-orchestrator                              │
 │  └─ RunConfig.logger (显式传递)          │
 ├─────────────────────────────────────────┤
-│  kaubo-core                             │
+│  kaubo-orchestrator                             │
 │  ├─ kit::lexer: Logger 字段 + 方法参数   │
 │  ├─ parser: Parser::with_logger()       │
 │  ├─ compiler: Compiler::with_logger()   │
@@ -377,8 +377,8 @@ fn test_lexer_logs_content() {
 ```bash
 $ cargo test --workspace
 
-test result: ok. 235 passed (kaubo-core)
-test result: ok.   3 passed (kaubo-api)
+test result: ok. 235 passed (kaubo-orchestrator)
+test result: ok.   3 passed (kaubo-orchestrator)
 test result: ok.   0 passed (kaubo-cli, 无测试)
 ```
 
@@ -392,13 +392,13 @@ test result: ok.   0 passed (kaubo-cli, 无测试)
 - tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 ```
 
-**kaubo-core/Cargo.toml**：
+**kaubo-orchestrator/Cargo.toml**：
 ```diff
 - tracing = { workspace = true }
   kaubo-log = { workspace = true }
 ```
 
-**kaubo-api/Cargo.toml**：
+**kaubo-orchestrator/Cargo.toml**：
 ```diff
 - tracing = { workspace = true }
   kaubo-log = { workspace = true, features = ["alloc", "stdout"] }
@@ -454,7 +454,7 @@ let vm = VM::with_logger(logger);
 ### 遇到的挑战
 
 1. **`Arc<Logger>` 生命周期**：需要在多组件间共享，使用 `Arc` 是必要妥协
-2. **`extern crate alloc`**：kaubo-api 和 kaubo-cli 需要显式声明以使用宏
+2. **`extern crate alloc`**：kaubo-orchestrator 和 kaubo-cli 需要显式声明以使用宏
 3. **`thiserror` 依赖**：暂时保留，未来可考虑纯 `core::fmt::Display` 实现
 
 ### 设计决策记录

@@ -438,7 +438,8 @@ fn string_len(_vm: &mut VM, receiver: Value, args: &[Value]) -> Result<Value, St
     }
 
     if let Some(ptr) = receiver.as_string() {
-        let len = unsafe { (*ptr).chars.len() as i32 };
+        let s = unsafe { &(*ptr).chars };
+        let len = s.len() as i32;
         Ok(Value::smi(len))
     } else {
         Err("len() receiver must be a string".to_string())
@@ -455,7 +456,8 @@ fn string_is_empty(_vm: &mut VM, receiver: Value, args: &[Value]) -> Result<Valu
     }
 
     if let Some(ptr) = receiver.as_string() {
-        let is_empty = unsafe { (*ptr).chars.is_empty() };
+        let s = unsafe { &(*ptr).chars };
+        let is_empty = s.is_empty();
         Ok(Value::bool_from(is_empty))
     } else {
         Err("is_empty() receiver must be a string".to_string())

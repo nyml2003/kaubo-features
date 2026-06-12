@@ -32,6 +32,8 @@ pub struct Compiler {
     pub(crate) struct_infos: HashMap<String, StructInfo>,
     pub(crate) var_types: HashMap<String, VarType>,
     pub(crate) logger: Arc<Logger>,
+    pub(crate) break_jumps: Vec<usize>,
+    pub(crate) loop_start: Option<usize>,
 }
 
 impl Compiler {
@@ -81,6 +83,8 @@ impl Compiler {
             struct_infos,
             var_types: HashMap::new(),
             logger,
+            break_jumps: Vec::new(),
+            loop_start: None,
         }
     }
 
@@ -123,6 +127,8 @@ impl Compiler {
             struct_infos,
             var_types: HashMap::new(),
             logger,
+            break_jumps: Vec::new(),
+            loop_start: None,
         }
     }
 
@@ -151,9 +157,11 @@ impl Compiler {
             modules: Vec::new(),
             imported_modules: Vec::new(),
             module_aliases: HashMap::new(),
-            struct_infos,              // 继承父编译器的 struct_infos
-            var_types: HashMap::new(), // 子编译器创建新的类型环境
+            struct_infos,
+            var_types: HashMap::new(),
             logger,
+            break_jumps: Vec::new(),
+            loop_start: None,
         }
     }
 

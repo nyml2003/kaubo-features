@@ -339,7 +339,8 @@ impl TypeChecker {
             StmtKind::Return(return_stmt) => self.check_return(return_stmt),
             StmtKind::Struct(struct_stmt) => self.check_struct_def(struct_stmt),
             StmtKind::Impl(impl_stmt) => self.check_impl_def(impl_stmt),
-            StmtKind::Empty(_) => Ok(None),
+            StmtKind::Empty(_) | StmtKind::Pass(_) => Ok(None),
+            StmtKind::Break(_) | StmtKind::Continue(_) => Ok(None),
             _ => {
                 // 其他语句类型暂不支持类型检查
                 Ok(None)
@@ -459,9 +460,20 @@ impl TypeChecker {
     /// 检查 if 语句
     fn check_if(&mut self, if_stmt: &IfStmt) -> TypeCheckResult<Option<TypeExpr>> {
         // 检查条件表达式（应该是 bool 类型）
-        // TODO: 严格模式下检查 cond_type 是否为 bool
-        #[allow(unused)]
         let cond_type = self.check_expression(&if_stmt.if_condition)?;
+        if self.strict_mode {
+            if let Some(ref ty) = cond_type {
+                if *ty != TypeExpr::named("bool") {
+                    return Err(TypeError::Mismatch {
+                        expected: "bool".to_string(),
+                        found: ty.to_string(),
+                        location: ErrorLocation::Unknown,
+                    });
+                }
+            }
+        } else {
+            let _ = cond_type;
+        }
 
         // 检查 then 分支
         self.check_statement(&if_stmt.then_body)?;
@@ -890,12 +902,9 @@ impl TypeChecker {
         struct_lit: &StructLiteral,
     ) -> TypeCheckResult<Option<TypeExpr>> {
         // 查找 struct 类型定义
-        // TODO: 使用 field_defs 验证字段名和类型
-        #[allow(unused)]
-        let field_defs = match self.struct_types.get(&struct_lit.name) {
-            Some(fields) => fields,
+        let field_type_map: HashMap<String, TypeExpr> = match self.struct_types.get(&struct_lit.name) {
+            Some(fields) => fields.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             None => {
-                // struct 类型未定义，但在非严格模式下允许
                 if self.strict_mode {
                     return Err(TypeError::UndefinedVar {
                         name: struct_lit.name.clone(),
@@ -906,10 +915,26 @@ impl TypeChecker {
             }
         };
 
-        // 检查字段（简化版：只检查字段值表达式）
-        // TODO: 检查字段名是否存在，类型是否匹配
-        for (_field_name, value_expr) in &struct_lit.fields {
-            let _value_type = self.check_expression(value_expr)?;
+        // 检查字段类型
+        for (field_name, value_expr) in &struct_lit.fields {
+            let value_type = self.check_expression(value_expr)?;
+            if let Some(expected_type) = field_type_map.get(field_name) {
+                if let Some(ref actual) = value_type {
+                    if !self.is_compatible(actual, expected_type) {
+                        return Err(TypeError::Mismatch {
+                            expected: expected_type.to_string(),
+                            found: actual.to_string(),
+                            location: ErrorLocation::Unknown,
+                        });
+                    }
+                }
+            } else if self.strict_mode {
+                return Err(TypeError::Mismatch {
+                    expected: format!("field '{}'", field_name),
+                    found: "unknown field".to_string(),
+                    location: ErrorLocation::Unknown,
+                });
+            }
         }
 
         // 返回 struct 类型
@@ -1017,10 +1042,8 @@ mod tests {
         let mut parser = Parser::new(lexer);
         let module = parser.parse().expect("Parse failed");
 
-        // TODO: 严格类型检查完善后启用断言
-        #[allow(unused)]
-        let _result = checker.check_statement(&module.statements[0]);
-        // assert!(_result.is_err());
+        let result = checker.check_statement(&module.statements[0]);
+        assert!(result.is_err());
     }
 
     #[test]

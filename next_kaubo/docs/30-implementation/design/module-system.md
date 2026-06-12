@@ -54,7 +54,7 @@ import std.math as m;          // 别名
 
 ### 3.1 核心原则
 
-- **独立 crate**：`kaubo-std` 是独立包，不依赖 `kaubo-core`
+- **独立 crate**：`kaubo-std` 是独立包，不依赖 `kaubo-orchestrator`
 - **自动包装**：编译器通过宏自动将 Rust 函数包装为 Kaubo 可调用
 - **插件化**：任何 crate 实现 `StdModule` trait 即可注册
 
@@ -124,7 +124,7 @@ impl MathModule {
 
 ### 3.4 编译器集成
 
-**只需新增一个文件**：`kaubo-core/src/native_registry.rs`
+**只需新增一个文件**：`kaubo-orchestrator/src/native_registry.rs`
 
 ```rust
 pub struct NativeRegistry {
@@ -154,7 +154,7 @@ impl NativeRegistry {
 }
 ```
 
-**你的 `kaubo-core/src/` 结构保持不变**，只新增 `native_registry.rs`。
+**你的 `kaubo-orchestrator/src/` 结构保持不变**，只新增 `native_registry.rs`。
 
 ---
 
@@ -263,7 +263,7 @@ impl ModuleResolver {
 
 ```
 workspace/
-├── kaubo-core/              # 你的编译器（最小改动）
+├── kaubo-orchestrator/              # 你的编译器（最小改动）
 │   ├── src/
 │   │   ├── lib.rs
 │   │   ├── compiler/

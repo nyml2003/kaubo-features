@@ -1,5 +1,7 @@
 # Kaubo 架构 V2 迁移方案
 
+> **历史文档** — 此文档描述了从 `kaubo-core` 到 `kaubo-orchestrator` 的迁移计划。迁移已完成，`kaubo-core` 已删除。仅供历史参考。
+
 ## 当前项目结构
 
 ```

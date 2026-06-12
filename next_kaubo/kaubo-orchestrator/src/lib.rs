@@ -22,6 +22,11 @@ pub mod emitters;
 pub mod vm;
 pub mod kit;
 
+// New architecture layers (DDD / Clean Architecture)
+pub mod domain;
+pub mod infrastructure;
+pub mod application;
+
 pub use component::{Component, ComponentKind, ComponentMetadata, Capabilities};
 pub use loader::{Loader, Source, SourceKind, RawData};
 pub use adaptive_parser::{AdaptiveParser, IR, DataFormat};
@@ -296,7 +301,12 @@ impl Orchestrator {
                     })?
             } else {
                 // Use first matching pass
-                matching_passes.into_iter().next().unwrap()
+                matching_passes.into_iter().next().ok_or_else(|| {
+                    OrchestratorError::IncompleteChain {
+                        from: from.to_string(),
+                        to: to.to_string(),
+                    }
+                })?
             };
             
             current = pass.output_format();

@@ -1,0 +1,26 @@
+var mandel = || {
+    var w = 500; var h = 500; var max_iter = 50;
+    var xmin = -2.0; var xmax = 1.0;
+    var ymin = -1.5; var ymax = 1.5;
+    var dx = (xmax - xmin) / (w as float);
+    var dy = (ymax - ymin) / (h as float);
+    var py = 0;
+    while py < h {
+        var y0 = ymin + (py as float) * dy;
+        var px = 0;
+        while px < w {
+            var x0 = xmin + (px as float) * dx;
+            var x = 0.0; var y = 0.0; var iter = 0;
+            while iter < max_iter {
+                var x_sq = x * x; var y_sq = y * y;
+                if x_sq + y_sq > 4.0 { break; }
+                y = 2.0 * x * y + y0;
+                x = x_sq - y_sq + x0;
+                iter = iter + 1;
+            }
+            px = px + 1;
+        }
+        py = py + 1;
+    }
+};
+mandel();

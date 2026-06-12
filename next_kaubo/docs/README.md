@@ -21,8 +21,8 @@
 1. [核心原则](00-principles/README.md) - 不可妥协的原则
 2. [约束条件](10-constraints/) - 复杂度/性能红线
 3. [实现总览](30-implementation/architecture/README.md) - 架构方向
-4. [迭代路线图](30-implementation/architecture/roadmap.md) - 当前阶段与未来规划
-5. [演进计划](40-evolution/README.md) - 泛型系统、模块改造等设计
+4. [迭代路线图](30-implementation/architecture/roadmap.md) - 当前阶段
+5. [演进计划](40-evolution/README.md) - MVP 收敛与后续方向
 6. [技术债务](30-implementation/tech-debt.md) - 待办事项
 
 ---
@@ -65,18 +65,15 @@ docs/
 │   │   ├── builtin-methods.md   # 内置方法设计
 │   │   └── kaubo-log.md         # 日志系统
 │   │
-│   ├── design/                  # 待实现设计
+│   ├── design/                  # 设计文档
 │   │   ├── README.md            # 设计文档索引
-│   │   ├── generic-type-system.md    # 泛型系统
 │   │   ├── module-system.md          # 模块系统改造
 │   │   └── method-type-inference.md  # 类型推断增强
 │   │
 │   └── tech-debt.md             # 技术债务清单
 │
 ├── 40-evolution/                # 演进计划
-│   ├── README.md                # 演进计划总览
-│   ├── 2025-roadmap.md          # 20周完整路线图
-│   └── assessment.md            # 方案评估（历史版本）
+│   └── README.md                # MVP 收敛与后续方向
 │
 ├── 50-lessons/                  # 经验总结
 │   ├── README.md                # 经验总结索引
@@ -98,12 +95,10 @@ docs/
 | 当前实现架构 | [架构总览](30-implementation/architecture/README.md) |
 | 运算符重载怎么实现 | [运算符重载](30-implementation/completed/operators.md) |
 | `as` 支持哪些类型转换 | [类型系统](20-language/spec/types.md) → as 类型转换 |
-| 配置文件格式 | [配置系统](30-implementation/architecture/config.md) |
+| 配置文件格式 | [配置系统](package-json.md) |
 | 性能目标 | [性能约束](10-constraints/performance-limits.md) |
 | 为什么不能重载 `and`/`or` | [运算符重载](30-implementation/completed/operators.md) → 不支持重载 |
-| 热重载何时实现 | [架构总览](30-implementation/architecture/roadmap.md) → Phase 5 |
-| JIT何时实现 | [架构总览](30-implementation/architecture/roadmap.md) → Phase 4 |
-| 泛型系统规划 | [演进计划](40-evolution/README.md) |
+| MVP 路线图 | [DEVELOPMENT.md](../DEVELOPMENT.md) |
 
 ---
 
@@ -117,4 +112,4 @@ docs/
 
 ---
 
-*最后更新：2026-02-17*
+*最后更新：2026-06-11*

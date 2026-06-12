@@ -432,7 +432,7 @@ kaubo run app.kpk
 ## 8. 文件结构
 
 ```
-kaubo-core/
+kaubo-orchestrator/
 ├── compiler/
 │   └── emitter/
 │       ├── mod.rs

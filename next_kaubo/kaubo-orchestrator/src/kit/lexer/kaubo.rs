@@ -165,8 +165,11 @@ impl KauboScanner {
         &mut self,
         _stream: &mut CharStream,
     ) -> ScanResult<Token<KauboTokenKind>> {
-        // TODO: 实现模板字符串扫描
-        unimplemented!("Template string mode not yet implemented")
+        ScanResult::Error(LexError {
+            kind: super::scanner::ErrorKind::Custom("unsupported".into()),
+            position: self.token_start,
+            message: "Template strings are not yet supported".to_string(),
+        })
     }
 
     /// 插值表达式模式（预留）
@@ -174,8 +177,11 @@ impl KauboScanner {
         &mut self,
         _stream: &mut CharStream,
     ) -> ScanResult<Token<KauboTokenKind>> {
-        // TODO: 实现插值表达式扫描
-        unimplemented!("Interpolation mode not yet implemented")
+        ScanResult::Error(LexError {
+            kind: super::scanner::ErrorKind::Custom("unsupported".into()),
+            position: self.token_start,
+            message: "String interpolation is not yet supported".to_string(),
+        })
     }
 
     /// 创建单字符 token
@@ -559,7 +565,6 @@ static KEYWORD_TABLE: &[(&str, KauboTokenKind)] = &[
     ("break", KauboTokenKind::Break),
     ("continue", KauboTokenKind::Continue),
     ("struct", KauboTokenKind::Struct),
-    ("interface", KauboTokenKind::Interface),
     ("impl", KauboTokenKind::Impl),
     ("import", KauboTokenKind::Import),
     ("as", KauboTokenKind::As),
@@ -568,8 +573,6 @@ static KEYWORD_TABLE: &[(&str, KauboTokenKind)] = &[
     ("and", KauboTokenKind::And),
     ("or", KauboTokenKind::Or),
     ("not", KauboTokenKind::Not),
-    ("async", KauboTokenKind::Async),
-    ("await", KauboTokenKind::Await),
     ("module", KauboTokenKind::Module),
     ("pub", KauboTokenKind::Pub),
     ("print", KauboTokenKind::Print),

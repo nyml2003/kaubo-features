@@ -1,44 +1,34 @@
-# Kaubo 语法参考（v2026.02）
+# Kaubo 语法参考 (MVP)
 
-> 本文档描述当前实际实现的语法。状态：稳定，随时可能扩展。
-
-## 核心设计理念
-
-> **默认静态，显式动态。**
-> 
-> 类似 Rust `mut` 默认不可变：  
-> - `let x = 5;`      // 不可变  
-> - `let mut x = 5;`  // 可变  
->
-> Kaubo 默认编译期确定：  
-> - `var x = 5;`           // 编译期常量  
-> - `runtime var x = 5;`   // 运行时变量
+> 本文档描述当前实际实现的语法。版本：v0.1.0
 
 ---
 
-## 词法元素
-
-### 关键字
+## 关键字
 
 ```
-var, val, runtime, if, else, elif, while, for, return, in, yield
-break, continue, struct, impl, import, as, from
-module, pub, json, cfg
+var, if, else, elif, while, for, return, in, yield
+break, continue, struct, impl, import, as, from, pass
+module, pub, json
 true, false, null
 and, or, not
 ```
 
-### 字面量
+---
+
+## 字面量
 
 | 类型 | 示例 | 说明 |
 |------|------|------|
-| 整数 | `42`, `-10`, `0` | 32位有符号整数 |
-| 浮点数 | `3.14`, `-0.5` | 64位浮点数 |
-| 字符串 | `"hello"`, `'world'` | 支持 `"` 或 `'` 包裹 |
+| 整数 | `42`, `-10`, `0` | 32 位有符号整数 |
+| 浮点数 | `3.14`, `-0.5` | 64 位浮点数 |
+| 字符串 | `"hello"` | 双引号包裹 |
 | 布尔 | `true`, `false` | 布尔值 |
 | null | `null` | 空值 |
 
-### 运算符
+---
+
+## 运算符
 
 | 优先级 | 运算符 | 说明 | 结合性 |
 |--------|--------|------|--------|
@@ -56,52 +46,39 @@ and, or, not
 ### 分隔符
 
 ```
-( )      // 圆括号
-{ }      // 花括号（代码块、struct/impl 体）
-[ ]      // 方括号（列表、索引）
-;        // 语句结束
-:        // 类型标注分隔符
-,        // 列表分隔符
-| |      // lambda 参数包裹
-->       // 返回类型箭头
-=>       // （保留）
+( )     圆括号
+{ }     花括号（代码块、struct/impl 体）
+[ ]     方括号（列表、索引）
+;       语句结束
+:       类型标注分隔符
+,       列表分隔符
+| |     lambda 参数包裹
+->      返回类型箭头
 ```
 
 ---
 
-## 语句（Statements）
+## 语句
 
 ### 变量声明
 
 ```kaubo
-// 默认编译期变量（值必须在编译期可确定）
-var x = 1;                    // x 是编译期常量
-var y: int = 2;               // 显式类型标注
-val z = 3.14;                 // val 也是编译期常量
-
-// 运行时变量（显式标记）
-runtime var user_input = read_line();   // 运行时才能确定
-runtime var timestamp = std.now();      // 运行时获取时间
-
-// 编译期变量可以用编译期表达式初始化
-var size = 100;
-var double_size = size * 2;     // 编译期计算
-
-// 编译期变量不能用运行时值初始化
-runtime var dynamic = get_random();  // OK
-var static_val = dynamic;            // ERROR: 不能用运行时值初始化编译期变量
+var x = 1;
+var y: int = 2;
+pub var z = 42;         // 导出到模块
 ```
-
-**规则：**
-- `var` / `val`：编译期变量，值必须在编译期可确定
-- `runtime var` / `runtime val`：运行时变量，值在运行时确定
-- 习惯上编译期常量用大写（`MAX_SIZE`），运行时变量用小写（`user_input`）
 
 ### 表达式语句
 
 ```kaubo
-1 + 2;                        // 表达式作为语句
-print("hello");               // 函数调用
+1 + 2;
+print("hello");
+```
+
+### 占位语句
+
+```kaubo
+pass;                   // 空操作
 ```
 
 ### 代码块
@@ -117,121 +94,68 @@ print("hello");               // 函数调用
 ### 条件语句
 
 ```kaubo
-// if 语句
 if condition {
     // ...
 }
 
-// if-else
 if condition {
     // ...
 } else {
     // ...
 }
 
-// if-elif-else 链
 if a > 0 {
     // ...
 } elif a == 0 {
     // ...
-} elif a < 0 {
-    // ...
 } else {
     // ...
 }
-
-// 编译期条件（条件是编译期常量，分支可能完全消除）
-if (cfg.DEBUG) {
-    // 只在 debug 模式编译的代码
-}
-
-// 运行时条件（显式标记）
-runtime if (user_input == "yes") {
-    // 运行时决定的代码路径
-}
-
-// if 表达式（返回值）
-var log_level = if (cfg.DEBUG) { "verbose" } else { "error" };
 ```
 
 ### 循环语句
 
 ```kaubo
-// while 循环
+// while
 while condition {
-    // ...
+    if done { break; }
+    if skip { continue; }
 }
 
-// for 循环（迭代列表）
+// for-in
 for item in list {
-    // ...
+    print(item);
 }
 
-// for 循环（range）
+// for with range
 for i in range(0, 10) {
-    // ...
-}
-
-// break / continue
-while true {
-    if should_stop {
-        break;
-    }
-    if should_skip {
-        continue;
-    }
+    print(i);
 }
 ```
 
 ### 返回语句
 
 ```kaubo
-return;           // 无返回值
-return value;     // 返回表达式值
+return;
+return value;
 ```
 
 ### 结构体定义
 
 ```kaubo
-// 编译期结构体（默认）
-// 所有字段必须是编译期可确定的
 struct Point {
     x: float,
     y: float
 }
 
-struct Config {
-    max_size: int,
-    debug: bool
-}
-
-// 使用编译期常量定义数组大小
-val SIZE = cfg.BUFFER_SIZE;
-struct Buffer {
-    data: [int; SIZE],    // 编译期确定的数组大小
-    len: int
-}
-
-// 运行时结构体（显式标记）
-runtime struct UserSession {
-    id: string,                 // 字段可以是运行时值
-    created_at: int,
-    token: string
-}
-
-// 编译期结构体不能包含运行时字段
-struct BadConfig {
-    value: int,
-    timestamp: std.now()        // ERROR：std.now() 是运行时函数
-}
+var p = Point { x: 1.0, y: 2.0 };
+print(p.x);  // 1.0
 ```
 
 ### 方法实现
 
 ```kaubo
-// 编译期 impl（默认）
 impl Point {
-    // 方法必须是编译期函数
     distance: |self: Point, other: Point| -> float {
         var dx = self.x - other.x;
         var dy = self.y - other.y;
@@ -239,267 +163,139 @@ impl Point {
     }
 }
 
-// 运行时 impl（显式标记）
-runtime impl HttpServer {
-    handle: |self: HttpServer, req: HttpRequest| -> HttpResponse {
-        runtime var result = process(req);   // 可以调用运行时函数
-        return result;
+p.distance(p2);
+```
+
+### 运算符重载
+
+```kaubo
+impl Counter {
+    operator add: |self: Counter, other: Counter| -> Counter {
+        return Counter { value: self.value + other.value };
     }
 }
 ```
 
-### 模块系统
+### 模块导入
 
 ```kaubo
-// 编译期模块（默认）
-module math {
-    pub val pi = 3.14159;
-    
-    pub val add = |a: int, b: int| -> int {
-        return a + b;
-    }
-}
-
-// 运行时模块（显式标记）
-runtime module io {
-    pub runtime val read_file = |path: string| -> string {
-        return std.read_file(path);     // 可以 IO
-    };
-}
-
-// 导入
 import math;
 var x = math.pi;
 
-// 条件导入（编译期 if）
-if (cfg.ENABLE_NETWORKING) {
-    import http;
-    
-    runtime val fetch = |url: string| -> string {
-        return http.get(url);
-    };
-}
+import math as m;
+var y = m.sqrt(16.0);
+
+from math import add;
+from math import add, sub;
+```
+
+### Print
+
+```kaubo
+print("hello");
+print(x);
+print("x = " + x as string);
 ```
 
 ---
 
-## 表达式（Expressions）
+## 表达式
 
-### 字面量表达式
-
-```kaubo
-42;               // 整数
-3.14;             // 浮点数
-"hello";          // 字符串
-true;             // 布尔真
-false;            // 布尔假
-null;             // 空值
-```
-
-### 列表字面量
+### 列表
 
 ```kaubo
-[];                           // 空列表
-[1, 2, 3];                    // 整数列表
-["a", "b", "c"];              // 字符串列表
-[1, "mixed", true];           // 混合类型（推导为 List<any>）
-
-// 使用编译期常量定义大小
-val SIZE = cfg.MAX_ITEMS;
-var arr = [0; SIZE];          // SIZE 个 0
+[];
+[1, 2, 3];
+["a", "b", "c"];
+[1, "mixed", true];     // List[any]
 ```
 
-### JSON 字面量
+### JSON
 
 ```kaubo
 json { "name": "Alice", "age": 30 }
-json { 
-    "nested": { "x": 1, "y": 2 },
-    "list": [1, 2, 3]
-}
+json { "nested": { "x": 1 }, "list": [1, 2] }
 ```
 
 ### 结构体实例化
 
 ```kaubo
-var p = Point { x: 1.0, y: 2.0 };
-var person = Person { 
-    name: "Bob", 
-    age: 25, 
-    tags: ["dev", "rust"] 
-};
-```
-
-### 变量引用
-
-```kaubo
-x;                // 变量 x
-std;              // 标准库模块
-
-// 配置访问（编译期常量）
-cfg.DEBUG;        // 访问编译期配置
-cfg.PLATFORM;
-cfg.MAX_SIZE;
+Point { x: 1.0, y: 2.0 }
+Person { name: "Bob", age: 25 }
 ```
 
 ### 二元运算
 
 ```kaubo
-// 算术
-a + b;
-a - b;
-a * b;
-a / b;
-a % b;
-
-// 比较
-a == b;
-a != b;
-a < b;
-a > b;
-a <= b;
-a >= b;
-
-// 逻辑
-a and b;
-a or b;
-
-// 字符串拼接
-"hello " + "world";  // "hello world"
+a + b; a - b; a * b; a / b; a % b;
+a == b; a != b; a < b; a > b; a <= b; a >= b;
+a and b; a or b;
+"hello " + "world";     // 字符串拼接
 ```
 
 ### 一元运算
 
 ```kaubo
--x;               // 负号
-not x;            // 逻辑非
-```
-
-### 括号表达式
-
-```kaubo
-(a + b) * c;      // 改变优先级
+-x;
+not x;
 ```
 
 ### 函数调用
 
 ```kaubo
-// 普通调用
 print("hello");
 add(1, 2);
-
-// 链式调用
 list.len();
-
-// 嵌套调用
-std.sqrt(add(9, 16) as float);
+std.sqrt(16.0);
 ```
 
 ### Lambda（匿名函数）
 
 ```kaubo
-// 编译期 lambda（默认）
-// 约束：函数体必须是纯计算，不能 IO、不能网络
-val add = |a: int, b: int| -> int {
-    return a + b;
-};
+|x| { return x + 1; };
+|x, y| { return x + y; };
+|x: int, y: int| -> int { return x + y; };
 
-val get_config = | | -> int {
-    return cfg.MAX_SIZE;    // OK：读取编译期配置
-};
-
-// 运行时 lambda（显式标记）
-runtime val fetch_url = |url: string| -> string {
-    return http.get(url);       // OK：可以网络请求
-};
-
-runtime val read_file = |path: string| -> string {
-    return std.read_file(path); // OK：可以 IO
-};
-
-// 编译期 lambda 不能调用运行时函数
-val bad_fn = |url: string| -> string {
-    return fetch_url(url);  // ERROR：编译期函数不能调用运行时函数
-};
-
-// 运行时 lambda 可以调用编译期函数
-runtime val good_fn = |a: int, b: int| -> int {
-    return add(a, b);       // OK：运行时函数可以调用编译期函数
-};
-
-// 多行函数体
-val average = |a: float, b: float| -> float {
+var average = |a: float, b: float| -> float {
     var sum = a + b;
     return sum / 2.0;
-};
-
-// 条件 lambda
-val log = if (cfg.DEBUG) {
-    |msg: string| -> void {
-        print(msg);
-    }
-} else {
-    |msg: string| -> void {
-        // 空实现
-    }
 };
 ```
 
 ### 成员访问
 
 ```kaubo
-// 对象属性
 point.x;
-point.y;
-
-// 模块函数
 std.sqrt(16.0);
-std.sin(angle);
-
-// 配置嵌套访问
-cfg.FEATURES.networking;
 ```
 
 ### 索引访问
 
 ```kaubo
-list[0];          // 第一个元素
-list[i];          // 变量索引
-list[len - 1];    // 表达式索引
+list[0];
+list[i];
+list[len - 1];
 ```
 
 ### 类型转换
 
 ```kaubo
-42 as float;              // int -> float
-3.14 as int;              // float -> int（截断）
-42 as string;             // int -> string
-3.14 as string;           // float -> string
-true as string;           // bool -> string
+42 as float;             // int -> float
+3.14 as int;             // float -> int
+42 as string;            // int -> string
+true as string;          // bool -> string
 ```
 
 ### Yield（协程）
 
 ```kaubo
-// 编译期生成器
-val counter = | | -> int {
+|x| {
     var i = 0;
     while true {
         yield i;
         i = i + 1;
     }
 };
-
-// 运行时生成器
-runtime val async_counter = | | -> int {
-    while true {
-        yield std.now();    // 运行时获取时间
-    }
-};
-
-// 使用
-var gen = counter();
-var value = gen.next();  // 0
 ```
 
 ---
@@ -510,254 +306,132 @@ var value = gen.next();  // 0
 
 | 类型 | 说明 | 示例 |
 |------|------|------|
-| `int` | 32位整数 | `42` |
-| `float` | 64位浮点数 | `3.14` |
+| `int` | 32 位整数 | `42` |
+| `float` | 64 位浮点数 | `3.14` |
 | `bool` | 布尔值 | `true` |
 | `string` | 字符串 | `"hello"` |
 | `any` | 顶层类型 | - |
-| `void` | 无返回值 | - |
 
 ### 复合类型
 
 ```kaubo
-List<int>                     // 整数列表
-List<string>                  // 字符串列表
-List<any>                     // 任意类型列表
-Tuple<int, string>            // 元组
-|int, int| -> int             // 函数类型（参数 -> 返回）
-|int| -> void                 // 无返回值函数
-
-// 编译期数组大小
-val SIZE = 100;
-[int; SIZE]                   // 编译期确定大小的数组
+List[int]
+List[string]
+List[any]
+|int, int| -> int       // 函数类型
+|int| -> void           // 无返回值
 ```
 
-### 类型标注位置
+### 类型标注
 
 ```kaubo
-// 变量声明
 var x: int = 42;
-
-// 函数参数
 |x: int, y: float| -> string { ... }
-
-// 返回类型
-val add: |int, int| -> int = |a: int, b: int| -> int {
-    return a + b;
-};
-
-// Struct 字段
 struct Point { x: float, y: float }
-
-// 编译期常量
-val MAX: int = 100;
 ```
 
 ---
 
-## 编译期计算
+## 标准库
 
-### 编译期表达式
+### 核心函数
 
-以下表达式在**编译期求值**：
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `print` | `(any) -> void` | 打印到标准输出 |
+| `assert` | `(bool, string?) -> void` | 断言 |
+| `type` | `(any) -> string` | 获取类型名 |
+| `to_string` | `(any) -> string` | 转为字符串 |
 
-```kaubo
-// 1. 字面量
-42
-3.14
-"hello"
-true
+### 数学
 
-// 2. val 绑定
-val MAX = 100;
-MAX
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `sqrt` | `(float) -> float` | 平方根 |
+| `sin` | `(float) -> float` | 正弦 |
+| `cos` | `(float) -> float` | 余弦 |
+| `floor` | `(float) -> float` | 向下取整 |
+| `ceil` | `(float) -> float` | 向上取整 |
+| `PI` | `float` | 圆周率常量 |
+| `E` | `float` | 自然对数底 |
 
-// 3. cfg 访问
-cfg.DEBUG
-cfg.MAX_SIZE
-cfg.PLATFORM
+### 列表
 
-// 4. 由以上构成的表达式
-val SIZE = cfg.MAX_SIZE * 2;
-val IS_BIG = cfg.MAX_SIZE > 1000;
-val PLATFORM_IS_UNIX = cfg.PLATFORM == "linux" or cfg.PLATFORM == "macos";
-```
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `len` | `(any) -> int` | 列表/字符串/JSON 长度 |
+| `push` | `(list, any) -> list` | 追加元素（返回新列表） |
+| `is_empty` | `(any) -> bool` | 是否为空 |
 
-### 编译期条件分支
-
-```kaubo
-// 如果条件是编译期常量，整个分支可能完全消除
-
-// 编译期条件（代码可能完全消除）
-if (cfg.DEBUG) {
-    val x = expensive_operation();  // release 模式下不存在
-}
-
-// 运行时条件（代码始终存在）
-runtime if (user_input == "yes") {
-    runtime var x = expensive_operation();  // 始终编译，运行时决定
-}
-```
-
----
-
-## 标准库（std）
-
-### 数学函数（编译期）
-
-```kaubo
-std.sqrt(x: float) -> float       // 平方根
-std.sin(x: float) -> float        // 正弦
-std.cos(x: float) -> float        // 余弦
-std.floor(x: float) -> float      // 向下取整
-std.ceil(x: float) -> float       // 向上取整
-std.pi                            // 圆周率常量
-std.e                             // 自然对数底
-```
-
-### 实用函数
-
-```kaubo
-print(value: any) -> void         // 打印（运行时）
-assert(cond: bool, msg?: string)  // 断言（编译期）
-type(value: any) -> string        // 获取类型名（编译期）
-to_string(value: any) -> string   // 转为字符串
-len(container: any) -> int        // 获取长度（编译期）
-range(start: int, end: int) -> List<int>  // 生成范围（编译期）
-clone(value: any) -> any          // 深拷贝
-```
-
-### 列表方法
-
-```kaubo
-list.len() -> int
-list.append(item: any) -> void
-list.remove(index: int) -> any
-list.clear() -> void
-list.is_empty() -> bool
-```
+| 方法 | 说明 |
+|------|------|
+| `list.push(x)` | 追加 |
+| `list.len()` | 长度 |
+| `list.remove(i)` | 移除 |
+| `list.clear()` | 清空 |
+| `list.is_empty()` | 判空 |
+| `list.foreach(f)` | 遍历 |
+| `list.map(f)` | 映射 |
+| `list.filter(f)` | 过滤 |
+| `list.reduce(f, init)` | 归约 |
+| `list.find(f)` | 查找 |
+| `list.any(f)` | 任一满足 |
+| `list.all(f)` | 全部满足 |
 
 ### 字符串方法
 
-```kaubo
-str.len() -> int
-str.substring(start: int, end: int) -> string
-str.contains(substr: string) -> bool
-str.starts_with(prefix: string) -> bool
-str.ends_with(suffix: string) -> bool
-```
+| 方法 | 说明 |
+|------|------|
+| `str.len()` | 长度 |
+| `str.is_empty()` | 判空 |
 
-### 文件操作（运行时）
+### 字符串函数
 
-```kaubo
-runtime std.read_file(path: string) -> string
-runtime std.write_file(path: string, content: string) -> void
-runtime std.exists(path: string) -> bool
-runtime std.is_file(path: string) -> bool
-runtime std.is_dir(path: string) -> bool
-```
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `substring` | `(string, int, int) -> string` | 子串截取 |
+| `contains` | `(string, string) -> bool` | 是否包含 |
+| `starts_with` | `(string, string) -> bool` | 前缀匹配 |
+| `ends_with` | `(string, string) -> bool` | 后缀匹配 |
 
-### 环境访问（运行时）
+### 环境与时间
 
-```kaubo
-runtime std.env(name: string) -> string   // 获取环境变量
-runtime std.now() -> int                  // 获取当前时间戳
-```
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `env` | `(string) -> string` | 获取环境变量 |
+| `now` | `() -> float` | Unix 时间戳（秒） |
 
----
+### 工具
 
-## 完整示例
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `range` | `(int, int?, int?) -> List[int]` | 生成整数范围 |
+| `clone` | `(any) -> any` | 浅拷贝 |
 
-```kaubo
-// 编译期常量
-val DEBUG = cfg.DEBUG;
-val PLATFORM = cfg.PLATFORM;
-val MAX_SIZE = cfg.MAX_SIZE;
+### 文件 I/O
 
-// 平台适配（编译期）
-val get_config_path = if (PLATFORM == "linux") {
-    | | -> string {
-        return "/home/user/.config/myapp";
-    }
-} elif (PLATFORM == "windows") {
-    | | -> string {
-        return "C:\\Users\\user\\AppData\\myapp";
-    }
-} else {
-    | | -> string {
-        return "/tmp/myapp";
-    }
-};
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `read_file` | `(string) -> string` | 读取文件 |
+| `write_file` | `(string, string) -> void` | 写入文件 |
+| `exists` | `(string) -> bool` | 路径是否存在 |
+| `is_file` | `(string) -> bool` | 是否为文件 |
+| `is_dir` | `(string) -> bool` | 是否为目录 |
 
-// 计算两点距离
-struct Point {
-    x: float,
-    y: float
-}
+### 协程
 
-impl Point {
-    distance: |self: Point, other: Point| -> float {
-        var dx = self.x - other.x;
-        var dy = self.y - other.y;
-        return std.sqrt(dx * dx + dy * dy);
-    }
-}
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `create_coroutine` | `(closure) -> coroutine` | 创建协程 |
+| `resume` | `(coroutine, ...args) -> any` | 恢复协程 |
+| `coroutine_status` | `(coroutine) -> int` | 状态 (0/1/2) |
 
-var p1 = Point { x: 0.0, y: 0.0 };
-var p2 = Point { x: 3.0, y: 4.0 };
+### JSON 方法
 
-print(p1.distance(p2));  // 5.0
-
-// 调试日志（编译期条件）
-val debug_log = if (DEBUG) {
-    |msg: string| -> void {
-        print("[DEBUG] " + msg);
-    }
-} else {
-    |msg: string| -> void {
-        // 空实现，release 模式下编译期消除
-    }
-};
-
-debug_log("starting app");
-
-// 使用编译期常量定义数组
-val BUFFER_SIZE = MAX_SIZE * 2;
-var buffer = [0; BUFFER_SIZE];
-
-// 列表操作
-var numbers = [1, 2, 3, 4, 5];
-var doubled = numbers.map(|n: int| -> int {
-    return n * 2;
-});
-
-// 类型转换
-var avg = (1 + 2 + 3) as float / 3.0;
-print("Average: " + avg as string);
-
-// 运行时文件读取
-runtime var config_content = std.read_file("app.config");
-runtime var port = parse_port(config_content);
-print("Server will start on port: " + port as string);
-
-// 协程生成器（编译期）
-val fib = | | -> int {
-    var a = 0;
-    var b = 1;
-    while true {
-        yield a;
-        var temp = a + b;
-        a = b;
-        b = temp;
-    }
-};
-
-var fib_gen = fib();
-print(fib_gen.next());  // 0
-print(fib_gen.next());  // 1
-print(fib_gen.next());  // 1
-print(fib_gen.next());  // 2
-```
+| 方法 | 说明 |
+|------|------|
+| `json.len()` | 属性数量 |
+| `json.is_empty()` | 判空 |
 
 ---
 
@@ -767,4 +441,5 @@ print(fib_gen.next());  // 2
 |------|------|
 | 2025-02-14 | 初始语法设计 |
 | 2026-02-14 | 添加 `as` 类型转换、impl 方法、yield 协程、json 字面量 |
-| 2026-02-19 | 添加 `runtime` 关键字，默认静态、显式动态的设计 |
+| 2026-06-11 | MVP 收敛：删除 `interface`/`async`/`await`/`val`/`runtime`/`cfg`，精简为实际实现的语法 |
+| 2026-06-12 | 实现 `break`/`continue`/`pass`；新增 std: `substring`/`contains`/`starts_with`/`ends_with`/`env`/`now`；修复闭包捕获 |

@@ -47,6 +47,10 @@ struct Cli {
     /// 生成二进制文件 (.kaubod)
     #[arg(long)]
     emit_binary: bool,
+
+    /// Release/生产模式 (生成 .kaubor 而非 .kaubod)
+    #[arg(long)]
+    production: bool,
     
     /// 执行模式: auto | source | binary
     #[arg(short, long, default_value = "auto")]
@@ -78,6 +82,8 @@ struct CompilerConfig {
     #[serde(default)]
     emit_binary: Option<bool>,
     #[serde(default)]
+    release: Option<bool>,
+    #[serde(default)]
     mode: Option<String>,
 }
 
@@ -98,6 +104,7 @@ fn main() {
     let compile_only = cli.compile_only || package.compiler.as_ref().and_then(|c| c.compile_only).unwrap_or(false);
     let dump_bytecode = cli.dump_bytecode || package.compiler.as_ref().and_then(|c| c.dump_bytecode).unwrap_or(false);
     let emit_binary = cli.emit_binary || package.compiler.as_ref().and_then(|c| c.emit_binary).unwrap_or(false);
+    let release = cli.production || package.compiler.as_ref().and_then(|c| c.release).unwrap_or(false);
     let mode = cli.mode;
     
     if verbose {
@@ -132,6 +139,7 @@ fn main() {
                 compile_only,
                 dump_bytecode,
                 emit_binary,
+                release,
             ) {
                 Ok(_) => {
                     if verbose {
@@ -166,6 +174,7 @@ fn compile_and_execute(
     compile_only: bool,
     dump_bytecode: bool,
     emit_binary: bool,
+    release: bool,
 ) -> Result<(), String> {
     // 1. 检测编译模式
     if verbose {
@@ -253,8 +262,9 @@ fn compile_and_execute(
         if verbose {
             println!("  Emitting binary...");
         }
-        let binary_path = entry_path.with_extension("kaubod");
-        emit_binary_file(&chunk, &binary_path, verbose)?;
+        let ext = if release { "kaubor" } else { "kaubod" };
+        let binary_path = entry_path.with_extension(ext);
+        emit_binary_file(&chunk, &binary_path, verbose, release)?;
     }
     
     // 6. 执行（如果不是仅编译模式）
@@ -317,6 +327,7 @@ fn emit_binary_file(
     chunk: &kaubo_orchestrator::vm::core::Chunk,
     path: &Path,
     verbose: bool,
+    release: bool,
 ) -> Result<(), String> {
     use kaubo_orchestrator::vm::binary::{
         BinaryWriter, BuildMode, EncodeContext,
@@ -339,9 +350,9 @@ fn emit_binary_file(
     
     // 创建二进制写入器
     let options = WriteOptions {
-        build_mode: BuildMode::Debug,
-        compress: false,
-        strip_debug: false,
+        build_mode: if release { BuildMode::Release } else { BuildMode::Debug },
+        compress: release,
+        strip_debug: release,
         source_map_external: false,
     };
     

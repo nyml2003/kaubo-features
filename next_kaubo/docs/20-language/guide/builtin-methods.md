@@ -18,7 +18,7 @@ list.len();                // 返回值
 向列表末尾添加一个元素，返回 receiver 支持链式调用。
 
 ```kaubo
-var list: List<int> = [1, 2];
+var list = [1, 2];
 list.push(3);                    // [1, 2, 3]
 list.push(4).push(5);            // [1, 2, 3, 4, 5]
 ```
@@ -28,7 +28,7 @@ list.push(4).push(5);            // [1, 2, 3, 4, 5]
 
 ```kaubo
 var list = [1, 2, 3];
-var n: int = list.len();         // n = 3
+var n = list.len();              // n = 3
 ```
 
 #### `remove(index: int) -> any`
@@ -36,7 +36,7 @@ var n: int = list.len();         // n = 3
 
 ```kaubo
 var list = [10, 20, 30];
-var removed: int = list.remove(1);   // removed = 20, list = [10, 30]
+var removed = list.remove(1);        // removed = 20, list = [10, 30]
 ```
 
 #### `clear() -> List`
@@ -52,7 +52,7 @@ list.clear();                    // list = []
 
 ```kaubo
 var list = [];
-var empty: bool = list.is_empty();   // true
+var empty = list.is_empty();         // true
 ```
 
 ### 函数式方法

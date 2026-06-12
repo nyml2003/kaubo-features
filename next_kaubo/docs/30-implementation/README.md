@@ -17,7 +17,7 @@
 ## 架构文档
 
 - [README.md](architecture/README.md) - 实现架构总览
-- [roadmap.md](architecture/roadmap.md) - 迭代路线图（Phase 3 进行中）
+- [roadmap.md](architecture/roadmap.md) - 迭代路线图（MVP v0.1）
 - [config.md](architecture/config.md) - 配置系统设计
 
 ---
@@ -32,9 +32,10 @@
 
 ## 待实现设计
 
-- [generic-type-system.md](design/generic-type-system.md) - 泛型系统设计
 - [module-system.md](design/module-system.md) - 模块系统改造
 - [method-type-inference.md](design/method-type-inference.md) - 方法调用类型推断
+
+> 泛型系统设计已归档至 [90-archive/generic-type-system.md](../90-archive/generic-type-system.md)
 
 ---
 

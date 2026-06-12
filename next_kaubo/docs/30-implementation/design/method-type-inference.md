@@ -25,7 +25,7 @@ var result = [1, 2, 3, 4, 5]
 **缺失**：内置类型方法调用和 struct 方法调用的返回类型推断
 
 ```rust
-// kaubo-core/src/compiler/parser/type_checker.rs:729
+// kaubo-orchestrator/src/compiler/parser/type_checker.rs:729
 fn check_member_access(&mut self, member_access: &MemberAccess) -> ... {
     // 1. 处理 std.xxx
     if obj_var.name == "std" { ... }
@@ -278,11 +278,11 @@ var c = [1,2,3].reduce(|acc, x| { return acc + x; }, 0);
 
 | 序号 | 任务 | 文件 | 备注 |
 |------|------|------|------|
-| 1 | 添加内置方法返回类型表 | `kaubo-core/src/compiler/parser/type_checker.rs` | 新增 `BuiltinMethodTypeTable` |
-| 2 | 添加 struct 方法表 | `kaubo-core/src/compiler/parser/type_checker.rs` | `struct_method_types` 字段 |
-| 3 | 增强 `check_impl_def` | `kaubo-core/src/compiler/parser/type_checker.rs` | 填充方法表 |
-| 4 | 增强 `check_member_access` | `kaubo-core/src/compiler/parser/type_checker.rs` | 内置类型 + struct 方法 |
-| 5 | 测试链式调用 | `kaubo-core/src/compiler/parser/type_checker.rs` | 添加测试用例 |
+| 1 | 添加内置方法返回类型表 | `kaubo-orchestrator/src/compiler/parser/type_checker.rs` | 新增 `BuiltinMethodTypeTable` |
+| 2 | 添加 struct 方法表 | `kaubo-orchestrator/src/compiler/parser/type_checker.rs` | `struct_method_types` 字段 |
+| 3 | 增强 `check_impl_def` | `kaubo-orchestrator/src/compiler/parser/type_checker.rs` | 填充方法表 |
+| 4 | 增强 `check_member_access` | `kaubo-orchestrator/src/compiler/parser/type_checker.rs` | 内置类型 + struct 方法 |
+| 5 | 测试链式调用 | `kaubo-orchestrator/src/compiler/parser/type_checker.rs` | 添加测试用例 |
 | 6 | 验证示例 | `examples/calc/main.kaubo` | 确保无类型错误 |
 
 ---

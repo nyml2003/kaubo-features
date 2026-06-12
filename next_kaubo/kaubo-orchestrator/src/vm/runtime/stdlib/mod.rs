@@ -107,6 +107,26 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
     exports.push(create_native_value(is_dir_fn, "is_dir", 1));
     name_to_shape.insert("is_dir".to_string(), 23u16);
 
+    // ===== 字符串函数 (24-27) =====
+    exports.push(create_native_value(substring_fn, "substring", 3));
+    name_to_shape.insert("substring".to_string(), 24u16);
+
+    exports.push(create_native_value(contains_fn, "contains", 2));
+    name_to_shape.insert("contains".to_string(), 25u16);
+
+    exports.push(create_native_value(starts_with_fn, "starts_with", 2));
+    name_to_shape.insert("starts_with".to_string(), 26u16);
+
+    exports.push(create_native_value(ends_with_fn, "ends_with", 2));
+    name_to_shape.insert("ends_with".to_string(), 27u16);
+
+    // ===== 环境与时间 (28-29) =====
+    exports.push(create_native_value(env_fn, "env", 1));
+    name_to_shape.insert("env".to_string(), 28u16);
+
+    exports.push(create_native_value(now_fn, "now", 0));
+    name_to_shape.insert("now".to_string(), 29u16);
+
     let module = ObjModule::new("std".to_string(), exports, name_to_shape);
     vec![("std".to_string(), Box::new(module))]
 }
@@ -458,7 +478,8 @@ fn len_fn(args: &[Value]) -> Result<Value, String> {
     }
 
     let len = if let Some(ptr) = args[0].as_string() {
-        unsafe { (*ptr).chars.len() as i64 }
+        let s = unsafe { &(*ptr).chars };
+        s.len() as i64
     } else if let Some(ptr) = args[0].as_list() {
         unsafe { (*ptr).len() as i64 }
     } else if let Some(ptr) = args[0].as_json() {
@@ -511,7 +532,8 @@ fn is_empty_fn(args: &[Value]) -> Result<Value, String> {
     }
 
     let is_empty = if let Some(ptr) = args[0].as_string() {
-        unsafe { (*ptr).chars.is_empty() }
+        let s = unsafe { &(*ptr).chars };
+        s.is_empty()
     } else if let Some(ptr) = args[0].as_list() {
         unsafe { (*ptr).is_empty() }
     } else if let Some(ptr) = args[0].as_json() {
@@ -719,4 +741,537 @@ fn is_dir_fn(args: &[Value]) -> Result<Value, String> {
     };
 
     Ok(Value::bool_from(Path::new(path).is_dir()))
+}
+
+// ===== 字符串函数实现 =====
+
+fn substring_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 3 {
+        return Err(format!(
+            "substring() takes exactly 3 arguments ({} given)",
+            args.len()
+        ));
+    }
+
+    let s = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("substring() first argument must be a string".to_string());
+    };
+
+    let start = to_i64(&args[1])? as usize;
+    let end = to_i64(&args[2])? as usize;
+
+    let chars: Vec<char> = s.chars().collect();
+    if start >= chars.len() || end > chars.len() || start > end {
+        return Err("substring() index out of bounds".to_string());
+    }
+    let result: String = chars[start..end].iter().collect();
+    let string_obj = Box::new(ObjString::new(result));
+    Ok(Value::string(Box::into_raw(string_obj)))
+}
+
+fn contains_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 2 {
+        return Err(format!(
+            "contains() takes exactly 2 arguments ({} given)",
+            args.len()
+        ));
+    }
+
+    let s = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("contains() first argument must be a string".to_string());
+    };
+    let substr = if let Some(ptr) = args[1].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("contains() second argument must be a string".to_string());
+    };
+
+    Ok(Value::bool_from(s.contains(substr.as_str())))
+}
+
+fn starts_with_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 2 {
+        return Err(format!(
+            "starts_with() takes exactly 2 arguments ({} given)",
+            args.len()
+        ));
+    }
+
+    let s = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("starts_with() first argument must be a string".to_string());
+    };
+    let prefix = if let Some(ptr) = args[1].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("starts_with() second argument must be a string".to_string());
+    };
+
+    Ok(Value::bool_from(s.starts_with(prefix.as_str())))
+}
+
+fn ends_with_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 2 {
+        return Err(format!(
+            "ends_with() takes exactly 2 arguments ({} given)",
+            args.len()
+        ));
+    }
+
+    let s = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("ends_with() first argument must be a string".to_string());
+    };
+    let suffix = if let Some(ptr) = args[1].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("ends_with() second argument must be a string".to_string());
+    };
+
+    Ok(Value::bool_from(s.ends_with(suffix.as_str())))
+}
+
+// ===== 环境与时间函数实现 =====
+
+fn env_fn(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!(
+            "env() takes exactly 1 argument ({} given)",
+            args.len()
+        ));
+    }
+
+    let name = if let Some(ptr) = args[0].as_string() {
+        unsafe { &(*ptr).chars }
+    } else {
+        return Err("env() argument must be a string".to_string());
+    };
+
+    match std::env::var(name.as_str()) {
+        Ok(val) => {
+            let string_obj = Box::new(ObjString::new(val));
+            Ok(Value::string(Box::into_raw(string_obj)))
+        }
+        Err(_) => Ok(Value::NULL),
+    }
+}
+
+fn now_fn(args: &[Value]) -> Result<Value, String> {
+    if !args.is_empty() {
+        return Err("now() takes no arguments".to_string());
+    }
+
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    Ok(Value::float(ts as f64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ===== 核心函数测试 =====
+
+    #[test]
+    fn test_print_too_many_args() {
+        let args = [Value::smi(1), Value::smi(2)];
+        let result = print_fn(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_assert_true() {
+        let args = [Value::bool_from(true)];
+        let result = assert_fn(&args);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_assert_false() {
+        let args = [Value::bool_from(false)];
+        let result = assert_fn(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_assert_with_message() {
+        let msg = Box::new(ObjString::new("fail".to_string()));
+        let args = [Value::bool_from(false), Value::string(Box::into_raw(msg))];
+        let result = assert_fn(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_assert_wrong_arg_count() {
+        let args: [Value; 0] = [];
+        let result = assert_fn(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_type_int() {
+        let args = [Value::smi(42)];
+        let result = type_fn(&args).unwrap();
+        assert_eq!(unsafe { &(*(result.as_string().unwrap())).chars }, "int");
+    }
+
+    #[test]
+    fn test_type_float() {
+        let args = [Value::float(3.14)];
+        let result = type_fn(&args).unwrap();
+        assert_eq!(unsafe { &(*(result.as_string().unwrap())).chars }, "float");
+    }
+
+    #[test]
+    fn test_type_bool() {
+        let args = [Value::bool_from(true)];
+        let result = type_fn(&args).unwrap();
+        assert_eq!(unsafe { &(*(result.as_string().unwrap())).chars }, "bool");
+    }
+
+    #[test]
+    fn test_type_null() {
+        let args = [Value::NULL];
+        let result = type_fn(&args).unwrap();
+        assert_eq!(unsafe { &(*(result.as_string().unwrap())).chars }, "null");
+    }
+
+    #[test]
+    fn test_type_string() {
+        let s = Box::new(ObjString::new("hello".to_string()));
+        let args = [Value::string(Box::into_raw(s))];
+        let result = type_fn(&args).unwrap();
+        assert_eq!(unsafe { &(*(result.as_string().unwrap())).chars }, "string");
+    }
+
+    #[test]
+    fn test_type_wrong_arg_count() {
+        let args: [Value; 0] = [];
+        assert!(type_fn(&args).is_err());
+    }
+
+    #[test]
+    fn test_to_string_int() {
+        let args = [Value::smi(42)];
+        let result = to_string_fn(&args).unwrap();
+        assert_eq!(unsafe { &(*(result.as_string().unwrap())).chars }, "42");
+    }
+
+    #[test]
+    fn test_to_string_float() {
+        let args = [Value::float(3.14)];
+        let result = to_string_fn(&args).unwrap();
+        assert!(unsafe { &(*(result.as_string().unwrap())).chars }.contains("3.14"));
+    }
+
+    // ===== 数学函数测试 =====
+
+    #[test]
+    fn test_sqrt() {
+        let args = [Value::float(4.0)];
+        let result = sqrt_fn(&args).unwrap();
+        assert!((result.as_float() - 2.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_sqrt_int() {
+        let args = [Value::smi(9)];
+        let result = sqrt_fn(&args).unwrap();
+        assert!((result.as_float() - 3.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_sqrt_negative() {
+        let args = [Value::float(-1.0)];
+        assert!(sqrt_fn(&args).is_err());
+    }
+
+    #[test]
+    fn test_sqrt_wrong_args() {
+        let args: [Value; 0] = [];
+        assert!(sqrt_fn(&args).is_err());
+    }
+
+    #[test]
+    fn test_sin() {
+        let args = [Value::float(std::f64::consts::PI / 2.0)];
+        let result = sin_fn(&args).unwrap();
+        assert!((result.as_float() - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cos() {
+        let args = [Value::float(0.0)];
+        let result = cos_fn(&args).unwrap();
+        assert!((result.as_float() - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_floor() {
+        let args = [Value::float(3.7)];
+        let result = floor_fn(&args).unwrap();
+        assert_eq!(result.as_int(), Some(3));
+    }
+
+    #[test]
+    fn test_ceil() {
+        let args = [Value::float(3.2)];
+        let result = ceil_fn(&args).unwrap();
+        assert_eq!(result.as_int(), Some(4));
+    }
+
+    #[test]
+    fn test_floor_negative() {
+        let args = [Value::float(-3.7)];
+        let result = floor_fn(&args).unwrap();
+        assert_eq!(result.as_int(), Some(-4));
+    }
+
+    #[test]
+    fn test_math_wrong_arg_type() {
+        let args = [Value::NULL];
+        assert!(sqrt_fn(&args).is_err());
+    }
+
+    // ===== 列表操作函数测试 =====
+
+    #[test]
+    fn test_len_empty_list() {
+        let list = Box::new(ObjList::new());
+        let args = [Value::list(Box::into_raw(list))];
+        let result = len_fn(&args).unwrap();
+        assert_eq!(result.as_int(), Some(0));
+    }
+
+    #[test]
+    fn test_len_non_empty_list() {
+        let list = ObjList::from_vec(vec![Value::smi(1), Value::smi(2), Value::smi(3)]);
+        let args = [Value::list(Box::into_raw(Box::new(list)))];
+        let result = len_fn(&args).unwrap();
+        assert_eq!(result.as_int(), Some(3));
+    }
+
+    #[test]
+    fn test_push() {
+        let list = ObjList::from_vec(vec![Value::smi(1)]);
+        let args = [Value::list(Box::into_raw(Box::new(list))), Value::smi(2)];
+        let result = push_fn(&args).unwrap();
+        let pushed_list = unsafe { &*(result.as_list().unwrap()) };
+        assert_eq!(pushed_list.elements.len(), 2);
+    }
+
+    #[test]
+    fn test_is_empty_true() {
+        let list = Box::new(ObjList::new());
+        let args = [Value::list(Box::into_raw(list))];
+        let result = is_empty_fn(&args).unwrap();
+        assert!(result.is_true());
+    }
+
+    #[test]
+    fn test_is_empty_false() {
+        let list = ObjList::from_vec(vec![Value::smi(1)]);
+        let args = [Value::list(Box::into_raw(Box::new(list)))];
+        let result = is_empty_fn(&args).unwrap();
+        assert!(!result.is_true());
+    }
+
+    // ===== 工具函数测试 =====
+
+    #[test]
+    fn test_range_single_arg() {
+        let args = [Value::smi(3)];
+        let result = range_fn(&args).unwrap();
+        let list = unsafe { &*(result.as_list().unwrap()) };
+        assert_eq!(list.elements.len(), 3);
+        assert_eq!(list.elements[0].as_smi(), Some(0));
+        assert_eq!(list.elements[2].as_smi(), Some(2));
+    }
+
+    #[test]
+    fn test_range_two_args() {
+        let args = [Value::smi(2), Value::smi(5)];
+        let result = range_fn(&args).unwrap();
+        let list = unsafe { &*(result.as_list().unwrap()) };
+        assert_eq!(list.elements.len(), 3);
+        assert_eq!(list.elements[0].as_smi(), Some(2));
+    }
+
+    #[test]
+    fn test_range_three_args() {
+        let args = [Value::smi(0), Value::smi(10), Value::smi(3)];
+        let result = range_fn(&args).unwrap();
+        let list = unsafe { &*(result.as_list().unwrap()) };
+        assert_eq!(list.elements.len(), 4);
+        assert_eq!(list.elements[1].as_smi(), Some(3));
+    }
+
+    #[test]
+    fn test_range_invalid() {
+        let args: [Value; 0] = [];
+        assert!(range_fn(&args).is_err());
+    }
+
+    #[test]
+    fn test_clone_int() {
+        let args = [Value::smi(42)];
+        let result = clone_fn(&args).unwrap();
+        assert_eq!(result.as_smi(), Some(42));
+    }
+
+    #[test]
+    fn test_clone_float() {
+        let args = [Value::float(3.14)];
+        let result = clone_fn(&args).unwrap();
+        assert!((result.as_float() - 3.14).abs() < 0.0001);
+    }
+
+    // ===== 文件 I/O 测试 =====
+
+    #[test]
+    fn test_file_exists_positive() {
+        let path = Box::new(ObjString::new("Cargo.toml".to_string()));
+        let args = [Value::string(Box::into_raw(path))];
+        let result = exists_fn(&args).unwrap();
+        assert!(result.is_true());
+    }
+
+    #[test]
+    fn test_file_exists_negative() {
+        let path = Box::new(ObjString::new("nonexistent_file.xyz".to_string()));
+        let args = [Value::string(Box::into_raw(path))];
+        let result = exists_fn(&args).unwrap();
+        assert!(!result.is_true());
+    }
+
+    #[test]
+    fn test_is_file() {
+        let path = Box::new(ObjString::new("Cargo.toml".to_string()));
+        let args = [Value::string(Box::into_raw(path))];
+        let result = is_file_fn(&args).unwrap();
+        assert!(result.is_true());
+    }
+
+    #[test]
+    fn test_is_dir() {
+        let path = Box::new(ObjString::new("src".to_string()));
+        let args = [Value::string(Box::into_raw(path))];
+        let result = is_dir_fn(&args).unwrap();
+        assert!(result.is_true());
+    }
+
+    #[test]
+    fn test_is_dir_false() {
+        let path = Box::new(ObjString::new("Cargo.toml".to_string()));
+        let args = [Value::string(Box::into_raw(path))];
+        let result = is_dir_fn(&args).unwrap();
+        assert!(!result.is_true());
+    }
+
+    #[test]
+    fn test_read_file() {
+        let path = Box::new(ObjString::new("Cargo.toml".to_string()));
+        let args = [Value::string(Box::into_raw(path))];
+        let result = read_file_fn(&args).unwrap();
+        let content = unsafe { &(*(result.as_string().unwrap())).chars };
+        assert!(!content.is_empty());
+    }
+
+    #[test]
+    fn test_read_file_not_found() {
+        let path = Box::new(ObjString::new("nonexistent_file.xyz".to_string()));
+        let args = [Value::string(Box::into_raw(path))];
+        assert!(read_file_fn(&args).is_err());
+    }
+
+    #[test]
+    fn test_write_and_read_file() {
+        let tmp_path = "test_write_temp.txt";
+        let path_val = Box::new(ObjString::new(tmp_path.to_string()));
+        let content = Box::new(ObjString::new("hello kaubo".to_string()));
+
+        let args = [
+            Value::string(Box::into_raw(path_val)),
+            Value::string(Box::into_raw(content)),
+        ];
+        let result = write_file_fn(&args).unwrap();
+        assert!(result.is_null());
+
+        let path_val2 = Box::new(ObjString::new(tmp_path.to_string()));
+        let args2 = [Value::string(Box::into_raw(path_val2))];
+        let result2 = read_file_fn(&args2).unwrap();
+        let content2 = unsafe { &(*(result2.as_string().unwrap())).chars };
+        assert_eq!(content2, "hello kaubo");
+
+        std::fs::remove_file(tmp_path).ok();
+    }
+
+    // ===== 字符串函数测试 =====
+
+    #[test]
+    fn test_substring() {
+        let s = Box::new(ObjString::new("hello world".to_string()));
+        let args = [
+            Value::string(Box::into_raw(s)),
+            Value::smi(0),
+            Value::smi(5),
+        ];
+        let result = substring_fn(&args).unwrap();
+        assert_eq!(unsafe { &(*(result.as_string().unwrap())).chars }, "hello");
+    }
+
+    #[test]
+    fn test_contains_true() {
+        let s = Box::new(ObjString::new("hello world".to_string()));
+        let sub = Box::new(ObjString::new("world".to_string()));
+        let args = [Value::string(Box::into_raw(s)), Value::string(Box::into_raw(sub))];
+        assert!(contains_fn(&args).unwrap().is_true());
+    }
+
+    #[test]
+    fn test_contains_false() {
+        let s = Box::new(ObjString::new("hello".to_string()));
+        let sub = Box::new(ObjString::new("xyz".to_string()));
+        let args = [Value::string(Box::into_raw(s)), Value::string(Box::into_raw(sub))];
+        assert!(!contains_fn(&args).unwrap().is_true());
+    }
+
+    #[test]
+    fn test_starts_with() {
+        let s = Box::new(ObjString::new("hello world".to_string()));
+        let prefix = Box::new(ObjString::new("hello".to_string()));
+        let args = [Value::string(Box::into_raw(s)), Value::string(Box::into_raw(prefix))];
+        assert!(starts_with_fn(&args).unwrap().is_true());
+    }
+
+    #[test]
+    fn test_ends_with() {
+        let s = Box::new(ObjString::new("hello world".to_string()));
+        let suffix = Box::new(ObjString::new("world".to_string()));
+        let args = [Value::string(Box::into_raw(s)), Value::string(Box::into_raw(suffix))];
+        assert!(ends_with_fn(&args).unwrap().is_true());
+    }
+
+    #[test]
+    fn test_now_returns_float() {
+        let args: [Value; 0] = [];
+        let result = now_fn(&args).unwrap();
+        assert!(result.is_float() || result.is_int());
+    }
+
+    #[test]
+    fn test_now_args_error() {
+        let args = [Value::smi(1)];
+        assert!(now_fn(&args).is_err());
+    }
 }

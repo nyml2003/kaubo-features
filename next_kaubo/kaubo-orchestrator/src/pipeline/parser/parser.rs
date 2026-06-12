@@ -7,8 +7,9 @@ use super::expr::{
 };
 use super::module::{Module, ModuleKind};
 use super::stmt::{
-    BlockStmt, EmptyStmt, ExprStmt, FieldDef, ForStmt, IfStmt, ImplStmt, ImportStmt, MethodDef,
-    PrintStmt, ReturnStmt, Stmt, StmtKind, StructStmt, VarDeclStmt, WhileStmt,
+    BlockStmt, BreakStmt, ContinueStmt, EmptyStmt, ExprStmt, FieldDef, ForStmt, IfStmt, ImplStmt,
+    ImportStmt, MethodDef, PassStmt, PrintStmt, ReturnStmt, Stmt, StmtKind, StructStmt,
+    VarDeclStmt, WhileStmt,
 };
 use super::type_expr::TypeExpr;
 use super::utils::{get_associativity, get_precedence};
@@ -233,6 +234,15 @@ impl Parser {
             }
         } else if self.check(KauboTokenKind::Print) {
             self.parse_print_statement()
+        } else if self.check(KauboTokenKind::Break) {
+            self.consume();
+            Ok(Box::new(StmtKind::Break(BreakStmt)))
+        } else if self.check(KauboTokenKind::Continue) {
+            self.consume();
+            Ok(Box::new(StmtKind::Continue(ContinueStmt)))
+        } else if self.check(KauboTokenKind::Pass) {
+            self.consume();
+            Ok(Box::new(StmtKind::Pass(PassStmt)))
         } else {
             // 表达式语句
             let expr = self.parse_expression(0)?;
@@ -310,7 +320,7 @@ impl Parser {
     fn parse_unary(&mut self) -> ParseResult<Expr> {
         trace!(self.logger, "parse_unary");
         if self.check(KauboTokenKind::Minus) || self.check(KauboTokenKind::Not) {
-            let token = self.current_token.as_ref().unwrap();
+            let token = self.current_token.as_ref().ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
             let op = token.kind;
             self.consume();
 
@@ -483,7 +493,7 @@ impl Parser {
 
     /// 解析整数字面量
     fn parse_int(&mut self) -> ParseResult<Expr> {
-        let token = self.current_token.as_ref().unwrap();
+        let token = self.current_token.as_ref().ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
         let coord = Coordinate {
             line: token.span.start.line,
             column: token.span.start.column,
@@ -498,7 +508,7 @@ impl Parser {
 
     /// 解析浮点数字面量
     fn parse_float(&mut self) -> ParseResult<Expr> {
-        let token = self.current_token.as_ref().unwrap();
+        let token = self.current_token.as_ref().ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
         let text = token.text.clone().unwrap_or_default();
         let num = text.parse().map_err(|_| {
             ParserError::here(
@@ -517,7 +527,7 @@ impl Parser {
 
     /// 解析字符串字面量
     fn parse_string(&mut self) -> ParseResult<Expr> {
-        let token = self.current_token.as_ref().unwrap();
+        let token = self.current_token.as_ref().ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
         // 移除首尾引号
         let text = token.text.clone().unwrap_or_default();
         let s = text.to_string();
@@ -560,7 +570,7 @@ impl Parser {
     /// 解析标识符引用
     /// 可能是变量引用或 struct 实例化（如 Point { x: 1.0 }）
     fn parse_identifier_expression(&mut self) -> ParseResult<Expr> {
-        let token = self.current_token.as_ref().unwrap();
+        let token = self.current_token.as_ref().ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
         let name = token.text.clone().unwrap_or_default();
         self.consume();
 

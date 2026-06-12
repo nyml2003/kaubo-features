@@ -9,7 +9,6 @@
 | 文档 | 内容 | 状态 |
 |------|------|------|
 | [builtin-methods.md](builtin-methods.md) | 内置类型方法（List/String/Json） | ✅ 可用 |
-| getting-started.md | 快速开始教程 | 📝 待编写 |
 
 ---
 
@@ -25,4 +24,4 @@
 
 ---
 
-*最后更新：2026-02-17*
+*最后更新：2026-06-11*

@@ -780,7 +780,7 @@ let v3 = v1 + v2  // 调用 __add
 1. **扩展 ObjShape 支持元表指针**
 
 ```rust
-// kaubo-core/src/runtime/object.rs
+// kaubo-orchestrator/src/runtime/object.rs
 pub struct ObjShape {
     pub shape_id: u16,
     pub name: String,
@@ -795,7 +795,7 @@ pub struct ObjShape {
 2. **VM 中运算符指令处理**
 
 ```rust
-// kaubo-core/src/runtime/vm.rs
+// kaubo-orchestrator/src/runtime/vm.rs
 fn add_values(&self, a: Value, b: Value) -> Result<Value, String> {
     // 1. 快速路径：基础类型
     if let (Some(ai), Some(bi)) = (a.as_int(), b.as_int()) {

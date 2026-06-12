@@ -236,10 +236,11 @@ impl PassContext {
         self
     }
     
-    /// Get a config value
-    pub fn config_val(&self, _key: &str) -> Option<&Value> {
-        // TODO: implement config access
-        None
+    /// Get a config value (from VmConfig serialized as JSON)
+    pub fn config_val(&self, key: &str) -> Option<serde_json::Value> {
+        serde_json::to_value(&*self.config)
+            .ok()
+            .and_then(|v| v.get(key).cloned())
     }
 }
 

@@ -34,6 +34,12 @@ pub enum StmtKind {
     Struct(StructStmt),
     // Impl 定义语句（如 `impl Point { ... }`）
     Impl(ImplStmt),
+    // Break 语句（如 `break;`）
+    Break(BreakStmt),
+    // Continue 语句（如 `continue;`）
+    Continue(ContinueStmt),
+    // Pass 空操作语句（如 `pass;`）
+    Pass(PassStmt),
 }
 
 // 表达式语句结构体（包装一个表达式）
@@ -140,6 +146,18 @@ pub struct ImplStmt {
     pub span: Span,
 }
 
+/// Break 语句结构体
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BreakStmt;
+
+/// Continue 语句结构体
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ContinueStmt;
+
+/// Pass 语句结构体
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PassStmt;
+
 // 实现Display trait（可选，用于调试输出）
 impl fmt::Display for StmtKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -231,6 +249,9 @@ impl fmt::Display for StmtKind {
                     .join("\n");
                 write!(f, "impl {} {{\n{}\n}}", impl_stmt.struct_name, methods)
             }
+            StmtKind::Break(_) => write!(f, "break;"),
+            StmtKind::Continue(_) => write!(f, "continue;"),
+            StmtKind::Pass(_) => write!(f, "pass;"),
         }
     }
 }

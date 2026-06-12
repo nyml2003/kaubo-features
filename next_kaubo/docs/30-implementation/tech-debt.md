@@ -207,14 +207,14 @@ registry.register("my_module", "my_func", my_func_type);
 
 **代码位置**：
 
-- `kaubo-core/src/core/operators.rs` - `InlineCacheEntry`
-- `kaubo-core/src/runtime/vm/mod.rs` - `interpret_with_locals` (加载 Chunk 缓存到 VM)
-- `kaubo-core/src/runtime/vm/execution.rs` - Add/Sub/Mul/Div 指令缓存检查逻辑
-- `kaubo-core/src/runtime/vm/operators.rs` - 缓存操作函数
+- `kaubo-orchestrator/src/core/operators.rs` - `InlineCacheEntry`
+- `kaubo-orchestrator/src/runtime/vm/mod.rs` - `interpret_with_locals` (加载 Chunk 缓存到 VM)
+- `kaubo-orchestrator/src/runtime/vm/execution.rs` - Add/Sub/Mul/Div 指令缓存检查逻辑
+- `kaubo-orchestrator/src/runtime/vm/operators.rs` - 缓存操作函数
 
 **实现概要**：
 
-1. **编译阶段**：`kaubo-core/src/runtime/compiler/expr.rs` 为二元运算指令分配内联缓存槽位
+1. **编译阶段**：`kaubo-orchestrator/src/runtime/compiler/expr.rs` 为二元运算指令分配内联缓存槽位
 2. **加载阶段**：`interpret_with_locals` 将 Chunk 的 `inline_caches` 加载到 VM
 3. **执行阶段**：算术指令先检查缓存命中，未命中则查找并更新缓存
 
@@ -329,13 +329,13 @@ let mut next_shape_id: u16 = 100;
 
 - 新增 `VMConfig` 结构体
 - 使用 `VM::with_config(VMConfig, logger)`
-- `kaubo-api` 传入 `config.vm.*` 值
+- `kaubo-orchestrator` 传入 `config.vm.*` 值
 
 **相关文件**：
 
-- `kaubo-core/src/compiler/lexer/builder.rs`
-- `kaubo-core/src/runtime/vm.rs`
-- `kaubo-api/src/lib.rs`
+- `kaubo-orchestrator/src/compiler/lexer/builder.rs`
+- `kaubo-orchestrator/src/runtime/vm.rs`
+- `kaubo-orchestrator/src/lib.rs`
 
 ### 包导出优化（2026-02-16）
 
@@ -343,7 +343,7 @@ let mut next_shape_id: u16 = 100;
 
 **优化内容**：
 
-#### kaubo-core
+#### kaubo-orchestrator
 
 | 优化前 | 优化后 |
 |--------|--------|
@@ -351,7 +351,7 @@ let mut next_shape_id: u16 = 100;
 | `pub mod compiler/kit/runtime` | 精简的重新导出 |
 | 无顶层快捷导出 | 新增 `Value`, `VM`, `Chunk`, `InterpretResult`, `VMConfig`, `ObjShape` |
 
-#### kaubo-api
+#### kaubo-orchestrator
 
 | 优化前 | 优化后 |
 |--------|--------|
@@ -361,15 +361,15 @@ let mut next_shape_id: u16 = 100;
 
 **设计原则**：
 
-- 顶层 crate（kaubo-api）提供统一入口
-- 底层 crate（kaubo-core）只导出核心类型
+- 顶层 crate（kaubo-orchestrator）提供统一入口
+- 底层 crate（kaubo-orchestrator）只导出核心类型
 - 配置 crate（kaubo-config）完整导出供上层使用
 
 **相关文件**：
 
-- `kaubo-core/src/lib.rs`
-- `kaubo-api/src/lib.rs`
-- `kaubo-api/src/error.rs`
+- `kaubo-orchestrator/src/lib.rs`
+- `kaubo-orchestrator/src/lib.rs`
+- `kaubo-orchestrator/src/error.rs`
 
 ---
 
@@ -411,7 +411,7 @@ cargo clippy --workspace --fix --allow-dirty --allow-staged
 
 ### Compiler 拆分
 
-将 `kaubo-core/src/runtime/compiler.rs` (2258行) 拆分为模块：
+将 `kaubo-orchestrator/src/runtime/compiler.rs` (2258行) 拆分为模块：
 
 | 文件 | 内容 | 行数 |
 |------|------|------|
@@ -424,7 +424,7 @@ cargo clippy --workspace --fix --allow-dirty --allow-staged
 
 ### VM 拆分
 
-将 `kaubo-core/src/runtime/vm.rs` (3530行) 拆分为模块：
+将 `kaubo-orchestrator/src/runtime/vm.rs` (3530行) 拆分为模块：
 
 | 文件 | 内容 | 行数 |
 |------|------|------|
@@ -461,10 +461,10 @@ cargo clippy --workspace --fix --allow-dirty --allow-staged
 **当前状态（2026-02-16）**：
 
 ```bash
-$ cargo clippy -p kaubo-core --lib
-warning: `kaubo-core` (lib) generated 10 warnings
+$ cargo clippy -p kaubo-orchestrator --lib
+warning: `kaubo-orchestrator` (lib) generated 10 warnings
 
-$ cargo test -p kaubo-core --lib
+$ cargo test -p kaubo-orchestrator --lib
 test result: ok. 265 passed; 0 failed; 0 ignored
 ```
 

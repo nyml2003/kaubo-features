@@ -125,7 +125,7 @@ VM 执行: LoadMethod: peek receiver, push encoded_method_id
 ### 2.2 类型索引常量
 
 ```rust
-// kaubo-core/src/core/builtin_methods.rs
+// kaubo-orchestrator/src/core/builtin_methods.rs
 
 pub mod builtin_types {
     pub const LIST: u8 = 0;
@@ -364,13 +364,13 @@ fn compile_method_call(
 
 | 序号 | 任务 | 文件 | 预估工时 |
 |------|------|------|---------|
-| 1 | 创建 `builtin_methods.rs` 模块 | `kaubo-core/src/core/builtin_methods.rs` | 1h |
-| 2 | 添加 SMI 编码/解码函数 | `kaubo-core/src/core/builtin_methods.rs` | 30m |
-| 3 | VM 集成 BuiltinMethodTable | `kaubo-core/src/core/vm.rs` | 30m |
-| 4 | 扩展 `LoadMethod` 支持内置类型 | `kaubo-core/src/runtime/vm/execution.rs` | 1h |
-| 5 | 扩展 `Call` 支持内置方法 | `kaubo-core/src/runtime/vm/execution.rs` | 1h |
-| 6 | 编译器支持方法调用 | `kaubo-core/src/runtime/compiler/expr.rs` | 1.5h |
-| 7 | 回归测试 | `kaubo-core/src/runtime/vm/tests.rs` | 1h |
+| 1 | 创建 `builtin_methods.rs` 模块 | `kaubo-orchestrator/src/core/builtin_methods.rs` | 1h |
+| 2 | 添加 SMI 编码/解码函数 | `kaubo-orchestrator/src/core/builtin_methods.rs` | 30m |
+| 3 | VM 集成 BuiltinMethodTable | `kaubo-orchestrator/src/core/vm.rs` | 30m |
+| 4 | 扩展 `LoadMethod` 支持内置类型 | `kaubo-orchestrator/src/runtime/vm/execution.rs` | 1h |
+| 5 | 扩展 `Call` 支持内置方法 | `kaubo-orchestrator/src/runtime/vm/execution.rs` | 1h |
+| 6 | 编译器支持方法调用 | `kaubo-orchestrator/src/runtime/compiler/expr.rs` | 1.5h |
+| 7 | 回归测试 | `kaubo-orchestrator/src/runtime/vm/tests.rs` | 1h |
 | 8 | 更新语法规范 | `docs/20-current/spec/syntax.md` | 30m |
 
 **总计**：7 小时

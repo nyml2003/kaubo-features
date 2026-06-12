@@ -462,52 +462,34 @@ kaubo-core:   462 tests (288 单元 + 13 多文件 + 63 集成 + 4 示例 + 90 V
 
 ---
 
-### 下一阶段：Phase 2 - 泛型类型系统
+### MVP v0.1 (进行中)
 
-**目标：** 实现完整的编译时泛型系统
+**目标：** 交付可用的 Kaubo v0.1 — 稳定、可靠、完整的脚本语言运行时。
 
-**核心功能：**
+**当前状态：425 tests，0 failures**
 
-| 功能 | 示例 | 状态 |
-|------|------|------|
-| 泛型匿名函数 | `\|[T] x: T\| -> T { return x; }` | 📋 待实现 |
-| 泛型 struct | `struct Box[T] { value: T }` | 📋 待实现 |
-| 泛型 impl | `impl[T] Box[T] { ... }` | 📋 待实现 |
-| 类型推导 | `identity(42)` → `\|int\| -> int` | 📋 待实现 |
-| 多类型参数 | `\|[T, U] x: T, y: U\|` | 📋 待实现 |
-| 嵌套泛型 | `Box[List[T]]` | 📋 待实现 |
+**MVP 交付清单：**
 
-**设计文档：**
-- `docs/30-implementation/design/generic-type-system.md`
+| 任务 | 状态 |
+|------|------|
+| 修复所有 `panic!()` / `unimplemented!()` | ✅ |
+| 删除废弃 token (`interface`/`async`/`await`) | ✅ |
+| 标准库测试覆盖 (49 tests) | ✅ |
+| 类型检查器 strict 模式 | ✅ |
+| Spec 文档收敛 | ✅ |
+| 实现 `break` / `continue` / `pass` | ✅ |
+| 修复闭包捕获 bug (`enclosing` 指针) | ✅ |
+| 修复 unsafe raw pointer autoref (4 处 UB) | ✅ |
+| 新增 std: `substring`/`contains`/`starts_with`/`ends_with`/`env`/`now` | ✅ |
+| 修复 config 访问 stub | ✅ |
+| `kaubo build` 命令 + Release 模式 | ✅ |
+| 打 tag v0.1.0 | ✅ |
 
-**语法规范：**
-统一使用 `[]` 表示泛型参数：
-```kaubo
-// 类型定义
-struct Box[T] { value: T }
-impl[T] Box[T] { ... }
-
-// 表达式
-|[T] x: T| -> T { return x; }
-
-// 类型标注
-var b: Box[int] = Box[int] { value: 42 };
-var list: List[List[string]] = [];
-```
-
----
-
-### 未来阶段
-
-#### Phase 3: JIT 编译器 (规划中)
-- Cranelift 集成
-- 热点检测与编译
-- 解释器 ↔ JIT 切换
-
-#### Phase 4: 热重载 (规划中)
-- 代码热更新
-- 状态保持
-- `@hot` 注解
+**已删除（非 MVP）：**
+- `interface` / `async` / `await` token
+- `val` / `runtime` / `cfg` 编译期元编程
+- 泛型 / JIT / 热重载
+- 链接器 / 包管理器
 
 ---
 
@@ -520,4 +502,4 @@ cargo make --list-all-steps
 
 ---
 
-*最后更新：2026-02-17*
+*最后更新：2026-06-11*

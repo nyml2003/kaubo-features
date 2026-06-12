@@ -114,39 +114,49 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 let cache_idx = read_byte(vm);
                 let (a, b) = stack::pop_two(vm);
 
-                // 先尝试基础类型（Level 1）
-                let result = operators::add_values(vm, a, b);
-                match result {
-                    Ok(v) => vm.stack.push(v),
-                    Err(_) => {
-                        // 基础类型失败，尝试内联缓存（Level 2）
-                        if cache_idx != 0xFF {
-                            if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
-                                // 缓存命中，直接调用
-                                match operators::call_operator_closure(vm, cached, &[a, b]) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            } else {
-                                // 缓存未命中，查找并更新缓存
-                                match operators::call_binary_operator_cached(
-                                    vm,
-                                    Operator::Add,
-                                    a,
-                                    b,
-                                    cache_idx,
-                                ) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            }
-                        } else {
-                            // 无缓存，直接调用（Level 3）
-                            match operators::call_binary_operator(vm, Operator::Add, a, b) {
-                                Ok(v) => vm.stack.push(v),
-                                Err(e) => return InterpretResult::RuntimeError(e),
-                            }
+                // String concatenation
+                if let (Some(ap), Some(bp)) = (a.as_string(), b.as_string()) {
+                    let a_str = unsafe { &(*ap).chars };
+                    let b_str = unsafe { &(*bp).chars };
+                    let concatenated = format!("{a_str}{b_str}");
+                    let string_obj = Box::new(ObjString::new(concatenated));
+                    vm.stack.push(Value::string(Box::into_raw(string_obj)));
+                    continue;
+                }
+
+                // Fast path: int or float arithmetic
+                if a.is_int() && b.is_int() {
+                    if let (Some(ai), Some(bi)) = (a.as_int(), b.as_int()) {
+                        let sum = ai as i64 + bi as i64; if sum >= -1073741824_i64 && sum <= 1073741823_i64 { let s = sum as i32;
+                            vm.stack.push(Value::smi(s));
+                            continue;
                         }
+                    }
+                }
+                if (a.is_int() || a.is_float()) && (b.is_int() || b.is_float()) {
+                    let af = if a.is_float() { a.as_float() } else { a.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    let bf = if b.is_float() { b.as_float() } else { b.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    vm.stack.push(Value::float(af + bf));
+                    continue;
+                }
+
+                // Slow path: operator overloading
+                if cache_idx != 0xFF {
+                    if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
+                        match operators::call_operator_closure(vm, cached, &[a, b]) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    } else {
+                        match operators::call_binary_operator_cached(vm, Operator::Add, a, b, cache_idx) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    }
+                } else {
+                    match operators::call_binary_operator(vm, Operator::Add, a, b) {
+                        Ok(v) => vm.stack.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
                     }
                 }
             }
@@ -154,34 +164,38 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             Sub => {
                 let cache_idx = read_byte(vm);
                 let (a, b) = stack::pop_two(vm);
-                let result = operators::sub_values(vm, a, b);
-                match result {
-                    Ok(v) => vm.stack.push(v),
-                    Err(_) => {
-                        if cache_idx != 0xFF {
-                            if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
-                                match operators::call_operator_closure(vm, cached, &[a, b]) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            } else {
-                                match operators::call_binary_operator_cached(
-                                    vm,
-                                    Operator::Sub,
-                                    a,
-                                    b,
-                                    cache_idx,
-                                ) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            }
-                        } else {
-                            match operators::call_binary_operator(vm, Operator::Sub, a, b) {
-                                Ok(v) => vm.stack.push(v),
-                                Err(e) => return InterpretResult::RuntimeError(e),
-                            }
+
+                if a.is_int() && b.is_int() {
+                    if let (Some(ai), Some(bi)) = (a.as_int(), b.as_int()) {
+                        let diff = ai as i64 - bi as i64; if diff >= -1073741824_i64 && diff <= 1073741823_i64 { let s = diff as i32;
+                            vm.stack.push(Value::smi(s));
+                            continue;
                         }
+                    }
+                }
+                if (a.is_int() || a.is_float()) && (b.is_int() || b.is_float()) {
+                    let af = if a.is_float() { a.as_float() } else { a.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    let bf = if b.is_float() { b.as_float() } else { b.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    vm.stack.push(Value::float(af - bf));
+                    continue;
+                }
+
+                if cache_idx != 0xFF {
+                    if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
+                        match operators::call_operator_closure(vm, cached, &[a, b]) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    } else {
+                        match operators::call_binary_operator_cached(vm, Operator::Sub, a, b, cache_idx) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    }
+                } else {
+                    match operators::call_binary_operator(vm, Operator::Sub, a, b) {
+                        Ok(v) => vm.stack.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
                     }
                 }
             }
@@ -189,34 +203,38 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             Mul => {
                 let cache_idx = read_byte(vm);
                 let (a, b) = stack::pop_two(vm);
-                let result = operators::mul_values(vm, a, b);
-                match result {
-                    Ok(v) => vm.stack.push(v),
-                    Err(_) => {
-                        if cache_idx != 0xFF {
-                            if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
-                                match operators::call_operator_closure(vm, cached, &[a, b]) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            } else {
-                                match operators::call_binary_operator_cached(
-                                    vm,
-                                    Operator::Mul,
-                                    a,
-                                    b,
-                                    cache_idx,
-                                ) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            }
-                        } else {
-                            match operators::call_binary_operator(vm, Operator::Mul, a, b) {
-                                Ok(v) => vm.stack.push(v),
-                                Err(e) => return InterpretResult::RuntimeError(e),
-                            }
+
+                if a.is_int() && b.is_int() {
+                    if let (Some(ai), Some(bi)) = (a.as_int(), b.as_int()) {
+                        let prod = ai as i64 * bi as i64; if prod >= -1073741824_i64 && prod <= 1073741823_i64 { let s = prod as i32;
+                            vm.stack.push(Value::smi(s));
+                            continue;
                         }
+                    }
+                }
+                if (a.is_int() || a.is_float()) && (b.is_int() || b.is_float()) {
+                    let af = if a.is_float() { a.as_float() } else { a.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    let bf = if b.is_float() { b.as_float() } else { b.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    vm.stack.push(Value::float(af * bf));
+                    continue;
+                }
+
+                if cache_idx != 0xFF {
+                    if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
+                        match operators::call_operator_closure(vm, cached, &[a, b]) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    } else {
+                        match operators::call_binary_operator_cached(vm, Operator::Mul, a, b, cache_idx) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    }
+                } else {
+                    match operators::call_binary_operator(vm, Operator::Mul, a, b) {
+                        Ok(v) => vm.stack.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
                     }
                 }
             }
@@ -224,34 +242,33 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             Div => {
                 let cache_idx = read_byte(vm);
                 let (a, b) = stack::pop_two(vm);
-                let result = operators::div_values(vm, a, b);
-                match result {
-                    Ok(v) => vm.stack.push(v),
-                    Err(_) => {
-                        if cache_idx != 0xFF {
-                            if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
-                                match operators::call_operator_closure(vm, cached, &[a, b]) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            } else {
-                                match operators::call_binary_operator_cached(
-                                    vm,
-                                    Operator::Div,
-                                    a,
-                                    b,
-                                    cache_idx,
-                                ) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            }
-                        } else {
-                            match operators::call_binary_operator(vm, Operator::Div, a, b) {
-                                Ok(v) => vm.stack.push(v),
-                                Err(e) => return InterpretResult::RuntimeError(e),
-                            }
+
+                if (a.is_int() || a.is_float()) && (b.is_int() || b.is_float()) {
+                    let af = if a.is_float() { a.as_float() } else { a.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    let bf = if b.is_float() { b.as_float() } else { b.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    if bf == 0.0 {
+                        return InterpretResult::RuntimeError("Division by zero".to_string());
+                    }
+                    vm.stack.push(Value::float(af / bf));
+                    continue;
+                }
+
+                if cache_idx != 0xFF {
+                    if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
+                        match operators::call_operator_closure(vm, cached, &[a, b]) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
                         }
+                    } else {
+                        match operators::call_binary_operator_cached(vm, Operator::Div, a, b, cache_idx) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    }
+                } else {
+                    match operators::call_binary_operator(vm, Operator::Div, a, b) {
+                        Ok(v) => vm.stack.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
                     }
                 }
             }
@@ -332,37 +349,31 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             Greater => {
                 let cache_idx = read_byte(vm);
                 let (a, b) = stack::pop_two(vm);
-                let result = operators::compare_values(vm, a, b);
-                match result {
-                    Ok(std::cmp::Ordering::Greater) => vm.stack.push(Value::TRUE),
-                    Ok(_) => vm.stack.push(Value::FALSE),
-                    Err(_) => {
-                        // 基础类型失败，尝试运算符重载
-                        // a > b 等价于 b < a，交换参数调用 operator lt
-                        if cache_idx != 0xFF {
-                            if let Some(cached) = operators::inline_cache_get(vm, cache_idx, b, a) {
-                                match operators::call_operator_closure(vm, cached, &[b, a]) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            } else {
-                                match operators::call_binary_operator_cached(
-                                    vm,
-                                    Operator::Lt,
-                                    b,
-                                    a,
-                                    cache_idx,
-                                ) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            }
-                        } else {
-                            match operators::call_binary_operator(vm, Operator::Lt, b, a) {
-                                Ok(v) => vm.stack.push(v),
-                                Err(e) => return InterpretResult::RuntimeError(e),
-                            }
+
+                if (a.is_int() || a.is_float()) && (b.is_int() || b.is_float()) {
+                    let af = if a.is_float() { a.as_float() } else { a.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    let bf = if b.is_float() { b.as_float() } else { b.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    vm.stack.push(Value::bool_from(af > bf));
+                    continue;
+                }
+
+                // Operator overloading: a > b ≡ b < a
+                if cache_idx != 0xFF {
+                    if let Some(cached) = operators::inline_cache_get(vm, cache_idx, b, a) {
+                        match operators::call_operator_closure(vm, cached, &[b, a]) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
                         }
+                    } else {
+                        match operators::call_binary_operator_cached(vm, Operator::Lt, b, a, cache_idx) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    }
+                } else {
+                    match operators::call_binary_operator(vm, Operator::Lt, b, a) {
+                        Ok(v) => vm.stack.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
                     }
                 }
             }
@@ -370,36 +381,30 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             Less => {
                 let cache_idx = read_byte(vm);
                 let (a, b) = stack::pop_two(vm);
-                let result = operators::compare_values(vm, a, b);
-                match result {
-                    Ok(std::cmp::Ordering::Less) => vm.stack.push(Value::TRUE),
-                    Ok(_) => vm.stack.push(Value::FALSE),
-                    Err(_) => {
-                        // 基础类型失败，尝试运算符重载
-                        if cache_idx != 0xFF {
-                            if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
-                                match operators::call_operator_closure(vm, cached, &[a, b]) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            } else {
-                                match operators::call_binary_operator_cached(
-                                    vm,
-                                    Operator::Lt,
-                                    a,
-                                    b,
-                                    cache_idx,
-                                ) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            }
-                        } else {
-                            match operators::call_binary_operator(vm, Operator::Lt, a, b) {
-                                Ok(v) => vm.stack.push(v),
-                                Err(e) => return InterpretResult::RuntimeError(e),
-                            }
+
+                if (a.is_int() || a.is_float()) && (b.is_int() || b.is_float()) {
+                    let af = if a.is_float() { a.as_float() } else { a.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    let bf = if b.is_float() { b.as_float() } else { b.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    vm.stack.push(Value::bool_from(af < bf));
+                    continue;
+                }
+
+                if cache_idx != 0xFF {
+                    if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
+                        match operators::call_operator_closure(vm, cached, &[a, b]) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
                         }
+                    } else {
+                        match operators::call_binary_operator_cached(vm, Operator::Lt, a, b, cache_idx) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    }
+                } else {
+                    match operators::call_binary_operator(vm, Operator::Lt, a, b) {
+                        Ok(v) => vm.stack.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
                     }
                 }
             }
@@ -407,38 +412,30 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             LessEqual => {
                 let cache_idx = read_byte(vm);
                 let (a, b) = stack::pop_two(vm);
-                let result = operators::compare_values(vm, a, b);
-                match result {
-                    Ok(std::cmp::Ordering::Less) | Ok(std::cmp::Ordering::Equal) => {
-                        vm.stack.push(Value::TRUE)
-                    }
-                    Ok(_) => vm.stack.push(Value::FALSE),
-                    Err(_) => {
-                        // 基础类型失败，尝试运算符重载
-                        if cache_idx != 0xFF {
-                            if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
-                                match operators::call_operator_closure(vm, cached, &[a, b]) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            } else {
-                                match operators::call_binary_operator_cached(
-                                    vm,
-                                    Operator::Le,
-                                    a,
-                                    b,
-                                    cache_idx,
-                                ) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            }
-                        } else {
-                            match operators::call_binary_operator(vm, Operator::Le, a, b) {
-                                Ok(v) => vm.stack.push(v),
-                                Err(e) => return InterpretResult::RuntimeError(e),
-                            }
+
+                if (a.is_int() || a.is_float()) && (b.is_int() || b.is_float()) {
+                    let af = if a.is_float() { a.as_float() } else { a.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    let bf = if b.is_float() { b.as_float() } else { b.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    vm.stack.push(Value::bool_from(af <= bf));
+                    continue;
+                }
+
+                if cache_idx != 0xFF {
+                    if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
+                        match operators::call_operator_closure(vm, cached, &[a, b]) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
                         }
+                    } else {
+                        match operators::call_binary_operator_cached(vm, Operator::Le, a, b, cache_idx) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    }
+                } else {
+                    match operators::call_binary_operator(vm, Operator::Le, a, b) {
+                        Ok(v) => vm.stack.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
                     }
                 }
             }
@@ -446,39 +443,31 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             GreaterEqual => {
                 let cache_idx = read_byte(vm);
                 let (a, b) = stack::pop_two(vm);
-                let result = operators::compare_values(vm, a, b);
-                match result {
-                    Ok(std::cmp::Ordering::Greater) | Ok(std::cmp::Ordering::Equal) => {
-                        vm.stack.push(Value::TRUE)
-                    }
-                    Ok(_) => vm.stack.push(Value::FALSE),
-                    Err(_) => {
-                        // 基础类型失败，尝试运算符重载
-                        // a >= b 等价于 b <= a，交换参数调用 operator le
-                        if cache_idx != 0xFF {
-                            if let Some(cached) = operators::inline_cache_get(vm, cache_idx, b, a) {
-                                match operators::call_operator_closure(vm, cached, &[b, a]) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            } else {
-                                match operators::call_binary_operator_cached(
-                                    vm,
-                                    Operator::Le,
-                                    b,
-                                    a,
-                                    cache_idx,
-                                ) {
-                                    Ok(v) => vm.stack.push(v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
-                                }
-                            }
-                        } else {
-                            match operators::call_binary_operator(vm, Operator::Le, b, a) {
-                                Ok(v) => vm.stack.push(v),
-                                Err(e) => return InterpretResult::RuntimeError(e),
-                            }
+
+                if (a.is_int() || a.is_float()) && (b.is_int() || b.is_float()) {
+                    let af = if a.is_float() { a.as_float() } else { a.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    let bf = if b.is_float() { b.as_float() } else { b.as_int().map(|n| n as f64).unwrap_or(0.0) };
+                    vm.stack.push(Value::bool_from(af >= bf));
+                    continue;
+                }
+
+                // a >= b ≡ b <= a
+                if cache_idx != 0xFF {
+                    if let Some(cached) = operators::inline_cache_get(vm, cache_idx, b, a) {
+                        match operators::call_operator_closure(vm, cached, &[b, a]) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
                         }
+                    } else {
+                        match operators::call_binary_operator_cached(vm, Operator::Le, b, a, cache_idx) {
+                            Ok(v) => vm.stack.push(v),
+                            Err(e) => return InterpretResult::RuntimeError(e),
+                        }
+                    }
+                } else {
+                    match operators::call_binary_operator(vm, Operator::Le, b, a) {
+                        Ok(v) => vm.stack.push(v),
+                        Err(e) => return InterpretResult::RuntimeError(e),
                     }
                 }
             }
@@ -898,7 +887,10 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             }
 
             Resume => {
-                handle_resume(vm);
+                let result = handle_resume(vm);
+                if !matches!(result, InterpretResult::Ok) {
+                    return result;
+                }
             }
 
             Yield => {
@@ -1308,7 +1300,10 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             }
 
             IterNext => {
-                handle_iter_next(vm);
+                let result = handle_iter_next(vm);
+                if !matches!(result, InterpretResult::Ok) {
+                    return result;
+                }
             }
 
             // ===== 类型转换 =====
@@ -1388,7 +1383,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
 }
 
 // Resume 指令处理
-fn handle_resume(vm: &mut VM) {
+fn handle_resume(vm: &mut VM) -> InterpretResult {
     // 操作数：传入值个数
     let arg_count = read_byte(vm);
 
@@ -1399,7 +1394,9 @@ fn handle_resume(vm: &mut VM) {
 
         // 检查协程状态
         if coro.state == CoroutineState::Dead {
-            panic!("Cannot resume dead coroutine"); // 简化处理
+            return InterpretResult::RuntimeError(
+                "Cannot resume a dead coroutine".to_string(),
+            );
         }
 
         // 收集传入的参数
@@ -1415,7 +1412,10 @@ fn handle_resume(vm: &mut VM) {
             let func = unsafe { &*(*closure).function };
 
             if func.arity != arg_count {
-                panic!("Expected {} arguments but got {}", func.arity, arg_count);
+                return InterpretResult::RuntimeError(format!(
+                    "Expected {} arguments but got {}",
+                    func.arity, arg_count
+                ));
             }
 
             // 创建初始调用帧
@@ -1460,6 +1460,7 @@ fn handle_resume(vm: &mut VM) {
                 vm.open_upvalues = saved_upvalues;
                 // 将返回值压入主栈
                 vm.stack.push(return_val);
+                InterpretResult::Ok
             }
             InterpretResult::RuntimeError(msg) => {
                 if msg == "yield" {
@@ -1473,13 +1474,14 @@ fn handle_resume(vm: &mut VM) {
                     vm.open_upvalues = saved_upvalues;
                     // 将 yield 值压入主栈
                     vm.stack.push(yield_val);
+                    InterpretResult::Ok
                 } else {
                     coro.state = CoroutineState::Dead;
                     // 恢复主 VM 状态再返回错误
                     vm.stack = saved_stack;
                     vm.frames = saved_frames;
                     vm.open_upvalues = saved_upvalues;
-                    panic!("Coroutine runtime error: {msg}");
+                    InterpretResult::RuntimeError(format!("Coroutine runtime error: {msg}"))
                 }
             }
             InterpretResult::CompileError(msg) => {
@@ -1488,16 +1490,16 @@ fn handle_resume(vm: &mut VM) {
                 vm.stack = saved_stack;
                 vm.frames = saved_frames;
                 vm.open_upvalues = saved_upvalues;
-                panic!("Coroutine compile error: {msg}");
+                InterpretResult::CompileError(format!("Coroutine compile error: {msg}"))
             }
         }
     } else {
-        panic!("Can only resume coroutines");
+        InterpretResult::RuntimeError("Can only resume coroutines".to_string())
     }
 }
 
 // IterNext 指令处理
-fn handle_iter_next(vm: &mut VM) {
+fn handle_iter_next(vm: &mut VM) -> InterpretResult {
     // 获取迭代器下一个值
     let iter_val = vm.stack.pop().expect("Stack underflow");
 
@@ -1511,6 +1513,7 @@ fn handle_iter_next(vm: &mut VM) {
 
             if coro.state == CoroutineState::Dead {
                 vm.stack.push(Value::NULL);
+                return InterpretResult::Ok;
             } else {
                 // 如果是第一次运行，初始化调用帧
                 if coro.state == CoroutineState::Suspended && coro.frames.is_empty() {
@@ -1557,32 +1560,40 @@ fn handle_iter_next(vm: &mut VM) {
                         coro.state = CoroutineState::Dead;
                         let return_val = coro.stack.last().copied().unwrap_or(Value::NULL);
                         vm.stack.push(return_val);
+                        InterpretResult::Ok
                     }
                     InterpretResult::RuntimeError(msg) => {
                         if msg == "yield" {
                             coro.state = CoroutineState::Suspended;
                             let yield_val = coro.stack.last().copied().unwrap_or(Value::NULL);
                             vm.stack.push(yield_val);
+                            InterpretResult::Ok
                         } else {
                             coro.state = CoroutineState::Dead;
-                            panic!("Coroutine runtime error: {msg}");
+                            InterpretResult::RuntimeError(format!("Coroutine runtime error: {msg}"))
                         }
                     }
                     InterpretResult::CompileError(msg) => {
                         coro.state = CoroutineState::Dead;
-                        panic!("Coroutine compile error: {msg}");
+                        InterpretResult::CompileError(format!("Coroutine compile error: {msg}"))
                     }
                 }
             }
         } else {
             // 普通迭代器
             match iter.next() {
-                Some(value) => vm.stack.push(value),
-                None => vm.stack.push(Value::NULL),
+                Some(value) => {
+                    vm.stack.push(value);
+                    InterpretResult::Ok
+                }
+                None => {
+                    vm.stack.push(Value::NULL);
+                    InterpretResult::Ok
+                }
             }
         }
     } else {
-        panic!("Expected iterator");
+        InterpretResult::RuntimeError("Expected iterator".to_string())
     }
 }
 

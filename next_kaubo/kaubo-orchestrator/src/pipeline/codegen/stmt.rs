@@ -108,6 +108,29 @@ pub fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileE
         StmtKind::Impl(impl_stmt) => {
             compile_impl_block(compiler, impl_stmt)?;
         }
+
+        StmtKind::Break(_) => {
+            if compiler.loop_start.is_none() {
+                return Err(CompileError::Unimplemented(
+                    "break outside of loop".to_string(),
+                ));
+            }
+            let jump = compiler.chunk.write_jump(OpCode::Jump, 0);
+            compiler.break_jumps.push(jump);
+        }
+
+        StmtKind::Continue(_) => {
+            if let Some(loop_start) = compiler.loop_start {
+                compiler.chunk.write_loop(loop_start, 0);
+            } else {
+                return Err(CompileError::Unimplemented(
+                    "continue outside of loop".to_string(),
+                ));
+            }
+        }
+
+        StmtKind::Pass(_) => {
+        }
     }
     Ok(())
 }
@@ -290,23 +313,26 @@ fn compile_if(compiler: &mut Compiler, if_stmt: &IfStmt) -> Result<(), CompileEr
 
 /// 编译 while 循环
 fn compile_while(compiler: &mut Compiler, while_stmt: &WhileStmt) -> Result<(), CompileError> {
-    // 记录循环开始位置
+    let saved_break_jumps = std::mem::take(&mut compiler.break_jumps);
+    let saved_loop_start = compiler.loop_start;
+
     let loop_start = compiler.chunk.code.len();
+    compiler.loop_start = Some(loop_start);
 
-    // 编译循环条件
     super::expr::compile_expr(compiler, &while_stmt.condition)?;
-
-    // 如果条件为假，跳出循环
     let exit_jump = compiler.chunk.write_jump(OpCode::JumpIfFalse, 0);
 
-    // 编译循环体
     compile_stmt(compiler, &while_stmt.body)?;
 
-    // 跳回循环开始位置
     compiler.chunk.write_loop(loop_start, 0);
-
-    // 修补退出跳转
     compiler.chunk.patch_jump(exit_jump);
+
+    for jump in &compiler.break_jumps {
+        compiler.chunk.patch_jump(*jump);
+    }
+
+    compiler.break_jumps = saved_break_jumps;
+    compiler.loop_start = saved_loop_start;
 
     Ok(())
 }
@@ -314,7 +340,6 @@ fn compile_while(compiler: &mut Compiler, while_stmt: &WhileStmt) -> Result<(), 
 /// 编译 for-in 循环（基于迭代器协议）
 /// 语法: for var item in iterable { body }
 fn compile_for(compiler: &mut Compiler, for_stmt: &ForStmt) -> Result<(), CompileError> {
-    // 解析迭代变量声明
     let var_name = match for_stmt.iterator.as_ref() {
         ExprKind::VarRef(VarRef { name }) => name.clone(),
         _ => {
@@ -324,56 +349,51 @@ fn compile_for(compiler: &mut Compiler, for_stmt: &ForStmt) -> Result<(), Compil
         }
     };
 
-    // 进入 for 循环作用域
+    let saved_break_jumps = std::mem::take(&mut compiler.break_jumps);
+    let saved_loop_start = compiler.loop_start;
+
     var::begin_scope(compiler);
 
-    // 1. 获取迭代器: var $iter = iterable.iter();
     super::expr::compile_expr(compiler, &for_stmt.iterable)?;
     compiler.chunk.write_op(OpCode::GetIter, 0);
     let iter_idx = var::add_local(compiler, "$iter")?;
     var::mark_initialized(compiler);
     var::emit_store_local(compiler, iter_idx);
 
-    // 2. 声明迭代变量（只声明一次，循环内赋值）
     let var_idx = var::add_local(compiler, &var_name)?;
     var::mark_initialized(compiler);
 
-    // 3. 循环开始
     let loop_start = compiler.chunk.code.len();
+    compiler.loop_start = Some(loop_start);
 
-    // 4. 获取下一个值
     var::emit_load_local(compiler, iter_idx);
     compiler.chunk.write_op(OpCode::IterNext, 0);
 
-    // 5. 复制值用于 null 检查
     compiler.chunk.write_op(OpCode::Dup, 0);
 
-    // 6. 检查是否为 null（结束标记）
     compiler.chunk.write_op(OpCode::LoadNull, 0);
-    compiler.chunk.write_op_u8(OpCode::Equal, 0xFF, 0); // Equal 现在需要 cache_idx
+    compiler.chunk.write_op_u8(OpCode::Equal, 0xFF, 0);
     let exit_jump = compiler.chunk.write_jump(OpCode::JumpIfFalse, 0);
 
-    // 是 null，退出循环
-    // 注意：JumpIfFalse 已经弹出 true，栈上是 [null]
-    compiler.chunk.write_op(OpCode::Pop, 0); // 弹出 null 值
-    let exit_patch = compiler.chunk.write_jump(OpCode::Jump, 0); // 跳到循环外
+    compiler.chunk.write_op(OpCode::Pop, 0);
+    let exit_patch = compiler.chunk.write_jump(OpCode::Jump, 0);
 
-    // 7. 不是 null，赋值给迭代变量
     compiler.chunk.patch_jump(exit_jump);
-    // 注意：JumpIfFalse 已经弹出 false，栈上只剩 next 值
-    var::emit_store_local(compiler, var_idx); // 弹出 next 值，存入 item
+    var::emit_store_local(compiler, var_idx);
 
-    // 8. 编译循环体
     compile_stmt(compiler, &for_stmt.body)?;
 
-    // 9. 跳回循环开始
     compiler.chunk.write_loop(loop_start, 0);
-
-    // 10. 修补退出跳转
     compiler.chunk.patch_jump(exit_patch);
 
-    // 11. 退出作用域（item 和 $iter 被清理）
     var::end_scope(compiler);
+
+    for jump in &compiler.break_jumps {
+        compiler.chunk.patch_jump(*jump);
+    }
+
+    compiler.break_jumps = saved_break_jumps;
+    compiler.loop_start = saved_loop_start;
 
     Ok(())
 }
