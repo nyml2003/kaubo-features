@@ -33,6 +33,12 @@
 docs/
 ├── README.md                    ← 你在这里（本文档）
 │
+├── architecture.md              # 架构全景图 (水平×竖直, 可观测, 扩展点)
+├── artifacts.md                 # 交付产物清单 (库/二进制/wasm/FFI)
+├── roadmap.md                   # v0.2.0 路线图
+├── type-system.md               # 类型系统审计与修复方案
+├── package-json.md              # 项目配置
+│
 ├── 00-principles/               # 设计哲学（稳定）
 │   └── README.md                # 10条核心原则
 │
@@ -92,13 +98,12 @@ docs/
 
 | 我想了解... | 去哪找 |
 |------------|--------|
+| 目标架构长什么样 | [架构全景图](architecture.md) |
+| v0.2 路线图 | [roadmap.md](roadmap.md) |
+| 交付产物有哪些 | [artifacts.md](artifacts.md) |
+| 类型系统有什么问题 | [type-system.md](type-system.md) |
 | 当前实现架构 | [架构总览](30-implementation/architecture/README.md) |
-| 运算符重载怎么实现 | [运算符重载](30-implementation/completed/operators.md) |
-| `as` 支持哪些类型转换 | [类型系统](20-language/spec/types.md) → as 类型转换 |
 | 配置文件格式 | [配置系统](package-json.md) |
-| 性能目标 | [性能约束](10-constraints/performance-limits.md) |
-| 为什么不能重载 `and`/`or` | [运算符重载](30-implementation/completed/operators.md) → 不支持重载 |
-| MVP 路线图 | [DEVELOPMENT.md](../DEVELOPMENT.md) |
 
 ---
 

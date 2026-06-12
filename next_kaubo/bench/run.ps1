@@ -1,31 +1,55 @@
-# Kaubo Benchmark Suite — 一键运行 Kaubo / Python / Rust
-param([switch]$Quick)
+# Kaubo Benchmark — 编译+执行分离
+param([int]$Runs = 4)
 
-$sw_all = [System.Diagnostics.Stopwatch]::StartNew()
+$kauboExe = (Resolve-Path "target\release\kaubo.exe").Path
 
+# === Kaubo ===
 Write-Host "=== Kaubo ===" -ForegroundColor Cyan
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
-& target\release\kaubo.exe bench\package.json 2>$null
-$sw.Stop()
-Write-Host "Kaubo: $([math]::Round($sw.Elapsed.TotalMilliseconds))ms" -ForegroundColor Cyan
+$times = @()
+for ($i = 1; $i -le $Runs; $i++) {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    & $kauboExe bench\package.json 2>$null
+    $sw.Stop()
+    $times += $sw.Elapsed.TotalMilliseconds
+    $label = if ($i -eq 1) { " (incl compile)" } else { "" }
+    Write-Host "  Run $i : $([math]::Round($sw.Elapsed.TotalMilliseconds))ms$label" -ForegroundColor Cyan
+}
+$compileTime = $times[0] - $times[1]
+$avgExec = ($times[1..($times.Count-1)] | Measure-Object -Average).Average
+Write-Host "  Compile: $([math]::Round($compileTime))ms" -ForegroundColor DarkGray
+Write-Host "  Execute: $([math]::Round($avgExec))ms (avg)" -ForegroundColor Cyan
 
-Write-Host "`n=== CPython $((python -c 'import sys;print(sys.version.split()[0])') 2>$null) ===" -ForegroundColor Yellow
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
-python bench\bench.py
-$sw.Stop()
-Write-Host "Python: $([math]::Round($sw.Elapsed.TotalMilliseconds))ms" -ForegroundColor Yellow
+# === Python ===
+Write-Host "`n=== Python ===" -ForegroundColor Yellow
+$py_times = @()
+for ($i = 1; $i -le $Runs; $i++) {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    python bench\bench.py
+    $sw.Stop()
+    $py_times += $sw.Elapsed.TotalMilliseconds
+}
+$avgPy = ($py_times | Measure-Object -Average).Average
+Write-Host "  Execute: $([math]::Round($avgPy))ms (avg)" -ForegroundColor Yellow
 
-if (-not $Quick) {
-    if (-not (Test-Path bench\bench_rs.exe)) {
-        Write-Host "`nCompiling Rust..." -ForegroundColor DarkGray
-        rustc -O bench\bench.rs -o bench\bench_rs.exe 2>&1 | Out-Null
-    }
-    Write-Host "`n=== Rust ===" -ForegroundColor Green
+# === Rust ===
+Write-Host "`n=== Rust ===" -ForegroundColor Green
+if (-not (Test-Path bench\bench_rs.exe)) { rustc -O bench\bench.rs -o bench\bench_rs.exe 2>$null }
+$rs_times = @()
+for ($i = 1; $i -le $Runs; $i++) {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     & bench\bench_rs.exe
     $sw.Stop()
-    Write-Host "Rust: $([math]::Round($sw.Elapsed.TotalMilliseconds))ms" -ForegroundColor Green
+    $rs_times += $sw.Elapsed.TotalMilliseconds
 }
+$avgRs = ($rs_times | Measure-Object -Average).Average
+Write-Host "  Execute: $([math]::Round($avgRs))ms (avg)" -ForegroundColor Green
 
-$sw_all.Stop()
-Write-Host "`nTotal: $([math]::Round($sw_all.Elapsed.TotalMilliseconds))ms" -ForegroundColor White
+# === Summary ===
+Write-Host "`n=== Summary ===" -ForegroundColor White
+Write-Host ("  Kaubo  compile: {0,6}ms" -f [math]::Round($compileTime))
+Write-Host ("  Kaubo  execute: {0,6}ms" -f [math]::Round($avgExec))
+Write-Host ("  Python execute: {0,6}ms" -f [math]::Round($avgPy))
+Write-Host ("  Rust   execute: {0,6}ms" -f [math]::Round($avgRs))
+Write-Host ""
+Write-Host ("  Kaubo vs Python (exec): {0:F1}x" -f ($avgExec / [Math]::Max(1, $avgPy)))
+Write-Host ("  Kaubo vs Rust   (exec): {0:F0}x" -f ($avgExec / [Math]::Max(1, $avgRs)))

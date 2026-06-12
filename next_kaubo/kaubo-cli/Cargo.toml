@@ -15,8 +15,7 @@ clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# 内部依赖
-kaubo-orchestrator = { path = "../kaubo-orchestrator" }
-kaubo-config = { path = "../kaubo-config" }
+kaubo-compiler = { path = "../crates/kaubo-compiler" }
+kaubo-runtime = { path = "../crates/kaubo-runtime" }
+kaubo-ir = { path = "../crates/kaubo-ir" }
 kaubo-log = { path = "../kaubo-log" }
-kaubo-vfs = { path = "../kaubo-vfs" }

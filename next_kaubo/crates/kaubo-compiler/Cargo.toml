@@ -1,0 +1,20 @@
+[package]
+name = "kaubo-compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Kaubo compiler (lexer, parser, codegen)"
+
+[dependencies]
+kaubo-ir = { path = "../kaubo-ir" }
+kaubo-pipeline = { path = "../kaubo-pipeline" }
+kaubo-log = { workspace = true }
+kaubo-vfs = { workspace = true }
+kaubo-config = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+kaubo-runtime = { path = "../kaubo-runtime" }

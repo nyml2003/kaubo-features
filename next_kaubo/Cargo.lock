@@ -143,12 +143,27 @@ name = "kaubo-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "kaubo-config",
+ "kaubo-compiler",
+ "kaubo-ir",
  "kaubo-log",
- "kaubo-orchestrator",
+ "kaubo-runtime",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "kaubo-compiler"
+version = "0.1.0"
+dependencies = [
+ "kaubo-config",
+ "kaubo-ir",
+ "kaubo-log",
+ "kaubo-pipeline",
+ "kaubo-runtime",
  "kaubo-vfs",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -160,6 +175,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaubo-ir"
+version = "0.1.0"
+dependencies = [
+ "kaubo-config",
+ "kaubo-log",
+]
+
+[[package]]
 name = "kaubo-log"
 version = "0.1.0"
 dependencies = [
@@ -168,12 +191,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "kaubo-orchestrator"
+name = "kaubo-pipeline"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "kaubo-runtime"
 version = "0.1.0"
 dependencies = [
  "kaubo-config",
+ "kaubo-ir",
  "kaubo-log",
- "kaubo-vfs",
  "serde",
  "serde_json",
  "thiserror",
@@ -189,7 +220,6 @@ version = "0.1.0"
 dependencies = [
  "kaubo-config",
  "kaubo-log",
- "kaubo-orchestrator",
 ]
 
 [[package]]

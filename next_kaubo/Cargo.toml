@@ -1,5 +1,5 @@
 [workspace]
-members = ["kaubo-config", "kaubo-vfs", "kaubo-cli", "kaubo-log", "kaubo-orchestrator"]
+members = ["kaubo-config", "kaubo-vfs", "kaubo-cli", "kaubo-log", "crates/kaubo-ir", "crates/kaubo-compiler", "crates/kaubo-runtime", "crates/kaubo-pipeline"]
 resolver = "2"
 
 [workspace.package]
@@ -26,7 +26,6 @@ kaubo-vfs = { path = "kaubo-vfs" }
 kaubo-log = { path = "kaubo-log" }
 
 # kaubo-cli 依赖
-kaubo-orchestrator = { path = "kaubo-orchestrator" }
 clap = { version = "4", features = ["derive"] }
 
 # 虚拟包配置（满足 Cargo 要求）
@@ -39,5 +38,4 @@ license = "MIT"
 [dev-dependencies]
 kaubo-config = { path = "kaubo-config" }
 kaubo-log = { path = "kaubo-log" }
-kaubo-orchestrator = { path = "kaubo-orchestrator" }
 

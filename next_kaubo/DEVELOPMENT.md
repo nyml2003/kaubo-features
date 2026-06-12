@@ -462,38 +462,26 @@ kaubo-core:   462 tests (288 单元 + 13 多文件 + 63 集成 + 4 示例 + 90 V
 
 ---
 
-### MVP v0.1 (进行中)
+### ✅ MVP v0.1 — 已完成 (2026-06-12)
 
-**目标：** 交付可用的 Kaubo v0.1 — 稳定、可靠、完整的脚本语言运行时。
+**当前状态：428 tests，0 failures · git tag: v0.1.0**
 
-**当前状态：425 tests，0 failures**
+**已完成：** 全部交付清单
 
-**MVP 交付清单：**
+### v0.2.0 — 进行中
 
-| 任务 | 状态 |
-|------|------|
-| 修复所有 `panic!()` / `unimplemented!()` | ✅ |
-| 删除废弃 token (`interface`/`async`/`await`) | ✅ |
-| 标准库测试覆盖 (49 tests) | ✅ |
-| 类型检查器 strict 模式 | ✅ |
-| Spec 文档收敛 | ✅ |
-| 实现 `break` / `continue` / `pass` | ✅ |
-| 修复闭包捕获 bug (`enclosing` 指针) | ✅ |
-| 修复 unsafe raw pointer autoref (4 处 UB) | ✅ |
-| 新增 std: `substring`/`contains`/`starts_with`/`ends_with`/`env`/`now` | ✅ |
-| 修复 config 访问 stub | ✅ |
-| `kaubo build` 命令 + Release 模式 | ✅ |
-| 打 tag v0.1.0 | ✅ |
+> 完整路线见 [docs/roadmap.md](docs/roadmap.md)
 
-**已删除（非 MVP）：**
-- `interface` / `async` / `await` token
-- `val` / `runtime` / `cfg` 编译期元编程
-- 泛型 / JIT / 热重载
-- 链接器 / 包管理器
+| Phase | 目标 |
+|-------|------|
+| Phase 1 | 消除 panic → 结构化错误 🔴 |
+| Phase 2 | 轻量 GC (Reference Counting) |
+| Phase 3 | Crate split (ir / compiler / runtime) |
+| Phase 4 | HIR lowering + codegen |
+| Phase 5 | TypeChecker 接线 |
+| Phase 6 | Platform 注入 + WASM |
 
 ---
-
-## 所有可用任务
 
 查看所有可用任务：
 ```bash
