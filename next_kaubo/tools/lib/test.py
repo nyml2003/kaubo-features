@@ -13,10 +13,13 @@ KAUBO_CLI = None
 def _find_kaubo():
     global KAUBO_CLI
     if KAUBO_CLI: return KAUBO_CLI
-    for p in [os.path.expanduser("~/.cargo/bin/cargo"), ROOT / "target/release/kaubo-cli", ROOT / "target/debug/kaubo-cli"]:
-        if os.path.exists(p):
+    for p in [ROOT / "target/release/kaubo", ROOT / "target/debug/kaubo"]:
+        if p.exists():
             KAUBO_CLI = str(p); return KAUBO_CLI
-    KAUBO_CLI = "cargo"; return KAUBO_CLI
+    for p in [os.path.expanduser("~/.cargo/bin/cargo"), "cargo"]:
+        if os.path.exists(p):
+            KAUBO_CLI = p; return p
+    return "cargo"
 
 def load_tests(config_path=None):
     """加载集成测试配置"""

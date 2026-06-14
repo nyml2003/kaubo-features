@@ -1,5 +1,6 @@
 """统一输出引擎 — table / JSON / markdown"""
 import json, sys, time
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -80,30 +81,24 @@ def print_bench_table(results: list[BenchResult]):
 
     print()
     _print_comparison(results)
-
 def _print_comparison(results: list[BenchResult]):
-    """Kaubo vs Python/Rust 对比"""
-    kaubo = [r for r in results if r.lang == "kaubo(bin)"]
+    kaubo = [r for r in results if r.lang == "kaubo"]
     python = [r for r in results if r.lang == "python"]
     rust = [r for r in results if r.lang == "rust"]
-
     if not kaubo: return
-
     kaubo_dict = {r.suite: r.median for r in kaubo}
 
     if python:
         ratios = [kaubo_dict[r.suite] / r.median for r in python if r.suite in kaubo_dict and r.median > 0]
         if ratios:
             gm = _geomean(ratios)
-            label = c("yellow") if gm > 1 else c("green")
-            print(f"  Kaubo vs Python (geomean): {label}{gm:.1f}x{'faster' if gm > 1 else 'slower'}{c('reset')}")
+            print(f"  Kaubo vs Python: {c('yellow')}{gm:.1f}x slower{c('reset')} (geomean)")
 
     if rust:
         ratios = [kaubo_dict[r.suite] / r.median for r in rust if r.suite in kaubo_dict and r.median > 0]
         if ratios:
             gm = _geomean(ratios)
-            label = c("red") if gm > 1 else c("green")
-            print(f"  Kaubo vs Rust   (geomean): {label}{gm:.1f}x{'slower' if gm > 1 else 'faster'}{c('reset')}")
+            print(f"  Rust   vs Kaubo:  {c('green')}{gm:.1f}x faster{c('reset')} (geomean)")
 
 def _geomean(values):
     from math import exp, log
@@ -139,3 +134,68 @@ def write_json(summary: Summary, path: str):
     with open(path, 'w') as f:
         json.dump(data, f, indent=2)
     print(f"\n  Report written to {path}")
+
+
+# ============================================================
+# Baseline — 性能回归防护
+# ============================================================
+
+BASELINE_DIR = Path(__file__).parent.parent / "bench"
+BASELINE_FILE = BASELINE_DIR / "baseline.json"
+
+# 小 benchmark（<10ms）允许更大的波动，因为测量噪声大
+HIGH_NOISE_THRESHOLD_MS = 10
+HIGH_NOISE_RATIO = 3.0     # 允许 200% 波动
+NORMAL_THRESHOLD_RATIO = 1.50  # 允许 50% 退化
+
+
+def save_baseline(results: list):
+    """从当前 benchmark 结果生成 baseline.json"""
+    baseline = {"version": 1, "entries": {}}
+    for r in results:
+        if not r.passed or not r.times_ms:
+            continue
+        entry = baseline["entries"].setdefault(r.suite, {})
+        entry[r.lang] = round(r.median, 4)
+    with open(BASELINE_FILE, 'w') as f:
+        json.dump(baseline, f, indent=2)
+    print(f"\n  Baseline saved to {BASELINE_FILE}")
+
+
+def check_baseline(results: list) -> list[str]:
+    """对比 baseline，返回退化项列表。空列表表示通过。"""
+    if not BASELINE_FILE.exists():
+        return ["No baseline file found. Run --save-baseline first."]
+
+    with open(BASELINE_FILE) as f:
+        baseline = json.load(f)
+
+    entries = baseline.get("entries", {})
+    violations = []
+
+    for r in results:
+        if not r.passed or not r.times_ms:
+            continue
+        baseline_ms = entries.get(r.suite, {}).get(r.lang)
+        if baseline_ms is None or baseline_ms <= 0:
+            continue
+        ratio = r.median / baseline_ms
+        threshold = HIGH_NOISE_RATIO if baseline_ms < HIGH_NOISE_THRESHOLD_MS else NORMAL_THRESHOLD_RATIO
+        if ratio > threshold:
+            pct = (ratio - 1) * 100
+            violations.append(
+                f"[{r.lang}] {r.suite}: {_fmt_ms(r.median)} vs baseline {_fmt_ms(baseline_ms)} (+{pct:.0f}%, limit {int((threshold-1)*100)}%)"
+            )
+    return violations
+
+
+def print_baseline_check(violations: list[str]):
+    """打印 baseline 检查结果"""
+    if not violations:
+        print(f"\n  {c('green', 'Performance baseline: PASS')}")
+        return
+
+    print(f"\n  {c('red', 'Performance baseline: FAIL')} — {len(violations)} regression(s)")
+    for v in violations:
+        print(f"    {c('yellow', v)}")
+

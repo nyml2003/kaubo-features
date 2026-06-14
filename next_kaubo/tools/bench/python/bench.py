@@ -37,6 +37,30 @@ def pipeline():
             if t % 7 == 0: total += t
     return total
 
+def list_push(n=100000):
+    l = []
+    for i in range(n):
+        l.append(i)
+    return len(l)
+
+def string_concat(n=1000):
+    s = "a"
+    for _ in range(n):
+        s += "b"
+    return "ok"
+
+def json_access(n=10000):
+    d = {"value": 0}
+    for _ in range(n):
+        d = {"value": d["value"] + 1}
+    return "ok"
+
+def closure_call(n=100000):
+    f = lambda x: x + 1
+    for _ in range(n):
+        f(0)
+    return "ok"
+
 if __name__ == "__main__":
     import time, sys
     if len(sys.argv) > 1:
@@ -45,8 +69,13 @@ if __name__ == "__main__":
         elif fn == "mandelbrot": print(mandelbrot())
         elif fn == "sieve": print(sieve(100000))
         elif fn == "pipeline": print(pipeline())
+        elif fn == "list_push": print(list_push())
+        elif fn == "string_concat": print(string_concat())
+        elif fn == "json_access": print(json_access())
+        elif fn == "closure_call": print(closure_call())
     else:
-        print(fib_iter(40))
-        print(mandelbrot())
-        print(sieve(100000))
-        print(pipeline())
+        for name, fn in [("fib", lambda: fib_iter(40)), ("mandelbrot", mandelbrot),
+                         ("sieve", lambda: sieve(100000)), ("pipeline", pipeline),
+                         ("list_push", list_push), ("string_concat", string_concat),
+                         ("json_access", json_access), ("closure_call", closure_call)]:
+            print(fn())

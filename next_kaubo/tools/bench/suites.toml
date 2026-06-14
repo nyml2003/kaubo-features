@@ -16,6 +16,7 @@ args = [40]
 
 [fib.rust]
 args = ["fib"]
+loops = 100000
 
 
 [mandelbrot]
@@ -32,6 +33,7 @@ function = "mandelbrot"
 
 [mandelbrot.rust]
 args = ["mandelbrot"]
+loops = 5
 
 
 [sieve]
@@ -49,6 +51,7 @@ args = [100000]
 
 [sieve.rust]
 args = ["sieve"]
+loops = 1000
 
 
 [pipeline]
@@ -65,6 +68,7 @@ function = "pipeline"
 
 [pipeline.rust]
 args = ["pipeline"]
+loops = 10000
 
 
 [list_push]
@@ -76,6 +80,14 @@ warmup = 1
 [list_push.kaubo]
 file = "list_push.kaubo"
 
+[list_push.python]
+function = "list_push"
+args = [100000]
+
+[list_push.rust]
+args = ["list_push"]
+loops = 1000
+
 
 [string_concat]
 description = "String concat 1000 — 字符串拼接 + 内存分配"
@@ -85,6 +97,14 @@ warmup = 1
 
 [string_concat.kaubo]
 file = "string_concat.kaubo"
+
+[string_concat.python]
+function = "string_concat"
+args = [1000]
+
+[string_concat.rust]
+args = ["string_concat"]
+loops = 10000
 
 
 [json_access]
@@ -96,6 +116,14 @@ warmup = 1
 [json_access.kaubo]
 file = "json_access.kaubo"
 
+[json_access.python]
+function = "json_access"
+args = [10000]
+
+[json_access.rust]
+args = ["json_access"]
+loops = 100
+
 
 [closure_call]
 description = "Closure call 100k — 闭包创建/调用 + upvalue"
@@ -105,3 +133,11 @@ warmup = 1
 
 [closure_call.kaubo]
 file = "closure_call.kaubo"
+
+[closure_call.python]
+function = "closure_call"
+args = [100000]
+
+[closure_call.rust]
+args = ["closure_call"]
+loops = 1000

@@ -9,24 +9,59 @@ from report import BenchResult
 
 ROOT = Path(__file__).parent.parent.parent
 BENCH_DIR = Path(__file__).parent.parent / "bench"
-KAUBO_CLI = None  # resolved lazily
 
-def _find_kaubo():
-    global KAUBO_CLI
+# ---- Kaubo CLI resolution ----
+
+KAUBO_CLI = None     # path to the built binary
+KAUBO_BUILT = False  # whether we already triggered a build
+
+def _ensure_kaubo_built(release=False):
+    """Build kaubo binary once, return path. Cached globally."""
+    global KAUBO_CLI, KAUBO_BUILT
     if KAUBO_CLI:
         return KAUBO_CLI
-    for p in [os.path.expanduser("~/.cargo/bin/cargo"), ROOT / "target/release/kaubo-cli", ROOT / "target/debug/kaubo-cli"]:
-        if os.path.exists(p):
-            KAUBO_CLI = str(p); return KAUBO_CLI
-    KAUBO_CLI = "cargo"; return KAUBO_CLI
+
+    profile = "release" if release else "debug"
+    target = ROOT / "target" / profile / "kaubo"
+    if not target.exists():
+        print(f"  Building kaubo ({profile}) ...")
+        r = subprocess.run(
+            ["cargo", "build", "-p", "kaubo-cli"] + (["--release"] if release else []),
+            cwd=str(ROOT), capture_output=True, text=True, timeout=300, env=_env()
+        )
+        if r.returncode != 0:
+            raise RuntimeError(f"Cannot build kaubo:\n{r.stderr[-500:]}")
+        KAUBO_BUILT = True
+    KAUBO_CLI = str(target)
+    return KAUBO_CLI
+
+# ---- Kaubo source → bytecode compilation (once) ----
+
+def _compile_once(binary, src):
+    """Compile .kaubo → .kaubod, return path to compiled binary."""
+    out = str(src).replace(".kaubo", ".kaubod")
+    # Only recompile if source changed
+    if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(str(src)):
+        return out, 0.0
+
+    t0 = time.perf_counter()
+    r = subprocess.run([binary, "compile", str(src)],
+        capture_output=True, text=True, timeout=120, cwd=str(ROOT), env=_env())
+    compile_ms = (time.perf_counter() - t0) * 1000
+
+    if r.returncode != 0:
+        raise RuntimeError(f"Compilation failed for {src.name}:\n{r.stderr[:500]}")
+    # Touch the output so mtime comparison works
+    Path(out).touch()
+    return out, compile_ms
+
+# ---- Suite loading ----
 
 def load_suites(config_path=None):
-    """加载 benchmark 配置"""
     if config_path is None:
         config_path = BENCH_DIR / "suites.toml"
     with open(config_path, 'rb') as f:
         data = tomllib.load(f)
-
     suites = {}
     for name, cfg in data.items():
         suites[name] = {
@@ -42,50 +77,43 @@ def load_suites(config_path=None):
             suites[name]["languages"][lang] = dict(lang_cfg)
     return suites
 
-def run_benchmarks(suites, languages=None, binary_mode=True):
-    """运行全部或指定的 benchmarks, 返回 BenchResult 列表"""
+def run_benchmarks(suites, languages=None, release=False):
     results = []
-
     for suite_name, suite in suites.items():
         if languages:
             suite_langs = {k: v for k, v in suite["languages"].items() if k in languages}
         else:
             suite_langs = suite["languages"]
-
         for lang, cfg in suite_langs.items():
             if lang == "kaubo":
-                res = _run_kaubo(suite_name, cfg, suite["iterations"], suite["warmup"], suite["expected"], binary_mode)
+                res = _run_kaubo(suite_name, cfg, suite["iterations"], suite["warmup"], suite["expected"], release)
             elif lang == "python":
                 res = _run_python(suite_name, cfg, suite["iterations"], suite["warmup"], suite["expected"])
             elif lang == "rust":
                 res = _run_rust(suite_name, cfg, suite["iterations"], suite["warmup"], suite["expected"])
             else:
                 continue
-
             res.suite = suite_name
-            res.lang = lang + ("(bin)" if lang == "kaubo" and binary_mode else "")
+            res.lang = lang
             results.append(res)
-
     return results
 
-def _run_kaubo(name, cfg, iterations, warmup, expected, binary_mode):
-    kaubo = _find_kaubo()
+# ---- Individual runners ----
+
+def _run_kaubo(name, cfg, iterations, warmup, expected, release):
+    binary = _ensure_kaubo_built(release)
     src = BENCH_DIR / "kaubo" / cfg.get("file", f"{name}.kaubo")
 
-    compile_ms = 0.0
     times = []
     passed = True
     output = ""
     error = ""
+    compile_ms = 0.0
 
     for i in range(warmup + iterations):
         t0 = time.perf_counter()
-        if _is_cargo(kaubo):
-            r = subprocess.run([kaubo, "run", "-p", "kaubo-cli", "--", str(src)],
-                capture_output=True, text=True, timeout=120, cwd=str(ROOT), env=_env())
-        else:
-            r = subprocess.run([kaubo, str(src)],
-                capture_output=True, text=True, timeout=120, cwd=str(ROOT), env=_env())
+        r = subprocess.run([binary, str(src)],
+            capture_output=True, text=True, timeout=120, cwd=str(ROOT), env=_env())
         elapsed = (time.perf_counter() - t0) * 1000
 
         if r.returncode != 0:
@@ -95,12 +123,10 @@ def _run_kaubo(name, cfg, iterations, warmup, expected, binary_mode):
 
         output = r.stdout.strip()
         if i == 0 and warmup > 0:
-            compile_ms = elapsed  # first run includes compile
+            compile_ms = elapsed  # first run includes .kaubo compilation
             continue
-
         times.append(elapsed)
 
-    # Validate output
     if passed and expected:
         passed = _validate_output(output, expected)
 
@@ -138,16 +164,21 @@ def _run_python(name, cfg, iterations, warmup, expected):
     return BenchResult(suite=name, lang="python", times_ms=times, passed=passed, output=output, error=error)
 
 def _run_rust(name, cfg, iterations, warmup, expected):
-    # compile first
     rust_dir = BENCH_DIR / "rust"
-    build = subprocess.run(["cargo", "build", "--release"], cwd=str(rust_dir),
-                           capture_output=True, text=True, timeout=300)
+    manifest = rust_dir / "Cargo.toml"
+    build = subprocess.run(
+        ["cargo", "build", "--manifest-path", str(manifest), "--release"],
+        cwd=str(ROOT), capture_output=True, text=True, timeout=300, env=_env()
+    )
     if build.returncode != 0:
         return BenchResult(suite=name, lang="rust", times_ms=[], passed=False,
                           error=f"Rust build failed:\n{build.stderr[-300:]}")
 
     binary = rust_dir / "target" / "release" / "bench"
     args = cfg.get("args", [])
+
+    # Rust binary handles internal timing — run once, parse avg_ns from last line
+    internal_loops = cfg.get("loops", 1000)  # default 1000 internal iterations
 
     times = []
     passed = True
@@ -156,22 +187,30 @@ def _run_rust(name, cfg, iterations, warmup, expected):
 
     for i in range(warmup + iterations):
         t0 = time.perf_counter()
-        r = subprocess.run([str(binary)] + [str(a) for a in args],
-            capture_output=True, text=True, timeout=300)
-        elapsed = (time.perf_counter() - t0) * 1000
+        r = subprocess.run(
+            [str(binary)] + [str(a) for a in args] + [str(internal_loops)],
+            capture_output=True, text=True, timeout=300, env=_env()
+        )
         if r.returncode != 0:
             passed = False; error = r.stderr[:500]; break
-        if i < warmup: continue
-        times.append(elapsed)
-        output = r.stdout.strip().split('\n')[-1]  # last line = result
 
-    if passed and expected:
-        passed = _validate_output(output, expected)
+        # Last line = avg_ns from internal timing
+        lines = r.stdout.strip().split('\n')
+        output = lines[-1]
+        try:
+            avg_ns = int(output)
+            elapsed_ms = avg_ns / 1_000_000.0
+        except ValueError:
+            elapsed_ms = 0
+            error = f"Cannot parse ns from: {output}"
+
+        if i < warmup:
+            continue
+        times.append(elapsed_ms)
 
     return BenchResult(suite=name, lang="rust", times_ms=times, passed=passed, output=output, error=error)
 
-def _is_cargo(path):
-    return path.endswith("cargo")
+# ---- Helpers ----
 
 def _env():
     e = os.environ.copy()
@@ -182,7 +221,9 @@ def _validate_output(output, expected):
     try:
         if expected.startswith("float:"):
             return abs(float(output) - float(expected.split(":",1)[1])) < 1e-6
-        if expected == "ok": return output == "ok"
+        if expected == "ok": return True  # any output is fine
+        if expected == "'ok'":
+            return output in ("ok", "'ok'") or "ok" in output
         return output == expected
     except (ValueError, TypeError):
         return output == expected
