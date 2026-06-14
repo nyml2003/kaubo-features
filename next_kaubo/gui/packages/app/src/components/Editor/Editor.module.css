@@ -1,0 +1,48 @@
+.editor {
+  flex: 1;
+  min-width: 0;
+}
+
+.editor :global(.cm-editor) {
+  height: 100%;
+  background: #1a1a2e;
+}
+
+.editor :global(.cm-editor .cm-content) {
+  background: #1a1a2e;
+  caret-color: #e0e0e0;
+}
+
+.editor :global(.cm-editor .cm-scroller) {
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: auto;
+}
+
+.editor :global(.cm-editor.cm-focused) {
+  outline: none;
+}
+
+.editor :global(.cm-editor .cm-gutters) {
+  background: #1e1e36;
+  color: #555;
+  border: none;
+  padding-right: 8px;
+}
+
+.editor :global(.cm-editor .cm-activeLineGutter) {
+  background: #252542;
+}
+
+.editor :global(.cm-editor .cm-activeLine) {
+  background: #252542;
+}
+
+.editor :global(.cm-editor .cm-selectionBackground) {
+  background: #363669;
+}
+
+.editor :global(.cm-editor .cm-cursor) {
+  border-left-color: #e0e0e0;
+}

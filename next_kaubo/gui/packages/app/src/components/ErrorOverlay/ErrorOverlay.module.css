@@ -1,0 +1,51 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+}
+
+.box {
+  max-width: 600px;
+  width: 90%;
+  background: #1a1a2e;
+  border: 1px solid #ff5555;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ff5555;
+  border-bottom: 1px solid #2a2a4a;
+}
+
+.close {
+  font-size: 18px;
+  color: #888;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.close:hover {
+  color: #fff;
+}
+
+.message {
+  padding: 14px;
+  margin: 0;
+  font-size: 13px;
+  color: #d0d0d0;
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 300px;
+}

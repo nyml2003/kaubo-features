@@ -1,0 +1,30 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  border-left: 1px solid #2a2a4a;
+  background: #16162a;
+  overflow: hidden;
+}
+
+.header {
+  padding: 6px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+  border-bottom: 1px solid #2a2a4a;
+  user-select: none;
+}
+
+.output {
+  flex: 1;
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #b0b0b0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

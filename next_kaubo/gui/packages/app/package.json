@@ -1,0 +1,32 @@
+{
+  "name": "@kaubo/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "pnpm --filter @kaubo/types build && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src/",
+    "format": "prettier --write 'src/**/*.{ts,tsx,css}'"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.5",
+    "@codemirror/view": "^6.36.4",
+    "@codemirror/state": "^6.5.2",
+    "@kaubo/wasm": "workspace:*"
+  },
+  "devDependencies": {
+    "@kaubo/types": "workspace:*",
+    "typescript": "~5.7.0",
+    "@types/node": "^22.0.0",
+    "vite": "^6.3.0",
+    "vite-plugin-solid": "^2.11.0",
+    "eslint": "^9.28.0",
+    "@eslint/js": "^9.28.0",
+    "typescript-eslint": "^8.32.0",
+    "eslint-plugin-solid": "^0.14.0",
+    "prettier": "^3.5.0",
+    "prettier-plugin-organize-imports": "^4.1.0"
+  }
+}

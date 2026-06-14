@@ -1,0 +1,18 @@
+/* eslint-disable */
+// Minimal CSS Reset — strip all browser defaults
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  text-decoration: none;
+  list-style: none;
+}
+:focus:not(:focus-visible) { outline: none; }
+html { -webkit-text-size-adjust: none; text-size-adjust: none; }
+body { line-height: 1.5; -webkit-font-smoothing: antialiased; }
+img, picture, video, canvas, svg { display: block; max-width: 100%; }

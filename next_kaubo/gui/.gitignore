@@ -1,0 +1,9 @@
+node_modules
+dist
+*.local
+*.tsbuildinfo
+# tsc emits these when composite=true — Vite handles the actual build
+packages/app/src/**/*.js
+packages/app/src/**/*.d.ts
+packages/types/src/**/*.js
+packages/types/src/**/*.d.ts

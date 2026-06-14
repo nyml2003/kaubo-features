@@ -122,11 +122,17 @@ pub fn create_stdlib_modules() -> Vec<(String, Box<ObjModule>)> {
     name_to_shape.insert("ends_with".to_string(), 27u16);
 
     // ===== 环境与时间 (28-29) =====
-    exports.push(create_native_value(env_fn, "env", 1));
-    name_to_shape.insert("env".to_string(), 28u16);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        exports.push(create_native_value(env_fn, "env", 1));
+        name_to_shape.insert("env".to_string(), 28u16);
+    }
 
-    exports.push(create_native_value(now_fn, "now", 0));
-    name_to_shape.insert("now".to_string(), 29u16);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        exports.push(create_native_value(now_fn, "now", 0));
+        name_to_shape.insert("now".to_string(), 29u16);
+    }
 
     let module = ObjModule::new("std".to_string(), exports, name_to_shape);
     vec![("std".to_string(), Box::new(module))]
@@ -841,40 +847,56 @@ fn ends_with_fn(args: &[Value]) -> Result<Value, String> {
 // ===== 环境与时间函数实现 =====
 
 fn env_fn(args: &[Value]) -> Result<Value, String> {
-    if args.len() != 1 {
-        return Err(format!(
-            "env() takes exactly 1 argument ({} given)",
-            args.len()
-        ));
-    }
-
-    let name = if let Some(ptr) = args[0].as_string() {
-        unsafe { &(*ptr).chars }
-    } else {
-        return Err("env() argument must be a string".to_string());
-    };
-
-    match std::env::var(name.as_str()) {
-        Ok(val) => {
-            let string_obj = Box::new(ObjString::new(val));
-            Ok(Value::string(Box::into_raw(string_obj)))
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if args.len() != 1 {
+            return Err(format!(
+                "env() takes exactly 1 argument ({} given)",
+                args.len()
+            ));
         }
-        Err(_) => Ok(Value::NULL),
+
+        let name = if let Some(ptr) = args[0].as_string() {
+            unsafe { &(*ptr).chars }
+        } else {
+            return Err("env() argument must be a string".to_string());
+        };
+
+        match std::env::var(name.as_str()) {
+            Ok(val) => {
+                let string_obj = Box::new(ObjString::new(val));
+                Ok(Value::string(Box::into_raw(string_obj)))
+            }
+            Err(_) => Ok(Value::NULL),
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = args;
+        Err("env() not available on wasm".to_string())
     }
 }
 
 fn now_fn(args: &[Value]) -> Result<Value, String> {
-    if !args.is_empty() {
-        return Err("now() takes no arguments".to_string());
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if !args.is_empty() {
+            return Err("now() takes no arguments".to_string());
+        }
+
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        Ok(Value::float(ts as f64))
     }
-
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-
-    Ok(Value::float(ts as f64))
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = args;
+        Err("now() not available on wasm".to_string())
+    }
 }
 
 #[cfg(test)]

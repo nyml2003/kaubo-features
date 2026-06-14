@@ -160,8 +160,8 @@ impl PartialEq for Record {
 
 /// 获取当前时间戳（毫秒）
 ///
-/// 在 std 平台使用系统时间，在 no_std 平台使用单调计数器
-#[cfg(feature = "std")]
+/// 在 std 平台使用系统时间，在 no_std / WASM 平台使用单调计数器
+#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
 fn current_timestamp_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -170,13 +170,12 @@ fn current_timestamp_ms() -> u64 {
         .as_millis() as u64
 }
 
-#[cfg(not(feature = "std"))]
+#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
 static mut MONOTONIC_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
-#[cfg(not(feature = "std"))]
+#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
 fn current_timestamp_ms() -> u64 {
-    // no_std 环境下使用单调递增计数器作为时间戳
-    // 实际项目应该接入硬件时钟
+    // no_std / WASM 环境下使用单调递增计数器作为时间戳
     unsafe { MONOTONIC_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed) }
 }
 

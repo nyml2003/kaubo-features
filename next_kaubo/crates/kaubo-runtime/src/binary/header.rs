@@ -512,11 +512,18 @@ fn detect_os() -> OS {
 
 /// 获取当前 Unix 时间戳
 fn current_timestamp() -> u32 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as u32
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as u32
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
 }
 
 #[cfg(test)]

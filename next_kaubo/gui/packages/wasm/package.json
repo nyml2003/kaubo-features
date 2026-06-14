@@ -1,0 +1,14 @@
+{
+  "name": "@kaubo/wasm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./pkg/kaubo_wasm.js",
+  "types": "./pkg/kaubo_wasm.d.ts",
+  "exports": {
+    ".": {
+      "import": "./pkg/kaubo_wasm.js",
+      "types": "./pkg/kaubo_wasm.d.ts"
+    }
+  }
+}
