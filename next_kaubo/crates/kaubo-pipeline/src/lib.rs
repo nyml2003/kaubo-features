@@ -200,7 +200,9 @@ impl<A: 'static, B: 'static> Pipeline<A, B> {
         let configs: Vec<_> = config.iter().map(|c| (c.capability, c.action.clone())).collect();
         for (cap, action) in &configs {
             if self.caps.contains(cap) {
-                let idx = self.caps.iter().position(|c| *c == *cap).unwrap();
+                let Some(idx) = self.caps.iter().position(|c| *c == *cap) else {
+                    continue;
+                };
                 let action = action.clone();
                 let handler_fn: Box<dyn Fn(&dyn std::any::Any) -> Result<String, String> + Send + Sync + 'static> =
                     if action == "count" {

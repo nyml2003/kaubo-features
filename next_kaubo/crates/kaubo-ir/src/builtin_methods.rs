@@ -25,6 +25,12 @@ pub fn set_closure_call_cb(f: ClosureCallFn) {
     unsafe { CLOSURE_CALL_CB = Some(f); }
 }
 
+/// 安全获取闭包调用回调
+#[inline]
+fn get_closure_call_cb() -> Result<ClosureCallFn, String> {
+    unsafe { CLOSURE_CALL_CB.ok_or_else(|| "CLOSURE_CALL_CB not initialized".to_string()) }
+}
+
 // ==================== 类型常量 ====================
 
 /// 内置类型标签
@@ -250,7 +256,7 @@ fn list_foreach(vm: &mut VM, receiver: Value, args: &[Value]) -> Result<Value, S
     if let Some(ptr) = receiver.as_list() {
         let list = unsafe { &*ptr };
         for elem in &list.elements {
-            (unsafe { crate::builtin_methods::CLOSURE_CALL_CB.unwrap() })(vm, closure, &[*elem])?;
+            get_closure_call_cb()?(vm, closure, &[*elem])?;
         }
         Ok(receiver)
     } else {
@@ -277,7 +283,7 @@ fn list_map(vm: &mut VM, receiver: Value, args: &[Value]) -> Result<Value, Strin
         let list = unsafe { &*ptr };
         let mut results = Vec::with_capacity(list.len());
         for elem in &list.elements {
-            let result = (unsafe { crate::builtin_methods::CLOSURE_CALL_CB.unwrap() })(vm, closure, &[*elem])?;
+            let result = get_closure_call_cb()?(vm, closure, &[*elem])?;
             results.push(result);
         }
         // 创建新列表
@@ -308,7 +314,7 @@ fn list_filter(vm: &mut VM, receiver: Value, args: &[Value]) -> Result<Value, St
         let list = unsafe { &*ptr };
         let mut results = Vec::new();
         for elem in &list.elements {
-            let keep = (unsafe { crate::builtin_methods::CLOSURE_CALL_CB.unwrap() })(vm, closure, &[*elem])?;
+            let keep = get_closure_call_cb()?(vm, closure, &[*elem])?;
             if keep.is_truthy() {
                 results.push(*elem);
             }
@@ -341,7 +347,7 @@ fn list_reduce(vm: &mut VM, receiver: Value, args: &[Value]) -> Result<Value, St
     if let Some(ptr) = receiver.as_list() {
         let list = unsafe { &*ptr };
         for elem in &list.elements {
-            acc = (unsafe { crate::builtin_methods::CLOSURE_CALL_CB.unwrap() })(vm, closure, &[acc, *elem])?;
+            acc = get_closure_call_cb()?(vm, closure, &[acc, *elem])?;
         }
         Ok(acc)
     } else {
@@ -367,7 +373,7 @@ fn list_find(vm: &mut VM, receiver: Value, args: &[Value]) -> Result<Value, Stri
     if let Some(ptr) = receiver.as_list() {
         let list = unsafe { &*ptr };
         for elem in &list.elements {
-            let found = (unsafe { crate::builtin_methods::CLOSURE_CALL_CB.unwrap() })(vm, closure, &[*elem])?;
+            let found = get_closure_call_cb()?(vm, closure, &[*elem])?;
             if found.is_truthy() {
                 return Ok(*elem);
             }
@@ -396,7 +402,7 @@ fn list_any(vm: &mut VM, receiver: Value, args: &[Value]) -> Result<Value, Strin
     if let Some(ptr) = receiver.as_list() {
         let list = unsafe { &*ptr };
         for elem in &list.elements {
-            let matched = (unsafe { crate::builtin_methods::CLOSURE_CALL_CB.unwrap() })(vm, closure, &[*elem])?;
+            let matched = get_closure_call_cb()?(vm, closure, &[*elem])?;
             if matched.is_truthy() {
                 return Ok(Value::TRUE);
             }
@@ -425,7 +431,7 @@ fn list_all(vm: &mut VM, receiver: Value, args: &[Value]) -> Result<Value, Strin
     if let Some(ptr) = receiver.as_list() {
         let list = unsafe { &*ptr };
         for elem in &list.elements {
-            let matched = (unsafe { crate::builtin_methods::CLOSURE_CALL_CB.unwrap() })(vm, closure, &[*elem])?;
+            let matched = get_closure_call_cb()?(vm, closure, &[*elem])?;
             if !matched.is_truthy() {
                 return Ok(Value::FALSE);
             }

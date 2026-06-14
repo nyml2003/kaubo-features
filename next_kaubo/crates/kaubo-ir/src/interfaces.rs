@@ -125,3 +125,24 @@ pub trait DomainLogger: Send + Sync {
     fn warn(&self, msg: &str);
     fn error(&self, msg: &str);
 }
+
+// ============================================================
+// ErrorReporter — 错误报告抽象
+// ============================================================
+
+use crate::error::RuntimeError;
+
+/// 错误报告接口：将运行时错误传递给外部环境（CLI/WASM/GUI）。
+///
+/// 不同平台提供不同实现：
+/// - CLI: 输出到 stderr
+/// - WASM: 调用 JS console + 构造错误对象
+/// - 嵌入: 通过回调传给宿主
+pub trait ErrorReporter: Send + Sync {
+    /// 报告运行时错误
+    fn report_runtime_error(&self, error: &RuntimeError);
+    /// 报告编译错误
+    fn report_compile_error(&self, error: &str);
+    /// 报告内部 panic（被 catch_unwind 捕获）
+    fn report_panic(&self, message: &str);
+}

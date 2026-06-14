@@ -1,6 +1,6 @@
 # Kaubo Programming Language
 
-Kaubo 是一门静态类型的脚本语言，专注于提供清晰的语法和可控的性能。
+Kaubo 是一门静态类型的编译型脚本语言，专注于清晰的语法和可控的性能。
 
 ```kaubo
 // Hello World
@@ -17,126 +17,137 @@ print("PI = " + math.PI);
 
 ## 特性
 
-- **单文件即模块**：每个 `.kaubo` 文件是一个独立模块，使用 `pub var` 导出，`import` 导入
-- **静态类型**：编译期类型检查，可选类型标注
-- **运算符重载**：通过 `operator add` 等语法实现自定义类型的运算符
-- **Lambda 函数**：匿名函数支持闭包
-- **Shape-based 对象系统**：高效的字段访问和内联缓存
-- **虚拟文件系统**：支持多平台（Windows/Mac/Linux/Web）
+- **编译至字节码**：源码 → 字节码 → 栈式 VM 执行
+- **静态类型**：编译期类型检查（TypeChecker 已实现，暂未强制）
+- **Lambda / 闭包**：匿名函数，支持 upvalue 捕获
+- **运算符重载**：通过 `operator add` 等语法实现自定义类型运算
+- **Shape-based 对象系统**：高效的 struct 字段访问和内联缓存
+- **协程**：`yield` / `resume` 支持
+- **二进制格式**：`.kaubod` (debug) / `.kaubor` (release)
+- **内置方法**：List/JSON 支持 `push` / `map` / `filter` / `reduce` 等函数式方法
+
+## 项目结构
+
+```
+kaubo/
+├── Cargo.toml            ← workspace 配置
+├── crates/
+│   ├── kaubo-ir/         ← IR 类型层 (Value, OpCode, Chunk, Object, VM)
+│   ├── kaubo-compiler/   ← 编译器 (Lexer, Parser, TypeChecker, Codegen, HIR)
+│   ├── kaubo-runtime/    ← 运行时 (VM 执行, Stdlib, 二进制格式, 平台抽象)
+│   └── kaubo-pipeline/   ← 流水线框架 (Stage trait + Pipeline 组合器)
+├── kaubo-cli/            ← CLI 入口
+├── kaubo-log/            ← 日志系统 (支持 no_std / WASM)
+├── kaubo-config/         ← 配置数据
+├── kaubo-vfs/            ← 虚拟文件系统
+├── examples/             ← 示例程序
+└── docs/                 ← 文档
+```
+
+### 架构概览
+
+```
+kaubo-ir (零依赖类型层)
+    ├── Value (NaN-boxed), OpCode (146 变体), Chunk
+    ├── Obj* (String, List, Function, Closure, Struct, Shape, ...)
+    └── HIR (基本块 IR + 优化 pass)
+
+kaubo-compiler
+    ├── Lexer    → TokenStream
+    ├── Parser   → AST Module
+    ├── TypeChecker → typed AST (已实现, 待接入主线)
+    ├── Codegen  → Chunk (字节码)
+    └── HIR      → basic blocks + optimizations (已有框架, 待接入)
+
+kaubo-runtime
+    ├── VM       → 栈式执行器 (1778 行执行循环)
+    ├── Stdlib   → 30 个原生函数 (数学、文件、网络、加密、时间)
+    ├── Binary   → .kaubod/.kaubor 读/写
+    └── Platform → trait-based I/O 抽象
+```
+
+## 命令
+
+```bash
+# 编译并执行源文件
+kaubo <file>                   # 编译 + 运行
+kaubo run <file>               # 运行 .kaubod/.kaubor 二进制
+
+# 编译
+kaubo compile <file>           # 编译为 .kaubod
+
+# 调试子阶段
+kaubo lex <file>               # 仅词法分析
+kaubo parse <file>             # 仅语法分析
+kaubo check <file>             # 仅类型检查
+```
 
 ## 快速开始
 
 ```bash
-# 克隆仓库
 git clone <repo-url>
 cd kaubo
 
 # 运行测试
 cargo test --workspace
 
-# 运行示例（源码模式）
-cargo run -p kaubo-cli -- examples/hello/package.json
-
-# 编译为二进制（开发模式，待实现）
-# kaubo build main.kaubo --debug -o main.kaubod
-
-# 编译为二进制（生产模式，待实现）
-# kaubo build main.kaubo --release -o main.kaubor
-
-# 链接为可执行包（待实现）
-# kaubo link *.kaubor -o app.kpk
+# 运行示例
+cargo run -p kaubo-cli -- examples/01_hello_world/package.json
 ```
 
-## 项目结构
+## 语言语法速览
 
-```
-kaubo/
-├── kaubo-cli/           # CLI 入口 (基于 Orchestrator)
-├── kaubo-orchestrator/  # 编排引擎 (组件管理 + 流水线执行)
-├── kaubo-core/          # 核心 (编译器 + VM)
-├── kaubo-log/           # 日志系统
-├── kaubo-config/        # 配置数据
-├── kaubo-vfs/           # 虚拟文件系统
-└── examples/            # 示例程序
-```
-
-### 新架构：组件化编排器
-
-Kaubo 正在迁移到组件化架构 (`kaubo-orchestrator`)：
-
-| 组件类型 | 职责 | 示例 |
-|----------|------|------|
-| **Loader** | 加载源代码 | `FileLoader` |
-| **Converter** | IR 格式转换 | `Source→Tokens` |
-| **Pass** | 编译阶段 | `Lexer`, `Parser`, `CodeGen` |
-| **Emitter** | 输出结果 | `FileEmitter`, `StdoutEmitter` |
-
-流水线通过 `package.json` 中的 `pipeline` 字段配置。
-
-```rust
-// 使用示例
-use kaubo_orchestrator::{Orchestrator, FileLoader, VmConfig};
-
-let mut orch = Orchestrator::new(VmConfig::default());
-orch.register_loader(Box::new(FileLoader::new()));
-```
-
-## 开发状态
-
-| 阶段 | 名称 | 状态 |
-|------|------|------|
-| Phase 0 | 基础设施 | ✅ 完成 |
-| Phase 1 | 模块系统与二进制格式 | 🚧 进行中 |
-| Phase 2 | 组件化架构迁移 | 🚧 进行中 |
-| Phase 3 | 泛型类型系统 | 📋 规划中 |
-| Phase 4 | JIT 编译器 | 📋 规划中 |
-| Phase 5 | 热重载 | 📋 规划中 |
-
-### Phase 1 详情
-
-| 子阶段 | 内容 | 状态 |
-|--------|------|------|
-| 1.1 | 源文件模块系统 (VFS + 多文件编译) | ✅ 完成 |
-| 1.2 | 二进制格式 (.kaubod/.kaubor + Source Map) | 🚧 进行中 |
-| 1.3 | 链接器 (KPK 打包) | 📋 待开始 |
-| 1.4 | 运行时加载器 | 📋 待开始 |
-| 1.5 | 动态链接预留 | 📋 待开始 |
-
-### Phase 2 详情 (组件化架构) ✅ 完成
-
-| 子阶段 | 内容 | 状态 |
-|--------|------|------|
-| 2.1 | Orchestrator 基础架构 | ✅ 完成 |
-| 2.2 | 组件 trait 系统 | ✅ 完成 |
-| 2.3 | Loader/Emitter 实现 | ✅ 完成 |
-| 2.4 | Core→Passes 迁移 | ✅ 完成 |
-| 2.5 | CLI 迁移 | ✅ 完成 |
-| 2.6 | 删除旧 API | ✅ 完成 |
-
-**架构特点：**
-- 组件化：Loader、Converter、Pass、Emitter 四大组件类型
-- 流水线：通过 JSON 配置定义编译流程
-- 可扩展：动态注册组件，支持插件
-
-## 文档
-
-- [package.json 配置](docs/package-json.md) - 项目配置完整指南
-- [开发指南](DEVELOPMENT.md) - 构建、测试、命令参考
-- [模块系统设计](docs/30-implementation/design/module-system.md)
-- [泛型类型系统设计](docs/30-implementation/design/generic-type-system.md)
-- [迭代路线图](docs/30-implementation/architecture/roadmap.md)
-
-## 示例
-
-### 基础示例
+### 基础
 ```kaubo
-// 变量与运算
 var x = 10;
-var y = 20;
-return x + y;
+var y: float = 3.14;
+var s = "hello";
+var flag = true;
 ```
 
-### 多模块项目
+### 控制流
+```kaubo
+if x > 0 {
+    print("positive");
+} elif x < 0 {
+    print("negative");
+} else {
+    print("zero");
+}
+
+while x > 0 {
+    x = x - 1;
+}
+
+for var item in [1, 2, 3] {
+    print(item);
+}
+```
+
+### 函数与闭包
+```kaubo
+var add = |a, b| { return a + b; };
+var counter = |init| {
+    var count = init;
+    return || { count = count + 1; return count; };
+};
+```
+
+### Struct 与运算符重载
+```kaubo
+struct Point {
+    x: float,
+    y: float,
+}
+
+impl Point {
+    operator add = |self, other| {
+        return Point { x: self.x + other.x, y: self.y + other.y };
+    };
+}
+```
+
+### 模块系统
 ```kaubo
 // math.kaubo
 pub var PI = 3.14159;
@@ -147,15 +158,37 @@ import math;
 print(math.add(2, 3));
 ```
 
-### JSON 对象
+### 协程
 ```kaubo
-var person = json {
-    name: "Alice",
-    age: 30,
-    skills: ["Rust", "Kaubo"]
+var producer = || {
+    yield 1;
+    yield 2;
+    yield 3;
 };
-print(person.name);
+var co = create_coroutine(producer);
+print(resume(co));  // 1
+print(resume(co));  // 2
 ```
+
+## 实现状态
+
+| 阶段 | 名称 | 状态 |
+|------|------|------|
+| Phase 0 | 基础设施 (日志/VFS/配置) | ✅ 完成 |
+| Phase 1 | 语言核心 (parser/codegen/VM) | ✅ 完成 |
+| Phase 2 | 模块系统 + 二进制格式 | ✅ 基本完成 |
+| Phase 3 | 消除 panic → 结构化错误 | 📋 待开始 |
+| Phase 4 | 轻量 GC (引用计数) | 📋 待开始 |
+| Phase 5 | TypeChecker 接入 + HIR 贯通 | 📋 待开始 |
+| Phase 6 | Platform trait 注入 + WASM | 📋 待开始 |
+
+## 文档
+
+- [文档中心](docs/README.md) - 文档导航
+- [架构全景图](docs/architecture.md) - 水平×竖直架构总览
+- [路线图](docs/roadmap.md) - v0.2.0 路线图
+- [类型系统审计](docs/type-system.md) - 已知 Gap 与修复方案
+- [交付产物](docs/artifacts.md) - 库/二进制/wasm/FFI
 
 ## License
 

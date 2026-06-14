@@ -1,0 +1,7 @@
+// List push 100k — List 操作 + SMI 优化
+var list = []; var i = 0;
+while i < 100000 {
+    list = list.push(i);
+    i = i + 1;
+}
+print(list.len());

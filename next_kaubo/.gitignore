@@ -1,3 +1,31 @@
-assets
-target/tarpaulin/
+# Build artifacts
+target/
+
+# Compiled Kaubo bytecode
+*.kaubod
+*.kaubor
+
+# Windows
+*.exe
+*.pdb
+*.dll
+
+# macOS
+.DS_Store
+
+# Linux
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Profiling / coverage
 *.profraw
+*.profdata
+
+# Misc
+assets
+*.tmp

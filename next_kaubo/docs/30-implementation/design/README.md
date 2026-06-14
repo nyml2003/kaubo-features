@@ -1,15 +1,20 @@
-# 待实现设计文档
+# 设计文档
 
-> 这些文档描述了计划中但尚未实现的功能设计。
+> 已确认或待实现的功能设计文档。
 
 ---
 
 ## 设计文档列表
 
-| 文档 | 内容 | 优先级 | 预计阶段 |
-|------|------|--------|----------|
-| [module-system.md](module-system.md) | 单文件单模块 + 插件化 Std | P1 | post-MVP |
-| [method-type-inference.md](method-type-inference.md) | 链式调用类型推断 | P1 | post-MVP |
+| 文档 | 内容 | 优先级 |
+|------|------|--------|
+| [module-system.md](module-system.md) | 单文件单模块 + 插件化 Std | P1 |
+| [multi-module-system-final.md](multi-module-system-final.md) | 多模块编译最终设计 | P1 |
+| [method-type-inference.md](method-type-inference.md) | 链式调用类型推断 | P2 |
+| [binary-module-system.md](binary-module-system.md) | 二进制模块系统 | P2 |
+| [vfs-mapped-layer-v4.md](vfs-mapped-layer-v4.md) | VFS 映射层 (逻辑→物理路径) | P2 |
+| [vfs-middleware-system.md](vfs-middleware-system.md) | VFS 中间件系统设计 | P2 |
+| [vfs-middleware-roadmap.md](vfs-middleware-roadmap.md) | VFS 中间件路线图 | P3 |
 
 > 泛型系统设计已归档至 [90-archive/generic-type-system.md](../../90-archive/generic-type-system.md)
 
@@ -23,13 +28,4 @@
 
 ---
 
-## 状态标注
-
-- 📋 **规划中**：仅概念阶段
-- 📝 **设计中**：文档编写中
-- ⏸️ **暂停**：等待前置条件
-- ✅ **已确认**：设计确认，待实施
-
----
-
-*最后更新：2026-06-11*
+*最后更新：2026-06-14*

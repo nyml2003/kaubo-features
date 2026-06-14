@@ -1,0 +1,107 @@
+# Kaubo Benchmark Suite — 声明式配置
+# 每个 suite 定义一个 benchmark 场景，支持多语言实现
+
+[fib]
+description = "Fibonacci iterative — 整数运算 + while + 函数调用"
+expected = "102334155"
+iterations = 5
+warmup = 1
+
+[fib.kaubo]
+file = "fib.kaubo"
+
+[fib.python]
+function = "fib_iter"
+args = [40]
+
+[fib.rust]
+args = ["fib"]
+
+
+[mandelbrot]
+description = "Mandelbrot 500x500 — 浮点运算 + 嵌套循环"
+expected = "'ok'"
+iterations = 3
+warmup = 1
+
+[mandelbrot.kaubo]
+file = "mandelbrot.kaubo"
+
+[mandelbrot.python]
+function = "mandelbrot"
+
+[mandelbrot.rust]
+args = ["mandelbrot"]
+
+
+[sieve]
+description = "Sieve n=100000 — 整数 + 取模 + while"
+expected = "9592"
+iterations = 5
+warmup = 1
+
+[sieve.kaubo]
+file = "sieve.kaubo"
+
+[sieve.python]
+function = "sieve"
+args = [100000]
+
+[sieve.rust]
+args = ["sieve"]
+
+
+[pipeline]
+description = "Pipeline 100k — 条件分支 + 算术"
+expected = "1071471429"
+iterations = 5
+warmup = 1
+
+[pipeline.kaubo]
+file = "pipeline.kaubo"
+
+[pipeline.python]
+function = "pipeline"
+
+[pipeline.rust]
+args = ["pipeline"]
+
+
+[list_push]
+description = "List push 100k — List 操作 + SMI 优化"
+expected = "100000"
+iterations = 5
+warmup = 1
+
+[list_push.kaubo]
+file = "list_push.kaubo"
+
+
+[string_concat]
+description = "String concat 1000 — 字符串拼接 + 内存分配"
+expected = "'ok'"
+iterations = 5
+warmup = 1
+
+[string_concat.kaubo]
+file = "string_concat.kaubo"
+
+
+[json_access]
+description = "JSON access 10000 — JSON 读写 + hash 查找"
+expected = "'ok'"
+iterations = 5
+warmup = 1
+
+[json_access.kaubo]
+file = "json_access.kaubo"
+
+
+[closure_call]
+description = "Closure call 100k — 闭包创建/调用 + upvalue"
+expected = "'ok'"
+iterations = 5
+warmup = 1
+
+[closure_call.kaubo]
+file = "closure_call.kaubo"

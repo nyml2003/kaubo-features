@@ -8,7 +8,7 @@
 
 use kaubo_ir::{
     CoroutineState, InterpretResult, NativeVmFn, ObjCoroutine, ObjList, ObjModule, ObjNative, ObjNativeVm,
-    ObjString, Value, VM,
+    ObjString, RuntimeError, Value, VM,
 };
 use crate::vm::VmRuntime;
 use std::collections::HashMap;
@@ -420,8 +420,8 @@ fn resume_fn(vm_ptr: *mut (), args: &[Value]) -> Result<Value, String> {
                 let return_val = coro.stack.last().copied().unwrap_or(Value::NULL);
                 Ok(return_val)
             }
-            InterpretResult::RuntimeError(msg) => {
-                if msg == "yield" {
+            InterpretResult::RuntimeError(ref msg) => {
+                if matches!(msg, RuntimeError::Yield) {
                     // 协程通过 yield 挂起
                     coro.state = CoroutineState::Suspended;
                     // 获取 yield 值（在协程栈顶）
@@ -429,7 +429,7 @@ fn resume_fn(vm_ptr: *mut (), args: &[Value]) -> Result<Value, String> {
                     Ok(yield_val)
                 } else {
                     coro.state = CoroutineState::Dead;
-                    Err(msg)
+                    Err(msg.to_string())
                 }
             }
             InterpretResult::CompileError(msg) => {

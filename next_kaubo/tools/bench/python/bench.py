@@ -1,4 +1,4 @@
-import time; import sys
+"""Kaubo Benchmark — Python reference implementation"""
 
 def fib_iter(n):
     if n <= 1: return n
@@ -7,7 +7,7 @@ def fib_iter(n):
     return b
 
 def mandelbrot():
-    w, h = 500, 500; max_iter = 50
+    w, h, max_iter = 500, 500, 50
     xmin, xmax = -2.0, 1.0; ymin, ymax = -1.5, 1.5
     dx = (xmax - xmin) / w; dy = (ymax - ymin) / h
     for py in range(h):
@@ -17,6 +17,7 @@ def mandelbrot():
             for _ in range(max_iter):
                 if x*x + y*y > 4.0: break
                 y = 2.0*x*y + y0; x = x*x - y*y + x0
+    return "ok"
 
 def sieve(n):
     count = 0
@@ -36,8 +37,16 @@ def pipeline():
             if t % 7 == 0: total += t
     return total
 
-print("=== CPython", sys.version.split()[0], "===")
-for _ in range(3): s=time.perf_counter(); r=fib_iter(35); print(f"fib {r} {((time.perf_counter()-s)*1000):.0f}ms")
-for _ in range(3): s=time.perf_counter(); mandelbrot(); print(f"mand {((time.perf_counter()-s)*1000):.0f}ms")
-for _ in range(3): s=time.perf_counter(); r=sieve(100000); print(f"sie {r} {((time.perf_counter()-s)*1000):.0f}ms")
-for _ in range(3): s=time.perf_counter(); r=pipeline(); print(f"pip {r} {((time.perf_counter()-s)*1000):.0f}ms")
+if __name__ == "__main__":
+    import time, sys
+    if len(sys.argv) > 1:
+        fn = sys.argv[1]
+        if fn == "fib": print(fib_iter(40))
+        elif fn == "mandelbrot": print(mandelbrot())
+        elif fn == "sieve": print(sieve(100000))
+        elif fn == "pipeline": print(pipeline())
+    else:
+        print(fib_iter(40))
+        print(mandelbrot())
+        print(sieve(100000))
+        print(pipeline())

@@ -616,7 +616,7 @@ mod tests {
                 // 返回值在栈顶
                 vm.stack_top().ok_or("Empty stack".to_string())
             }
-            InterpretResult::RuntimeError(msg) => Err(msg),
+            InterpretResult::RuntimeError(ref msg) => Err(msg.to_string()),
             InterpretResult::CompileError(msg) => Err(msg),
         }
     }

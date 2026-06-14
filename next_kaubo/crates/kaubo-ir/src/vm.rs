@@ -6,6 +6,8 @@ use crate::builtin_methods::BuiltinMethodTable;
 use crate::object::{CallFrame, ObjShape, ObjUpvalue};
 use crate::operators::InlineCacheEntry;
 use crate::value::Value;
+use crate::error::RuntimeError;
+use crate::interfaces::ErrorReporter;
 use std::collections::HashMap;
 use std::sync::Arc;
 use kaubo_log::Logger;
@@ -36,7 +38,29 @@ impl Default for VMConfig {
 pub enum InterpretResult {
     Ok,
     CompileError(String),
-    RuntimeError(String),
+    RuntimeError(RuntimeError),
+}
+
+impl InterpretResult {
+    pub fn runtime_error(msg: impl Into<String>) -> Self {
+        InterpretResult::RuntimeError(RuntimeError::other(msg))
+    }
+
+    pub fn is_ok(&self) -> bool {
+        matches!(self, InterpretResult::Ok)
+    }
+}
+
+impl From<String> for InterpretResult {
+    fn from(s: String) -> Self {
+        InterpretResult::RuntimeError(RuntimeError::other(s))
+    }
+}
+
+impl From<RuntimeError> for InterpretResult {
+    fn from(e: RuntimeError) -> Self {
+        InterpretResult::RuntimeError(e)
+    }
 }
 
 /// 输出回调类型
@@ -64,6 +88,8 @@ pub struct VM {
     pub builtin_methods: BuiltinMethodTable,
     /// 输出回调（用于 print 语句等）
     output_callback: Option<OutputCallback>,
+    /// 错误回调（用于 CLI/WASM 错误报告）
+    pub error_reporter: Option<Box<dyn ErrorReporter>>,
 }
 
 impl VM {
@@ -89,6 +115,7 @@ impl VM {
             logger,
             builtin_methods: BuiltinMethodTable::new(),
             output_callback: None,
+            error_reporter: None,
         }
     }
     
@@ -98,6 +125,11 @@ impl VM {
         F: Fn(&str) + Send + Sync + 'static,
     {
         self.output_callback = Some(Box::new(callback));
+    }
+
+    /// 设置错误报告器
+    pub fn set_error_reporter(&mut self, reporter: Box<dyn ErrorReporter>) {
+        self.error_reporter = Some(reporter);
     }
     
     /// 输出消息（通过回调或默认到 stdout）

@@ -9,7 +9,6 @@
 | 文档 | 内容 | 类型 |
 |------|------|------|
 | [discovered-constraints.md](discovered-constraints.md) | 发现的隐藏约束 | 约束记录 |
-| [operator-research.md](operator-research.md) | 运算符重载调研 | 调研报告 |
 | [rejected-approaches.md](rejected-approaches.md) | 否决的方案 | 决策记录 |
 | [tracing-migration.md](tracing-migration.md) | 日志系统迁移记录 | 迁移记录 |
 
@@ -40,4 +39,4 @@
 
 ---
 
-*最后更新：2026-02-17*
+*最后更新：2026-06-14*

@@ -87,7 +87,7 @@ impl Value {
                 Self(QNAN | tag)
             }
             SMI_MIN..=SMI_MAX => Self::smi(n),
-            _ => panic!("Integer {n} out of SMI range"),
+            _ => Self::float(n as f64),
         }
     }
 
@@ -395,7 +395,7 @@ impl std::fmt::Display for Value {
                     for i in 0..max {
                         if i > 0 { write!(f, ", ")?; }
                         let name = &shape.field_names[i];
-                        let field = &(*ptr).fields[i];
+                        let field = &(&(*ptr).fields)[i];
                         write!(f, "{name}: {field}")?;
                     }
                     write!(f, " }}")

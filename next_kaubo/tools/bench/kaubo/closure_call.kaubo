@@ -1,0 +1,11 @@
+// Closure call 100k — 闭包创建/调用 + upvalue
+var make_counter = |init: int| -> || -> int {
+    return || { return init + 1; };
+};
+var counter = make_counter(0);
+var i = 0; var total = 0;
+while i < 100000 {
+    total = total + counter();
+    i = i + 1;
+}
+print("ok");

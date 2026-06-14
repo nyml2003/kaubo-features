@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Instant, Duration};
 
 fn fib_iter(n: i32) -> i32 {
     if n <= 1 { return n; }
@@ -7,7 +7,7 @@ fn fib_iter(n: i32) -> i32 {
     b
 }
 
-fn mandelbrot() {
+fn mandelbrot() -> &'static str {
     let w = 500; let h = 500; let max_iter = 50;
     let xmin = -2.0; let xmax = 1.0;
     let ymin = -1.5; let ymax = 1.5;
@@ -25,6 +25,7 @@ fn mandelbrot() {
             }
         }
     }
+    "ok"
 }
 
 fn sieve(n: usize) -> usize {
@@ -51,10 +52,27 @@ fn pipeline() -> i64 {
     total
 }
 
+fn timed<F, R>(name: &str, f: F) where F: FnOnce() -> R {
+    let s = Instant::now(); let r = f(); let e = s.elapsed();
+    println!("rust_{} {}us", name, e.as_micros());
+    println!("{}", r); // result on separate line for extraction
+}
+
 fn main() {
-    println!("=== Rust ===");
-    for _ in 0..3 { let s = Instant::now(); let r = fib_iter(35); let e = s.elapsed().as_micros(); println!("fib(35)={}  {}us", r, e); }
-    for _ in 0..3 { let s = Instant::now(); mandelbrot(); let e = s.elapsed().as_millis(); println!("mandelbrot(500x500)  {}ms", e); }
-    for _ in 0..3 { let s = Instant::now(); let r = sieve(100_000); let e = s.elapsed().as_millis(); println!("sieve(1e5)={}  {}ms", r, e); }
-    for _ in 0..3 { let s = Instant::now(); let r = pipeline(); let e = s.elapsed().as_micros(); println!("pipeline(100k)={}  {}us", r, e); }
+    let args: Vec<String> = std::env::args().collect();
+    let suite = args.get(1).map(|s| s.as_str()).unwrap_or("all");
+
+    match suite {
+        "fib" => timed("fib", || fib_iter(40)),
+        "mandelbrot" => timed("mand", || mandelbrot()),
+        "sieve" => timed("sieve", || sieve(100_000)),
+        "pipeline" => timed("pipeline", || pipeline()),
+        "all" => {
+            timed("fib", || fib_iter(40));
+            timed("mand", || mandelbrot());
+            timed("sieve", || sieve(100_000));
+            timed("pipeline", || pipeline());
+        }
+        _ => eprintln!("Unknown suite: {}", suite),
+    }
 }

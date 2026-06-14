@@ -9,8 +9,12 @@
 | 文件/目录 | 说明 | 日期 |
 |-----------|------|------|
 | [major-pivots/](major-pivots/) | 重大决策快照目录 | - |
+| [operator-research/](operator-research/) | 运算符重载调研（最终选择了不同方案） | 2026-02 |
 | 2026-02-16-generic-assessment-v2.md | 泛型评估 v2 | 2026-02-16 |
 | 2026-02-16-generic-assessment-v3.md | 泛型评估 v3 | 2026-02-16 |
+| generic-type-system.md | 泛型类型系统早期设计 | 2026-02 |
+| assessment.md | 早期评估 | 2025 |
+| 2025-roadmap.md | 2025 路线图 | 2025 |
 
 ---
 
@@ -28,4 +32,4 @@
 
 ---
 
-*最后更新：2026-02-17*
+*最后更新：2026-06-14*

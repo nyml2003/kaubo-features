@@ -4,6 +4,7 @@ use kaubo_ir::{
     InlineCacheEntry, ObjClosure, ObjString, Operator, Value, VM,
 };
 use super::VmRuntime;
+use crate::vm::stack;
 
 /// 加法（仅基础类型）
 pub fn add_values(_vm: &VM, a: Value, b: Value) -> Result<Value, String> {
@@ -432,7 +433,7 @@ pub fn call_operator_closure_varargs(
             StoreLocal => {
                 let idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if (idx as usize) < locals.len() {
                     locals[idx as usize] = val;
                 } else {
@@ -441,7 +442,7 @@ pub fn call_operator_closure_varargs(
                 }
             }
             StoreLocal0 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.is_empty() {
                     locals.push(val);
                 } else {
@@ -449,21 +450,21 @@ pub fn call_operator_closure_varargs(
                 }
             }
             StoreLocal1 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.len() < 2 {
                     locals.resize(2, Value::NULL);
                 }
                 locals[1] = val;
             }
             StoreLocal2 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.len() < 3 {
                     locals.resize(3, Value::NULL);
                 }
                 locals[2] = val;
             }
             StoreLocal3 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.len() < 4 {
                     locals.resize(4, Value::NULL);
                 }
@@ -474,8 +475,8 @@ pub fn call_operator_closure_varargs(
             Add => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match add_values(vm, a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -484,8 +485,8 @@ pub fn call_operator_closure_varargs(
             Sub => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match sub_values(vm, a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -494,8 +495,8 @@ pub fn call_operator_closure_varargs(
             Mul => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match mul_values(vm, a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -504,8 +505,8 @@ pub fn call_operator_closure_varargs(
             Div => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match div_values(vm, a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -514,15 +515,15 @@ pub fn call_operator_closure_varargs(
             Mod => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match mod_values(vm, a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
                 }
             }
             Neg => {
-                let v = vm.stack.pop().expect("Stack underflow");
+                let v = stack::pop(vm)?;
                 match neg_value(vm, v) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -533,22 +534,22 @@ pub fn call_operator_closure_varargs(
             Equal => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 vm.stack.push(Value::bool_from(a == b));
             }
             NotEqual => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 vm.stack.push(Value::bool_from(a != b));
             }
             Greater => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match compare_values(vm, a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(ord == std::cmp::Ordering::Greater)),
                     Err(e) => return Err(e),
@@ -557,8 +558,8 @@ pub fn call_operator_closure_varargs(
             Less => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match compare_values(vm, a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(ord == std::cmp::Ordering::Less)),
                     Err(e) => return Err(e),
@@ -567,8 +568,8 @@ pub fn call_operator_closure_varargs(
             GreaterEqual => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match compare_values(vm, a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(
                         ord == std::cmp::Ordering::Greater || ord == std::cmp::Ordering::Equal,
@@ -579,8 +580,8 @@ pub fn call_operator_closure_varargs(
             LessEqual => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match compare_values(vm, a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(
                         ord == std::cmp::Ordering::Less || ord == std::cmp::Ordering::Equal,
@@ -594,7 +595,7 @@ pub fn call_operator_closure_varargs(
                 vm.stack.pop();
             }
             Dup => {
-                let v = vm.stack.last().copied().unwrap();
+                let v = stack::peek(vm, 0)?;
                 vm.stack.push(v);
             }
 
@@ -607,7 +608,7 @@ pub fn call_operator_closure_varargs(
             JumpIfFalse => {
                 let offset = super::execution::read_i16_at_ptr(ip);
                 ip = unsafe { ip.add(2) };
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if !val.is_truthy() {
                     ip = unsafe { ip.offset(offset as isize) };
                 }
@@ -622,7 +623,7 @@ pub fn call_operator_closure_varargs(
 
                 let mut fields = Vec::with_capacity(field_count as usize);
                 for _ in 0..field_count {
-                    fields.push(vm.stack.pop().expect("Stack underflow"));
+                    fields.push(stack::pop(vm)?);
                 }
 
                 let shape_ptr = super::shape::get_shape(vm, shape_id);
@@ -638,7 +639,7 @@ pub fn call_operator_closure_varargs(
             GetField => {
                 let field_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let obj_val = vm.stack.pop().expect("Stack underflow");
+                let obj_val = stack::pop(vm)?;
                 if let Some(ptr) = obj_val.as_struct() {
                     let obj = unsafe { &*ptr };
                     if (field_idx as usize) < obj.fields.len() {
@@ -655,8 +656,8 @@ pub fn call_operator_closure_varargs(
             }
 
             IndexGet => {
-                let index_val = vm.stack.pop().expect("Stack underflow");
-                let obj_val = vm.stack.pop().expect("Stack underflow");
+                let index_val = stack::pop(vm)?;
+                let obj_val = stack::pop(vm)?;
 
                 // 整数索引：仅 List 支持
                 // struct 不再支持整数索引访问，请使用 .field_name
@@ -682,7 +683,7 @@ pub fn call_operator_closure_varargs(
             }
 
             ReturnValue => {
-                return Ok(vm.stack.pop().expect("Stack underflow"));
+                return Ok(stack::pop(vm)?);
             }
             Return => {
                 return Ok(Value::NULL);
@@ -793,7 +794,7 @@ pub fn call_operator_closure(
             StoreLocal => {
                 let idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if (idx as usize) < locals.len() {
                     locals[idx as usize] = val;
                 } else {
@@ -802,7 +803,7 @@ pub fn call_operator_closure(
                 }
             }
             StoreLocal0 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.is_empty() {
                     locals.push(val);
                 } else {
@@ -810,14 +811,14 @@ pub fn call_operator_closure(
                 }
             }
             StoreLocal1 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.len() < 2 {
                     locals.resize(2, Value::NULL);
                 }
                 locals[1] = val;
             }
             StoreLocal2 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.len() < 3 {
                     locals.resize(3, Value::NULL);
                 }
@@ -828,7 +829,7 @@ pub fn call_operator_closure(
                 vm.stack.pop();
             }
             Dup => {
-                let v = vm.stack.last().copied().unwrap();
+                let v = stack::peek(vm, 0)?;
                 vm.stack.push(v);
             }
 
@@ -840,7 +841,7 @@ pub fn call_operator_closure(
             JumpIfFalse => {
                 let offset = super::execution::read_i16_at_ptr(ip);
                 ip = unsafe { ip.add(2) };
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if !val.is_truthy() {
                     ip = unsafe { ip.offset(offset as isize) };
                 }
@@ -855,7 +856,7 @@ pub fn call_operator_closure(
                 // 编译器按 shape 字段顺序的逆序入栈，所以弹出后直接是正确顺序
                 let mut fields = Vec::with_capacity(field_count as usize);
                 for _ in 0..field_count {
-                    fields.push(vm.stack.pop().expect("Stack underflow"));
+                    fields.push(stack::pop(vm)?);
                 }
                 // 不需要 reverse，编译器已经处理好顺序
 
@@ -872,7 +873,7 @@ pub fn call_operator_closure(
             GetField => {
                 let field_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let obj_val = vm.stack.pop().expect("Stack underflow");
+                let obj_val = stack::pop(vm)?;
                 if let Some(ptr) = obj_val.as_struct() {
                     let obj = unsafe { &*ptr };
                     if (field_idx as usize) < obj.fields.len() {
@@ -889,8 +890,8 @@ pub fn call_operator_closure(
             }
 
             IndexGet => {
-                let index_val = vm.stack.pop().expect("Stack underflow");
-                let obj_val = vm.stack.pop().expect("Stack underflow");
+                let index_val = stack::pop(vm)?;
+                let obj_val = stack::pop(vm)?;
 
                 // 整数索引：仅 List 支持
                 // struct 不再支持整数索引访问，请使用 .field_name
@@ -919,8 +920,8 @@ pub fn call_operator_closure(
             Add => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match add_values(vm, a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -929,8 +930,8 @@ pub fn call_operator_closure(
             Sub => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match sub_values(vm, a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -939,8 +940,8 @@ pub fn call_operator_closure(
             Mul => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match mul_values(vm, a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -949,22 +950,22 @@ pub fn call_operator_closure(
             Div => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match div_values(vm, a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
                 }
             }
             Neg => {
-                let v = vm.stack.pop().expect("Stack underflow");
+                let v = stack::pop(vm)?;
                 match neg_value(vm, v) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
                 }
             }
             CastToString => {
-                let v = vm.stack.pop().expect("Stack underflow");
+                let v = stack::pop(vm)?;
                 // 在 operator str 中，假设输入已经是基础类型
                 // 直接转换为字符串
                 let s = v.to_string();
@@ -974,8 +975,8 @@ pub fn call_operator_closure(
             Less => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match compare_values(vm, a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(ord == std::cmp::Ordering::Less)),
                     Err(e) => return Err(e),
@@ -984,8 +985,8 @@ pub fn call_operator_closure(
             Greater => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match compare_values(vm, a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(ord == std::cmp::Ordering::Greater)),
                     Err(e) => return Err(e),
@@ -994,8 +995,8 @@ pub fn call_operator_closure(
             GreaterEqual => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match compare_values(vm, a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(
                         ord == std::cmp::Ordering::Greater || ord == std::cmp::Ordering::Equal,
@@ -1006,8 +1007,8 @@ pub fn call_operator_closure(
             LessEqual => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match compare_values(vm, a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(
                         ord == std::cmp::Ordering::Less || ord == std::cmp::Ordering::Equal,
@@ -1017,7 +1018,7 @@ pub fn call_operator_closure(
             }
 
             ReturnValue => {
-                return Ok(vm.stack.pop().expect("Stack underflow"));
+                return Ok(stack::pop(vm)?);
             }
             Return => {
                 return Ok(Value::NULL);

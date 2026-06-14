@@ -4,17 +4,22 @@ use kaubo_ir::OperatorTableEntry;
 use super::VmRuntime;
 use kaubo_ir::{
     CallFrame, Chunk, CoroutineState, InterpretResult, ObjClosure, ObjCoroutine, ObjIterator,
-    ObjJson, ObjList, ObjModule, ObjShape, ObjString, ObjStruct, Operator, Value, VM,
+    ObjJson, ObjList, ObjModule, ObjShape, ObjString, ObjStruct, Operator, RuntimeError, Value, VM,
 };
 use kaubo_ir::OpCode::*;
 macro_rules! pop_ok {
-    ($vm:expr) => { match $vm.stack.pop() { Some(v) => v, None => return InterpretResult::RuntimeError("StackUnderflow".to_string()) } };
+    ($vm:expr) => { match $vm.stack.pop() { Some(v) => v, None => return InterpretResult::runtime_error("StackUnderflow".to_string()) } };
 }
 macro_rules! pop_two_ok {
     ($vm:expr) => {{ let b = pop_ok!($vm); let a = pop_ok!($vm); (a, b) }};
 }
 macro_rules! peek_ok {
-    ($vm:expr, $d:expr) => { stack::peek($vm, $d) };
+    ($vm:expr, $d:expr) => {{
+        match stack::peek($vm, $d) {
+            Ok(v) => v,
+            Err(e) => return InterpretResult::runtime_error(e),
+        }
+    }};
 }
 macro_rules! push_ok {
     ($vm:expr, $val:expr) => {{
@@ -24,7 +29,7 @@ macro_rules! push_ok {
     }};
 }
 macro_rules! frame_pop_ok {
-    ($vm:expr) => { match $vm.frames.pop() { Some(f) => f, None => return InterpretResult::RuntimeError("StackUnderflow".to_string()) } };
+    ($vm:expr) => { match $vm.frames.pop() { Some(f) => f, None => return InterpretResult::runtime_error("StackUnderflow".to_string()) } };
 }
 
 
@@ -166,18 +171,18 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
                         match operators::call_operator_closure(vm, cached, &[a, b]) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     } else {
                         match operators::call_binary_operator_cached(vm, Operator::Add, a, b, cache_idx) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                 } else {
                     match operators::call_binary_operator(vm, Operator::Add, a, b) {
                         Ok(v) => push_ok!(vm, v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 }
             }
@@ -205,18 +210,18 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
                         match operators::call_operator_closure(vm, cached, &[a, b]) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     } else {
                         match operators::call_binary_operator_cached(vm, Operator::Sub, a, b, cache_idx) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                 } else {
                     match operators::call_binary_operator(vm, Operator::Sub, a, b) {
                         Ok(v) => push_ok!(vm, v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 }
             }
@@ -244,18 +249,18 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
                         match operators::call_operator_closure(vm, cached, &[a, b]) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     } else {
                         match operators::call_binary_operator_cached(vm, Operator::Mul, a, b, cache_idx) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                 } else {
                     match operators::call_binary_operator(vm, Operator::Mul, a, b) {
                         Ok(v) => push_ok!(vm, v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 }
             }
@@ -268,7 +273,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     let af = if a.is_float() { a.as_float() } else { a.as_int().map(|n| n as f64).unwrap_or(0.0) };
                     let bf = if b.is_float() { b.as_float() } else { b.as_int().map(|n| n as f64).unwrap_or(0.0) };
                     if bf == 0.0 {
-                        return InterpretResult::RuntimeError("Division by zero".to_string());
+                        return InterpretResult::runtime_error("Division by zero".to_string());
                     }
                     push_ok!(vm, Value::float(af / bf));
                     continue;
@@ -278,18 +283,18 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
                         match operators::call_operator_closure(vm, cached, &[a, b]) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     } else {
                         match operators::call_binary_operator_cached(vm, Operator::Div, a, b, cache_idx) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                 } else {
                     match operators::call_binary_operator(vm, Operator::Div, a, b) {
                         Ok(v) => push_ok!(vm, v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 }
             }
@@ -305,7 +310,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                             if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
                                 match operators::call_operator_closure(vm, cached, &[a, b]) {
                                     Ok(v) => push_ok!(vm, v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
+                                    Err(e) => return InterpretResult::runtime_error(e),
                                 }
                             } else {
                                 match operators::call_binary_operator_cached(
@@ -316,13 +321,13 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                                     cache_idx,
                                 ) {
                                     Ok(v) => push_ok!(vm, v),
-                                    Err(e) => return InterpretResult::RuntimeError(e),
+                                    Err(e) => return InterpretResult::runtime_error(e),
                                 }
                             }
                         } else {
                             match operators::call_binary_operator(vm, Operator::Mod, a, b) {
                                 Ok(v) => push_ok!(vm, v),
-                                Err(e) => return InterpretResult::RuntimeError(e),
+                                Err(e) => return InterpretResult::runtime_error(e),
                             }
                         }
                     }
@@ -338,7 +343,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                         // 基础类型失败，尝试运算符重载
                         match operators::call_unary_operator(vm, Operator::Neg, v) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                 }
@@ -383,18 +388,18 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(cached) = operators::inline_cache_get(vm, cache_idx, b, a) {
                         match operators::call_operator_closure(vm, cached, &[b, a]) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     } else {
                         match operators::call_binary_operator_cached(vm, Operator::Lt, b, a, cache_idx) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                 } else {
                     match operators::call_binary_operator(vm, Operator::Lt, b, a) {
                         Ok(v) => push_ok!(vm, v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 }
             }
@@ -414,18 +419,18 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
                         match operators::call_operator_closure(vm, cached, &[a, b]) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     } else {
                         match operators::call_binary_operator_cached(vm, Operator::Lt, a, b, cache_idx) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                 } else {
                     match operators::call_binary_operator(vm, Operator::Lt, a, b) {
                         Ok(v) => push_ok!(vm, v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 }
             }
@@ -445,18 +450,18 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(cached) = operators::inline_cache_get(vm, cache_idx, a, b) {
                         match operators::call_operator_closure(vm, cached, &[a, b]) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     } else {
                         match operators::call_binary_operator_cached(vm, Operator::Le, a, b, cache_idx) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                 } else {
                     match operators::call_binary_operator(vm, Operator::Le, a, b) {
                         Ok(v) => push_ok!(vm, v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 }
             }
@@ -477,18 +482,18 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(cached) = operators::inline_cache_get(vm, cache_idx, b, a) {
                         match operators::call_operator_closure(vm, cached, &[b, a]) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     } else {
                         match operators::call_binary_operator_cached(vm, Operator::Le, b, a, cache_idx) {
                             Ok(v) => push_ok!(vm, v),
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                 } else {
                     match operators::call_binary_operator(vm, Operator::Le, b, a) {
                         Ok(v) => push_ok!(vm, v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 }
             }
@@ -577,7 +582,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 if let Some(value) = vm.globals.get(&name) {
                     push_ok!(vm, *value);
                 } else {
-                    return InterpretResult::RuntimeError(format!(
+                    return InterpretResult::runtime_error(format!(
                         "Undefined global variable: {name}"
                     ));
                 }
@@ -637,9 +642,8 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     args.reverse();  // [receiver, arg1, arg2...]
                     
                     if args.is_empty() {
-                        return InterpretResult::RuntimeError(
-                            "Builtin method call requires at least receiver".to_string()
-                        );
+                        return InterpretResult::runtime_error(
+                            "Builtin method call requires at least receiver".to_string());
                     }
                     
                     // 直接调用原生方法
@@ -667,14 +671,14 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     
                     match result {
                         Ok(v) => push_ok!(vm, v),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 } else if let Some(closure_ptr) = callee.as_closure() {
                     let closure = unsafe { &*closure_ptr };
                     let func = unsafe { &*closure.function };
 
                     if func.arity != arg_count {
-                        return InterpretResult::RuntimeError(format!(
+                        return InterpretResult::runtime_error(format!(
                             "Expected {} arguments but got {}",
                             func.arity, arg_count
                         ));
@@ -700,7 +704,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     // 向后兼容：直接调用函数（无闭包）
                     let func = unsafe { &*func_ptr };
                     if func.arity != arg_count {
-                        return InterpretResult::RuntimeError(format!(
+                        return InterpretResult::runtime_error(format!(
                             "Expected {} arguments but got {}",
                             func.arity, arg_count
                         ));
@@ -729,7 +733,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     // 变参函数：arity=255 表示可变参数
                     // 否则参数数量必须等于 arity（或支持变参的函数内部处理）
                     if native.arity != 255 && arg_count != native.arity {
-                        return InterpretResult::RuntimeError(format!(
+                        return InterpretResult::runtime_error(format!(
                             "Expected {} arguments but got {}",
                             native.arity, arg_count
                         ));
@@ -745,7 +749,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     // 调用原生函数
                     match native.call(&args) {
                         Ok(result) => push_ok!(vm, result),
-                        Err(msg) => return InterpretResult::RuntimeError(msg),
+                        Err(msg) => return InterpretResult::runtime_error(msg),
                     }
                 } else if let Some(native_vm_ptr) = callee.as_native_vm() {
                     // 调用 VM-aware 原生函数
@@ -753,7 +757,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
 
                     // 参数校验
                     if native_vm.arity != 255 && arg_count != native_vm.arity {
-                        return InterpretResult::RuntimeError(format!(
+                        return InterpretResult::runtime_error(format!(
                             "Expected {} arguments but got {}",
                             native_vm.arity, arg_count
                         ));
@@ -769,7 +773,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     // 调用 VM-aware 原生函数，传入 self (VM)
                     match (native_vm.function)(vm as *mut _ as *mut (), &args) {
                         Ok(result) => push_ok!(vm, result),
-                        Err(msg) => return InterpretResult::RuntimeError(msg),
+                        Err(msg) => return InterpretResult::runtime_error(msg),
                     }
                 } else {
                     // 尝试 operator call（可调用对象）
@@ -786,7 +790,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
 
                     match operators::call_callable_operator(vm, Operator::Call, &all_args) {
                         Ok(result) => push_ok!(vm, result),
-                        Err(e) => return InterpretResult::RuntimeError(e),
+                        Err(e) => return InterpretResult::runtime_error(e),
                     }
                 }
             }
@@ -822,7 +826,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
 
                     push_ok!(vm, Value::closure(Box::into_raw(closure)));
                 } else {
-                    return InterpretResult::RuntimeError(
+                    return InterpretResult::runtime_error(
                         "Closure constant must be a function".to_string(),
                     );
                 }
@@ -856,9 +860,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 call::close_upvalues(vm, 0);
 
                 // 2. 弹出当前函数的调用帧
-                vm.frames
-                    .pop()
-                    .expect("Runtime error: No call frame to pop");
+                let _ = frame_pop_ok!(vm);
 
                 // 3. 压入 NULL 作为无返回值函数的返回值
                 push_ok!(vm, Value::NULL);
@@ -876,9 +878,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 call::close_upvalues(vm, 0);
 
                 // 2. 弹出当前函数的调用帧
-                vm.frames
-                    .pop()
-                    .expect("Runtime error: No call frame to pop");
+                let _ = frame_pop_ok!(vm);
 
                 // 3. 保存栈顶的返回值（函数执行结果）
                 let return_value = pop_ok!(vm);
@@ -901,7 +901,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     let coroutine = Box::new(ObjCoroutine::new(closure_ptr));
                     push_ok!(vm, Value::coroutine(Box::into_raw(coroutine)));
                 } else {
-                    return InterpretResult::RuntimeError(
+                    return InterpretResult::runtime_error(
                         "Coroutine must be created from a closure".to_string(),
                     );
                 }
@@ -922,7 +922,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 push_ok!(vm, value);
 
                 // 返回特殊错误表示 yield（简化实现）
-                return InterpretResult::RuntimeError("yield".to_string());
+                return InterpretResult::RuntimeError(RuntimeError::r#yield());
             }
 
             CoroutineStatus => {
@@ -937,7 +937,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     };
                     push_ok!(vm, Value::smi(status as i32));
                 } else {
-                    return InterpretResult::RuntimeError("Expected a coroutine".to_string());
+                    return InterpretResult::runtime_error("Expected a coroutine".to_string());
                 }
             }
 
@@ -969,7 +969,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                         let key_str = unsafe { &(*key_ptr).chars };
                         entries.insert(key_str.clone(), value);
                     } else {
-                        return InterpretResult::RuntimeError(
+                        return InterpretResult::runtime_error(
                             "JSON key must be a string".to_string(),
                         );
                     }
@@ -1010,12 +1010,12 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(value) = module.get_by_shape_id(shape_id) {
                         push_ok!(vm, value);
                     } else {
-                        return InterpretResult::RuntimeError(format!(
+                        return InterpretResult::runtime_error(format!(
                             "Module field with ShapeID {shape_id} not found"
                         ));
                     }
                 } else {
-                    return InterpretResult::RuntimeError(
+                    return InterpretResult::runtime_error(
                         "ModuleGet requires a module".to_string(),
                     );
                 }
@@ -1032,12 +1032,12 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(ptr) = constant.as_string() {
                         unsafe { (&*ptr).chars.clone() }
                     } else {
-                        return InterpretResult::RuntimeError(
+                        return InterpretResult::runtime_error(
                             "GetModuleExport name must be a string".to_string(),
                         );
                     }
                 } else {
-                    return InterpretResult::RuntimeError(format!(
+                    return InterpretResult::runtime_error(format!(
                         "Invalid constant index for GetModuleExport: {name_idx}"
                     ));
                 };
@@ -1047,12 +1047,12 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(value) = module.get(&name) {
                         push_ok!(vm, value);
                     } else {
-                        return InterpretResult::RuntimeError(format!(
+                        return InterpretResult::runtime_error(format!(
                             "Export '{name}' not found in module"
                         ));
                     }
                 } else {
-                    return InterpretResult::RuntimeError(
+                    return InterpretResult::runtime_error(
                         "GetModuleExport requires a module".to_string(),
                     );
                 }
@@ -1065,7 +1065,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 let name = if let Some(ptr) = name_val.as_string() {
                     unsafe { (&*ptr).chars.clone() }
                 } else {
-                    return InterpretResult::RuntimeError(
+                    return InterpretResult::runtime_error(
                         "GetModule requires a string name".to_string(),
                     );
                 };
@@ -1073,7 +1073,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 if let Some(value) = vm.globals.get(&name) {
                     push_ok!(vm, *value);
                 } else {
-                    return InterpretResult::RuntimeError(format!("Module '{name}' not found"));
+                    return InterpretResult::runtime_error(format!("Module '{name}' not found"));
                 }
             }
 
@@ -1094,7 +1094,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 // 创建 struct 实例
                 let shape_ptr = shape::get_shape(vm, shape_id);
                 if shape_ptr.is_null() {
-                    return InterpretResult::RuntimeError(format!("Shape ID {shape_id} not found"));
+                    return InterpretResult::runtime_error(format!("Shape ID {shape_id} not found"));
                 }
 
                 let struct_obj = Box::new(ObjStruct::new(shape_ptr, fields));
@@ -1112,12 +1112,12 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     if let Some(value) = struct_obj.get_field(field_idx) {
                         push_ok!(vm, value);
                     } else {
-                        return InterpretResult::RuntimeError(format!(
+                        return InterpretResult::runtime_error(format!(
                             "Field index {field_idx} out of bounds"
                         ));
                     }
                 } else {
-                    return InterpretResult::RuntimeError(
+                    return InterpretResult::runtime_error(
                         "GetField requires a struct instance".to_string(),
                     );
                 }
@@ -1135,7 +1135,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     let struct_obj = unsafe { &mut *struct_ptr };
                     struct_obj.set_field(field_idx, value);
                 } else {
-                    return InterpretResult::RuntimeError(
+                    return InterpretResult::runtime_error(
                         "SetField requires a struct instance".to_string(),
                     );
                 }
@@ -1168,12 +1168,12 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                         // 压入函数对象（不是闭包）
                         push_ok!(vm, Value::function(method));
                     } else {
-                        return InterpretResult::RuntimeError(format!(
+                        return InterpretResult::runtime_error(format!(
                             "Method index {method_idx} not found in shape"
                         ));
                     }
                 } else {
-                    return InterpretResult::RuntimeError(format!(
+                    return InterpretResult::runtime_error(format!(
                         "Type '{}' has no methods",
                         vm.get_type_name(receiver)
                     ));
@@ -1194,9 +1194,8 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 args.reverse();  // [receiver, arg1, arg2...]
                 
                 if args.is_empty() {
-                    return InterpretResult::RuntimeError(
-                        "CallBuiltin requires at least receiver".to_string()
-                    );
+                    return InterpretResult::runtime_error(
+                            "CallBuiltin requires at least receiver".to_string());
                 }
                 
                 // 直接调用原生方法
@@ -1225,7 +1224,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                 
                 match result {
                     Ok(v) => push_ok!(vm, v),
-                    Err(e) => return InterpretResult::RuntimeError(e),
+                    Err(e) => return InterpretResult::runtime_error(e),
                 }
             }
 
@@ -1256,13 +1255,13 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                             Ok(v) => push_ok!(vm, v),
                             Err(e) => {
                                 kaubo_log::trace!(&vm.logger, "IndexGet: operator get failed: {}", e);
-                                return InterpretResult::RuntimeError(e);
+                                return InterpretResult::runtime_error(e);
                             }
                         }
                     }
                     Err(e) => {
                         // 基础类型处理出错（如索引越界）
-                        return InterpretResult::RuntimeError(e);
+                        return InterpretResult::runtime_error(e);
                     }
                 }
             }
@@ -1284,12 +1283,12 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                         // 基础类型不匹配，尝试 operator set
                         match index::call_set_operator(vm, obj_val, key_val, value) {
                             Ok(_) => {}
-                            Err(e) => return InterpretResult::RuntimeError(e),
+                            Err(e) => return InterpretResult::runtime_error(e),
                         }
                     }
                     Err(e) => {
                         // 基础类型处理出错（如索引越界）
-                        return InterpretResult::RuntimeError(e);
+                        return InterpretResult::runtime_error(e);
                     }
                 }
             }
@@ -1314,7 +1313,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
                     let iter_ptr = Box::into_raw(iter);
                     push_ok!(vm, Value::iterator(iter_ptr));
                 } else {
-                    return InterpretResult::RuntimeError(
+                    return InterpretResult::runtime_error(
                         "Can only iterate over lists, coroutines, or json objects".to_string(),
                     );
                 }
@@ -1377,7 +1376,7 @@ pub fn run(vm: &mut VM) -> InterpretResult {
 
                 match result {
                     Ok(v) => push_ok!(vm, v),
-                    Err(e) => return InterpretResult::RuntimeError(e),
+                    Err(e) => return InterpretResult::runtime_error(e),
                 }
             }
 
@@ -1393,11 +1392,11 @@ pub fn run(vm: &mut VM) -> InterpretResult {
             }
 
             Invalid => {
-                return InterpretResult::RuntimeError("Invalid opcode".to_string());
+                return InterpretResult::runtime_error("Invalid opcode".to_string());
             }
 
             _ => {
-                return InterpretResult::RuntimeError(format!("Unimplemented opcode: {op:?}"));
+                return InterpretResult::runtime_error(format!("Unimplemented opcode: {op:?}"));
             }
         }
     }
@@ -1415,7 +1414,7 @@ fn handle_resume(vm: &mut VM) -> InterpretResult {
 
         // 检查协程状态
         if coro.state == CoroutineState::Dead {
-            return InterpretResult::RuntimeError(
+            return InterpretResult::runtime_error(
                 "Cannot resume a dead coroutine".to_string(),
             );
         }
@@ -1433,7 +1432,7 @@ fn handle_resume(vm: &mut VM) -> InterpretResult {
             let func = unsafe { &*(*closure).function };
 
             if func.arity != arg_count {
-                return InterpretResult::RuntimeError(format!(
+                return InterpretResult::runtime_error(format!(
                     "Expected {} arguments but got {}",
                     func.arity, arg_count
                 ));
@@ -1483,8 +1482,8 @@ fn handle_resume(vm: &mut VM) -> InterpretResult {
                 push_ok!(vm, return_val);
                 InterpretResult::Ok
             }
-            InterpretResult::RuntimeError(msg) => {
-                if msg == "yield" {
+            InterpretResult::RuntimeError(ref msg) => {
+                if matches!(msg, RuntimeError::Yield) {
                     // 协程通过 yield 挂起
                     coro.state = CoroutineState::Suspended;
                     // 获取 yield 值（在协程栈顶）
@@ -1502,7 +1501,7 @@ fn handle_resume(vm: &mut VM) -> InterpretResult {
                     vm.stack = saved_stack;
                     vm.frames = saved_frames;
                     vm.open_upvalues = saved_upvalues;
-                    InterpretResult::RuntimeError(format!("Coroutine runtime error: {msg}"))
+                    InterpretResult::RuntimeError(msg.clone())
                 }
             }
             InterpretResult::CompileError(msg) => {
@@ -1515,7 +1514,7 @@ fn handle_resume(vm: &mut VM) -> InterpretResult {
             }
         }
     } else {
-        InterpretResult::RuntimeError("Can only resume coroutines".to_string())
+        InterpretResult::runtime_error("Can only resume coroutines".to_string())
     }
 }
 
@@ -1583,15 +1582,15 @@ fn handle_iter_next(vm: &mut VM) -> InterpretResult {
                         push_ok!(vm, return_val);
                         InterpretResult::Ok
                     }
-                    InterpretResult::RuntimeError(msg) => {
-                        if msg == "yield" {
+                    InterpretResult::RuntimeError(ref msg) => {
+                        if matches!(msg, RuntimeError::Yield) {
                             coro.state = CoroutineState::Suspended;
                             let yield_val = coro.stack.last().copied().unwrap_or(Value::NULL);
                             push_ok!(vm, yield_val);
                             InterpretResult::Ok
                         } else {
                             coro.state = CoroutineState::Dead;
-                            InterpretResult::RuntimeError(format!("Coroutine runtime error: {msg}"))
+                            InterpretResult::RuntimeError(msg.clone())
                         }
                     }
                     InterpretResult::CompileError(msg) => {
@@ -1614,7 +1613,7 @@ fn handle_iter_next(vm: &mut VM) -> InterpretResult {
             }
         }
     } else {
-        InterpretResult::RuntimeError("Expected iterator".to_string())
+        InterpretResult::runtime_error("Expected iterator".to_string())
     }
 }
 
@@ -1751,7 +1750,10 @@ pub fn push_const(vm: &mut VM, idx: usize) {
 #[cfg(feature = "trace_execution")]
 pub fn trace_instruction(vm: &VM) {
     // 反汇编当前指令
-    let frame = vm.frames.last().unwrap();
+    let frame = match vm.frames.last() {
+        Some(f) => f,
+        None => return,
+    };
     let chunk = frame.chunk();
     let code = &chunk.code;
 

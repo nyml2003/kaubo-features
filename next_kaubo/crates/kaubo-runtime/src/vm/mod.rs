@@ -26,9 +26,9 @@ pub trait VmRuntime {
     unsafe fn register_shape(&mut self, shape: *const ObjShape);
     fn register_method_to_shape(&mut self, shape_id: u16, method_idx: u8, func: *mut ObjFunction);
     fn push(&mut self, value: Value);
-    fn pop(&mut self) -> Value;
-    fn pop_two(&mut self) -> (Value, Value);
-    fn peek(&self, distance: usize) -> Value;
+    fn pop(&mut self) -> Result<Value, String>;
+    fn pop_two(&mut self) -> Result<(Value, Value), String>;
+    fn peek(&self, distance: usize) -> Result<Value, String>;
     fn current_ip(&self) -> *const u8;
     fn current_ip_mut(&mut self) -> &mut *const u8;
     fn current_locals_mut(&mut self) -> &mut Vec<Value>;
@@ -104,10 +104,39 @@ impl VmRuntime for VM {
         for _ in 0..local_count { locals.push(Value::NULL); }
         let ip = unsafe { (*(*closure).function).chunk.code.as_ptr() };
         self.frames.push(CallFrame { closure, ip, locals, stack_base: 0 });
-        let result = self.run();
-        self.frames.pop();
-        call::close_upvalues(self, 0);
-        result
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run()));
+        let interpret_result = match result {
+            Ok(r) => r,
+            Err(e) => {
+                let msg = if let Some(s) = e.downcast_ref::<String>() {
+                    s.clone()
+                } else if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "Internal VM error".to_string()
+                };
+                if let Some(ref reporter) = self.error_reporter {
+                    reporter.report_panic(&msg);
+                }
+                InterpretResult::runtime_error(format!("VM panic: {}", msg))
+            }
+        };
+        // Report error if reporter is set
+        if let InterpretResult::RuntimeError(ref err) = interpret_result {
+            if let Some(ref reporter) = self.error_reporter {
+                reporter.report_runtime_error(err);
+            }
+        } else if let InterpretResult::CompileError(ref msg) = interpret_result {
+            if let Some(ref reporter) = self.error_reporter {
+                reporter.report_compile_error(msg);
+            }
+        }
+        // Try cleanup — ignore errors on already-corrupted state
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.frames.pop();
+            call::close_upvalues(self, 0);
+        }));
+        interpret_result
     }
 
     fn run(&mut self) -> InterpretResult { execution::run(self) }
@@ -121,9 +150,9 @@ impl VmRuntime for VM {
     }
 
     fn push(&mut self, value: Value) { stack::push(self, value); }
-    fn pop(&mut self) -> Value { stack::pop(self) }
-    fn pop_two(&mut self) -> (Value, Value) { stack::pop_two(self) }
-    fn peek(&self, distance: usize) -> Value { stack::peek(self, distance) }
+    fn pop(&mut self) -> Result<Value, String> { stack::pop(self) }
+    fn pop_two(&mut self) -> Result<(Value, Value), String> { stack::pop_two(self) }
+    fn peek(&self, distance: usize) -> Result<Value, String> { stack::peek(self, distance) }
 
     fn current_ip(&self) -> *const u8 { execution::current_ip(self) }
     fn current_ip_mut(&mut self) -> &mut *const u8 { execution::current_ip_mut(self) }

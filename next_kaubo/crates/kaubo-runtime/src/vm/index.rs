@@ -4,6 +4,7 @@ use kaubo_ir::{
     ObjClosure, Operator, Value, VM,
 };
 use super::VmRuntime;
+use crate::vm::stack;
 
 /// 基础类型索引获取（用于 IndexGet）
 /// 返回 Ok(Some(value)) - 成功获取值
@@ -211,7 +212,7 @@ use super::VmRuntime;
             StoreLocal => {
                 let idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if (idx as usize) < locals.len() {
                     locals[idx as usize] = val;
                 } else {
@@ -220,7 +221,7 @@ use super::VmRuntime;
                 }
             }
             StoreLocal0 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.is_empty() {
                     locals.push(val);
                 } else {
@@ -228,21 +229,21 @@ use super::VmRuntime;
                 }
             }
             StoreLocal1 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.len() < 2 {
                     locals.resize(2, Value::NULL);
                 }
                 locals[1] = val;
             }
             StoreLocal2 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.len() < 3 {
                     locals.resize(3, Value::NULL);
                 }
                 locals[2] = val;
             }
             StoreLocal3 => {
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if locals.len() < 4 {
                     locals.resize(4, Value::NULL);
                 }
@@ -252,8 +253,8 @@ use super::VmRuntime;
             Add => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match vm.add_values(a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -262,8 +263,8 @@ use super::VmRuntime;
             Sub => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match vm.sub_values(a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -272,8 +273,8 @@ use super::VmRuntime;
             Mul => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match vm.mul_values(a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -282,8 +283,8 @@ use super::VmRuntime;
             Div => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match vm.div_values(a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -292,15 +293,15 @@ use super::VmRuntime;
             Mod => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match vm.mod_values(a, b) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
                 }
             }
             Neg => {
-                let v = vm.stack.pop().expect("Stack underflow");
+                let v = stack::pop(vm)?;
                 match vm.neg_value(v) {
                     Ok(v) => vm.stack.push(v),
                     Err(e) => return Err(e),
@@ -310,22 +311,22 @@ use super::VmRuntime;
             Equal => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 vm.stack.push(Value::bool_from(a == b));
             }
             NotEqual => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 vm.stack.push(Value::bool_from(a != b));
             }
             Greater => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match vm.compare_values(a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(ord == std::cmp::Ordering::Greater)),
                     Err(e) => return Err(e),
@@ -334,8 +335,8 @@ use super::VmRuntime;
             Less => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match vm.compare_values(a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(ord == std::cmp::Ordering::Less)),
                     Err(e) => return Err(e),
@@ -344,8 +345,8 @@ use super::VmRuntime;
             GreaterEqual => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match vm.compare_values(a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(
                         ord == std::cmp::Ordering::Greater || ord == std::cmp::Ordering::Equal,
@@ -356,8 +357,8 @@ use super::VmRuntime;
             LessEqual => {
                 let _cache_idx = unsafe { *ip };
                 ip = unsafe { ip.add(1) };
-                let b = vm.stack.pop().expect("Stack underflow");
-                let a = vm.stack.pop().expect("Stack underflow");
+                let b = stack::pop(vm)?;
+                let a = stack::pop(vm)?;
                 match vm.compare_values(a, b) {
                     Ok(ord) => vm.stack.push(Value::bool_from(
                         ord == std::cmp::Ordering::Less || ord == std::cmp::Ordering::Equal,
@@ -370,7 +371,7 @@ use super::VmRuntime;
                 vm.stack.pop();
             }
             Dup => {
-                let v = vm.stack.last().copied().unwrap();
+                let v = stack::peek(vm, 0)?;
                 vm.stack.push(v);
             }
 
@@ -382,7 +383,7 @@ use super::VmRuntime;
             JumpIfFalse => {
                 let offset = super::execution::read_i16_at_ptr(ip);
                 ip = unsafe { ip.add(2) };
-                let val = vm.stack.pop().expect("Stack underflow");
+                let val = stack::pop(vm)?;
                 if !val.is_truthy() {
                     ip = unsafe { ip.offset(offset as isize) };
                 }
@@ -396,7 +397,7 @@ use super::VmRuntime;
 
                 let mut fields = Vec::with_capacity(field_count as usize);
                 for _ in 0..field_count {
-                    fields.push(vm.stack.pop().expect("Stack underflow"));
+                    fields.push(stack::pop(vm)?);
                 }
 
                 let shape_ptr = vm.get_shape(shape_id);

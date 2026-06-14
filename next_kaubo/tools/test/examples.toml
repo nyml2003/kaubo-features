@@ -1,0 +1,45 @@
+# Kaubo 集成测试用例
+
+[suite]
+timeout = 30
+
+[[tests]]
+name = "hello_world"
+entry = "examples/01_hello_world/package.json"
+
+[[tests]]
+name = "variables"
+entry = "examples/02_variables/package.json"
+
+[[tests]]
+name = "control_flow"
+entry = "examples/04_control_flow/package.json"
+
+[[tests]]
+name = "functions"
+entry = "examples/05_functions/package.json"
+
+[[tests]]
+name = "structs"
+entry = "examples/06_structs/package.json"
+
+[[tests]]
+name = "lists"
+entry = "examples/07_lists/package.json"
+
+# Multi-module tests: currently limited by single-file CLI
+# [[tests]]
+# name = "multi_module"
+# entry = "examples/multi_module/main.kaubo"
+#
+# [[tests]]
+# name = "diamond_deps"
+# entry = "examples/diamond_deps/main.kaubo"
+#
+# [[tests]]
+# name = "import_chain"
+# entry = "examples/import_chain/main.kaubo"
+#
+# [[tests]]
+# name = "builtin_methods"
+# entry = "examples/builtin_methods.kaubo"
