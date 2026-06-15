@@ -1,6 +1,6 @@
 //! Shape 注册和查找
 
-use kaubo_ir::{ObjFunction, ObjShape, OperatorTableEntry, VM};
+use kaubo_ir::{MethodTableEntry, ObjFunction, ObjShape, OperatorTableEntry, VM};
 use super::VmRuntime;
 
 /// 注册 Shape 到 VM
@@ -75,6 +75,30 @@ pub fn register_operators_from_chunk(
                         (*(*shape_ptr as *mut ObjShape)).register_operator(op, closure);
                     }
                 }
+            }
+        }
+    }
+}
+
+/// 从 Chunk 的 method_table 注册方法到 Shape
+pub fn register_methods_from_chunk(
+    vm: &mut VM,
+    chunk: &kaubo_ir::Chunk,
+) {
+    for entry in &chunk.method_table {
+        let MethodTableEntry { shape_id, method_idx, const_idx } = entry;
+        if let Some(func_val) = chunk.constants.get(*const_idx as usize) {
+            if let Some(func_ptr) = func_val.as_function() {
+                // Ensure the shape exists
+                vm.shapes.entry(*shape_id).or_insert_with(|| {
+                    let shape = Box::into_raw(Box::new(ObjShape::new(
+                        *shape_id,
+                        format!("<anon_{shape_id}>"),
+                        Vec::new(),
+                    )));
+                    shape
+                });
+                register_method_to_shape(vm, *shape_id, *method_idx, func_ptr);
             }
         }
     }

@@ -1,6 +1,0 @@
-// Utils module
-import math;
-
-pub var calculate = |x, y| -> int {
-    return math.add(x, y) * 2;
-};

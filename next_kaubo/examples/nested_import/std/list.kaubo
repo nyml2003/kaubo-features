@@ -1,5 +1,0 @@
-// List utilities (std module)
-
-pub var length = |list| -> int {
-    return list.length();
-};

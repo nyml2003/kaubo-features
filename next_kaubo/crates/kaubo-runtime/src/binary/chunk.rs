@@ -257,9 +257,9 @@ pub fn decode_chunk_with_context(
         operator_table,
         inline_cache_slots,
         inline_caches,
+        shape_table: Vec::new(),
     })
 }
-
 /// 从字节数组解码 Chunk（简化版本）
 /// 
 /// **注意**: 如果 Chunk 包含字符串、函数等堆对象引用，此函数会返回错误。
@@ -297,9 +297,9 @@ pub fn decode_chunk(bytes: &[u8]) -> Result<Chunk, ChunkDecodeError> {
         operator_table,
         inline_cache_slots,
         inline_caches,
+        shape_table: Vec::new(),
     })
 }
-
 // ==================== 辅助编码函数 ====================
 
 fn encode_bytes(buf: &mut Vec<u8>, data: &[u8]) {

@@ -1,6 +1,0 @@
-// Strings module (right of diamond)
-import common;
-
-pub var concat = |a, b| -> string {
-    return a + b;
-};

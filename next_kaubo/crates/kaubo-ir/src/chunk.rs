@@ -6,6 +6,9 @@ use crate::bytecode::{InlineCacheSlot, MethodTableEntry, OpCode, OperatorTableEn
 use crate::operators::InlineCacheEntry;
 use crate::value::Value;
 
+/// Shape table entry: shape_id, name, field_names, field_types
+pub type ShapeTableEntry = (u16, String, Vec<String>, Vec<String>);
+
 /// 字节码块
 #[derive(Clone)]
 pub struct Chunk {
@@ -23,6 +26,8 @@ pub struct Chunk {
     pub inline_cache_slots: Vec<InlineCacheSlot>,
     /// 内联缓存条目
     pub inline_caches: Vec<InlineCacheEntry>,
+    /// Shape 表（编译期注册，运行时自动创建）
+    pub shape_table: Vec<ShapeTableEntry>,
 }
 
 impl std::fmt::Debug for Chunk {
@@ -35,6 +40,7 @@ impl std::fmt::Debug for Chunk {
             .field("operator_table", &self.operator_table)
             .field("inline_cache_slots", &self.inline_cache_slots)
             .field("inline_caches", &self.inline_caches)
+            .field("shape_table", &self.shape_table)
             .finish()
     }
 }
@@ -55,6 +61,7 @@ impl Chunk {
             operator_table: Vec::new(),
             inline_cache_slots: Vec::new(),
             inline_caches: Vec::new(),
+            shape_table: Vec::new(),
         }
     }
 

@@ -1,8 +1,0 @@
-// Main module
-import app;
-import logger;
-
-var result = app.run();
-logger.log("Done");
-
-return result;

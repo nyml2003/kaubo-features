@@ -1,5 +1,0 @@
-// Main module
-import app.utils;
-
-var result = app.utils.calculate(10, 20);
-return result;

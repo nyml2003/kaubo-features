@@ -200,6 +200,12 @@ fn compile_impl_block(
                         param_name.clone(),
                         VarType::Struct(named_type.name.clone()),
                     );
+                } else {
+                    // Fallback: untyped parameters default to the same struct type
+                    method_compiler.var_types.insert(
+                        param_name.clone(),
+                        VarType::Struct(impl_stmt.struct_name.clone()),
+                    );
                 }
             }
             

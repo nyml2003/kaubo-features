@@ -1,6 +1,0 @@
-// Main module
-import math;
-
-var result = math.add(1, 2);
-print result;
-return result;

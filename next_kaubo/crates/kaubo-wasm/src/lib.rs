@@ -183,7 +183,7 @@ pub fn run(_bytes: &[u8]) -> Result<String, JsValue> {
 
         let chunk = COMPILED.lock()
             .map_err(|_| JsValue::from_str("Lock poisoned"))?
-            .take()
+            .clone()
             .ok_or_else(|| JsValue::from_str("No compiled chunk — run compile() first"))?;
 
         let mut vm = kaubo_ir::VM::new();

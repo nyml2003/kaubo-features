@@ -1,6 +1,0 @@
-// App module
-import database;
-
-pub var run = || {
-    return database.query("SELECT * FROM users");
-};

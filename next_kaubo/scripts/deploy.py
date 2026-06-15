@@ -40,26 +40,33 @@ def read_version() -> str:
 
 
 def get_download_url(repo: str, version: str) -> tuple[str, str]:
-    url = f"https://api.github.com/repos/{repo}/releases/tags/v{version}"
+    """从 GitHub Releases 列表中找到指定版本，返回 (tag_name, download_url)。"""
+    url = f"https://api.github.com/repos/{repo}/releases"
     try:
         req = urllib.request.Request(url)
         req.add_header("Accept", "application/vnd.github+json")
         req.add_header("User-Agent", "kaubo-deploy")
         with urllib.request.urlopen(req) as resp:
-            data = json.loads(resp.read())
+            releases = json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        if e.code == 404:
-            sys.exit(f"错误: 找不到 Release v{version} (仓库 {repo})")
         sys.exit(f"错误: HTTP {e.code} - {e.reason}")
     except Exception as e:
         sys.exit(f"错误: 访问 GitHub API 失败 - {e}")
 
-    assets = data.get("assets", [])
-    if not assets:
-        sys.exit(f"错误: Release v{version} 没有附件")
+    if not isinstance(releases, list) or not releases:
+        sys.exit(f"错误: 仓库 {repo} 没有 Release")
 
-    asset = assets[0]
-    return data["tag_name"], asset["browser_download_url"]
+    # 匹配 tag_name 或 name 中包含目标版本的 release
+    for rel in releases:
+        tag = rel.get("tag_name", "")
+        name = rel.get("name", "")
+        if version in tag or version in name:
+            assets = rel.get("assets", [])
+            if not assets:
+                sys.exit(f"错误: Release {tag} 没有附件")
+            return tag, assets[0]["browser_download_url"]
+
+    sys.exit(f"错误: 找不到版本 {version} (仓库 {repo})")
 
 
 def check_nginx() -> None:

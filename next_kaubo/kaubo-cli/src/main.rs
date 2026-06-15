@@ -94,6 +94,7 @@ fn cmd_default(file: &PathBuf, cli: &Cli) {
     if !cli.compile_only {
         use kaubo_runtime::vm::VmRuntime;
         let mut vm = kaubo_ir::VM::new();
+        vm.init_stdlib();
         let result = vm.interpret(&chunk);
         match result {
             kaubo_ir::InterpretResult::Ok => {}

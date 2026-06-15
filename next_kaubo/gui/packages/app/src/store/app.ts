@@ -46,31 +46,33 @@ export function createKauboStore() {
       setStatus("running");
       setError(null);
     });
-    try {
-      // Auto-compile if needed
-      const len = doCompile(code());
-      if (len == null) {
-        setError("WASM not loaded yet");
-        setStatus("idle");
-        return;
-      }
+    // Yield a frame so the spinner can render before blocking WASM
+    requestAnimationFrame(() => {
+      try {
+        const len = doCompile(code());
+        if (len == null) {
+          setError("WASM not loaded yet");
+          setStatus("idle");
+          return;
+        }
 
-      const out = doRun();
-      if (out == null) {
-        setError("WASM not loaded yet");
-        setStatus("idle");
-        return;
+        const out = doRun();
+        if (out == null) {
+          setError("WASM not loaded yet");
+          setStatus("idle");
+          return;
+        }
+        batch(() => {
+          setStatus("ready");
+          setOutput((prev) => prev + out);
+        });
+      } catch (e: unknown) {
+        batch(() => {
+          setStatus("ready");
+          setError(e instanceof Error ? e.message : String(e));
+        });
       }
-      batch(() => {
-        setStatus("ready");
-        setOutput((prev) => prev + out);
-      });
-    } catch (e: unknown) {
-      batch(() => {
-        setStatus("ready");
-        setError(e instanceof Error ? e.message : String(e));
-      });
-    }
+    });
   };
 
   const clearError = () => setError(null);

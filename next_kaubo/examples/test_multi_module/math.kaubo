@@ -1,5 +1,0 @@
-// Math module
-
-pub var add = |a, b| -> int {
-    return a + b;
-};

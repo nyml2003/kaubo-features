@@ -40,3 +40,13 @@ test("invalid code shows error", async ({ page }) => {
   // Error should appear — either in overlay header or as text
   await expect(page.getByText("ParserError")).toBeVisible({ timeout: 10_000 });
 });
+
+test("struct instantiation compiles and runs", async ({ page }) => {
+  const editor = page.locator(".cm-content");
+  await editor.click();
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type('struct A { x: int, y: int }; var a = A { x: 200, y: 300 }; print(a.x);');
+
+  await page.click("button:has-text('Run')");
+  await expect(page.locator("pre")).toContainText("200", { timeout: 10_000 });
+});

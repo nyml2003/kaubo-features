@@ -21,7 +21,7 @@ export const App: Component = () => {
           onRun={store.run}
         />
         <main class={styles.main}>
-          <Editor code={store.code} onUpdate={store.setCode} />
+          <Editor code={store.code} onUpdate={store.setCode} onRun={store.run} />
           <OutputPanel output={store.output} />
         </main>
         <ErrorOverlay error={store.error} onDismiss={store.clearError} />

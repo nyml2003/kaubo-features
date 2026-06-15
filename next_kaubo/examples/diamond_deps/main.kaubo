@@ -1,8 +1,0 @@
-// Main module (top of diamond)
-import math;
-import strings;
-
-var num = math.add(10, 20);
-var str = strings.concat("Hello, ", "World!");
-
-return num;

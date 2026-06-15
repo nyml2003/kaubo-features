@@ -52,6 +52,6 @@
 .editor :global(.cm-kaubo-number)    { color: #f78c6c; }
 .editor :global(.cm-kaubo-string)    { color: #c3e88d; }
 .editor :global(.cm-kaubo-comment)   { color: #676e95; font-style: italic; }
-.editor :global(.cm-kaubo-identifier) { color: #e0e0e0; }
+.editor :global(.cm-kaubo-identifier) { color: #a6accd; }
 .editor :global(.cm-kaubo-atom)      { color: #ff5370; }
 .editor :global(.cm-kaubo-operator)  { color: #89ddff; }

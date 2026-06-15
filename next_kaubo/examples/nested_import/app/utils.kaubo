@@ -1,6 +1,0 @@
-// App utilities
-import std.math;
-
-pub var calculate = |a, b| -> int {
-    return std.math.max(a, b) * 2;
-};

@@ -1,7 +1,0 @@
-// Database module
-import logger;
-
-pub var query = |sql| {
-    logger.log("Executing query...");
-    return 42;
-};

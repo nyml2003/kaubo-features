@@ -27,4 +27,5 @@
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
+  max-height: 300px;
 }

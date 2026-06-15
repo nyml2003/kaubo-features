@@ -1,5 +1,5 @@
 import { onMount, createEffect, type Component } from "solid-js";
-import { EditorView } from "@codemirror/view";
+import { EditorView, placeholder, keymap } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { kauboLanguage } from "../../editor/kauboLang";
 import { lex } from "@kaubo/wasm";
@@ -12,6 +12,7 @@ if (win) (win as any).__kauboWasm = { lex };
 export const Editor: Component<{
   code: () => string;
   onUpdate: (value: string) => void;
+  onRun: () => void;
 }> = (props) => {
   let container!: HTMLDivElement;
   let view: EditorView;
@@ -23,7 +24,12 @@ export const Editor: Component<{
         doc: props.code(),
         extensions: [
           EditorState.tabSize.of(4),
+          placeholder("// Enter Kaubo code..."),
           kauboLanguage(),
+          keymap.of([{
+            key: "Ctrl-Enter",
+            run: () => { props.onRun(); return true; },
+          }]),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               props.onUpdate(update.state.doc.toString());

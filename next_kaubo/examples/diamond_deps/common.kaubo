@@ -1,7 +1,0 @@
-// Common module (base of diamond)
-
-pub var version = "1.0.0";
-
-pub var helper = || {
-    return 1;
-};

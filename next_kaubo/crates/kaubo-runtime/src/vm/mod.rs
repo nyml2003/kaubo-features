@@ -98,6 +98,14 @@ impl VmRuntime for VM {
         execution::register_operators_from_chunk(self, chunk);
         self.inline_caches.clear();
         self.inline_caches.extend(chunk.inline_caches.clone());
+        // Register shapes first, then methods (methods need shapes to exist)
+        for (shape_id, name, field_names, field_types) in &chunk.shape_table {
+            let shape = Box::into_raw(Box::new(ObjShape::new_with_types(
+                *shape_id, name.clone(), field_names.clone(), field_types.clone(),
+            )));
+            unsafe { self.register_shape(shape); }
+        }
+        shape::register_methods_from_chunk(self, chunk);
         let function = Box::into_raw(Box::new(ObjFunction::new(chunk.clone(), 0, Some("<main>".to_string()))));
         let closure = Box::into_raw(Box::new(ObjClosure::new(function)));
         let mut locals = Vec::with_capacity(local_count);

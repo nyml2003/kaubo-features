@@ -1,5 +1,0 @@
-// Logger module
-
-pub var log = |msg| {
-    print msg;
-};
