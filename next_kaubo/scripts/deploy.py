@@ -25,6 +25,7 @@ DEPLOY_ROOT = Path(os.environ.get("DEPLOY_ROOT", "/var/www/kaubo"))
 DIST_DIR = DEPLOY_ROOT / "dist"
 DEPLOYED_TAG_FILE = DEPLOY_ROOT / ".deployed_version"
 DEFAULT_REPO = os.environ.get("KAUBO_REPO", "nyml2003/kaubo-features")
+DL_MIRROR   = os.environ.get("DEPLOY_MIRROR", "https://ghproxy.com/")
 
 
 def read_version() -> str:
@@ -89,7 +90,8 @@ def do_deploy(version: str, download_url: str) -> None:
     # Step 2: 下载 + 解压
     print(f"\n[2/3] 下载 v{version} 并解压 …")
     try:
-        req = urllib.request.Request(download_url)
+        mirror_url = DL_MIRROR + download_url
+        req = urllib.request.Request(mirror_url)
         req.add_header("User-Agent", "kaubo-deploy")
         with urllib.request.urlopen(req) as resp:
             with tarfile.open(fileobj=resp, mode="r:gz") as tar:
