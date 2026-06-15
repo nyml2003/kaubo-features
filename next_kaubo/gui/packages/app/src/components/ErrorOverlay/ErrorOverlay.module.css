@@ -12,7 +12,7 @@
 .box {
   max-width: 600px;
   width: 90%;
-  background: #1a1a2e;
+  background: var(--kb-bg);
   border: 1px solid #ff5555;
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -26,25 +26,25 @@
   font-size: 13px;
   font-weight: 600;
   color: #ff5555;
-  border-bottom: 1px solid #2a2a4a;
+  border-bottom: 1px solid var(--kb-selection);
 }
 
 .close {
   font-size: 18px;
-  color: #888;
+  color: var(--kb-comment);
   cursor: pointer;
   line-height: 1;
 }
 
 .close:hover {
-  color: #fff;
+  color: var(--kb-text);
 }
 
 .message {
   padding: 14px;
   margin: 0;
   font-size: 13px;
-  color: #d0d0d0;
+  color: var(--kb-text);
   white-space: pre-wrap;
   overflow: auto;
   max-height: 300px;

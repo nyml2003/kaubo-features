@@ -7,7 +7,12 @@ struct Point {
 
 var p = Point { x: 100, y: 200 };
 
-print(p.x);
-print(p.y);
+impl Point {
+    distance: |self, other: Point| -> float {
+        return std.sqrt((self.x - other.x) * (self.x - other.x) + (self.y - other.y) * (self.y - other.y));
+    }
+}
 
-return p.x + p.y;
+var p2 = Point { x: 300, y: 400 };
+var d = p.distance(p2);
+print(d);

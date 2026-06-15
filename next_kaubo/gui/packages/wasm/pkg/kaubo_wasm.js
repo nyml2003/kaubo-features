@@ -17,6 +17,33 @@ export function compile(source) {
 }
 
 /**
+ * Diagnose Kaubo source code — returns structured errors as JSON.
+ *
+ * Takes source code, runs lexer + parser + type checker.
+ * Returns a JSON array of diagnostic objects:
+ *   `[{"severity":"error","line":1,"column":3,"from":2,"to":5,"message":"..."}]`
+ *
+ * `from`/`to` are UTF-16 code unit offsets (compatible with CodeMirror / VSCode).
+ * If no errors, returns `"[]"`.
+ * @param {string} source
+ * @returns {string}
+ */
+export function diagnose(source) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.diagnose(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * Initialize panic hook so errors show in browser console instead of `unreachable`
  */
 export function init() {

@@ -8,6 +8,18 @@
 export function compile(source: string): number;
 
 /**
+ * Diagnose Kaubo source code — returns structured errors as JSON.
+ *
+ * Takes source code, runs lexer + parser + type checker.
+ * Returns a JSON array of diagnostic objects:
+ *   `[{"severity":"error","line":1,"column":3,"from":2,"to":5,"message":"..."}]`
+ *
+ * `from`/`to` are UTF-16 code unit offsets (compatible with CodeMirror / VSCode).
+ * If no errors, returns `"[]"`.
+ */
+export function diagnose(source: string): string;
+
+/**
  * Initialize panic hook so errors show in browser console instead of `unreachable`
  */
 export function init(): void;
@@ -30,6 +42,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly compile: (a: number, b: number) => [number, number, number];
+    readonly diagnose: (a: number, b: number) => [number, number];
     readonly init: () => void;
     readonly lex: (a: number, b: number) => [number, number];
     readonly run: (a: number, b: number) => [number, number, number, number];

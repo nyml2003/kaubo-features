@@ -1,16 +1,29 @@
 import { onMount, createEffect, type Component } from "solid-js";
-import { EditorView, placeholder, keymap } from "@codemirror/view";
+import { EditorView, placeholder, keymap, highlightActiveLine, drawSelection } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
+import { bracketMatching, foldGutter, indentOnInput, foldKeymap } from "@codemirror/language";
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { lintGutter, lintKeymap } from "@codemirror/lint";
+import { defaultKeymap } from "@codemirror/commands";
 import { kauboLanguage } from "../../editor/kauboLang";
 import { lex } from "@kaubo/wasm";
+import { applyTheme, presets } from "../../themes";
+import type { ThemeName } from "../../themes";
 import styles from "./Editor.module.css";
 
-// Expose lex to window for e2e tests
-const win = typeof window !== "undefined" ? window : undefined;
-if (win) (win as any).__kauboWasm = { lex };
+declare global {
+  interface Window {
+    __kauboWasm?: { lex: typeof lex };
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.__kauboWasm = { lex };
+}
 
 export const Editor: Component<{
   code: () => string;
+  theme: () => string;
   onUpdate: (value: string) => void;
   onRun: () => void;
 }> = (props) => {
@@ -25,11 +38,24 @@ export const Editor: Component<{
         extensions: [
           EditorState.tabSize.of(4),
           placeholder("// Enter Kaubo code..."),
-          kauboLanguage(),
-          keymap.of([{
-            key: "Ctrl-Enter",
-            run: () => { props.onRun(); return true; },
-          }]),
+          highlightActiveLine(),
+          drawSelection(),
+          bracketMatching(),
+          foldGutter(),
+          indentOnInput(),
+          closeBrackets(),
+          lintGutter(),
+          ...kauboLanguage(),
+          keymap.of([
+            ...closeBracketsKeymap,
+            ...defaultKeymap,
+            ...foldKeymap,
+            ...lintKeymap,
+            {
+              key: "Ctrl-Enter",
+              run: () => { props.onRun(); return true; },
+            },
+          ]),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               props.onUpdate(update.state.doc.toString());
@@ -46,6 +72,12 @@ export const Editor: Component<{
           changes: { from: 0, to: view.state.doc.length, insert: external },
         });
       }
+    });
+
+    createEffect(() => {
+      const themeName = props.theme();
+      const theme = presets[themeName as ThemeName];
+      applyTheme(container, theme);
     });
   });
 

@@ -1,10 +1,10 @@
 import { createResource } from "solid-js";
-import init, { compile, run } from "@kaubo/wasm";
+import init, { compile, run, diagnose } from "@kaubo/wasm";
 
 export function useKaubo() {
   const [wasm] = createResource(async () => {
     await init();
-    return { compile, run };
+    return { compile, run, diagnose };
   });
 
   const doCompile = (source: string): number | null => {
@@ -17,5 +17,10 @@ export function useKaubo() {
     return w ? w.run(new Uint8Array()) : null;
   };
 
-  return { doCompile, doRun, loading: () => wasm.loading };
+  const doDiagnose = (source: string): string | null => {
+    const w = wasm();
+    return w ? w.diagnose(source) : null;
+  };
+
+  return { doCompile, doRun, doDiagnose, loading: () => wasm.loading };
 }

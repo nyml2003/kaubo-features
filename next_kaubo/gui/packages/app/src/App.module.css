@@ -4,14 +4,21 @@
   height: 100%;
   font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
   font-size: 14px;
-  color: #e0e0e0;
-  background: #1a1a2e;
+  color: var(--kb-text);
+  background: var(--kb-bg);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 .main {
   display: flex;
+  flex-direction: column;
   flex: 1;
-  min-height: 0;
+  min-width: 0;
 }
 
 .splash {
@@ -20,5 +27,5 @@
   justify-content: center;
   height: 100%;
   font-size: 16px;
-  color: #888;
+  color: var(--kb-comment);
 }

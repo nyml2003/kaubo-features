@@ -5,12 +5,13 @@
 
 .editor :global(.cm-editor) {
   height: 100%;
-  background: #1a1a2e;
+  background: var(--kb-bg);
+  color: var(--kb-text);
 }
 
 .editor :global(.cm-editor .cm-content) {
-  background: #1a1a2e;
-  caret-color: #e0e0e0;
+  background: var(--kb-bg);
+  caret-color: var(--kb-cursor);
 }
 
 .editor :global(.cm-editor .cm-scroller) {
@@ -25,33 +26,43 @@
 }
 
 .editor :global(.cm-editor .cm-gutters) {
-  background: #1e1e36;
-  color: #555;
+  background: var(--kb-gutter);
+  color: var(--kb-comment);
   border: none;
   padding-right: 8px;
 }
 
 .editor :global(.cm-editor .cm-activeLineGutter) {
-  background: #252542;
+  background: var(--kb-active-line);
 }
 
 .editor :global(.cm-editor .cm-activeLine) {
-  background: #252542;
+  background: var(--kb-active-line);
 }
 
 .editor :global(.cm-editor .cm-selectionBackground) {
-  background: #363669;
+  background: var(--kb-selection);
 }
 
 .editor :global(.cm-editor .cm-cursor) {
-  border-left-color: #e0e0e0;
+  border-left-color: var(--kb-cursor);
 }
 
 /* Syntax highlighting — Kaubo token kinds */
-.editor :global(.cm-kaubo-keyword)   { color: #c792ea; }
-.editor :global(.cm-kaubo-number)    { color: #f78c6c; }
-.editor :global(.cm-kaubo-string)    { color: #c3e88d; }
-.editor :global(.cm-kaubo-comment)   { color: #676e95; font-style: italic; }
-.editor :global(.cm-kaubo-identifier) { color: #a6accd; }
-.editor :global(.cm-kaubo-atom)      { color: #ff5370; }
-.editor :global(.cm-kaubo-operator)  { color: #89ddff; }
+.editor :global(.cm-kaubo-keyword)   { color: var(--kb-keyword); }
+.editor :global(.cm-kaubo-number)    { color: var(--kb-number); }
+.editor :global(.cm-kaubo-string)    { color: var(--kb-string); }
+.editor :global(.cm-kaubo-comment)   { color: var(--kb-comment); font-style: italic; }
+.editor :global(.cm-kaubo-identifier) { color: var(--kb-identifier); }
+.editor :global(.cm-kaubo-atom)      { color: var(--kb-atom); }
+.editor :global(.cm-kaubo-operator)  { color: var(--kb-operator); }
+
+/* Fold & lint gutter */
+.editor :global(.cm-foldGutter) { color: var(--kb-comment); }
+.editor :global(.cm-foldPlaceholder) {
+  background: var(--kb-active-line);
+  border-color: var(--kb-selection);
+  color: var(--kb-keyword);
+}
+.editor :global(.cm-lintMarker-error) { color: var(--kb-atom); }
+.editor :global(.cm-lintMarker-warning) { color: var(--kb-number); }

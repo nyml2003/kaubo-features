@@ -1,0 +1,87 @@
+{
+  "var": {
+    "prefix": "var",
+    "body": ["var ${1:name} = ${2:value};"],
+    "description": "Variable declaration"
+  },
+  "var_typed": {
+    "prefix": "vart",
+    "body": ["var ${1:name}: ${2:Type} = ${3:value};"],
+    "description": "Variable declaration with type annotation"
+  },
+  "if": {
+    "prefix": "if",
+    "body": ["if ${1:condition} {", "\t${2:body}", "}"],
+    "description": "If statement"
+  },
+  "if_else": {
+    "prefix": "ife",
+    "body": ["if ${1:condition} {", "\t${2:body}", "} else {", "\t${3:body}", "}"],
+    "description": "If-else statement"
+  },
+  "if_elif": {
+    "prefix": "ifel",
+    "body": ["if ${1:condition} {", "\t${2:body}", "} elif ${3:condition} {", "\t${4:body}", "} else {", "\t${5:body}", "}"],
+    "description": "If-elif-else statement"
+  },
+  "while": {
+    "prefix": "while",
+    "body": ["while ${1:condition} {", "\t${2:body}", "}"],
+    "description": "While loop"
+  },
+  "for_in": {
+    "prefix": "for",
+    "body": ["for ${1:item} in ${2:collection} {", "\t${3:body}", "}"],
+    "description": "For-in loop"
+  },
+  "lambda": {
+    "prefix": "fn",
+    "body": ["|${1:params}| {", "\t${2:body}", "}"],
+    "description": "Lambda expression"
+  },
+  "typed_lambda": {
+    "prefix": "fnt",
+    "body": ["|${1:param}: ${2:Type}| -> ${3:ReturnType} {", "\t${4:body}", "}"],
+    "description": "Lambda with type annotations"
+  },
+  "struct": {
+    "prefix": "struct",
+    "body": ["struct ${1:Name} {", "\t${2:field}: ${3:Type},", "}"],
+    "description": "Struct definition"
+  },
+  "impl": {
+    "prefix": "impl",
+    "body": ["impl ${1:Name} {", "\toperator ${2:op}(${3:params}) {", "\t\t${4:body}", "\t}", "}"],
+    "description": "Impl block with operator"
+  },
+  "fun_call": {
+    "prefix": "call",
+    "body": ["${1:function}(${2:args});"],
+    "description": "Function call"
+  },
+  "return": {
+    "prefix": "ret",
+    "body": ["return ${1:value};"],
+    "description": "Return statement"
+  },
+  "import": {
+    "prefix": "import",
+    "body": ["import \"${1:module}\";"],
+    "description": "Import module"
+  },
+  "import_as": {
+    "prefix": "importa",
+    "body": ["import \"${1:module}\" as ${2:alias};"],
+    "description": "Import module with alias"
+  },
+  "from_import": {
+    "prefix": "from",
+    "body": ["from \"${1:module}\" import { ${2:exports} };"],
+    "description": "From-import statement"
+  },
+  "print": {
+    "prefix": "print",
+    "body": ["print(${1:value});"],
+    "description": "Print statement"
+  }
+}

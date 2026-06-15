@@ -1,0 +1,147 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Kaubo",
+  "scopeName": "source.kaubo",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#numbers" },
+    { "include": "#operators" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.kaubo",
+          "begin": "/\\*",
+          "end": "\\*/"
+        },
+        {
+          "name": "comment.line.double-slash.kaubo",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.kaubo",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.kaubo",
+              "match": "\\\\(n|r|t|\\\\|\"|')"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.kaubo",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.kaubo",
+              "match": "\\\\(n|r|t|\\\\|\"|')"
+            }
+          ]
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.kaubo",
+          "match": "\\b(if|else|elif|while|for|return|in|break|continue|pass|yield)\\b"
+        },
+        {
+          "name": "keyword.struct.kaubo",
+          "match": "\\b(struct|impl|operator)\\b"
+        },
+        {
+          "name": "keyword.other.kaubo",
+          "match": "\\b(var|module|pub|import|as|from|and|or|not|print|json|true|false|null)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.kaubo",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.kaubo",
+          "match": "\\bnull\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.kaubo",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.kaubo",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.kaubo",
+          "match": "==|!=|>=|<=|=>"
+        },
+        {
+          "name": "keyword.operator.kaubo",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.assignment.kaubo",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.bitwise.kaubo",
+          "match": "[<>]"
+        },
+        {
+          "name": "punctuation.separator.kaubo",
+          "match": "[,:;]"
+        },
+        {
+          "name": "punctuation.section.kaubo",
+          "match": "[(){}\\[\\]]"
+        },
+        {
+          "name": "keyword.operator.accessor.kaubo",
+          "match": "\\."
+        },
+        {
+          "name": "keyword.operator.pipe.kaubo",
+          "match": "\\|"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "entity.name.function.kaubo",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*(?=\\()"
+        },
+        {
+          "name": "entity.name.struct.kaubo",
+          "match": "(?<=struct\\s)([A-Z][a-zA-Z0-9_]*)"
+        },
+        {
+          "name": "variable.other.kaubo",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}

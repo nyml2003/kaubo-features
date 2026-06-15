@@ -136,6 +136,113 @@ fn token_kind_to_tag(kind: KauboTokenKind) -> &'static str {
     }
 }
 
+// ── Diagnose (structured errors) ──────────────────────────────────────────
+
+use kaubo_compiler::parser::Parser;
+
+/// Diagnose Kaubo source code — returns structured errors as JSON.
+///
+/// Takes source code, runs lexer + parser + type checker.
+/// Returns a JSON array of diagnostic objects:
+///   `[{"severity":"error","line":1,"column":3,"from":2,"to":5,"message":"..."}]`
+///
+/// `from`/`to` are UTF-16 code unit offsets (compatible with CodeMirror / VSCode).
+/// If no errors, returns `"[]"`.
+#[wasm_bindgen]
+pub fn diagnose(source: &str) -> String {
+    let owned = source.to_owned();
+    let utf16_starts = build_utf16_line_starts(&owned);
+
+    let mut errors: Vec<String> = Vec::new();
+
+    // Stage 1: Lexer
+    let mut lexer = Lexer::new(4096);
+    if lexer.feed(owned.as_bytes()).is_err() {
+        return "[]".to_string();
+    }
+    if lexer.terminate().is_err() {
+        return "[]".to_string();
+    }
+
+    // Stage 2: Parser
+    let mut parser = Parser::new(lexer);
+    let module = match parser.parse() {
+        Ok(m) => m,
+        Err(e) => {
+            let line = e.line().unwrap_or(1);
+            let col = e.column().unwrap_or(1);
+            let offset = line_col_to_utf16_offset(line, col, &utf16_starts, &owned);
+            errors.push(format_diagnostic("error", line, col, offset, offset, &e.to_string()));
+            return format!("[{}]", errors.join(","));
+        }
+    };
+
+    // Stage 3: Type checker
+    use kaubo_compiler::CheckStage;
+    let check_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        CheckStage::new().run(&module)
+    }));
+    match check_result {
+        Ok(Err(msg)) => {
+            errors.push(format_diagnostic("error", 1, 1, 0, 0, &msg));
+        }
+        Err(panic) => {
+            let msg = panic.downcast_ref::<String>()
+                .cloned()
+                .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "Internal type check error".to_string());
+            errors.push(format_diagnostic("error", 1, 1, 0, 0, &msg));
+        }
+        _ => {}
+    }
+
+    if errors.is_empty() {
+        return "[]".to_string();
+    }
+    format!("[{}]", errors.join(","))
+}
+
+fn line_col_to_utf16_offset(
+    line: usize,
+    column: usize,
+    utf16_starts: &[usize],
+    source: &str,
+) -> usize {
+    let line_idx = line.saturating_sub(1);
+    let base = utf16_starts.get(line_idx).copied().unwrap_or(0);
+
+    // Walk the line to compute UTF-16 offset for column
+    let mut utf16_offset = 0usize;
+    let mut byte_pos = 0usize;
+    for ch in source.chars() {
+        if byte_pos >= column.saturating_sub(1) {
+            break;
+        }
+        byte_pos += ch.len_utf8();
+        utf16_offset += ch.len_utf16();
+    }
+    base + utf16_offset
+}
+
+fn format_diagnostic(
+    severity: &str,
+    line: usize,
+    column: usize,
+    from: usize,
+    to: usize,
+    message: &str,
+) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    let escaped = message.replace('\\', "\\\\").replace('"', "\\\"");
+    write!(
+        &mut s,
+        r#"{{"severity":"{severity}","line":{line},"column":{column},"from":{from},"to":{to},"message":"{escaped}"}}"#
+    )
+    .ok();
+    s
+}
+
 // ── Compile & Run ──────────────────────────────────────────────────────────
 
 /// Compile Kaubo source code, store chunk in memory.
