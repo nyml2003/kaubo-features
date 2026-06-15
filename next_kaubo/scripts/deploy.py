@@ -22,7 +22,9 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+NGINX_CONF_SRC = REPO_ROOT / "nginx" / "kaubo.conf"
 DEFAULT_DEPLOY_ROOT = Path(os.environ.get("DEPLOY_ROOT", "/var/www/kaubo"))
+DEFAULT_NGINX_CONF = Path("/etc/nginx/conf.d/kaubo.conf")
 DEFAULT_REPO = os.environ.get("KAUBO_REPO", "nyml2003/kaubo-features")
 DL_MIRROR   = os.environ.get("DEPLOY_MIRROR", "https://ghfast.top/")
 
@@ -38,7 +40,6 @@ def read_version() -> str:
 
 
 def get_download_url(repo: str, version: str) -> tuple[str, str]:
-    """返回 (tag, download_url)"""
     url = f"https://api.github.com/repos/{repo}/releases/tags/v{version}"
     try:
         req = urllib.request.Request(url)
@@ -76,12 +77,34 @@ def check_skip(version: str, deploy_root: Path) -> bool:
     return False
 
 
-def do_deploy(version: str, download_url: str, deploy_root: Path) -> None:
+def install_nginx_conf(target: Path) -> bool:
+    if not NGINX_CONF_SRC.exists():
+        print("      (nginx 配置源文件不存在，跳过)")
+        return False
+
+    new_content = NGINX_CONF_SRC.read_bytes()
+    old_content = target.read_bytes() if target.exists() else b""
+
+    if old_content == new_content:
+        print("      nginx 配置未变更，跳过")
+        return False
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(new_content)
+    print(f"      nginx 配置已更新 → {target}")
+    return True
+
+
+def do_deploy(version: str, download_url: str, deploy_root: Path, nginx_conf: Path) -> None:
     dist_dir = deploy_root / "dist"
     tag_file = deploy_root / ".deployed_version"
 
+    # Step 0: 安装 nginx 配置
+    print(f"\n[0/4] 安装 nginx 配置 …")
+    install_nginx_conf(nginx_conf)
+
     # Step 1: 清空
-    print(f"\n[1/3] 清空部署目录 …")
+    print(f"\n[1/4] 清空部署目录 …")
     dist_dir.mkdir(parents=True, exist_ok=True)
     for item in dist_dir.iterdir():
         if item.is_dir():
@@ -91,7 +114,7 @@ def do_deploy(version: str, download_url: str, deploy_root: Path) -> None:
     print(f"      {dist_dir} 已清空")
 
     # Step 2: 下载 + 解压
-    print(f"\n[2/3] 下载 v{version} 并解压 …")
+    print(f"\n[2/4] 下载 v{version} 并解压 …")
     try:
         mirror_url = DL_MIRROR + download_url
         req = urllib.request.Request(mirror_url)
@@ -106,7 +129,7 @@ def do_deploy(version: str, download_url: str, deploy_root: Path) -> None:
     print(f"      解压完成 ({file_count} 个文件)")
 
     # Step 3: nginx 重载
-    print(f"\n[3/3] 重载 nginx …")
+    print(f"\n[3/4] 重载 nginx …")
     result = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
     if result.returncode != 0:
         print(f"      !!! nginx 配置检查失败:\n{result.stderr}")
@@ -125,6 +148,8 @@ def main() -> None:
     parser.add_argument("version", nargs="?", help="版本号 (默认读 .version)")
     parser.add_argument("--root", default=DEFAULT_DEPLOY_ROOT, type=Path,
                         help=f"部署根目录 (默认 {DEFAULT_DEPLOY_ROOT})")
+    parser.add_argument("--nginx-conf", default=DEFAULT_NGINX_CONF, type=Path,
+                        help=f"nginx 配置目标路径 (默认 {DEFAULT_NGINX_CONF})")
     parser.add_argument("--repo", default=DEFAULT_REPO,
                         help=f"GitHub 仓库 (默认 {DEFAULT_REPO})")
     args = parser.parse_args()
@@ -136,7 +161,7 @@ def main() -> None:
         return
 
     tag, download_url = get_download_url(args.repo, version)
-    do_deploy(tag.lstrip("v"), download_url, args.root)
+    do_deploy(tag.lstrip("v"), download_url, args.root, args.nginx_conf)
 
 
 if __name__ == "__main__":

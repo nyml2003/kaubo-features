@@ -1,11 +1,12 @@
 #! /usr/bin/env python3
-"""Kaubo 发布脚本 —— 构建前端并上传到 GitHub Release。
+"""Kaubo 发布脚本 —— 自动升版本号、构建前端并上传到 GitHub Release。
 
 用法:
-    python3 scripts/upload.py              # 读 .version，交互确认
-    python3 scripts/upload.py 0.2.0        # 指定版本号
-    python3 scripts/upload.py -y           # 跳过确认
-    python3 scripts/upload.py 0.2.0 -y     # 指定版本 + 跳过确认
+    python3 scripts/upload.py                   # 自动 bump patch (0.1.1 → 0.1.2)
+    python3 scripts/upload.py -y                # 同上，跳过确认
+    python3 scripts/upload.py --bump minor      # 0.1.1 → 0.2.0
+    python3 scripts/upload.py --bump major      # 0.1.1 → 1.0.0
+    python3 scripts/upload.py 0.5.0             # 直接指定版本号
 
 前提: 安装了 pnpm / gh CLI (gh auth login)
 """
@@ -34,6 +35,23 @@ def read_version() -> str:
     return version
 
 
+def write_version(version: str) -> None:
+    (REPO_ROOT / ".version").write_text(version + "\n")
+
+
+def bump_version(current: str, level: str) -> str:
+    parts = current.split(".")
+    if len(parts) != 3:
+        sys.exit(f"错误: 版本号格式不对 — {current} (需要 X.Y.Z)")
+    major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
+    if level == "major":
+        return f"{major + 1}.0.0"
+    elif level == "minor":
+        return f"{major}.{minor + 1}.0"
+    else:
+        return f"{major}.{minor}.{patch + 1}"
+
+
 def run(cmd: list[str], cwd: Path | None = None) -> None:
     print(f"  → {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=cwd or REPO_ROOT)
@@ -49,7 +67,7 @@ def check_prerequisites() -> None:
 
 
 def build() -> None:
-    print("\n[1/4] 构建前端 …")
+    print("\n[1/5] 构建前端 …")
     if not DIST_DIR.exists():
         sys.exit(f"错误: 找不到前端目录 {GUI_DIR}")
     run(["pnpm", "build"], cwd=GUI_DIR)
@@ -58,7 +76,7 @@ def build() -> None:
 
 
 def pack(version: str) -> Path:
-    print(f"\n[2/4] 打包 kaubo-v{version}.tar.gz …")
+    print(f"\n[2/5] 打包 kaubo-v{version}.tar.gz …")
     tmpdir = Path(tempfile.mkdtemp())
     tarball = tmpdir / f"kaubo-v{version}.tar.gz"
     with tarfile.open(tarball, "w:gz") as tar:
@@ -66,11 +84,11 @@ def pack(version: str) -> Path:
             tar.add(item, arcname=item.name)
     size_mb = os.path.getsize(tarball) / (1024 * 1024)
     print(f"      打包完成 ({size_mb:.1f} MB)")
-    return Path(tarball)
+    return tarball
 
 
 def release(version: str, tarball: Path, skip_confirm: bool) -> None:
-    print(f"\n[3/4] 发布到 GitHub Release v{version} …")
+    print(f"\n[3/5] 发布到 GitHub Release v{version} …")
     tag = f"v{version}"
 
     confirm = "y" if skip_confirm else input(f"      确认发布 v{version}? [y/N] ")
@@ -78,22 +96,20 @@ def release(version: str, tarball: Path, skip_confirm: bool) -> None:
         print("      已取消")
         sys.exit(0)
 
-    cmd = [
-        "gh", "release", "create", tag,
-        "--title", tag,
-        "--notes", f"Kaubo Playground v{version}",
-        str(tarball),
-    ]
+    run(["gh", "release", "create", tag,
+         "--title", tag,
+         "--notes", f"Kaubo Playground v{version}",
+         str(tarball)])
+    print(f"      已发布 → https://github.com/{_get_repo()}/releases/tag/{tag}")
 
-    result = subprocess.run(cmd, cwd=REPO_ROOT)
-    if result.returncode != 0:
-        sys.exit("错误: gh release create 失败。\n"
-                 "     提示: 确保 gh auth login 已登录，且该 tag 尚未被使用。")
-    print(f"      已发布: https://github.com/{_get_repo()}/releases/tag/{tag}")
+
+def write_back_version(version: str) -> None:
+    print(f"\n[4/5] 写入 .version → {version}")
+    write_version(version)
 
 
 def cleanup(tarball: Path) -> None:
-    print(f"\n[4/4] 清理临时文件 …")
+    print(f"\n[5/5] 清理临时文件 …")
     if tarball.parent.exists():
         shutil.rmtree(tarball.parent)
     print("      完成")
@@ -109,16 +125,26 @@ def _get_repo() -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Kaubo 发布脚本")
-    parser.add_argument("version", nargs="?", help="版本号 (默认读 .version)")
+    parser.add_argument("version", nargs="?", help="直接指定版本号 (不 auto bump)")
+    parser.add_argument("--bump", choices=["major", "minor", "patch"], default="patch",
+                        help="自动升版本 (默认 patch)")
     parser.add_argument("-y", "--yes", action="store_true", help="跳过确认")
     args = parser.parse_args()
 
-    version = args.version or read_version()
     check_prerequisites()
+
+    if args.version:
+        version = args.version
+    else:
+        old = read_version()
+        version = bump_version(old, args.bump)
+        print(f"版本号: {old} → {version}")
+
     build()
     tarball = pack(version)
     try:
         release(version, tarball, args.yes)
+        write_back_version(version)
     finally:
         cleanup(tarball)
 
