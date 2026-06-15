@@ -13,6 +13,14 @@ export function compile(source: string): number;
 export function init(): void;
 
 /**
+ * Tokenize Kaubo source and return a JSON array of tokens.
+ *
+ * Each token: `{"kind":"keyword","from":0,"to":3}`
+ * Positions are UTF-16 code unit offsets (compatible with JavaScript / CodeMirror).
+ */
+export function lex(source: string): string;
+
+/**
  * Run the most recently compiled chunk, returns stdout output
  */
 export function run(_bytes: Uint8Array): string;
@@ -23,6 +31,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly compile: (a: number, b: number) => [number, number, number];
     readonly init: () => void;
+    readonly lex: (a: number, b: number) => [number, number];
     readonly run: (a: number, b: number) => [number, number, number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

@@ -1,4 +1,4 @@
-//! Kaubo WASM bindings — compile and run Kaubo code in the browser
+//! Kaubo WASM bindings — compile, run, and tokenize Kaubo code in the browser
 
 use wasm_bindgen::prelude::*;
 use std::sync::Mutex;
@@ -11,6 +11,132 @@ static COMPILED: Mutex<Option<kaubo_ir::Chunk>> = Mutex::new(None);
 pub fn init() {
     console_error_panic_hook::set_once();
 }
+
+// ── Lexer (syntax highlighting) ────────────────────────────────────────────
+
+use kaubo_compiler::lexer::v2::Lexer;
+use kaubo_compiler::lexer::token_kind::KauboTokenKind;
+
+/// Tokenize Kaubo source and return a JSON array of tokens.
+///
+/// Each token: `{"kind":"keyword","from":0,"to":3}`
+/// Positions are UTF-16 code unit offsets (compatible with JavaScript / CodeMirror).
+#[wasm_bindgen]
+pub fn lex(source: &str) -> String {
+    let owned = source.to_owned();
+    let utf16_starts = build_utf16_line_starts(&owned);
+
+    let mut lexer = Lexer::new(4096);
+    let _ = lexer.feed(owned.as_bytes());
+    let _ = lexer.terminate();
+
+    let mut tokens = String::from("[");
+    let mut first = true;
+
+    while let Some(tok) = lexer.next_token() {
+        let kind_str = token_kind_to_tag(tok.kind);
+        if kind_str.is_empty() {
+            continue;
+        }
+
+        let line = tok.start().line.saturating_sub(1); // 0-based
+        let base = utf16_starts.get(line).copied().unwrap_or(0);
+        let from = base + tok.start().utf16_column;
+        let to = base + tok.end().utf16_column;
+
+        if !first {
+            tokens.push(',');
+        }
+        first = false;
+        use std::fmt::Write;
+        write!(&mut tokens, r#"{{"kind":"{kind_str}","from":{from},"to":{to}}}"#).ok();
+    }
+
+    tokens.push(']');
+    tokens
+}
+
+/// Build a table of UTF-16 code unit offsets at each line start.
+/// line_starts[i] = total UTF-16 code units before line i (0-based).
+fn build_utf16_line_starts(source: &str) -> Vec<usize> {
+    let mut starts = vec![0usize];
+    let mut total: usize = 0;
+    for ch in source.chars() {
+        total += ch.len_utf16();
+        if ch == '\n' {
+            starts.push(total);
+        }
+    }
+    starts
+}
+
+fn token_kind_to_tag(kind: KauboTokenKind) -> &'static str {
+    match kind {
+        KauboTokenKind::Var
+        | KauboTokenKind::If
+        | KauboTokenKind::Else
+        | KauboTokenKind::Elif
+        | KauboTokenKind::While
+        | KauboTokenKind::For
+        | KauboTokenKind::Return
+        | KauboTokenKind::In
+        | KauboTokenKind::Break
+        | KauboTokenKind::Continue
+        | KauboTokenKind::Struct
+        | KauboTokenKind::Impl
+        | KauboTokenKind::Import
+        | KauboTokenKind::As
+        | KauboTokenKind::From
+        | KauboTokenKind::Pass
+        | KauboTokenKind::And
+        | KauboTokenKind::Or
+        | KauboTokenKind::Not
+        | KauboTokenKind::Module
+        | KauboTokenKind::Operator
+        | KauboTokenKind::Pub
+        | KauboTokenKind::Print
+        | KauboTokenKind::Json => "keyword",
+
+        KauboTokenKind::LiteralInteger | KauboTokenKind::LiteralFloat => "number",
+        KauboTokenKind::LiteralString => "string",
+
+        KauboTokenKind::True | KauboTokenKind::False | KauboTokenKind::Null => "atom",
+
+        KauboTokenKind::Identifier => "identifier",
+
+        KauboTokenKind::Comment => "comment",
+
+        KauboTokenKind::DoubleEqual
+        | KauboTokenKind::ExclamationEqual
+        | KauboTokenKind::GreaterThanEqual
+        | KauboTokenKind::LessThanEqual
+        | KauboTokenKind::FatArrow
+        | KauboTokenKind::GreaterThan
+        | KauboTokenKind::LessThan
+        | KauboTokenKind::Plus
+        | KauboTokenKind::Asterisk
+        | KauboTokenKind::Slash
+        | KauboTokenKind::Percent
+        | KauboTokenKind::Colon
+        | KauboTokenKind::Equal
+        | KauboTokenKind::Comma
+        | KauboTokenKind::Semicolon
+        | KauboTokenKind::LeftParenthesis
+        | KauboTokenKind::RightParenthesis
+        | KauboTokenKind::LeftCurlyBrace
+        | KauboTokenKind::RightCurlyBrace
+        | KauboTokenKind::LeftSquareBracket
+        | KauboTokenKind::RightSquareBracket
+        | KauboTokenKind::Dot
+        | KauboTokenKind::Pipe
+        | KauboTokenKind::Yield
+        | KauboTokenKind::Minus => "operator",
+
+        _ => "",
+    }
+}
+
+// ── Compile & Run ──────────────────────────────────────────────────────────
 
 /// Compile Kaubo source code, store chunk in memory.
 /// Returns number of bytecode instructions (for display).

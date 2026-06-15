@@ -46,16 +46,20 @@ pub enum StmtKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExprStmt {
     pub expression: Expr, // 对应C++的ExprPtr
+    pub span: Span,
 }
 
-// 空语句结构体（无实际数据）
+// 空语句结构体
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct EmptyStmt;
+pub struct EmptyStmt {
+    pub span: Span,
+}
 
 // 代码块语句结构体（包含多个语句）
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockStmt {
     pub statements: Vec<Stmt>, // 对应C++的std::vector<StmtPtr>
+    pub span: Span,
 }
 
 // 变量声明语句结构体
@@ -76,6 +80,7 @@ pub struct IfStmt {
     pub elif_bodies: Vec<Stmt>,     // elif代码块列表（对应elif_bodies）
     pub else_body: Option<Stmt>,    // else代码块（可能为空，用Option表示）
     pub then_body: Stmt,            // if条件满足时的代码块（对应then_body）
+    pub span: Span,
 }
 
 // While循环语句结构体
@@ -83,6 +88,7 @@ pub struct IfStmt {
 pub struct WhileStmt {
     pub condition: Expr, // 循环条件表达式（对应condition）
     pub body: Stmt,      // 循环体（对应body）
+    pub span: Span,
 }
 
 // For循环语句结构体
@@ -91,6 +97,7 @@ pub struct ForStmt {
     pub iterator: Expr, // 迭代变量表达式（对应iterator）
     pub iterable: Expr, // 可迭代对象表达式（对应iterable）
     pub body: Stmt,     // 循环体（对应body）
+    pub span: Span,
 }
 
 // Return返回语句结构体
@@ -104,6 +111,7 @@ pub struct ReturnStmt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrintStmt {
     pub expression: Expr, // 要打印的表达式
+    pub span: Span,
 }
 
 // 导入语句结构体
@@ -112,6 +120,7 @@ pub struct ImportStmt {
     pub module_path: String,   // 模块路径
     pub items: Vec<String>,    // 导入的项（空表示导入整个模块）
     pub alias: Option<String>, // 别名（如 `import foo as bar`）
+    pub span: Span,
 }
 
 // 字段定义（用于 struct）
@@ -148,15 +157,21 @@ pub struct ImplStmt {
 
 /// Break 语句结构体
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct BreakStmt;
+pub struct BreakStmt {
+    pub span: Span,
+}
 
 /// Continue 语句结构体
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct ContinueStmt;
+pub struct ContinueStmt {
+    pub span: Span,
+}
 
 /// Pass 语句结构体
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct PassStmt;
+pub struct PassStmt {
+    pub span: Span,
+}
 
 // 实现Display trait（可选，用于调试输出）
 impl fmt::Display for StmtKind {
@@ -267,13 +282,13 @@ mod tests {
 
     #[test]
     fn test_empty_stmt_display() {
-        let stmt = StmtKind::Empty(EmptyStmt);
+        let stmt = StmtKind::Empty(EmptyStmt { span: Span::default() });
         assert_eq!(format!("{stmt}"), ";");
     }
 
     #[test]
     fn test_block_stmt_display() {
-        let stmt = StmtKind::Block(BlockStmt { statements: vec![] });
+        let stmt = StmtKind::Block(BlockStmt { statements: vec![], span: Span::default() });
         assert!(format!("{stmt}").contains('{'));
     }
 
@@ -282,7 +297,7 @@ mod tests {
         let stmt = StmtKind::VarDecl(VarDeclStmt {
             name: "x".to_string(),
             type_annotation: None,
-            initializer: make_expr(ExprKind::LiteralInt(LiteralInt { value: 5 })),
+            initializer: make_expr(ExprKind::LiteralInt(LiteralInt { value: 5, span: Span::default() })),
             is_public: false,
             span: Span::default(),
         });
@@ -292,8 +307,9 @@ mod tests {
     #[test]
     fn test_while_stmt_display() {
         let stmt = StmtKind::While(WhileStmt {
-            condition: make_expr(ExprKind::LiteralTrue(LiteralTrue)),
-            body: make_stmt(StmtKind::Empty(EmptyStmt)),
+            condition: make_expr(ExprKind::LiteralTrue(LiteralTrue { span: Span::default() })),
+            body: make_stmt(StmtKind::Empty(EmptyStmt { span: Span::default() })),
+            span: Span::default(),
         });
         assert!(format!("{stmt}").contains("while"));
     }
@@ -303,11 +319,14 @@ mod tests {
         let stmt = StmtKind::For(ForStmt {
             iterator: make_expr(ExprKind::VarRef(VarRef {
                 name: "i".to_string(),
+                span: Span::default(),
             })),
             iterable: make_expr(ExprKind::VarRef(VarRef {
                 name: "list".to_string(),
+                span: Span::default(),
             })),
-            body: make_stmt(StmtKind::Empty(EmptyStmt)),
+            body: make_stmt(StmtKind::Empty(EmptyStmt { span: Span::default() })),
+            span: Span::default(),
         });
         assert!(format!("{stmt}").contains("for"));
     }
@@ -315,7 +334,7 @@ mod tests {
     #[test]
     fn test_return_stmt_display() {
         let stmt_with_value = StmtKind::Return(ReturnStmt {
-            value: Some(make_expr(ExprKind::LiteralInt(LiteralInt { value: 42 }))),
+            value: Some(make_expr(ExprKind::LiteralInt(LiteralInt { value: 42, span: Span::default() }))),
             span: Span::default(),
         });
         let stmt_without_value = StmtKind::Return(ReturnStmt {
@@ -329,14 +348,14 @@ mod tests {
 
     #[test]
     fn test_stmt_kind_clone() {
-        let stmt = StmtKind::Empty(EmptyStmt);
+        let stmt = StmtKind::Empty(EmptyStmt { span: Span::default() });
         let cloned = stmt.clone();
         assert_eq!(stmt, cloned);
     }
 
     #[test]
     fn test_empty_stmt_default() {
-        let _ = EmptyStmt;
+        let _ = EmptyStmt { span: Span::default() };
     }
 
     fn make_stmt(kind: StmtKind) -> Stmt {

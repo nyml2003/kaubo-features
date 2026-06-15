@@ -1,0 +1,15 @@
+{
+  "name": "kaubo-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "kaubo_wasm_bg.wasm",
+    "kaubo_wasm.js",
+    "kaubo_wasm.d.ts"
+  ],
+  "main": "kaubo_wasm.js",
+  "types": "kaubo_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

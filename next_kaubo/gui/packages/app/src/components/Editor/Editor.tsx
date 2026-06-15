@@ -1,7 +1,13 @@
 import { onMount, createEffect, type Component } from "solid-js";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
+import { kauboLanguage } from "../../editor/kauboLang";
+import { lex } from "@kaubo/wasm";
 import styles from "./Editor.module.css";
+
+// Expose lex to window for e2e tests
+const win = typeof window !== "undefined" ? window : undefined;
+if (win) (win as any).__kauboWasm = { lex };
 
 export const Editor: Component<{
   code: () => string;
@@ -17,6 +23,7 @@ export const Editor: Component<{
         doc: props.code(),
         extensions: [
           EditorState.tabSize.of(4),
+          kauboLanguage(),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               props.onUpdate(update.state.doc.toString());
@@ -26,7 +33,6 @@ export const Editor: Component<{
       }),
     });
 
-    // Sync external code changes into the editor
     createEffect(() => {
       const external = props.code();
       if (external !== view.state.doc.toString()) {

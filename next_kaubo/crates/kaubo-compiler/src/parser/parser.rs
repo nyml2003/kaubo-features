@@ -197,8 +197,15 @@ impl Parser {
         } else if self.check(KauboTokenKind::Var) {
             self.parse_var_declaration()
         } else if self.check(KauboTokenKind::Semicolon) {
+            let span = {
+                let t = self.current_token.as_ref().unwrap();
+                Span::new(
+                    Coordinate { line: t.span.start.line, column: t.span.start.column },
+                    Coordinate { line: t.span.end.line, column: t.span.end.column },
+                )
+            };
             self.consume();
-            Ok(Box::new(StmtKind::Empty(EmptyStmt)))
+            Ok(Box::new(StmtKind::Empty(EmptyStmt { span })))
         } else if self.check(KauboTokenKind::Return) {
             self.parse_return_statement()
         } else if self.check(KauboTokenKind::If) {
@@ -235,24 +242,53 @@ impl Parser {
         } else if self.check(KauboTokenKind::Print) {
             self.parse_print_statement()
         } else if self.check(KauboTokenKind::Break) {
+            let span = {
+                let t = self.current_token.as_ref().unwrap();
+                Span::new(
+                    Coordinate { line: t.span.start.line, column: t.span.start.column },
+                    Coordinate { line: t.span.end.line, column: t.span.end.column },
+                )
+            };
             self.consume();
-            Ok(Box::new(StmtKind::Break(BreakStmt)))
+            self.expect(KauboTokenKind::Semicolon)?;
+            Ok(Box::new(StmtKind::Break(BreakStmt { span })))
         } else if self.check(KauboTokenKind::Continue) {
+            let span = {
+                let t = self.current_token.as_ref().unwrap();
+                Span::new(
+                    Coordinate { line: t.span.start.line, column: t.span.start.column },
+                    Coordinate { line: t.span.end.line, column: t.span.end.column },
+                )
+            };
             self.consume();
-            Ok(Box::new(StmtKind::Continue(ContinueStmt)))
+            self.expect(KauboTokenKind::Semicolon)?;
+            Ok(Box::new(StmtKind::Continue(ContinueStmt { span })))
         } else if self.check(KauboTokenKind::Pass) {
+            let span = {
+                let t = self.current_token.as_ref().unwrap();
+                Span::new(
+                    Coordinate { line: t.span.start.line, column: t.span.start.column },
+                    Coordinate { line: t.span.end.line, column: t.span.end.column },
+                )
+            };
             self.consume();
-            Ok(Box::new(StmtKind::Pass(PassStmt)))
+            self.expect(KauboTokenKind::Semicolon)?;
+            Ok(Box::new(StmtKind::Pass(PassStmt { span })))
         } else {
             // 表达式语句
+            let start = self.current_coordinate().unwrap_or_default();
             let expr = self.parse_expression(0)?;
-            Ok(Box::new(StmtKind::Expr(ExprStmt { expression: expr })))
+            self.expect(KauboTokenKind::Semicolon)?;
+            let end = self.current_coordinate().unwrap_or(start);
+            let span = Span::new(start, end);
+            Ok(Box::new(StmtKind::Expr(ExprStmt { expression: expr, span })))
         }
     }
 
     /// 解析代码块
     fn parse_block(&mut self) -> ParseResult<Stmt> {
         trace!(self.logger, "parse_block: starting");
+        let start = self.current_coordinate().unwrap_or_default();
         self.expect(KauboTokenKind::LeftCurlyBrace)?;
 
         let mut statements = Vec::new();
@@ -270,12 +306,14 @@ impl Parser {
         }
 
         self.expect(KauboTokenKind::RightCurlyBrace)?;
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
         trace!(
             self.logger,
             "parse_block: completed with {} statements",
             statements.len()
         );
-        Ok(Box::new(StmtKind::Block(BlockStmt { statements })))
+        Ok(Box::new(StmtKind::Block(BlockStmt { statements, span })))
     }
 
     /// 解析表达式（Pratt解析核心）
@@ -299,6 +337,7 @@ impl Parser {
 
             // 消费运算符
             let op = token.kind;
+            let start = self.current_coordinate().unwrap_or_default();
             self.consume();
 
             // 解析右操作数（考虑结合性）
@@ -309,8 +348,10 @@ impl Parser {
             };
             let right = self.parse_expression(next_precedence)?;
 
+            let end = self.current_coordinate().unwrap_or(start);
+            let span = Span::new(start, end);
             // 构建二元表达式
-            left = Box::new(ExprKind::Binary(Binary { left, op, right }));
+            left = Box::new(ExprKind::Binary(Binary { left, op, right, span }));
         }
 
         Ok(left)
@@ -322,12 +363,16 @@ impl Parser {
         if self.check(KauboTokenKind::Minus) || self.check(KauboTokenKind::Not) {
             let token = self.current_token.as_ref().ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
             let op = token.kind;
+            let start = self.current_coordinate().unwrap_or_default();
             self.consume();
 
             let operand = self.parse_unary()?;
-            Ok(Box::new(ExprKind::Unary(Unary { op, operand })))
+            let end = self.current_coordinate().unwrap_or(start);
+            let span = Span::new(start, end);
+            Ok(Box::new(ExprKind::Unary(Unary { op, operand, span })))
         } else if self.check(KauboTokenKind::Yield) {
             // 解析 yield 表达式
+            let start = self.current_coordinate().unwrap_or_default();
             self.consume(); // 消耗 yield
 
             // yield 可以有值也可以没有值
@@ -341,7 +386,9 @@ impl Parser {
                 Some(self.parse_expression(0)?)
             };
 
-            Ok(Box::new(ExprKind::Yield(YieldExpr { value })))
+            let end = self.current_coordinate().unwrap_or(start);
+            let span = Span::new(start, end);
+            Ok(Box::new(ExprKind::Yield(YieldExpr { value, span })))
         } else {
             self.parse_primary()
         }
@@ -366,16 +413,37 @@ impl Parser {
             KauboTokenKind::LiteralFloat => self.parse_float(),
             KauboTokenKind::LiteralString => self.parse_string(),
             KauboTokenKind::True => {
+                let span = {
+                    let t = self.current_token.as_ref().unwrap();
+                    Span::new(
+                        Coordinate { line: t.span.start.line, column: t.span.start.column },
+                        Coordinate { line: t.span.end.line, column: t.span.end.column },
+                    )
+                };
                 self.consume();
-                Ok(Box::new(ExprKind::LiteralTrue(LiteralTrue)))
+                Ok(Box::new(ExprKind::LiteralTrue(LiteralTrue { span })))
             }
             KauboTokenKind::False => {
+                let span = {
+                    let t = self.current_token.as_ref().unwrap();
+                    Span::new(
+                        Coordinate { line: t.span.start.line, column: t.span.start.column },
+                        Coordinate { line: t.span.end.line, column: t.span.end.column },
+                    )
+                };
                 self.consume();
-                Ok(Box::new(ExprKind::LiteralFalse(LiteralFalse)))
+                Ok(Box::new(ExprKind::LiteralFalse(LiteralFalse { span })))
             }
             KauboTokenKind::Null => {
+                let span = {
+                    let t = self.current_token.as_ref().unwrap();
+                    Span::new(
+                        Coordinate { line: t.span.start.line, column: t.span.start.column },
+                        Coordinate { line: t.span.end.line, column: t.span.end.column },
+                    )
+                };
                 self.consume();
-                Ok(Box::new(ExprKind::LiteralNull(LiteralNull)))
+                Ok(Box::new(ExprKind::LiteralNull(LiteralNull { span })))
             }
             KauboTokenKind::LeftSquareBracket => self.parse_list(),
             KauboTokenKind::LeftParenthesis => self.parse_parenthesized(),
@@ -392,6 +460,7 @@ impl Parser {
     /// 解析 JSON 字面量
     /// json { "key": value, ... }
     fn parse_json_literal(&mut self) -> ParseResult<Expr> {
+        let start = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'json'
         self.expect(KauboTokenKind::LeftCurlyBrace)?;
 
@@ -439,14 +508,16 @@ impl Parser {
 
         self.expect(KauboTokenKind::RightCurlyBrace)?;
 
-        Ok(Box::new(ExprKind::JsonLiteral(JsonLiteral { entries })))
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
+        Ok(Box::new(ExprKind::JsonLiteral(JsonLiteral { entries, span })))
     }
 
     /// 解析后缀表达式（成员访问、函数调用）
     fn parse_postfix(&mut self, mut expr: Expr) -> ParseResult<Expr> {
         loop {
             if self.check(KauboTokenKind::Dot) {
-                // 成员访问：a.b
+                let start = self.current_coordinate().unwrap_or_default();
                 self.consume();
 
                 let token = self
@@ -459,29 +530,40 @@ impl Parser {
 
                 let member_name = token.text.clone().unwrap_or_default();
                 self.consume();
+                let end = self.current_coordinate().unwrap_or(start);
+                let span = Span::new(start, end);
                 expr = Box::new(ExprKind::MemberAccess(MemberAccess {
                     object: expr,
                     member: member_name,
+                    span,
                 }));
             } else if self.check(KauboTokenKind::LeftParenthesis) {
                 // 函数调用：a() 或 a.b()
                 expr = self.parse_function_call(expr)?;
             } else if self.check(KauboTokenKind::LeftSquareBracket) {
                 // 索引访问：a[i]
+                let start = self.current_coordinate().unwrap_or_default();
                 self.consume(); // 消费 '['
                 let index = self.parse_expression(0)?;
                 self.expect(KauboTokenKind::RightSquareBracket)?;
+                let end = self.current_coordinate().unwrap_or(start);
+                let span = Span::new(start, end);
                 expr = Box::new(ExprKind::IndexAccess(IndexAccess {
                     object: expr,
                     index,
+                    span,
                 }));
             } else if self.check(KauboTokenKind::As) {
                 // 类型转换：expr as Type
+                let start = self.current_coordinate().unwrap_or_default();
                 self.consume(); // 消费 'as'
                 let target_type = self.parse_type_expression()?;
+                let end = self.current_coordinate().unwrap_or(start);
+                let span = Span::new(start, end);
                 expr = Box::new(ExprKind::As(super::expr::AsExpr {
                     expr,
                     target_type,
+                    span,
                 }));
             } else {
                 break;
@@ -498,12 +580,16 @@ impl Parser {
             line: token.span.start.line,
             column: token.span.start.column,
         };
+        let span = Span::new(
+            Coordinate { line: token.span.start.line, column: token.span.start.column },
+            Coordinate { line: token.span.end.line, column: token.span.end.column },
+        );
         let text = token.text.clone().unwrap_or_default();
         let num = text.parse().map_err(|_| {
             ParserError::here(ParserErrorKind::InvalidNumberFormat(text.clone()), coord)
         })?;
         self.consume();
-        Ok(Box::new(ExprKind::LiteralInt(LiteralInt { value: num })))
+        Ok(Box::new(ExprKind::LiteralInt(LiteralInt { value: num, span })))
     }
 
     /// 解析浮点数字面量
@@ -519,26 +605,35 @@ impl Parser {
                 },
             )
         })?;
+        let span = Span::new(
+            Coordinate { line: token.span.start.line, column: token.span.start.column },
+            Coordinate { line: token.span.end.line, column: token.span.end.column },
+        );
         self.consume();
         Ok(Box::new(ExprKind::LiteralFloat(
-            super::expr::LiteralFloat { value: num },
+            super::expr::LiteralFloat { value: num, span },
         )))
     }
 
     /// 解析字符串字面量
     fn parse_string(&mut self) -> ParseResult<Expr> {
         let token = self.current_token.as_ref().ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
-        // 移除首尾引号
         let text = token.text.clone().unwrap_or_default();
         let s = text.to_string();
+        let span = Span::new(
+            Coordinate { line: token.span.start.line, column: token.span.start.column },
+            Coordinate { line: token.span.end.line, column: token.span.end.column },
+        );
         self.consume();
         Ok(Box::new(ExprKind::LiteralString(LiteralString {
             value: s,
+            span,
         })))
     }
 
     /// 解析列表字面量
     fn parse_list(&mut self) -> ParseResult<Expr> {
+        let start = self.current_coordinate().unwrap_or_default();
         self.expect(KauboTokenKind::LeftSquareBracket)?;
 
         let mut elements = Vec::new();
@@ -552,11 +647,14 @@ impl Parser {
 
         self.expect(KauboTokenKind::RightSquareBracket)
             .map_err(|_| self.error_here(ParserErrorKind::MissingRightBracket))?;
-        Ok(Box::new(ExprKind::LiteralList(LiteralList { elements })))
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
+        Ok(Box::new(ExprKind::LiteralList(LiteralList { elements, span })))
     }
 
     /// 解析括号表达式
     fn parse_parenthesized(&mut self) -> ParseResult<Expr> {
+        let start = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 '('
 
         let expr = self.parse_expression(0)?;
@@ -564,7 +662,9 @@ impl Parser {
         self.expect(KauboTokenKind::RightParenthesis)
             .map_err(|_| self.error_here(ParserErrorKind::MissingRightParen))?;
 
-        Ok(Box::new(ExprKind::Grouping(Grouping { expression: expr })))
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
+        Ok(Box::new(ExprKind::Grouping(Grouping { expression: expr, span })))
     }
 
     /// 解析标识符引用
@@ -572,6 +672,10 @@ impl Parser {
     fn parse_identifier_expression(&mut self) -> ParseResult<Expr> {
         let token = self.current_token.as_ref().ok_or_else(|| ParserError::at_eof(ParserErrorKind::UnexpectedEndOfInput))?;
         let name = token.text.clone().unwrap_or_default();
+        let span = Span::new(
+            Coordinate { line: token.span.start.line, column: token.span.start.column },
+            Coordinate { line: token.span.end.line, column: token.span.end.column },
+        );
         self.consume();
 
         // 检查是否是 struct 实例化（大写开头的标识符后面跟着 {）
@@ -583,16 +687,16 @@ impl Parser {
                 .map(|c| c.is_uppercase())
                 .unwrap_or(false)
             {
-                return self.parse_struct_literal(name);
+                return self.parse_struct_literal(name, span);
             }
         }
 
-        Ok(Box::new(ExprKind::VarRef(VarRef { name })))
+        Ok(Box::new(ExprKind::VarRef(VarRef { name, span })))
     }
 
     /// 解析 struct 实例化表达式
     /// 语法: StructName { field1: value1, field2: value2 }
-    fn parse_struct_literal(&mut self, name: String) -> ParseResult<Expr> {
+    fn parse_struct_literal(&mut self, name: String, start_span: Span) -> ParseResult<Expr> {
         self.expect(KauboTokenKind::LeftCurlyBrace)?;
 
         let mut fields = Vec::new();
@@ -612,9 +716,13 @@ impl Parser {
 
         self.expect(KauboTokenKind::RightCurlyBrace)?;
 
+        let end = self.current_coordinate().unwrap_or(start_span.start);
+        let span = Span::new(start_span.start, end);
+
         Ok(Box::new(ExprKind::StructLiteral(StructLiteral {
             name,
             fields,
+            span,
         })))
     }
 
@@ -623,6 +731,7 @@ impl Parser {
     /// 语法: |param1: Type1, param2: Type2| -> ReturnType { body }
     fn parse_lambda(&mut self) -> ParseResult<Expr> {
         trace!(self.logger, "parse_lambda");
+        let start = self.current_coordinate().unwrap_or_default();
         self.expect(KauboTokenKind::Pipe)?; // 消费 '|'
 
         let mut params: Vec<(String, Option<TypeExpr>)> = Vec::new();
@@ -663,16 +772,21 @@ impl Parser {
 
         let body = self.parse_block()?;
 
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
+
         Ok(Box::new(ExprKind::Lambda(Lambda {
             params,
             return_type,
             body,
+            span,
         })))
     }
 
     /// 解析函数调用
     fn parse_function_call(&mut self, function_expr: Expr) -> ParseResult<Expr> {
         trace!(self.logger, "parse_function_call");
+        let start = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 '('
 
         let mut arguments = Vec::new();
@@ -687,10 +801,13 @@ impl Parser {
         self.expect(KauboTokenKind::RightParenthesis)
             .map_err(|_| self.error_here(ParserErrorKind::MissingRightParen))?;
 
-        // 方法调用保持原样：obj.method(args) 在运行时解析
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
+
         Ok(Box::new(ExprKind::FunctionCall(FunctionCall {
             function_expr,
             arguments,
+            span,
         })))
     }
 
@@ -773,12 +890,15 @@ impl Parser {
     /// print expression;
     fn parse_print_statement(&mut self) -> ParseResult<Stmt> {
         trace!(self.logger, "parse_print_statement");
+        let start = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'print'
 
         let expression = self.parse_expression(0)?;
         self.expect(KauboTokenKind::Semicolon)?;
 
-        Ok(Box::new(StmtKind::Print(PrintStmt { expression })))
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
+        Ok(Box::new(StmtKind::Print(PrintStmt { expression, span })))
     }
 
     /// 解析导入项（允许关键字作为导入项）
@@ -811,6 +931,7 @@ impl Parser {
         // 检查是 from...import 还是 import
         if self.check(KauboTokenKind::From) {
             // from module import item1, item2;
+            let start = self.current_coordinate().unwrap_or_default();
             self.consume(); // 消费 'from'
             let module_path = self.parse_module_path()?;
             self.expect(KauboTokenKind::Import)?;
@@ -829,13 +950,17 @@ impl Parser {
             }
 
             self.expect(KauboTokenKind::Semicolon)?;
+            let end = self.current_coordinate().unwrap_or(start);
+            let span = Span::new(start, end);
             Ok(Box::new(StmtKind::Import(ImportStmt {
                 module_path,
                 items,
                 alias: None,
+                span,
             })))
         } else {
             // import module; 或 import module as alias;
+            let start = self.current_coordinate().unwrap_or_default();
             self.consume(); // 消费 'import'
             let module_path = self.parse_module_path()?;
 
@@ -847,10 +972,13 @@ impl Parser {
             };
 
             self.expect(KauboTokenKind::Semicolon)?;
+            let end = self.current_coordinate().unwrap_or(start);
+            let span = Span::new(start, end);
             Ok(Box::new(StmtKind::Import(ImportStmt {
                 module_path,
                 items: Vec::new(),
                 alias,
+                span,
             })))
         }
     }
@@ -968,6 +1096,7 @@ impl Parser {
     /// 解析if语句
     fn parse_if_statement(&mut self) -> ParseResult<Stmt> {
         trace!(self.logger, "parse_if_statement");
+        let start = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'if'
         let if_condition = self.parse_expression(0)?;
         let then_body = self.parse_block()?;
@@ -990,27 +1119,34 @@ impl Parser {
             None
         };
 
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
         Ok(Box::new(StmtKind::If(IfStmt {
             if_condition,
             then_body,
             elif_conditions,
             elif_bodies,
             else_body,
+            span,
         })))
     }
 
     /// 解析while循环
     fn parse_while_loop(&mut self) -> ParseResult<Stmt> {
         trace!(self.logger, "parse_while_loop");
+        let start = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'while'
         let condition = self.parse_expression(0)?;
         let body = self.parse_block()?;
-        Ok(Box::new(StmtKind::While(WhileStmt { condition, body })))
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
+        Ok(Box::new(StmtKind::While(WhileStmt { condition, body, span })))
     }
 
     /// 解析for循环
     fn parse_for_loop(&mut self) -> ParseResult<Stmt> {
         trace!(self.logger, "parse_for_loop");
+        let start = self.current_coordinate().unwrap_or_default();
         self.consume(); // 消费 'for'
 
         // 新语法: for var item in iterable { ... }
@@ -1019,10 +1155,13 @@ impl Parser {
         self.expect(KauboTokenKind::In)?;
         let iterable = self.parse_expression(0)?;
         let body = self.parse_block()?;
+        let end = self.current_coordinate().unwrap_or(start);
+        let span = Span::new(start, end);
         Ok(Box::new(StmtKind::For(ForStmt {
             iterator,
             iterable,
             body,
+            span,
         })))
     }
 

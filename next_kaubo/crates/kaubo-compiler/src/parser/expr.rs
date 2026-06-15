@@ -1,4 +1,5 @@
 use crate::lexer::token_kind::KauboTokenKind;
+use crate::lexer::types::Span;
 use crate::parser::stmt::Stmt;
 use crate::parser::type_expr::TypeExpr;
 use std::fmt;
@@ -53,36 +54,46 @@ pub enum ExprKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiteralInt {
     pub value: i64,
+    pub span: Span,
 }
 
 // 浮点数字面量结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiteralFloat {
     pub value: f64,
+    pub span: Span,
 }
 
 // 字符串字面量结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiteralString {
     pub value: String,
+    pub span: Span,
 }
 
-// 布尔true字面量（无数据）
+// 布尔true字面量
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct LiteralTrue;
+pub struct LiteralTrue {
+    pub span: Span,
+}
 
-// 布尔false字面量（无数据）
+// 布尔false字面量
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct LiteralFalse;
+pub struct LiteralFalse {
+    pub span: Span,
+}
 
-// Null字面量（无数据）
+// Null字面量
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct LiteralNull;
+pub struct LiteralNull {
+    pub span: Span,
+}
 
 // 列表字面量结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiteralList {
     pub elements: Vec<Expr>,
+    pub span: Span,
 }
 
 // 二元运算符表达式结构体
@@ -91,6 +102,7 @@ pub struct Binary {
     pub left: Expr,
     pub op: KauboTokenKind,
     pub right: Expr,
+    pub span: Span,
 }
 
 // 一元运算符表达式结构体
@@ -98,18 +110,21 @@ pub struct Binary {
 pub struct Unary {
     pub op: KauboTokenKind,
     pub operand: Expr,
+    pub span: Span,
 }
 
 // 括号表达式结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
     pub expression: Expr,
+    pub span: Span,
 }
 
 // 变量引用表达式结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct VarRef {
     pub name: String,
+    pub span: Span,
 }
 
 // 函数调用表达式结构体
@@ -117,6 +132,7 @@ pub struct VarRef {
 pub struct FunctionCall {
     pub function_expr: Expr,
     pub arguments: Vec<Expr>,
+    pub span: Span,
 }
 
 // Lambda 参数（带可选类型标注）
@@ -128,6 +144,7 @@ pub struct Lambda {
     pub params: Vec<LambdaParam>,      // 参数名 + 可选类型标注
     pub return_type: Option<TypeExpr>, // 返回类型，可选
     pub body: Stmt,
+    pub span: Span,
 }
 
 // 成员访问表达式结构体
@@ -135,6 +152,7 @@ pub struct Lambda {
 pub struct MemberAccess {
     pub object: Expr,
     pub member: String,
+    pub span: Span,
 }
 
 // 索引访问表达式结构体
@@ -142,12 +160,14 @@ pub struct MemberAccess {
 pub struct IndexAccess {
     pub object: Expr,
     pub index: Expr,
+    pub span: Span,
 }
 
 // JSON 字面量结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsonLiteral {
     pub entries: Vec<(String, Expr)>, // 键值对列表
+    pub span: Span,
 }
 
 // Struct 实例化结构体
@@ -155,12 +175,14 @@ pub struct JsonLiteral {
 pub struct StructLiteral {
     pub name: String,                // Struct 类型名
     pub fields: Vec<(String, Expr)>, // 字段赋值列表
+    pub span: Span,
 }
 
 // Yield 表达式结构体
 #[derive(Debug, Clone, PartialEq)]
 pub struct YieldExpr {
     pub value: Option<Expr>, // yield 的值，None 表示 yield;
+    pub span: Span,
 }
 
 // 类型转换表达式结构体: expr as Type
@@ -168,6 +190,7 @@ pub struct YieldExpr {
 pub struct AsExpr {
     pub expr: Expr,
     pub target_type: TypeExpr,
+    pub span: Span,
 }
 
 // 实现Display trait（可选，用于调试输出）
@@ -251,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_literal_int_display() {
-        let expr = ExprKind::LiteralInt(LiteralInt { value: 42 });
+        let expr = ExprKind::LiteralInt(LiteralInt { value: 42, span: Span::default() });
         assert_eq!(format!("{expr}"), "42");
     }
 
@@ -259,27 +282,28 @@ mod tests {
     fn test_literal_string_display() {
         let expr = ExprKind::LiteralString(LiteralString {
             value: "hello".to_string(),
+            span: Span::default(),
         });
         assert_eq!(format!("{expr}"), "\"hello\"");
     }
 
     #[test]
     fn test_literal_bool_display() {
-        let expr_true = ExprKind::LiteralTrue(LiteralTrue);
-        let expr_false = ExprKind::LiteralFalse(LiteralFalse);
+        let expr_true = ExprKind::LiteralTrue(LiteralTrue { span: Span::default() });
+        let expr_false = ExprKind::LiteralFalse(LiteralFalse { span: Span::default() });
         assert_eq!(format!("{expr_true}"), "true");
         assert_eq!(format!("{expr_false}"), "false");
     }
 
     #[test]
     fn test_literal_null_display() {
-        let expr = ExprKind::LiteralNull(LiteralNull);
+        let expr = ExprKind::LiteralNull(LiteralNull { span: Span::default() });
         assert_eq!(format!("{expr}"), "null");
     }
 
     #[test]
     fn test_literal_list_display() {
-        let expr = ExprKind::LiteralList(LiteralList { elements: vec![] });
+        let expr = ExprKind::LiteralList(LiteralList { elements: vec![], span: Span::default() });
         assert_eq!(format!("{expr}"), "[]");
     }
 
@@ -287,21 +311,22 @@ mod tests {
     fn test_var_ref_display() {
         let expr = ExprKind::VarRef(VarRef {
             name: "x".to_string(),
+            span: Span::default(),
         });
         assert_eq!(format!("{expr}"), "x");
     }
 
     #[test]
     fn test_expr_kind_clone() {
-        let expr = ExprKind::LiteralInt(LiteralInt { value: 42 });
+        let expr = ExprKind::LiteralInt(LiteralInt { value: 42, span: Span::default() });
         let cloned = expr.clone();
         assert_eq!(expr, cloned);
     }
 
     #[test]
     fn test_struct_defaults() {
-        let _ = LiteralTrue;
-        let _ = LiteralFalse;
-        let _ = LiteralNull;
+        let _ = LiteralTrue { span: Span::default() };
+        let _ = LiteralFalse { span: Span::default() };
+        let _ = LiteralNull { span: Span::default() };
     }
 }

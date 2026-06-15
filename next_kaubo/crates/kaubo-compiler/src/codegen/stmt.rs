@@ -341,7 +341,7 @@ fn compile_while(compiler: &mut Compiler, while_stmt: &WhileStmt) -> Result<(), 
 /// 语法: for var item in iterable { body }
 fn compile_for(compiler: &mut Compiler, for_stmt: &ForStmt) -> Result<(), CompileError> {
     let var_name = match for_stmt.iterator.as_ref() {
-        ExprKind::VarRef(VarRef { name }) => name.clone(),
+        ExprKind::VarRef(VarRef { name, .. }) => name.clone(),
         _ => {
             return Err(CompileError::Unimplemented(
                 "For loop iterator must be a variable".to_string(),
