@@ -26,6 +26,31 @@ function getStoredTheme(): ThemeName {
   return "material-dark";
 }
 
+function getStoredTabSize(): number {
+  try {
+    const stored = localStorage.getItem("kaubo-tabsize");
+    if (stored === "2" || stored === "4") {
+      return parseInt(stored);
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return 4;
+}
+
+function getStoredFontSize(): number {
+  try {
+    const stored = localStorage.getItem("kaubo-fontsize");
+    if (stored) {
+      const n = parseInt(stored);
+      if (n >= 10 && n <= 24) return n;
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return 14;
+}
+
 export function createKauboStore() {
   const [code, setCode] = createSignal(DEFAULT_CODE);
   const [output, setOutput] = createSignal("");
@@ -34,6 +59,9 @@ export function createKauboStore() {
   const [theme, setThemeSignal] = createSignal<ThemeName>(getStoredTheme());
   const [activeExample, setActiveExample] = createSignal<string | null>(null);
   const [examplesExpanded, setExamplesExpanded] = createSignal(true);
+  const [tabSize, setTabSizeSignal] = createSignal<number>(getStoredTabSize());
+  const [fontSize, setFontSizeSignal] = createSignal<number>(getStoredFontSize());
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
   const { doCompile, doRun, doDiagnose, loading } = useKaubo();
 
   let diagnoseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -44,6 +72,29 @@ export function createKauboStore() {
   };
 
   const toggleExamples = () => setExamplesExpanded((prev) => !prev);
+
+  const setTabSize = (size: number) => {
+    setTabSizeSignal(size);
+    try { localStorage.setItem("kaubo-tabsize", String(size)); } catch { /* noop */ }
+  };
+
+  const setFontSize = (size: number) => {
+    setFontSizeSignal(size);
+    try { localStorage.setItem("kaubo-fontsize", String(size)); } catch { /* noop */ }
+  };
+
+  const toggleSettings = () => setSettingsOpen((prev) => !prev);
+
+  const resetSettings = () => {
+    setThemeSignal("material-dark");
+    setTabSizeSignal(4);
+    setFontSizeSignal(14);
+    try {
+      localStorage.setItem("kaubo-theme", "material-dark");
+      localStorage.setItem("kaubo-tabsize", "4");
+      localStorage.setItem("kaubo-fontsize", "14");
+    } catch { /* noop */ }
+  };
 
   const loadExample = (ex: KauboExample) => {
     setActiveExample(ex.id);
@@ -148,10 +199,15 @@ export function createKauboStore() {
     setKauboDiagnostics(null);
   };
 
+  const clearOutput = () => setOutput("");
+
   return {
     code, setCode: updateCode, output, status, error,
     theme, setTheme,
+    tabSize, setTabSize,
+    fontSize, setFontSize,
+    settingsOpen, toggleSettings, resetSettings,
     activeExample, examplesExpanded, toggleExamples, loadExample,
-    compile, run, clearError, loading,
+    compile, run, clearError, clearOutput, loading,
   };
 }

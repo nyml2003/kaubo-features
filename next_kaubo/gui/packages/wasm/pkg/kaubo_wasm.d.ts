@@ -20,6 +20,16 @@ export function compile(source: string): number;
 export function diagnose(source: string): string;
 
 /**
+ * Get hover information for the token at the given UTF-16 offset.
+ *
+ * Returns a JSON object with token kind, range, and description,
+ * or `"null"` if no token found at that offset.
+ *
+ * Format: `{"kind":"keyword","from":0,"to":3,"description":"variable declaration"}`
+ */
+export function hover(source: string, offset: number): string;
+
+/**
  * Initialize panic hook so errors show in browser console instead of `unreachable`
  */
 export function init(): void;
@@ -43,6 +53,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly compile: (a: number, b: number) => [number, number, number];
     readonly diagnose: (a: number, b: number) => [number, number];
+    readonly hover: (a: number, b: number, c: number) => [number, number];
     readonly init: () => void;
     readonly lex: (a: number, b: number) => [number, number];
     readonly run: (a: number, b: number) => [number, number, number, number];

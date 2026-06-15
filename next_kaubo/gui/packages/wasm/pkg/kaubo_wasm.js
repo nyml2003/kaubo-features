@@ -44,6 +44,32 @@ export function diagnose(source) {
 }
 
 /**
+ * Get hover information for the token at the given UTF-16 offset.
+ *
+ * Returns a JSON object with token kind, range, and description,
+ * or `"null"` if no token found at that offset.
+ *
+ * Format: `{"kind":"keyword","from":0,"to":3,"description":"variable declaration"}`
+ * @param {string} source
+ * @param {number} offset
+ * @returns {string}
+ */
+export function hover(source, offset) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.hover(ptr0, len0, offset);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * Initialize panic hook so errors show in browser console instead of `unreachable`
  */
 export function init() {

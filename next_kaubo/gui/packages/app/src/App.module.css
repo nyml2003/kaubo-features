@@ -3,7 +3,7 @@
   flex-direction: column;
   height: 100%;
   font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
-  font-size: 14px;
+  font-size: var(--kb-font-size);
   color: var(--kb-text);
   background: var(--kb-bg);
 }

@@ -9,7 +9,7 @@
   user-select: none;
 }
 
-.toggleBtn {
+.iconBtn {
   width: 28px;
   height: 26px;
   display: flex;
@@ -23,7 +23,7 @@
   line-height: 1;
 }
 
-.toggleBtn:hover {
+.iconBtn:hover {
   background: var(--kb-active-line);
   color: var(--kb-text);
 }
@@ -59,21 +59,6 @@
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-.themeSelect {
-  padding: 3px 8px;
-  font-size: 12px;
-  background: var(--kb-gutter);
-  color: var(--kb-text);
-  border: 1px solid var(--kb-selection);
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.themeSelect:focus {
-  outline: none;
-  border-color: var(--kb-keyword);
 }
 
 .status {

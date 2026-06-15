@@ -162,6 +162,17 @@ describe("createKauboStore", () => {
     });
   });
 
+  describe("clearOutput", () => {
+    it("resets output to empty", () => {
+      mockDoCompile.mockReturnValue(42);
+      store.compile();
+      expect(store.output()).toContain("Compiled");
+
+      store.clearOutput();
+      expect(store.output()).toBe("");
+    });
+  });
+
   describe("theme", () => {
     it("defaults to material-dark", () => {
       expect(store.theme()).toBe("material-dark");
@@ -216,6 +227,54 @@ describe("createKauboStore", () => {
 
       store.setCode("var x = 1;");
       expect(store.activeExample()).toBeNull();
+    });
+  });
+
+  describe("tabSize", () => {
+    it("defaults to 4", () => {
+      expect(store.tabSize()).toBe(4);
+    });
+
+    it("setTabSize updates signal", () => {
+      store.setTabSize(2);
+      expect(store.tabSize()).toBe(2);
+    });
+  });
+
+  describe("fontSize", () => {
+    it("defaults to 14", () => {
+      expect(store.fontSize()).toBe(14);
+    });
+
+    it("setFontSize updates signal", () => {
+      store.setFontSize(16);
+      expect(store.fontSize()).toBe(16);
+    });
+  });
+
+  describe("settingsOpen", () => {
+    it("defaults to false", () => {
+      expect(store.settingsOpen()).toBe(false);
+    });
+
+    it("toggleSettings flips the value", () => {
+      store.toggleSettings();
+      expect(store.settingsOpen()).toBe(true);
+      store.toggleSettings();
+      expect(store.settingsOpen()).toBe(false);
+    });
+  });
+
+  describe("resetSettings", () => {
+    it("resets to defaults", () => {
+      store.setTheme("nord");
+      store.setTabSize(2);
+      store.setFontSize(16);
+      store.resetSettings();
+
+      expect(store.theme()).toBe("material-dark");
+      expect(store.tabSize()).toBe(4);
+      expect(store.fontSize()).toBe(14);
     });
   });
 });

@@ -1,8 +1,10 @@
-import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
+import { EditorView, Decoration, type DecorationSet, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { StateField, type EditorState } from "@codemirror/state";
 import { linter, type Diagnostic } from "@codemirror/lint";
-import { lex } from "@kaubo/wasm";
+import { autocompletion } from "@codemirror/autocomplete";
+import { lex, hover as wasmHover } from "@kaubo/wasm";
 import { log } from "../lib/logger";
+import { kauboCompletions } from "./kauboAutocomplete";
 
 interface TokenSpan {
   from: number;
@@ -160,6 +162,43 @@ export function kauboLintDiagnostics(): Diagnostic[] {
   return lastDiagnostics;
 }
 
+// ── Hover tooltip source ─────────────────────────────────────────────────────
+
+interface HoverInfo {
+  kind: string;
+  from: number;
+  to: number;
+  description: string;
+}
+
+function hoverSource(view: EditorView, pos: number): Tooltip | null {
+  try {
+    const source = view.state.doc.toString();
+    const raw = wasmHover(source, pos);
+    if (raw === "null") return null;
+    const info: HoverInfo = JSON.parse(raw) as HoverInfo;
+    return {
+      pos: info.from,
+      end: info.to,
+      above: true,
+      create() {
+        const dom = document.createElement("div");
+        dom.className = "cm-tooltip-hover";
+        const kind = document.createElement("div");
+        kind.className = "cm-tooltip-section";
+        kind.textContent = info.kind;
+        const desc = document.createElement("div");
+        desc.className = "cm-tooltip-section";
+        desc.textContent = info.description;
+        dom.append(kind, desc);
+        return { dom };
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── Main extension ──────────────────────────────────────────────────────────
 
 export function kauboLanguage() {
@@ -177,6 +216,8 @@ export function kauboLanguage() {
   });
 
   const kauboLinter = linter(() => kauboLintDiagnostics());
+  const kauboCompletion = autocompletion({ override: [kauboCompletions] });
+  const kauboHover = hoverTooltip(hoverSource);
 
-  return [highlightField, kauboLinter];
+  return [highlightField, kauboLinter, kauboCompletion, kauboHover];
 }

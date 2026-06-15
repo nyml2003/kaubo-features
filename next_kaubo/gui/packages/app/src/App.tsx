@@ -1,15 +1,24 @@
-import type { Component } from "solid-js";
+import { createEffect, type Component } from "solid-js";
 import { Show } from "solid-js";
 import { Editor } from "./components/Editor/Editor";
 import { OutputPanel } from "./components/OutputPanel/OutputPanel";
 import { Toolbar } from "./components/Toolbar/Toolbar";
 import { ErrorOverlay } from "./components/ErrorOverlay/ErrorOverlay";
 import { Examples } from "./components/Examples/Examples";
+import { Settings } from "./components/Settings/Settings";
 import { createKauboStore } from "./store/app";
+import { applyTheme, presets } from "./themes";
 import styles from "./App.module.css";
 
 export const App: Component = () => {
   const store = createKauboStore();
+
+  createEffect(() => {
+    const root = document.documentElement;
+    const theme = presets[store.theme()];
+    applyTheme(root, theme);
+    root.style.setProperty("--kb-font-size", `${String(store.fontSize())}px`);
+  });
 
   return (
     <div class={styles.layout}>
@@ -18,12 +27,11 @@ export const App: Component = () => {
       }>
         <Toolbar
           status={store.status}
-          theme={store.theme}
           examplesExpanded={store.examplesExpanded}
           onCompile={store.compile}
           onRun={store.run}
-          onThemeChange={store.setTheme}
           onToggleExamples={store.toggleExamples}
+          onOpenSettings={store.toggleSettings}
         />
         <div class={styles.body}>
           <Examples
@@ -34,14 +42,25 @@ export const App: Component = () => {
           <main class={styles.main}>
             <Editor
               code={store.code}
-              theme={store.theme}
+              tabSize={store.tabSize}
               onUpdate={store.setCode}
               onRun={store.run}
             />
-            <OutputPanel output={store.output} />
+            <OutputPanel output={store.output} onClear={store.clearOutput} />
           </main>
         </div>
         <ErrorOverlay error={store.error} onDismiss={store.clearError} />
+        <Settings
+          open={store.settingsOpen()}
+          theme={store.theme()}
+          tabSize={store.tabSize()}
+          fontSize={store.fontSize()}
+          onThemeChange={store.setTheme}
+          onTabSizeChange={store.setTabSize}
+          onFontSizeChange={store.setFontSize}
+          onReset={store.resetSettings}
+          onClose={store.toggleSettings}
+        />
       </Show>
     </div>
   );

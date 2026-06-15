@@ -1,14 +1,11 @@
 import { onMount, createEffect, type Component } from "solid-js";
-import { EditorView, placeholder, keymap, highlightActiveLine, drawSelection } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { EditorView, placeholder, keymap, highlightActiveLine, drawSelection, lineNumbers } from "@codemirror/view";
+import { EditorState, Compartment } from "@codemirror/state";
 import { bracketMatching, foldGutter, indentOnInput, foldKeymap } from "@codemirror/language";
-import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
 import { lintGutter, lintKeymap } from "@codemirror/lint";
-import { defaultKeymap } from "@codemirror/commands";
 import { kauboLanguage } from "../../editor/kauboLang";
 import { lex } from "@kaubo/wasm";
-import { applyTheme, presets } from "../../themes";
-import type { ThemeName } from "../../themes";
 import styles from "./Editor.module.css";
 
 declare global {
@@ -21,9 +18,11 @@ if (typeof window !== "undefined") {
   window.__kauboWasm = { lex };
 }
 
+const tabSizeComp = new Compartment();
+
 export const Editor: Component<{
   code: () => string;
-  theme: () => string;
+  tabSize: () => number;
   onUpdate: (value: string) => void;
   onRun: () => void;
 }> = (props) => {
@@ -36,7 +35,8 @@ export const Editor: Component<{
       state: EditorState.create({
         doc: props.code(),
         extensions: [
-          EditorState.tabSize.of(4),
+          lineNumbers(),
+          tabSizeComp.of(EditorState.tabSize.of(props.tabSize())),
           placeholder("// Enter Kaubo code..."),
           highlightActiveLine(),
           drawSelection(),
@@ -48,7 +48,7 @@ export const Editor: Component<{
           ...kauboLanguage(),
           keymap.of([
             ...closeBracketsKeymap,
-            ...defaultKeymap,
+            ...completionKeymap,
             ...foldKeymap,
             ...lintKeymap,
             {
@@ -75,9 +75,11 @@ export const Editor: Component<{
     });
 
     createEffect(() => {
-      const themeName = props.theme();
-      const theme = presets[themeName as ThemeName];
-      applyTheme(container, theme);
+      view.dispatch({
+        effects: tabSizeComp.reconfigure(
+          EditorState.tabSize.of(props.tabSize())
+        ),
+      });
     });
   });
 

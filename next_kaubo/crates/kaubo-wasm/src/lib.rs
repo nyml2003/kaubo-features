@@ -243,6 +243,112 @@ fn format_diagnostic(
     s
 }
 
+// ── Hover (type info at cursor) ────────────────────────────────────────────
+
+/// Get hover information for the token at the given UTF-16 offset.
+///
+/// Returns a JSON object with token kind, range, and description,
+/// or `"null"` if no token found at that offset.
+///
+/// Format: `{"kind":"keyword","from":0,"to":3,"description":"variable declaration"}`
+#[wasm_bindgen]
+pub fn hover(source: &str, offset: usize) -> String {
+    let owned = source.to_owned();
+    let utf16_starts = build_utf16_line_starts(&owned);
+
+    let mut lexer = Lexer::new(4096);
+    if lexer.feed(owned.as_bytes()).is_err() {
+        return "null".to_string();
+    }
+    if lexer.terminate().is_err() {
+        return "null".to_string();
+    }
+
+    while let Some(tok) = lexer.next_token() {
+        let line = tok.start().line.saturating_sub(1);
+        let base = utf16_starts.get(line).copied().unwrap_or(0);
+        let from = base + tok.start().utf16_column;
+        let to = base + tok.end().utf16_column;
+
+        if offset >= from && offset < to {
+            let kind_str = token_kind_to_tag(tok.kind);
+            if kind_str.is_empty() {
+                continue;
+            }
+            let description = describe_token(tok.kind);
+            use std::fmt::Write;
+            let mut s = String::new();
+            let escaped_desc = description.replace('\\', "\\\\").replace('"', "\\\"");
+            write!(
+                &mut s,
+                r#"{{"kind":"{kind_str}","from":{from},"to":{to},"description":"{escaped_desc}"}}"#
+            ).ok();
+            return s;
+        }
+    }
+
+    "null".to_string()
+}
+
+fn describe_token(kind: KauboTokenKind) -> &'static str {
+    match kind {
+        KauboTokenKind::Var => "variable declaration",
+        KauboTokenKind::If => "conditional branch",
+        KauboTokenKind::Else => "fallback branch",
+        KauboTokenKind::Elif => "else-if branch",
+        KauboTokenKind::While => "while loop",
+        KauboTokenKind::For => "for-in loop",
+        KauboTokenKind::Return => "return value",
+        KauboTokenKind::In => "iteration keyword",
+        KauboTokenKind::Break => "exit loop",
+        KauboTokenKind::Continue => "next iteration",
+        KauboTokenKind::Struct => "struct definition",
+        KauboTokenKind::Impl => "implementation block",
+        KauboTokenKind::Import => "module import",
+        KauboTokenKind::As => "import alias",
+        KauboTokenKind::From => "named import",
+        KauboTokenKind::Pass => "no-op",
+        KauboTokenKind::And => "logical AND",
+        KauboTokenKind::Or => "logical OR",
+        KauboTokenKind::Not => "logical NOT",
+        KauboTokenKind::Yield => "yield from coroutine",
+        KauboTokenKind::Pub => "public export",
+        KauboTokenKind::Print => "output to stdout",
+        KauboTokenKind::Json => "JSON literal",
+        KauboTokenKind::Module => "module declaration (deprecated)",
+        KauboTokenKind::Operator => "operator overload",
+        KauboTokenKind::True | KauboTokenKind::False => "boolean literal",
+        KauboTokenKind::Null => "null value",
+        KauboTokenKind::LiteralInteger => "integer literal",
+        KauboTokenKind::LiteralFloat => "float literal",
+        KauboTokenKind::LiteralString => "string literal",
+        KauboTokenKind::Identifier => "identifier",
+        KauboTokenKind::Comment => "comment",
+        KauboTokenKind::DoubleEqual => "equality comparison ==",
+        KauboTokenKind::ExclamationEqual => "not-equal comparison !=",
+        KauboTokenKind::GreaterThanEqual => "greater-than-or-equal >=",
+        KauboTokenKind::LessThanEqual => "less-than-or-equal <=",
+        KauboTokenKind::FatArrow => "lambda return type arrow",
+        KauboTokenKind::GreaterThan => "greater-than >",
+        KauboTokenKind::LessThan => "less-than <",
+        KauboTokenKind::Plus => "addition / string concat",
+        KauboTokenKind::Minus => "subtraction / negation",
+        KauboTokenKind::Asterisk => "multiplication",
+        KauboTokenKind::Slash => "division",
+        KauboTokenKind::Percent => "modulo",
+        KauboTokenKind::Colon => "type annotation",
+        KauboTokenKind::Equal => "assignment",
+        KauboTokenKind::Comma => "separator",
+        KauboTokenKind::Semicolon => "statement end",
+        KauboTokenKind::LeftParenthesis | KauboTokenKind::RightParenthesis => "parenthesis",
+        KauboTokenKind::LeftCurlyBrace | KauboTokenKind::RightCurlyBrace => "block delimiter",
+        KauboTokenKind::LeftSquareBracket | KauboTokenKind::RightSquareBracket => "index / list bracket",
+        KauboTokenKind::Dot => "member access",
+        KauboTokenKind::Pipe => "lambda parameter delimiter",
+        _ => "token",
+    }
+}
+
 // ── Compile & Run ──────────────────────────────────────────────────────────
 
 /// Compile Kaubo source code, store chunk in memory.

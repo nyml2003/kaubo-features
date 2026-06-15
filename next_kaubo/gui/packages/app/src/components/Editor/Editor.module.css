@@ -10,13 +10,13 @@
 }
 
 .editor :global(.cm-editor .cm-content) {
-  background: var(--kb-bg);
   caret-color: var(--kb-cursor);
+  font-size: var(--kb-font-size);
 }
 
 .editor :global(.cm-editor .cm-scroller) {
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--kb-font-size);
   line-height: 1.6;
   overflow: auto;
 }
@@ -37,11 +37,14 @@
 }
 
 .editor :global(.cm-editor .cm-activeLine) {
-  background: var(--kb-active-line);
+  background: color-mix(in srgb, var(--kb-active-line) 60%, transparent);
 }
 
 .editor :global(.cm-editor .cm-selectionBackground) {
-  background: var(--kb-selection);
+  background: rgba(100, 144, 255, 0.35) !important;
+}
+.editor :global(.cm-editor:not(.cm-focused) .cm-selectionBackground) {
+  background: rgba(100, 144, 255, 0.15) !important;
 }
 
 .editor :global(.cm-editor .cm-cursor) {
@@ -66,3 +69,83 @@
 }
 .editor :global(.cm-lintMarker-error) { color: var(--kb-atom); }
 .editor :global(.cm-lintMarker-warning) { color: var(--kb-number); }
+
+/* Tooltips: lint diagnostics, hover type info, autocomplete */
+.editor :global(.cm-tooltip) {
+  background: var(--kb-gutter);
+  border: 1px solid var(--kb-selection);
+  color: var(--kb-text);
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+  border-radius: 4px;
+}
+.editor :global(.cm-tooltip .cm-diagnostic) {
+  color: var(--kb-text);
+  padding: 2px 4px;
+}
+.editor :global(.cm-tooltip .cm-diagnostic-error) {
+  border-left: 3px solid var(--kb-atom);
+  padding-left: 6px;
+}
+.editor :global(.cm-tooltip .cm-diagnosticText) {
+  color: var(--kb-comment);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* Autocomplete popup */
+.editor :global(.cm-tooltip.cm-completionInfo) {
+  background: var(--kb-gutter);
+  border-color: var(--kb-selection);
+}
+.editor :global(.cm-tooltip-autocomplete) {
+  background: var(--kb-gutter);
+  border-color: var(--kb-selection);
+}
+.editor :global(.cm-completionIcon) {
+  opacity: 0.7;
+}
+.editor :global(.cm-completionLabel) {
+  color: var(--kb-text);
+}
+.editor :global(.cm-completionDetail) {
+  color: var(--kb-comment);
+}
+.editor :global(.cm-completionMatchedText) {
+  color: var(--kb-keyword);
+}
+.editor :global(.cm-tooltip-autocomplete .cm-completionIcon-keyword::after) {
+  content: "K";
+  color: var(--kb-keyword);
+}
+.editor :global(.cm-tooltip-autocomplete .cm-completionIcon-function::after) {
+  content: "F";
+  color: var(--kb-operator);
+}
+.editor :global(.cm-tooltip-autocomplete .cm-completionIcon-variable::after) {
+  content: "v";
+  color: var(--kb-identifier);
+}
+.editor :global(.cm-tooltip-autocomplete .cm-completionIcon-constant::after) {
+  content: "C";
+  color: var(--kb-atom);
+}
+.editor :global(.cm-tooltip-autocomplete ul li[aria-selected]) {
+  background: var(--kb-active-line);
+}
+
+/* Hover type info */
+.editor :global(.cm-tooltip-hover) {
+  background: var(--kb-gutter);
+  border-color: var(--kb-operator);
+  max-width: 420px;
+}
+.editor :global(.cm-tooltip-hover .cm-tooltip-section) {
+  color: var(--kb-text);
+  padding: 4px 6px;
+}
+.editor :global(.cm-tooltip-hover .cm-tooltip-section:not(:last-child)) {
+  border-bottom: 1px solid var(--kb-selection);
+}
