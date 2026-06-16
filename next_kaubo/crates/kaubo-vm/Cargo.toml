@@ -1,10 +1,10 @@
 [package]
-name = "kaubo-ir"
+name = "kaubo-vm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Kaubo v2 CPS IR types and AST→CPS lowering"
+description = "Kaubo v2 register VM — CPS block scheduler"
 
 [dependencies]
-kaubo-syntax = { path = "../kaubo-syntax" }
+kaubo-ir = { path = "../kaubo-ir" }

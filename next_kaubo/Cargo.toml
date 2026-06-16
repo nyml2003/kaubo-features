@@ -1,5 +1,5 @@
 [workspace]
-members = ["kaubo-config", "kaubo-vfs", "kaubo-cli", "kaubo-log", "crates/kaubo-ir", "crates/kaubo-compiler", "crates/kaubo-runtime", "crates/kaubo-pipeline", "crates/kaubo-wasm"]
+members = ["kaubo-vfs", "kaubo-log", "crates/kaubo-syntax", "crates/kaubo-infer", "crates/kaubo-ir", "crates/kaubo-vm", "kaubo2-cli"]
 resolver = "2"
 
 [workspace.package]
@@ -16,12 +16,9 @@ once_cell = "1.19"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# kaubo-config (无依赖)
-
 # kaubo-vfs 依赖 (无)
 
 # kaubo-config (无依赖)
-kaubo-config = { path = "kaubo-config" }
 kaubo-vfs = { path = "kaubo-vfs" }
 kaubo-log = { path = "kaubo-log" }
 
@@ -36,6 +33,5 @@ edition = "2021"
 license = "MIT"
 
 [dev-dependencies]
-kaubo-config = { path = "kaubo-config" }
 kaubo-log = { path = "kaubo-log" }
 
