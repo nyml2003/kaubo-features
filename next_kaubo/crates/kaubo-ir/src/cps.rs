@@ -43,6 +43,7 @@ pub enum CpsInstr {
     IndexSet(usize, usize, usize, usize),
     Box(usize, usize),
     Unbox(usize, usize),
+    Print(usize),    // Print register value
     Nop,
 }
 

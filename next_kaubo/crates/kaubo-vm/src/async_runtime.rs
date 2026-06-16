@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn test_suspend_and_resume() {
         let mut sched = AsyncScheduler::new();
-        let cf = CallFrame { int_base: 0, float_base: 0, ptr_base: 0, ptr_count: 0, ret_block: 0, func_entry: 0 };
+        let cf = CallFrame { ret_block: 0, ret_ip: 0 };
         let id = sched.suspend(cf, 42);
         assert_eq!(sched.tasks.len(), 1);
         let sf = sched.resume_frame(id).unwrap();
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn test_complete() {
         let mut sched = AsyncScheduler::new();
-        let cf = CallFrame { int_base: 0, float_base: 0, ptr_base: 0, ptr_count: 0, ret_block: 0, func_entry: 0 };
+        let cf = CallFrame { ret_block: 0, ret_ip: 0 };
         let id = sched.suspend(cf, 0);
         sched.complete(id, 100);
         assert!(sched.tasks.is_empty());

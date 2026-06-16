@@ -267,21 +267,21 @@ impl Parser {
                 }
                 TokenKind::LBrace => {
                     if let Expr::VarRef(ref name) = expr {
-                        let struct_name = name.clone();
-                        self.bump();
-                        let mut fields = Vec::new();
-                        while self.current_kind() != TokenKind::RBrace {
-                            let fname = self.expect_ident()?;
-                            self.expect(TokenKind::Colon)?;
-                            let val = self.parse_expr()?;
-                            fields.push((fname, val));
-                            if self.current_kind() == TokenKind::Comma { self.bump(); }
-                        }
-                        self.bump();
-                        expr = Expr::StructLit { name: struct_name, fields };
-                    } else {
-                        break;
-                    }
+                        if name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                            let struct_name = name.clone();
+                            self.bump();
+                            let mut fields = Vec::new();
+                            while self.current_kind() != TokenKind::RBrace {
+                                let fname = self.expect_ident()?;
+                                self.expect(TokenKind::Colon)?;
+                                let val = self.parse_expr()?;
+                                fields.push((fname, val));
+                                if self.current_kind() == TokenKind::Comma { self.bump(); }
+                            }
+                            self.bump();
+                            expr = Expr::StructLit { name: struct_name, fields };
+                        } else { break; }
+                    } else { break; }
                 }
                 _ => break,
             }
@@ -561,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    #[test] #[ignore] fn test_for_loop() { // TODO: fix for-loop in struct context
+    #[test] fn test_for_loop() { // TODO: fix for-loop in struct context
         let e = parse_expr_only("for x in xs { print(x) }"); assert!(matches!(e, Expr::For { .. })); }
 
     #[test]

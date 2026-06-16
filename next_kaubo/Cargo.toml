@@ -1,5 +1,5 @@
 [workspace]
-members = ["kaubo-vfs", "kaubo-log", "crates/kaubo-syntax", "crates/kaubo-infer", "crates/kaubo-ir", "crates/kaubo-vm", "kaubo2-cli"]
+members = ["kaubo-vfs", "kaubo-log", "crates/kaubo-syntax", "crates/kaubo-infer", "crates/kaubo-ir", "crates/kaubo-vm", "crates/kaubo-module", "kaubo2-cli"]
 resolver = "2"
 
 [workspace.package]

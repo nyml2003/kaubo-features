@@ -49,7 +49,10 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
         }
     }
 
-    // Pass 2: infer all statements
+    // Pass 2: inject stdlib builtins
+    inject_stdlib(&mut env);
+
+    // Pass 3: infer all statements
     for stmt in &module.stmts {
         match stmt {
             Stmt::ConstDecl { name, value, .. } => {
@@ -87,6 +90,31 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
     }
 
     Ok((env, struct_fields))
+}
+
+// ── stdlib injection ──
+
+fn inject_stdlib(env: &mut TypeEnv) {
+    // print: String → Null
+    env.insert("print".into(), Scheme::monomorphic(
+        Type::Arrow(Box::new(Type::String), Box::new(Type::Null))
+    ));
+    // type_of: forall a. a → String
+    let tv = fresh_tvar();
+    env.insert("type_of".into(), Scheme {
+        bound: vec![tv],
+        body: Box::new(Type::Arrow(Box::new(Type::Var(tv)), Box::new(Type::String))),
+    });
+    // assert: Bool → Null
+    env.insert("assert".into(), Scheme::monomorphic(
+        Type::Arrow(Box::new(Type::Bool), Box::new(Type::Null))
+    ));
+    // sqrt/sin/cos: Float64 → Float64
+    for name in &["sqrt", "sin", "cos", "floor", "ceil"] {
+        env.insert(name.to_string(), Scheme::monomorphic(
+            Type::Arrow(Box::new(Type::Float64), Box::new(Type::Float64))
+        ));
+    }
 }
 
 // ── 推断 ──

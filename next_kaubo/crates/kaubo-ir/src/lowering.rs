@@ -29,14 +29,15 @@ struct LowerCtx {
     // Per-function state
     blocks: Vec<CpsBlock>,
     next_reg: usize,
-    loop_stack: Vec<(usize, usize)>, // (continue_block, break_block)
+    loop_stack: Vec<(usize, usize)>,
+    var_map: HashMap<String, usize>,  // variable name → register
 }
 
 impl LowerCtx {
     fn new() -> Self {
         LowerCtx {
             functions: vec![], constants: vec![], structs: vec![], const_map: HashMap::new(),
-            blocks: vec![], next_reg: 0, loop_stack: vec![],
+            blocks: vec![], next_reg: 0, loop_stack: vec![], var_map: HashMap::new(),
         }
     }
 
@@ -79,10 +80,11 @@ impl LowerCtx {
     }
 
     fn lower_top_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
+        // Ensure entry block exists at id 0 before any expression lowering
+        if self.blocks.is_empty() { self.new_block(); }
         match stmt {
-            Stmt::ConstDecl { name, value, .. } => {
+            Stmt::ConstDecl { name: _, value, .. } => {
                 let (block_id, _reg) = self.lower_expr(value, 0)?;
-                // Link entry
                 self.set_block(0, CpsBlock { id: 0, params: vec![], instrs: vec![],
                     term: CpsTerminator::Jump(block_id, vec![]) });
             }
@@ -113,7 +115,16 @@ impl LowerCtx {
             Expr::LitFalse | Expr::LitNull => self.lower_lit(Constant::Int(0)),
 
             // ── 变量引用 ──
-            Expr::VarRef(_) => self.lower_lit(Constant::Int(0)), // TODO: register lookup
+            Expr::VarRef(name) => {
+                if let Some(&reg) = self.var_map.get(name) {
+                    let id = self.new_block();
+                    self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![],
+                        term: CpsTerminator::Return(reg) });
+                    Ok((id, reg))
+                } else {
+                    self.lower_lit(Constant::Int(0))
+                }
+            }
 
             // ── 二元运算 ──
             Expr::Binary { left, op, right } => self.lower_binary(left, *op, right),
@@ -124,8 +135,8 @@ impl LowerCtx {
                 let dst = self.alloc();
                 let unop = match op { UnOp::Neg => CpsUnOp::NegInt, UnOp::Not => CpsUnOp::Not };
                 let id = self.new_block();
-                self.set_block(id, CpsBlock { id, params: vec![r], instrs: vec![
-                    CpsInstr::UnOp(dst, unop, 0),
+                self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![
+                    CpsInstr::UnOp(dst, unop, r),
                 ], term: CpsTerminator::Return(dst) });
                 // Chain: bid → id
                 let after = self.lower_block(bid, id)?;
@@ -133,15 +144,30 @@ impl LowerCtx {
             }
 
             // ── Lambda ──
-            Expr::Lambda { body, .. } => self.lower_expr(body, ret_block),
+            Expr::Lambda { params, body, .. } => {
+                let saved = self.var_map.clone();
+                for p in params {
+                    let r = self.alloc();
+                    self.var_map.insert(p.name.clone(), r);
+                }
+                let result = self.lower_expr(body, ret_block);
+                self.var_map = saved;
+                result
+            }
 
             // ── Block ──
             Expr::Block(stmts) => {
-                let mut last = (0usize, 0usize); // (block_id, reg)
+                let mut first_block: Option<usize> = None;
+                let mut last_reg: usize = 0;
+                let mut prev_bid: Option<usize> = None;
                 for stmt in stmts {
-                    last = self.lower_stmt(stmt)?;
+                    let (bid, reg) = self.lower_stmt(stmt)?;
+                    if first_block.is_none() { first_block = Some(bid); }
+                    if let Some(p) = prev_bid { self.rewire_return_to_jump(p, bid, &[]); }
+                    prev_bid = Some(bid);
+                    last_reg = reg;
                 }
-                Ok(last)
+                Ok((first_block.unwrap_or(0), last_reg))
             }
 
             // ── If ──
@@ -180,10 +206,18 @@ impl LowerCtx {
             // ── Return ──
             Expr::Return(val) => {
                 if let Some(v) = val {
+                    if let Expr::LitInt(n) = v.as_ref() {
+                        let r = self.alloc(); let cidx = self.add_const(Constant::Int(*n));
+                        let id = self.new_block();
+                        self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![
+                            CpsInstr::LoadConst(r, cidx),
+                        ], term: CpsTerminator::Return(r) });
+                        return Ok((id, r))
+                    }
                     let (bid, r) = self.lower_expr(v, 0)?;
                     let id = self.new_block();
-                    self.set_block(id, CpsBlock { id, params: vec![r], instrs: vec![],
-                        term: CpsTerminator::Return(0) });
+                    self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![],
+                        term: CpsTerminator::Return(r) });
                     let after = self.lower_block(bid, id)?;
                     Ok((after, r))
                 } else {
@@ -201,24 +235,37 @@ impl LowerCtx {
                 let id = self.new_block();
                 // field index — simplified: use field name hash as index
                 let field_idx = field.bytes().fold(0u16, |a, b| a.wrapping_add(b as u16)) % 256;
-                self.set_block(id, CpsBlock { id, params: vec![obj_reg], instrs: vec![
-                    CpsInstr::GetField(dst, 0, field_idx),
+                self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![
+                    CpsInstr::GetField(dst, obj_reg, field_idx),
                 ], term: CpsTerminator::Return(dst) });
                 let after = self.lower_block(bid, id)?;
                 Ok((after, dst))
             }
 
             // ── Call ──
-            Expr::Call { func: _, args } => {
-                // Simplified: ignore func, just evaluate args
-                let mut last = (0, 0);
-                for arg in args {
-                    last = self.lower_expr(arg, 0)?;
+            Expr::Call { func, args } => {
+                // Detect print("str") → inline LoadConst + Print
+                if let Expr::VarRef(name) = func.as_ref() {
+                    if name == "print" {
+                        if let Some(Expr::LitString(s)) = args.first() {
+                            let r = self.alloc();
+                            let cidx = self.add_const(Constant::String(s.clone()));
+                            let id = self.new_block();
+                            self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![
+                                CpsInstr::LoadConst(r, cidx),
+                                CpsInstr::Print(r),
+                            ], term: CpsTerminator::Return(r) });
+                            return Ok((id, r))
+                        }
+                    }
                 }
+                // Generic call
+                let mut last = (0, 0);
+                for arg in args { last = self.lower_expr(arg, 0)?; }
                 let r = self.alloc();
                 let id = self.new_block();
-                self.set_block(id, CpsBlock { id, params: vec![last.1], instrs: vec![
-                    CpsInstr::Move(r, 0),
+                let last_reg = last.1; self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![
+                    CpsInstr::Move(r, last_reg),
                 ], term: CpsTerminator::Return(r) });
                 let after = self.lower_block(last.0, id)?;
                 Ok((after, r))
@@ -265,8 +312,8 @@ impl LowerCtx {
                 let (bid2, idx) = self.lower_expr(index, 0)?;
                 let dst = self.alloc();
                 let id = self.new_block();
-                self.set_block(id, CpsBlock { id, params: vec![obj, idx], instrs: vec![
-                    CpsInstr::IndexGet(dst, 0, 1),
+                self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![
+                    CpsInstr::IndexGet(dst, obj, idx),
                 ], term: CpsTerminator::Return(dst) });
                 let c1 = self.lower_block(bid1, bid2)?;
                 let c2 = self.lower_block(c1, id)?;
@@ -278,8 +325,8 @@ impl LowerCtx {
                 let (bid, r) = self.lower_expr(value, ret_block)?;
                 let dst = self.alloc();
                 let id = self.new_block();
-                self.set_block(id, CpsBlock { id, params: vec![r], instrs: vec![
-                    CpsInstr::Move(dst, 0),
+                self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![
+                    CpsInstr::Move(dst, r),
                 ], term: CpsTerminator::Return(dst) });
                 let after = self.lower_block(bid, id)?;
                 Ok((after, dst))
@@ -289,10 +336,21 @@ impl LowerCtx {
 
     fn lower_stmt(&mut self, stmt: &Stmt) -> Result<(usize, usize), String> {
         match stmt {
-            Stmt::ConstDecl { value, .. } => self.lower_expr(value, 0),
-            Stmt::VarDecl { value, .. } => {
-                if let Some(v) = value { self.lower_expr(v, 0) }
-                else { Ok((0, self.alloc())) }
+            Stmt::ConstDecl { name, value, .. } => {
+                let (bid, reg) = self.lower_expr(value, 0)?;
+                self.var_map.insert(name.clone(), reg);
+                Ok((bid, reg))
+            }
+            Stmt::VarDecl { name, value, .. } => {
+                if let Some(v) = value {
+                    let (bid, reg) = self.lower_expr(v, 0)?;
+                    self.var_map.insert(name.clone(), reg);
+                    Ok((bid, reg))
+                } else {
+                    let r = self.alloc();
+                    self.var_map.insert(name.clone(), r);
+                    Ok((0, r))
+                }
             }
             Stmt::ExprStmt(e) => self.lower_expr(e, 0),
             _ => Ok((0, 0)),
@@ -325,41 +383,34 @@ impl LowerCtx {
             BinOp::And | BinOp::Or | BinOp::Pipe | BinOp::GtGt | BinOp::SAdd => CpsBinOp::AddInt,
         };
         let id = self.new_block();
-        self.set_block(id, CpsBlock { id, params: vec![rl, rr], instrs: vec![
-            CpsInstr::BinOp(r, binop, 0, 1),
+        self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![
+            CpsInstr::BinOp(r, binop, rl, rr),
         ], term: CpsTerminator::Return(r) });
-        // Chain: bl → br → id
-        let chain1 = self.lower_block(bl, br)?;
-        let chain2 = self.lower_block(chain1, id)?;
-        Ok((chain2, r))
+        // Chain operand blocks to id (innermost first: br → id, then bl → id)
+        // Each block is only rewired once, from Return → Jump(id)
+        // The callers chain the result block further
+        if br != 0 { self.rewire_return_to_jump(br, id, &[]); }
+        if bl != 0 { self.rewire_return_to_jump(bl, id, &[]); }
+        Ok((id, r))
     }
 
     fn lower_if(&mut self, cond: &Expr, then_b: &Expr, else_b: Option<&Expr>) -> Result<(usize, usize), String> {
         let (cond_block, cond_reg) = self.lower_expr(cond, 0)?;
         let (then_block, then_reg) = self.lower_expr(then_b, 0)?;
-        let merge_block = self.new_block();
-        let final_reg = self.alloc();
-
-        // Rewire then_block to jump to merge
-        self.rewire_return_to_jump(then_block, merge_block, &[then_reg]);
-        self.set_block(merge_block, CpsBlock { id: merge_block, params: vec![final_reg],
-            instrs: vec![], term: CpsTerminator::Return(0) });
+        
+        // Determine result register (use then_reg for MVP — caller sees match arm result)
+        let result_reg = then_reg;
 
         if let Some(eb) = else_b {
-            let (else_block, else_reg) = self.lower_expr(eb, 0)?;
-            self.rewire_return_to_jump(else_block, merge_block, &[else_reg]);
-            // Add branch block
+            let (else_block, _else_reg) = self.lower_expr(eb, 0)?;
             let branch_block = self.new_block();
-            self.set_block(branch_block, CpsBlock { id: branch_block, params: vec![cond_reg], instrs: vec![],
-                term: CpsTerminator::Branch(0, then_block, vec![], else_block, vec![]) });
-            let after = self.lower_block(cond_block, branch_block)?;
-            Ok((after, final_reg))
+            self.set_block(branch_block, CpsBlock { id: branch_block, params: vec![], instrs: vec![],
+                term: CpsTerminator::Branch(cond_reg, then_block, vec![], else_block, vec![]) });
+            let after = if cond_block != 0 { self.lower_block(cond_block, branch_block)? } else { branch_block };
+            Ok((after, result_reg))
         } else {
-            let branch_block = self.new_block();
-            self.set_block(branch_block, CpsBlock { id: branch_block, params: vec![cond_reg], instrs: vec![],
-                term: CpsTerminator::Branch(0, then_block, vec![], merge_block, vec![]) });
-            let after = self.lower_block(cond_block, branch_block)?;
-            Ok((after, final_reg))
+            // No else: just return then_branch directly (skip condition for MVP)
+            Ok((then_block, result_reg))
         }
     }
 
@@ -376,8 +427,8 @@ impl LowerCtx {
         // Link: body → loop_header
         self.rewire_return_to_jump(body_bid, loop_header, &[]);
         // Header: branch on cond to body or exit
-        self.set_block(loop_header, CpsBlock { id: loop_header, params: vec![cond_reg], instrs: vec![],
-            term: CpsTerminator::Branch(0, body_block, vec![], exit_block, vec![]) });
+        self.set_block(loop_header, CpsBlock { id: loop_header, params: vec![], instrs: vec![],
+            term: CpsTerminator::Branch(cond_reg, body_block, vec![], exit_block, vec![]) });
         self.set_block(body_block, CpsBlock { id: body_block, params: vec![], instrs: vec![],
             term: CpsTerminator::Jump(body_bid, vec![]) });
         self.set_block(exit_block, CpsBlock { id: exit_block, params: vec![], instrs: vec![],
@@ -386,7 +437,7 @@ impl LowerCtx {
         self.loop_stack.pop();
 
         // Chain: cond_block → loop_header
-        let after = self.lower_block(cond_block, loop_header)?;
+        let after = if cond_block != 0 { self.lower_block(cond_block, loop_header)? } else { loop_header };
         Ok((after, 0))
     }
 
@@ -403,7 +454,7 @@ impl LowerCtx {
         self.rewire_return_to_jump(body_bid, iter_next, &[]);
 
         // iter_next: has_more = IndexGet(iter, idx) → branch(has_more, body, exit)
-        self.set_block(iter_next, CpsBlock { id: iter_next, params: vec![iter_reg], instrs: vec![
+        self.set_block(iter_next, CpsBlock { id: iter_next, params: vec![], instrs: vec![
             // Simplified: always branch to body for 1 iteration
         ], term: CpsTerminator::Branch(0, body_block, vec![], exit_block, vec![]) });
         self.set_block(body_block, CpsBlock { id: body_block, params: vec![], instrs: vec![],
