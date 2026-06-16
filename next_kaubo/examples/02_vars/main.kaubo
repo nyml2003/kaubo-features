@@ -1,0 +1,4 @@
+// 02. Variables — var/const in v2
+var x = 10;
+var y = 32;
+x + y;

@@ -1,5 +1,0 @@
-// 01. Hello World — v2 syntax
-const main = || {
-    print("Hello, World!");
-    return 42;
-};

@@ -47,25 +47,30 @@ pub struct VM {
     pub regs: RegFile,
     pub frames: Vec<CallFrame>,
     pub consts: Vec<Constant>,
-    pub blocks: Vec<(usize, usize)>,
+    // Per-function data
+    pub func_blocks: Vec<Vec<(usize, usize)>>,
+    pub func_params: Vec<Vec<Vec<usize>>>,
+    pub jump_args: Vec<Vec<usize>>,  // flat global jump_args by absolute IP
+    pub func_entries: Vec<usize>,
+    pub func_reg_counts: Vec<usize>,
+    pub func_instr_base: Vec<usize>,   // start IP in flat instrs array
+    pub current_func: usize,
     pub instrs: Vec<u32>,
     pub output: Vec<String>,
+    pub debug: bool, // transient
 
-    // Heap
     pub heap: Vec<HeapObj>,
     pub next_heap_id: usize,
-
-    // Native functions
     pub natives: Vec<(&'static str, stdlib::NativeFn)>,
-
-    // Async
     pub scheduler: AsyncScheduler,
 }
 
 #[derive(Debug, Clone)]
 pub struct CallFrame {
+    pub func_idx: usize,
     pub ret_block: usize,
-    pub ret_ip: usize,
+    pub saved_ints: Vec<i64>,
+    pub result_reg: usize,  // where to store return value in caller's ints
 }
 
 const MAX_CALL_DEPTH: usize = 1024;
@@ -74,7 +79,11 @@ impl VM {
     pub fn new() -> Self {
         VM {
             regs: RegFile::new(512, 256, 256),
-            frames: vec![], consts: vec![], blocks: vec![], instrs: vec![], output: vec![],
+            frames: vec![], consts: vec![],
+            func_blocks: vec![], func_params: vec![],
+            func_entries: vec![], func_reg_counts: vec![], func_instr_base: vec![], current_func: 0,
+            jump_args: vec![],
+            instrs: vec![], output: vec![], debug: false,
             heap: vec![], next_heap_id: 0,
             natives: stdlib::register_all(),
             scheduler: AsyncScheduler::new(),
@@ -83,18 +92,63 @@ impl VM {
 
     pub fn load(&mut self, module: &CpsModule) -> Result<(), String> {
         self.consts = module.constants.clone();
-        self.instrs.clear(); self.blocks.clear();
+        self.instrs.clear();
+        self.func_blocks.clear(); self.func_params.clear();
+        self.func_blocks.clear(); self.func_params.clear();
+        self.func_entries.clear(); self.func_reg_counts.clear(); self.func_instr_base.clear();
+        self.jump_args.clear();
+        
         for func in &module.functions {
-            let max_id = func.blocks.iter().map(|b| b.id).max().unwrap_or(0) + 1;
-            self.blocks.resize(max_id, (0, 0));
+            let base_ip = self.instrs.len();
+            let max_id = func.blocks.iter()
+                .filter(|b| b.id != usize::MAX)
+                .map(|b| b.id).max().unwrap_or(0) + 1;
+            let mut blocks = vec![(0, 0); max_id];
+            let mut params = vec![vec![]; max_id];
+            
             for block in &func.blocks {
+                if block.id == usize::MAX { continue; }
                 let start = self.instrs.len();
-                for instr in &block.instrs { self.instrs.push(encode_instr(instr)?); }
+                for instr in &block.instrs {
+                    self.instrs.push(encode_instr(instr)?);
+                    self.jump_args.push(vec![]);  // placeholder for instruction
+                }
+                let args = match &block.term {
+                    CpsTerminator::Jump(_, a) => a.clone(),
+                    CpsTerminator::Branch(_, _, a, _, _) => { let mut all = a.clone(); all.push(0); all }
+                    CpsTerminator::Call(_, a, _) => a.clone(),
+                    _ => vec![],
+                };
+                self.jump_args.push(args);  // args for terminator
                 self.instrs.push(encode_term(&block.term)?);
-                self.blocks[block.id] = (start, self.instrs.len() - start);
+                blocks[block.id] = (start, self.instrs.len() - start);
+                params[block.id] = block.params.clone();
             }
+            let entry_ip = blocks[func.entry].0;
+            self.func_blocks.push(blocks);
+            self.func_params.push(params);
+            self.func_entries.push(entry_ip);
+            self.func_reg_counts.push(func.reg_count);
+            self.func_instr_base.push(base_ip);
         }
         Ok(())
+    }
+
+    fn block_ip(&self, block_id: usize) -> usize {
+        self.func_blocks[self.current_func][block_id].0
+    }
+
+    fn jump_args(&self, abs_ip: usize) -> &[usize] {
+        &self.jump_args[abs_ip]
+    }
+
+    fn bind_params(&mut self, block_id: usize, args: &[usize]) {
+        let params = &self.func_params[self.current_func][block_id];
+        for (i, &arg_reg) in args.iter().enumerate() {
+            if i < params.len() {
+                self.regs.ints[params[i]] = self.regs.ints[arg_reg];
+            }
+        }
     }
 
     fn alloc_heap(&mut self, obj: HeapObj) -> i64 {
@@ -112,18 +166,13 @@ impl VM {
         &mut self.heap[id as usize]
     }
 
-    pub fn execute(&mut self, entry: usize, reg_count: usize) -> Result<i64, RuntimeError> {
-        // Allocate register space for this function
-        self.regs.ensure_capacity(reg_count, reg_count, reg_count);
-        let int_save = self.regs.ints.len();
-        let float_save = self.regs.floats.len();
-        let ptr_save = self.regs.ptrs.len();
-        // Expand registers for this function call
-        if self.regs.ints.len() < int_save + reg_count { self.regs.ints.resize(int_save + reg_count, 0); }
-        if self.regs.floats.len() < float_save + reg_count { self.regs.floats.resize(float_save + reg_count, 0.0); }
-        if self.regs.ptrs.len() < ptr_save + reg_count { self.regs.ptrs.resize(ptr_save + reg_count, GcPtr::null()); }
+    pub fn execute(&mut self, entry_func: usize, _reg_count: usize) -> Result<i64, RuntimeError> {
+        self.current_func = entry_func;
+        let reg_needed = self.func_reg_counts[entry_func];
+        self.regs.ensure_capacity(reg_needed, reg_needed, reg_needed);
+        if self.regs.ints.len() < reg_needed { self.regs.ints.resize(reg_needed, 0); }
 
-        let mut ip = self.blocks[entry].0;
+        let mut ip = self.func_entries[entry_func];
 
         loop {
             let inst = self.instrs[ip]; ip += 1;
@@ -228,28 +277,58 @@ impl VM {
                 0x3B => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.ints[s]; } // unbox
 
                 // ── 控制流 ──
-                0x40 => { ip = self.blocks[(inst & 0x1FFFFFF) as usize].0; }
+                0x40 => {
+                    let block_id = (inst & 0x1FFFFFF) as usize;
+                    self.bind_params(block_id, &self.jump_args(ip - 1).to_vec());
+                    ip = self.block_ip(block_id);
+                }
                 0x41 => {
                     let c=((inst>>17)&0xFF) as usize;
                     let tb=((inst>>8)&0x1FF) as usize;
                     let fb=(inst&0xFF) as usize;
-                    ip = self.blocks[if self.regs.ints[c] != 0 { tb } else { fb }].0;
+                    let block_id = if self.regs.ints[c] != 0 { tb } else { fb };
+                    self.bind_params(block_id, &self.jump_args(ip - 1).to_vec());
+                    ip = self.block_ip(block_id);
                 }
 
                 // ── 调用 ──
-                0x50 => { // call(func, args, ret_block)
-                    let ret = (inst & 0x1FFFFFF) as usize;
+                0x50 => { // Call(func_idx, args, cont_block)
+                    let func_idx = ((inst >> 17) & 0xFF) as usize;
+                    let cont_block = (inst & 0x1FFFFFF) as usize;
                     if self.frames.len() >= MAX_CALL_DEPTH { return Err(RuntimeError::StackOverflow); }
-                    self.frames.push(CallFrame { ret_block: ret, ret_ip: ip });
-                    ip = self.blocks[0].0; // jump to func entry (simplified: always block 0)
+                    let callee_regs = self.func_reg_counts[func_idx];
+                    // Expand callee registers
+                    let mut callee_ints = vec![0; callee_regs];
+                    let args = &self.jump_args(ip - 1).to_vec();
+                    if self.debug { eprintln!("[CALL] func={} callee_regs={} args={:?} caller_ints[..10]={:?}", func_idx, callee_regs, args, &self.regs.ints[..std::cmp::min(10, self.regs.ints.len())]); }
+                    for (i, &arg_reg) in args.iter().enumerate() {
+                        if i < callee_regs { callee_ints[i] = self.regs.ints[arg_reg]; }
+                    }
+                    if self.debug { eprintln!("[CALL] callee_ints={:?}", callee_ints); }
+                    // Save caller ints and switch to callee
+                    let saved_ints = std::mem::replace(&mut self.regs.ints, callee_ints);
+                    self.frames.push(CallFrame {
+                        func_idx: self.current_func,
+                        ret_block: cont_block,
+                        saved_ints,
+                        result_reg: 0,
+                    });
+                    self.current_func = func_idx;
+                    ip = self.func_entries[func_idx];
                 }
-                0x51 => { // tailcall
-                    ip = self.blocks[0].0;
-                }
+                0x51 => { ip = self.func_entries[self.current_func]; }
                 0x52 => { // ret
-                    let r = ((inst>>17)&0xFF) as usize;
+                    let r = ((inst >> 17) & 0xFF) as usize;
                     if let Some(frame) = self.frames.pop() {
-                        ip = self.blocks[frame.ret_block].0;
+                        let result = self.regs.ints[r];
+                        self.regs.ints = frame.saved_ints;
+                        self.current_func = frame.func_idx;
+                        // Store result at caller's expected slot
+                        if self.regs.ints.len() <= frame.result_reg {
+                            self.regs.ints.resize(frame.result_reg + 1, 0);
+                        }
+                        self.regs.ints[frame.result_reg] = result;
+                        ip = self.block_ip(frame.ret_block);
                     } else {
                         return Ok(self.regs.ints[r]);
                     }
@@ -262,8 +341,12 @@ impl VM {
                     }
                 }
                 0x61 => { // suspend
-                    self.frames.push(CallFrame { ret_block: 0, ret_ip: ip });
-                    let cf = self.frames.pop().unwrap();
+                    let cf = CallFrame {
+                        func_idx: self.current_func,
+                        ret_block: 0,
+                        saved_ints: self.regs.ints.clone(),
+                        result_reg: 0,
+                    };
                     self.scheduler.suspend(cf, ip);
                     return Ok(0);
                 }
@@ -330,7 +413,7 @@ fn encode_term(term: &CpsTerminator) -> Result<u32, String> {
         CpsTerminator::Branch(c, tb, _, fb, _) => encode(0x41, *c as u32, *tb as u32, *fb as u32),
         CpsTerminator::Suspend => encode(0x61, 0, 0, 0),
         CpsTerminator::Return(r) => encode(0x52, *r as u32, 0, 0),
-        CpsTerminator::Call(_, _, ret) => encode(0x50, 0, 0, *ret as u32),
+        CpsTerminator::Call(fi, _, ret) => encode(0x50, *fi as u32, 0, *ret as u32),
         CpsTerminator::TailCall(_, _) => encode(0x51, 0, 0, 0),
     })
 }

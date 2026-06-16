@@ -8,10 +8,18 @@ use crate::cps::*;
 
 pub fn lower_module(module: &Module) -> Result<CpsModule, String> {
     let mut ctx = LowerCtx::new();
+    ctx.new_block(); // entry block at id 0
+    let mut chain_tail = None;
     for stmt in &module.stmts {
-        ctx.lower_top_stmt(stmt)?;
+        let (bid, _reg) = ctx.lower_top_stmt_inner(stmt)?;
+        if let Some(tail) = chain_tail {
+            ctx.rewire_return_to_jump(tail, bid, &[]);
+        } else {
+            ctx.set_block(0, CpsBlock { id: 0, params: vec![], instrs: vec![],
+                term: CpsTerminator::Jump(bid, vec![]) });
+        }
+        chain_tail = Some(bid);
     }
-    // Fix block IDs to be sequential
     ctx.finalize();
     Ok(CpsModule {
         functions: ctx.functions,
@@ -80,9 +88,14 @@ impl LowerCtx {
     }
 
     fn lower_top_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
-        // Ensure entry block exists at id 0 before any expression lowering
         if self.blocks.is_empty() { self.new_block(); }
-        match stmt {
+        let (block_id, _reg) = self.lower_top_stmt_inner(stmt)?;
+        self.set_block(0, CpsBlock { id: 0, params: vec![], instrs: vec![],
+            term: CpsTerminator::Jump(block_id, vec![]) });
+        Ok(())
+    }
+
+    fn lower_top_stmt_inner(&mut self, stmt: &Stmt) -> Result<(usize, usize), String> {
             Stmt::ConstDecl { name: _, value, .. } => {
                 let (block_id, _reg) = self.lower_expr(value, 0)?;
                 self.set_block(0, CpsBlock { id: 0, params: vec![], instrs: vec![],
@@ -386,12 +399,18 @@ impl LowerCtx {
         self.set_block(id, CpsBlock { id, params: vec![], instrs: vec![
             CpsInstr::BinOp(r, binop, rl, rr),
         ], term: CpsTerminator::Return(r) });
-        // Chain operand blocks to id (innermost first: br → id, then bl → id)
-        // Each block is only rewired once, from Return → Jump(id)
-        // The callers chain the result block further
-        if br != 0 { self.rewire_return_to_jump(br, id, &[]); }
-        if bl != 0 { self.rewire_return_to_jump(bl, id, &[]); }
-        Ok((id, r))
+        // Chain operand blocks in order: bl → br → id
+        if bl != 0 && br != 0 {
+            self.rewire_return_to_jump(bl, br, &[]);
+            self.rewire_return_to_jump(br, id, &[]);
+        } else if br != 0 {
+            self.rewire_return_to_jump(br, id, &[]);
+        } else if bl != 0 {
+            self.rewire_return_to_jump(bl, id, &[]);
+        }
+        // Return FIRST block in chain for entry, not the binop block
+        let first = if bl != 0 { bl } else if br != 0 { br } else { id };
+        Ok((first, r))
     }
 
     fn lower_if(&mut self, cond: &Expr, then_b: &Expr, else_b: Option<&Expr>) -> Result<(usize, usize), String> {

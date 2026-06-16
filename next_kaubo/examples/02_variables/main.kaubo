@@ -1,8 +1,0 @@
-// 02. Variables — v2 syntax
-const main = || {
-    var age = 25;
-    var pi = 3.14;
-    var name = "Kaubo";
-    var ok = true;
-    return age;
-};
