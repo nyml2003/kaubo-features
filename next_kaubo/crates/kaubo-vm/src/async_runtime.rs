@@ -83,7 +83,6 @@ impl AsyncScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::regfile::RegFile;
     use crate::execute::CallFrame;
 
     #[test]

@@ -2,8 +2,6 @@
 //!
 //! 所有函数以 Rust NativeFn 方式实现，注册到 VM 中供 Kaubo 调用
 
-use crate::regfile::GcPtr;
-
 /// 标准库函数签名: (args: &[i64]) -> Result<i64, String>
 pub type NativeFn = fn(args: &[i64]) -> Result<i64, String>;
 

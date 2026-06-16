@@ -79,4 +79,5 @@ pub struct StructDef {
     pub id: usize,
     pub name: String,
     pub fields: Vec<(String, String)>, // name, type_name
+    pub type_bitmap: u64,              // bit i = 1 → field i is a heap type
 }

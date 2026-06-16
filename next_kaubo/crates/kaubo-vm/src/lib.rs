@@ -6,6 +6,7 @@
 
 pub mod regfile;
 pub mod execute;
+pub mod gc_heap;
 pub mod async_runtime;
 pub mod stdlib;
 

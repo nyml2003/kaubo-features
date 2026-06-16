@@ -3,6 +3,7 @@
 
 use kaubo_ir::cps::*;
 use crate::regfile::*;
+use crate::gc_heap::GcHeap;
 use crate::async_runtime::AsyncScheduler;
 use crate::stdlib;
 
@@ -31,7 +32,7 @@ pub enum RuntimeError {
 pub enum HeapObj {
     String(String),
     List(Vec<i64>),
-    Struct(Vec<i64>),         // fields as flat i64 for MVP
+    Struct(usize, Vec<i64>),  // (struct_id, field_values)
     Closure(Box<ClosureObj>),
 }
 
@@ -59,8 +60,9 @@ pub struct VM {
     pub output: Vec<String>,
     pub debug: bool, // transient
 
-    pub heap: Vec<HeapObj>,
-    pub next_heap_id: usize,
+    pub heap: super::gc_heap::GcHeap,
+    pub struct_bitmaps: Vec<u64>,
+    pub struct_field_counts: Vec<usize>,
     pub natives: Vec<(&'static str, stdlib::NativeFn)>,
     pub scheduler: AsyncScheduler,
 }
@@ -78,13 +80,15 @@ const MAX_CALL_DEPTH: usize = 1024;
 impl VM {
     pub fn new() -> Self {
         VM {
-            regs: RegFile::new(512, 256, 256),
+            regs: RegFile::new(512, 256),
             frames: vec![], consts: vec![],
             func_blocks: vec![], func_params: vec![],
             func_entries: vec![], func_reg_counts: vec![], func_instr_base: vec![], current_func: 0,
             jump_args: vec![],
             instrs: vec![], output: vec![], debug: false,
-            heap: vec![], next_heap_id: 0,
+            heap: GcHeap::new(),
+            struct_bitmaps: vec![],
+            struct_field_counts: vec![],
             natives: stdlib::register_all(),
             scheduler: AsyncScheduler::new(),
         }
@@ -94,10 +98,21 @@ impl VM {
         self.consts = module.constants.clone();
         self.instrs.clear();
         self.func_blocks.clear(); self.func_params.clear();
-        self.func_blocks.clear(); self.func_params.clear();
         self.func_entries.clear(); self.func_reg_counts.clear(); self.func_instr_base.clear();
         self.jump_args.clear();
-        
+        self.struct_bitmaps.clear();
+        self.struct_field_counts.clear();
+
+        for sd in &module.structs {
+            let id = sd.id;
+            if id >= self.struct_bitmaps.len() {
+                self.struct_bitmaps.resize(id + 1, 0);
+                self.struct_field_counts.resize(id + 1, 0);
+            }
+            self.struct_bitmaps[id] = sd.type_bitmap;
+            self.struct_field_counts[id] = sd.fields.len();
+        }
+
         for func in &module.functions {
             let base_ip = self.instrs.len();
             let max_id = func.blocks.iter()
@@ -152,24 +167,21 @@ impl VM {
     }
 
     fn alloc_heap(&mut self, obj: HeapObj) -> i64 {
-        let id = self.next_heap_id;
-        self.next_heap_id += 1;
-        self.heap.push(obj);
-        id as i64
+        self.heap.alloc(obj) as i64
     }
 
     fn heap_get(&self, id: i64) -> &HeapObj {
-        &self.heap[id as usize]
+        self.heap.get(id as usize)
     }
 
     fn heap_get_mut(&mut self, id: i64) -> &mut HeapObj {
-        &mut self.heap[id as usize]
+        self.heap.get_mut(id as usize)
     }
 
     pub fn execute(&mut self, entry_func: usize, _reg_count: usize) -> Result<i64, RuntimeError> {
         self.current_func = entry_func;
         let reg_needed = self.func_reg_counts[entry_func];
-        self.regs.ensure_capacity(reg_needed, reg_needed, reg_needed);
+        self.regs.ensure_capacity(reg_needed, reg_needed);
         if self.regs.ints.len() < reg_needed { self.regs.ints.resize(reg_needed, 0); }
 
         let mut ip = self.func_entries[entry_func];
@@ -234,7 +246,19 @@ impl VM {
                 }
 
                 // ── 堆分配 ──
-                0x34 => { let d=((inst>>17)&0xFF) as usize; let nf=((inst>>8)&0xFF) as usize; self.regs.ints[d]=self.alloc_heap(HeapObj::Struct(vec![0;nf])); }
+                0x34 => {
+                    let d=((inst>>17)&0xFF) as usize;
+                    let sid=((inst>>8)&0xFF) as usize;
+                    let nf=self.struct_field_counts.get(sid).copied().unwrap_or(0);
+                    let bitmap=self.struct_bitmaps.get(sid).copied().unwrap_or(0);
+                    let mut fields = vec![0i64; nf];
+                    for i in 0..nf {
+                        if (bitmap >> i) & 1 != 0 {
+                            fields[i] = -1; // null sentinel for heap-type fields
+                        }
+                    }
+                    self.regs.ints[d]=self.alloc_heap(HeapObj::Struct(sid, fields));
+                }
                 0x35 => { // NewList(dst, elements)
                     let d=((inst>>17)&0xFF) as usize;
                     let ne=((inst>>8)&0xFF) as usize;
@@ -246,7 +270,7 @@ impl VM {
                 0x36 => { // GetField(dst, src, idx)
                     let (d,s,idx)=decode_rrr(inst);
                     let hid = self.regs.ints[s];
-                    if let HeapObj::Struct(fields) = self.heap_get(hid) {
+                    if let HeapObj::Struct(_, fields) = self.heap_get(hid) {
                         self.regs.ints[d] = *fields.get(idx).unwrap_or(&0);
                     }
                 }
@@ -254,8 +278,29 @@ impl VM {
                     let (d,s,idx)=decode_rrr(inst);
                     let hid = self.regs.ints[s];
                     let val = self.regs.ints[d];
-                    if let HeapObj::Struct(fields) = self.heap_get_mut(hid) {
+
+                    // Read struct_id and old field value
+                    let (sid, old_val) = if let HeapObj::Struct(sid, fields) = self.heap_get(hid) {
+                        (*sid, fields.get(idx).copied().unwrap_or(0))
+                    } else {
+                        (0, 0)
+                    };
+                    // Check if this field is a heap type
+                    let is_heap = (self.struct_bitmaps.get(sid).copied().unwrap_or(0) >> idx) & 1 != 0;
+
+                    // Release old value if heap type
+                    if is_heap && old_val >= 0 {
+                        self.heap.release(old_val as usize);
+                    }
+
+                    // Write new value
+                    if let HeapObj::Struct(_, fields) = self.heap_get_mut(hid) {
                         if idx < fields.len() { fields[idx] = val; }
+                    }
+
+                    // Retain new value if heap type
+                    if is_heap && val >= 0 {
+                        self.heap.retain(val as usize);
                     }
                 }
 
@@ -355,9 +400,8 @@ impl VM {
                 0x7F => {
                     let r = ((inst>>17)&0xFF) as usize;
                     let val = self.regs.ints[r];
-                    // Check if val points to a heap string
-                    if val >= 0 && (val as usize) < self.heap.len() {
-                        if let HeapObj::String(s) = self.heap_get(val) {
+                    if val >= 0 {
+                        if let Some(HeapObj::String(s)) = self.heap.try_get(val as usize) {
                             self.output.push(s.clone());
                         } else {
                             self.output.push(format!("{}", val));
@@ -484,5 +528,131 @@ mod tests {
         if let HeapObj::String(s) = vm.heap_get(r) {
             assert_eq!(s, "hello");
         } else { panic!("expected string"); }
+    }
+
+    fn simple_mod_with_structs(instrs: Vec<CpsInstr>, term: CpsTerminator, consts: Vec<Constant>, structs: Vec<StructDef>, reg_count: usize) -> CpsModule {
+        CpsModule{functions:vec![CpsFunction{name:"main".into(),blocks:vec![CpsBlock{id:0,params:vec![],instrs,term}],entry:0,reg_count}],constants:consts,structs}
+    }
+
+    #[test]
+    fn t16_struct_set_get_field_retains_rc() {
+        // struct Foo { x: String } → bitmap = 0b01 (field 0 is heap type)
+        let structs = vec![StructDef {
+            id: 0, name: "Foo".into(),
+            fields: vec![("x".into(), "String".into())],
+            type_bitmap: 0b01,
+        }];
+        // Alloc string at slot 0, alloc struct Foo at slot 1
+        // SetField(value=r0, obj=r1, field=0) → set field 0 of struct to string
+        let cps = simple_mod_with_structs(
+            vec![
+                CpsInstr::LoadConst(0, 0),              // r0 = "hello" string (heap slot 0, rc=1)
+                CpsInstr::NewStruct(1, 0, vec![]),      // r1 = struct Foo (heap slot 1, rc=1)
+                CpsInstr::SetField(0, 1, 0, 0),          // struct[r1].field[0] = r0 → retains r0
+            ],
+            CpsTerminator::Return(0),                     // return string ref
+            vec![Constant::String("hello".into())],
+            structs,
+            2,
+        );
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        let result = vm.execute(0, 2).unwrap();
+        // r0 (string) should have rc=2: one from LoadConst, one from SetField retain
+        assert_eq!(vm.heap.ref_count(result as usize), 2);
+        assert_eq!(vm.heap.ref_count(0), 2);
+        // struct at slot 1 should have rc=1
+        assert_eq!(vm.heap.ref_count(1), 1);
+    }
+
+    #[test]
+    fn t17_setfield_overwrite_releases_old() {
+        // struct Foo { x: String }
+        let structs = vec![StructDef {
+            id: 0, name: "Foo".into(),
+            fields: vec![("x".into(), "String".into())],
+            type_bitmap: 0b01,
+        }];
+        // 1. Load "hello" → r0 (slot 0)
+        // 2. Load "world" → r1 (slot 1)
+        // 3. NewStruct → r2 (slot 2)
+        // 4. SetField(value=r0, obj=r2, field=0) → slot0 rc 1→2
+        // 5. SetField(value=r1, obj=r2, field=0) → slot0 released (rc 2→1), slot1 retained (rc 1→2)
+        let cps = simple_mod_with_structs(
+            vec![
+                CpsInstr::LoadConst(0, 0),              // r0 = "hello"
+                CpsInstr::LoadConst(1, 1),              // r1 = "world"
+                CpsInstr::NewStruct(2, 0, vec![]),      // r2 = struct
+                CpsInstr::SetField(0, 2, 0, 0),          // struct.field0 = "hello"
+                CpsInstr::SetField(1, 2, 0, 0),          // struct.field0 = "world" (overwrites)
+            ],
+            CpsTerminator::Return(2),                     // return struct
+            vec![Constant::String("hello".into()), Constant::String("world".into())],
+            structs,
+            3,
+        );
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        let _ = vm.execute(0, 3).unwrap();
+        // "hello" (slot 0) was released by overwrite → rc should be 1 (only LoadConst reference left)
+        assert_eq!(vm.heap.ref_count(0), 1, "old string should be released back to rc=1");
+        // "world" (slot 1) was retained by SetField → rc should be 2
+        assert_eq!(vm.heap.ref_count(1), 2, "new string should be retained to rc=2");
+        // struct (slot 2) → rc=1
+        assert_eq!(vm.heap.ref_count(2), 1);
+    }
+
+    #[test]
+    fn t18_setfield_non_heap_does_nothing() {
+        // struct Bar { n: Int64 } → bitmap = 0 (no heap fields)
+        let structs = vec![StructDef {
+            id: 0, name: "Bar".into(),
+            fields: vec![("n".into(), "Int64".into())],
+            type_bitmap: 0,
+        }];
+        let cps = simple_mod_with_structs(
+            vec![
+                CpsInstr::LoadConst(0, 0),              // r0 = 42 (int constant)
+                CpsInstr::NewStruct(1, 0, vec![]),      // r1 = struct
+                CpsInstr::SetField(0, 1, 0, 0),          // struct.field0 = 42
+            ],
+            CpsTerminator::Return(1),
+            vec![Constant::Int(42)],
+            structs,
+            2,
+        );
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        vm.execute(0, 2).unwrap();
+        // No heap objects manipulated by SetField; struct at slot 0 should have rc=1
+        assert_eq!(vm.heap.ref_count(0), 1);
+    }
+
+    #[test]
+    fn t19_many_allocs_no_panic() {
+        let structs = vec![StructDef {
+            id: 0, name: "Node".into(),
+            fields: vec![("val".into(), "String".into())],
+            type_bitmap: 0b01,
+        }];
+        let mut instrs = vec![];
+        let mut consts: Vec<Constant> = vec![];
+        for i in 0usize..20 {
+            consts.push(Constant::String(format!("s{}", i)));
+            instrs.push(CpsInstr::LoadConst(i, i));
+        }
+        for i in 0usize..20 {
+            let si = 20 + i;
+            instrs.push(CpsInstr::NewStruct(si, 0, vec![]));
+            instrs.push(CpsInstr::SetField(i, si, 0, 0));
+        }
+        for i in 0usize..19 {
+            let si = 20 + i;
+            instrs.push(CpsInstr::SetField(i + 1, si, 0, 0));
+        }
+        let cps = simple_mod_with_structs(instrs, CpsTerminator::Return(39), consts, structs, 40);
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        let _ = vm.execute(0, 40).unwrap();
     }
 }

@@ -96,26 +96,36 @@ impl LowerCtx {
     }
 
     fn lower_top_stmt_inner(&mut self, stmt: &Stmt) -> Result<(usize, usize), String> {
+        match stmt {
             Stmt::ConstDecl { name: _, value, .. } => {
-                let (block_id, _reg) = self.lower_expr(value, 0)?;
+                let (block_id, reg) = self.lower_expr(value, 0)?;
                 self.set_block(0, CpsBlock { id: 0, params: vec![], instrs: vec![],
                     term: CpsTerminator::Jump(block_id, vec![]) });
+                Ok((block_id, reg))
             }
             Stmt::ExprStmt(e) => {
-                let (block_id, _) = self.lower_expr(e, 0)?;
+                let (block_id, reg) = self.lower_expr(e, 0)?;
                 self.set_block(0, CpsBlock { id: 0, params: vec![], instrs: vec![],
                     term: CpsTerminator::Jump(block_id, vec![]) });
+                Ok((block_id, reg))
             }
             Stmt::StructDef { name, fields } => {
+                let mut bitmap: u64 = 0;
+                for (i, f) in fields.iter().enumerate() {
+                    if is_heap_type(&f.ty) {
+                        bitmap |= 1 << i;
+                    }
+                }
                 self.structs.push(StructDef {
                     id: self.structs.len(),
                     name: name.clone(),
                     fields: fields.iter().map(|f| (f.name.clone(), f.ty.to_string())).collect(),
+                    type_bitmap: bitmap,
                 });
+                Ok((0, 0))
             }
-            _ => {}
+            _ => Ok((0, 0)),
         }
-        Ok(())
     }
 
     fn lower_expr(&mut self, expr: &Expr, ret_block: usize) -> Result<(usize, usize), String> {
@@ -502,6 +512,17 @@ impl LowerCtx {
         if let Some(t) = new_term {
             self.blocks[block_id].term = t;
         }
+    }
+}
+
+fn is_heap_type(ty: &TypeExpr) -> bool {
+    match ty {
+        TypeExpr::Named(name) => {
+            name == "String" || name == "List"
+                || name.chars().next().map_or(false, |c| c.is_uppercase())
+        }
+        TypeExpr::List(_) => true,
+        TypeExpr::Arrow { .. } => false,
     }
 }
 
