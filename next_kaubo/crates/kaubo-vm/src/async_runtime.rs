@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn test_suspend_and_resume() {
         let mut sched = AsyncScheduler::new();
-        let cf = CallFrame { func_idx: 0, ret_block: 0, saved_ints: vec![], result_reg: 0 };
+        let cf = CallFrame { func_idx: 0, ret_block: 0, saved_ints: vec![], saved_floats: vec![], result_reg: 0 };
         let id = sched.suspend(cf, 42);
         assert_eq!(sched.tasks.len(), 1);
         let sf = sched.resume_frame(id).unwrap();
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn test_complete() {
         let mut sched = AsyncScheduler::new();
-        let cf = CallFrame { func_idx: 0, ret_block: 0, saved_ints: vec![], result_reg: 0 };
+        let cf = CallFrame { func_idx: 0, ret_block: 0, saved_ints: vec![], saved_floats: vec![], result_reg: 0 };
         let id = sched.suspend(cf, 0);
         sched.complete(id, 100);
         assert!(sched.tasks.is_empty());

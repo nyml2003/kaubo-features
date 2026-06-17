@@ -164,9 +164,9 @@ impl Parser {
                 TokenKind::Ge => (4, Some(BinOp::Ge)),
                 TokenKind::Plus => (5, Some(BinOp::Add)),
                 TokenKind::Minus => (5, Some(BinOp::Sub)),
-                TokenKind::Asterisk => (5, Some(BinOp::Mul)),
-                TokenKind::Slash => (5, Some(BinOp::Div)),
-                TokenKind::Percent => (5, Some(BinOp::Mod)),
+                TokenKind::Asterisk => (6, Some(BinOp::Mul)),
+                TokenKind::Slash => (6, Some(BinOp::Div)),
+                TokenKind::Percent => (6, Some(BinOp::Mod)),
                 _ => break,
             };
             if lbp < min_bp { break; }

@@ -80,3 +80,15 @@ test("struct instantiation and field access", async ({ page }) => {
   const outputText = await page.locator("pre").textContent();
   expect(outputText).toContain("200", { timeout: 5_000 });
 });
+
+test("impl struct method with sqrt", async ({ page }) => {
+  const editor = page.locator(".cm-content");
+  await editor.click();
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type('struct Point { x: Int64, y: Int64 };\nimpl Point {\n  dis: |self: Point, other: Point| -> Float64 {\n    const dx = (self.x - other.x);\n    const dy = (self.y - other.y);\n    return sqrt((dx*dx + dy*dy).to_float());\n  }\n};\nconst p1 = Point { x: 200, y: 300 };\nconst p2 = Point { x: 300, y: 400 };\nprint(p1.dis(p2).to_string());');
+
+  await page.click("button:has-text('Run')");
+  await page.waitForTimeout(2000);
+  const outputText = await page.locator("pre").textContent();
+  expect(outputText).toContain("141.421", { timeout: 5_000 });
+});

@@ -6,12 +6,15 @@ use kaubo_infer::infer_module;
 use kaubo_ir::cps_build::build_module;
 use kaubo_ir::flatten::flatten_module;
 use kaubo_ir::cps::CpsModule;
+use kaubo_ir::pass::{run_passes, fold::ConstantFold};
+use kaubo_ir::pass::binary;
 
 fn compile_pipeline(source: &str) -> Result<CpsModule, String> {
     let module = Parser::new(source).parse().map_err(|e| format!("parse: {}", e))?;
     infer_module(&module).map_err(|e| format!("infer: {:?}", e))?;
     let mut cps = build_module(&module).map_err(|e| format!("build: {}", e))?;
     flatten_module(&mut cps);
+    run_passes(&mut cps, &[&ConstantFold]);
     Ok(cps)
 }
 
@@ -41,15 +44,15 @@ fn main() -> Result<(), String> {
             let source = fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
             let cps = compile_pipeline(&source)?;
             let out = file.replace(".kaubo", ".kauboc");
-            let json = serde_json::to_string(&cps).map_err(|e| format!("json: {}", e))?;
-            let len = json.len();
-            fs::write(&out, json).map_err(|e| format!("write {}: {}", out, e))?;
-            println!("Compiled: {} ({:.1}KB)", out, len as f64 / 1024.0);
+            let bytes = binary::encode_module(&cps);
+            let len = bytes.len();
+            fs::write(&out, bytes).map_err(|e| format!("write {}: {}", out, e))?;
+            println!("Compiled: ({:.1}KB)", len as f64 / 1024.0);
         }
         "run" => {
             if file.ends_with(".kauboc") {
-                let json = fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
-                let cps: CpsModule = serde_json::from_str(&json).map_err(|e| format!("parse json: {}", e))?;
+                let bytes = fs::read(file).map_err(|e| format!("read {}: {}", file, e))?;
+                let cps = binary::decode_module(&bytes)?;
                 run_compiled(&cps)?;
             } else {
                 let source = fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
@@ -128,5 +131,44 @@ mod tests {
     fn e2e_print() {
         let result = run_src_with_output("print(\"hi\");").unwrap();
         assert!(result.1.iter().any(|s| s.contains("hi")), "output should contain 'hi', got {:?}", result.1);
+    }
+
+    #[test]
+    fn debug_impl_dis() {
+        use kaubo_ir::pass::{run_passes, fold::ConstantFold};
+        let src = r#"
+struct Point { x: Int64, y: Int64 };
+impl Point {
+  dis: |self: Point, other: Point| -> Float64 {
+    const dx = (self.x - other.x);
+    const dy = (self.y - other.y);
+    return sqrt((dx*dx + dy*dy).to_float());
+  }
+};
+const p1 = Point { x: 200, y: 300 };
+const p2 = Point { x: 300, y: 400 };
+print(p1.dis(p2).to_string());
+"#;
+        let m = Parser::new(src).parse().unwrap();
+        infer_module(&m).unwrap();
+        let mut cps = build_module(&m).unwrap();
+        flatten_module(&mut cps);
+        run_passes(&mut cps, &[&ConstantFold]);
+        eprintln!("=== CPS DUMP ===");
+        for (fi, func) in cps.functions.iter().enumerate() {
+            eprintln!("fn {} '{}' entry={} regs={}",
+                fi, func.name, func.entry, func.reg_count);
+            for b in func.blocks.iter().filter(|b| b.id != usize::MAX) {
+                eprintln!("  blk{} {}: {:?} | {:?}",
+                    b.id, if b.id == func.entry {"(entry)"} else {""}, b.instrs, b.term);
+            }
+        }
+        if cps.functions.is_empty() { panic!("no funcs"); }
+        let mut vm = kaubo_vm::VM::new();
+        vm.debug = true;
+        vm.load(&cps).unwrap();
+        let e = cps.functions.len() - 1;
+        let r = vm.execute(e, cps.functions[e].reg_count);
+        eprintln!("[DEBUG] result={:?} output={:?}", r, vm.output);
     }
 }

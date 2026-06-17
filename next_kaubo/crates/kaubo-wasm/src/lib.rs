@@ -45,6 +45,7 @@ pub fn compile(source: &str) -> Result<usize, JsValue> {
     let mut cps = kaubo_ir::cps_build::build_module(&module)
         .map_err(|e| JsValue::from_str(&e))?;
     kaubo_ir::flatten::flatten_module(&mut cps);
+    kaubo_ir::pass::run_passes(&mut cps, &[&kaubo_ir::pass::fold::ConstantFold]);
 
     if cps.functions.is_empty() {
         return Err(JsValue::from_str("no functions in compiled module"));

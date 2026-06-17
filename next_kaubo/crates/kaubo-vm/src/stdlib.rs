@@ -11,11 +11,11 @@ pub fn register_all() -> Vec<(&'static str, NativeFn)> {
         ("print", print_fn),
         ("type_of", type_of_fn),
         ("assert", assert_fn),
-        ("sqrt", |a| Ok(((*a.get(0).unwrap_or(&0) as f64).sqrt()) as i64)),
-        ("sin",  |a| Ok(((*a.get(0).unwrap_or(&0) as f64).sin()) as i64)),
-        ("cos",  |a| Ok(((*a.get(0).unwrap_or(&0) as f64).cos()) as i64)),
-        ("floor", |a| Ok(((*a.get(0).unwrap_or(&0) as f64).floor()) as i64)),
-        ("ceil", |a| Ok(((*a.get(0).unwrap_or(&0) as f64).ceil()) as i64)),
+        ("sqrt", |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).sqrt().to_bits() as i64)),
+        ("sin",  |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).sin().to_bits() as i64)),
+        ("cos",  |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).cos().to_bits() as i64)),
+        ("floor", |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).floor().to_bits() as i64)),
+        ("ceil", |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).ceil().to_bits() as i64)),
     ]
 }
 
@@ -63,6 +63,6 @@ mod tests {
     #[test]
     fn test_sqrt() {
         let sqrt = register_all()[3].1;
-        assert_eq!(sqrt(&[25]), Ok(5));
+        assert_eq!(sqrt(&[25.0f64.to_bits() as i64]), Ok(5.0f64.to_bits() as i64));
     }
 }

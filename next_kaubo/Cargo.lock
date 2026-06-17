@@ -129,7 +129,6 @@ dependencies = [
  "kaubo-ir",
  "kaubo-syntax",
  "kaubo-vm",
- "serde_json",
 ]
 
 [[package]]

@@ -57,10 +57,11 @@ pub enum CpsTerminator {
     Return(usize),
     Call(usize, Vec<usize>, usize),
     TailCall(usize, Vec<usize>),
+    CallNative(usize, Vec<usize>, usize),  // (native_index, arg_regs, cont_block)
     Suspend,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum CpsBinOp {
     AddInt, SubInt, MulInt, DivInt, ModInt,
     FAdd, FSub, FMul, FDiv,
@@ -70,7 +71,7 @@ pub enum CpsBinOp {
     IToF, FToI, IToS, FToS, SToI,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum CpsUnOp { NegInt, FNeg, Not }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

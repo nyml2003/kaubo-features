@@ -121,17 +121,25 @@ export const examples: KauboExample[] = [
   },
   {
     id: "structs",
-    name: "Structs",
-    description: "Define, instantiate, access struct fields",
+    name: "Structs with impl",
+    description: "Struct definition, impl method, sqrt distance",
     code:
       "struct Point {\n" +
       "    x: Int64,\n" +
       "    y: Int64,\n" +
       "};\n" +
       "\n" +
-      "const p = Point { x: 200, y: 300 };\n" +
-      "print(p.x.to_string());\n" +
-      "print(p.y.to_string());\n",
+      "impl Point {\n" +
+      "  dis: |self: Point, other: Point| -> Float64 {\n" +
+      "    const dx = (self.x - other.x);\n" +
+      "    const dy = (self.y - other.y);\n" +
+      "    return sqrt((dx*dx + dy*dy).to_float());\n" +
+      "  }\n" +
+      "};\n" +
+      "\n" +
+      "const p1 = Point { x: 200, y: 300 };\n" +
+      "const p2 = Point { x: 300, y: 400 };\n" +
+      "print(p1.dis(p2).to_string());\n",
     tags: ["structs"],
   },
 ];

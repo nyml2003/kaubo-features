@@ -43,7 +43,7 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
             struct_registry.insert(name.clone(), id);
             let mut fts = Vec::new();
             for f in fields {
-                fts.push((f.name.clone(), type_expr_to_type(&f.ty)?));
+                fts.push((f.name.clone(), type_expr_to_type(&f.ty, &struct_registry, &struct_fields)?));
             }
             struct_fields.insert(id, fts);
         }
@@ -73,7 +73,7 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
                 let id = struct_registry[name];
                 let mut fts = Vec::new();
                 for f in fields {
-                    fts.push((f.name.clone(), type_expr_to_type(&f.ty)?));
+                    fts.push((f.name.clone(), type_expr_to_type(&f.ty, &struct_registry, &struct_fields)?));
                 }
                 struct_fields.insert(id, fts);
             }
@@ -146,7 +146,7 @@ pub fn infer(
 
             for p in params {
                 let pt = if let Some(ann) = &p.ty_ann {
-                    type_expr_to_type(ann)?
+                    type_expr_to_type(ann, structs, struct_fields)?
                 } else {
                     Type::Var(fresh_tvar())
                 };
@@ -303,14 +303,32 @@ pub fn infer(
             if field == "to_string" && matches!(applied, Type::Int64 | Type::Float64) {
                 return Ok((s, Type::String));
             }
+            // to_float() on Int64 returns Float64
+            if field == "to_float" && matches!(applied, Type::Int64) {
+                return Ok((s, Type::Float64));
+            }
             match applied {
-                Type::Record(_id, fields) => {
-                    let ft = fields.iter().find(|(n, _)| n == field)
-                        .map(|(_, t)| t.clone())
-                        .ok_or_else(|| TypeError {
-                            msg: format!("field '{}' not found", field), line: 0, col: 0
-                        })?;
-                    Ok((s, ft))
+                Type::Record(id, fields) => {
+                    // Try struct field first
+                    if let Some(t) = fields.iter().find(|(n, _)| n == field).map(|(_, t)| t.clone()) {
+                        return Ok((s, t));
+                    }
+                    // Try impl method: look up "{struct_name}.{field}" in env
+                    for (name, &sid) in structs {
+                        if sid == id {
+                            let method_name = format!("{}.{}", name, field);
+                            if let Some(scheme) = env.get(&method_name) {
+                                let ty = instantiate(scheme);
+                                // Drop self parameter — caller already knows self
+                                let ty = match ty {
+                                    Type::Arrow(_, body) => *body,
+                                    other => other,
+                                };
+                                return Ok((s, ty));
+                            }
+                        }
+                    }
+                    Err(TypeError { msg: format!("field '{}' not found", field), line: 0, col: 0 })
                 }
                 _ => Err(TypeError { msg: format!("cannot access field '{}' on {}", field, ty), line: 0, col: 0 }),
             }
@@ -427,7 +445,7 @@ pub fn instantiate(scheme: &Scheme) -> Type {
 
 // ── 类型表达式转内部类型 ──
 
-fn type_expr_to_type(te: &TypeExpr) -> InferResult<Type> {
+fn type_expr_to_type(te: &TypeExpr, structs: &HashMap<String, usize>, struct_fields: &HashMap<usize, Vec<(String, Type)>>) -> InferResult<Type> {
     match te {
         TypeExpr::Named(n) => match n.as_str() {
             "Int64" => Ok(Type::Int64),
@@ -435,13 +453,20 @@ fn type_expr_to_type(te: &TypeExpr) -> InferResult<Type> {
             "String" => Ok(Type::String),
             "Bool" => Ok(Type::Bool),
             "Null" => Ok(Type::Null),
-            _ => Err(TypeError { msg: format!("unknown type '{}'", n), line: 0, col: 0 }),
+            _ => {
+                if let Some(&id) = structs.get(n) {
+                    let fields = struct_fields.get(&id).cloned().unwrap_or_default();
+                    Ok(Type::Record(id, fields))
+                } else {
+                    Err(TypeError { msg: format!("unknown type '{}'", n), line: 0, col: 0 })
+                }
+            }
         },
-        TypeExpr::List(t) => Ok(Type::List(Box::new(type_expr_to_type(t)?))),
+        TypeExpr::List(t) => Ok(Type::List(Box::new(type_expr_to_type(t, structs, struct_fields)?))),
         TypeExpr::Arrow { params, ret } => {
-            let mut arrow = type_expr_to_type(ret)?;
+            let mut arrow = type_expr_to_type(ret, structs, struct_fields)?;
             for p in params.iter().rev() {
-                arrow = Type::Arrow(Box::new(type_expr_to_type(p)?), Box::new(arrow));
+                arrow = Type::Arrow(Box::new(type_expr_to_type(p, structs, struct_fields)?), Box::new(arrow));
             }
             Ok(arrow)
         }

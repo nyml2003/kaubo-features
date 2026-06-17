@@ -12,14 +12,6 @@ pub fn encode(op: u8, dst: u32, src1: u32, src2: u32) -> u32 {
     ((op as u32) << 25) | ((dst & 0xFF) << 17) | ((src1 & 0x1FF) << 8) | (src2 & 0xFF)
 }
 
-pub fn decode_rrr(inst: u32) -> (usize, usize, usize) {
-    (((inst >> 17) & 0xFF) as usize, ((inst >> 8) & 0x1FF) as usize, (inst & 0xFF) as usize)
-}
-
-pub fn decode_rr(inst: u32) -> (usize, usize) {
-    (((inst >> 17) & 0xFF) as usize, ((inst >> 8) & 0x1FF) as usize)
-}
-
 // ── 运行时错误 ──
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -55,6 +47,8 @@ pub struct VM {
     pub func_entries: Vec<usize>,
     pub func_reg_counts: Vec<usize>,
     pub func_instr_base: Vec<usize>,   // start IP in flat instrs array
+    pub block_starts: Vec<usize>,      // flat: block_id → start IP (per func)
+    pub func_block_base: Vec<usize>,   // offset into block_starts per function
     pub current_func: usize,
     pub instrs: Vec<u32>,
     pub output: Vec<String>,
@@ -72,7 +66,8 @@ pub struct CallFrame {
     pub func_idx: usize,
     pub ret_block: usize,
     pub saved_ints: Vec<i64>,
-    pub result_reg: usize,  // where to store return value in caller's ints
+    pub saved_floats: Vec<f64>,
+    pub result_reg: usize,
 }
 
 const MAX_CALL_DEPTH: usize = 1024;
@@ -84,6 +79,7 @@ impl VM {
             frames: vec![], consts: vec![],
             func_blocks: vec![], func_params: vec![],
             func_entries: vec![], func_reg_counts: vec![], func_instr_base: vec![], current_func: 0,
+            block_starts: vec![], func_block_base: vec![],
             jump_args: vec![],
             instrs: vec![], output: vec![], debug: false,
             heap: GcHeap::new(),
@@ -99,6 +95,7 @@ impl VM {
         self.instrs.clear();
         self.func_blocks.clear(); self.func_params.clear();
         self.func_entries.clear(); self.func_reg_counts.clear(); self.func_instr_base.clear();
+        self.block_starts.clear(); self.func_block_base.clear();
         self.jump_args.clear();
         self.struct_bitmaps.clear();
         self.struct_field_counts.clear();
@@ -132,6 +129,7 @@ impl VM {
                     CpsTerminator::Jump(_, a) => a.clone(),
                     CpsTerminator::Branch(_, _, a, _, _) => { let mut all = a.clone(); all.push(0); all }
                     CpsTerminator::Call(_, a, _) => a.clone(),
+                    CpsTerminator::CallNative(_, a, _) => a.clone(),
                     _ => vec![],
                 };
                 self.jump_args.push(args);  // args for terminator
@@ -140,6 +138,11 @@ impl VM {
                 params[block.id] = block.params.clone();
             }
             let entry_ip = blocks[func.entry].0;
+            // Build flat block_starts before moving blocks
+            self.func_block_base.push(self.block_starts.len());
+            for b in &blocks {
+                self.block_starts.push(b.0);
+            }
             self.func_blocks.push(blocks);
             self.func_params.push(params);
             self.func_entries.push(entry_ip);
@@ -150,7 +153,7 @@ impl VM {
     }
 
     fn block_ip(&self, block_id: usize) -> usize {
-        self.func_blocks[self.current_func][block_id].0
+        self.block_starts[self.func_block_base[self.current_func] + block_id]
     }
 
     fn jump_args(&self, abs_ip: usize) -> &[usize] {
@@ -159,6 +162,7 @@ impl VM {
 
     fn bind_params(&mut self, block_id: usize, args: &[usize]) {
         let params = &self.func_params[self.current_func][block_id];
+        if params.is_empty() && args.is_empty() { return; }
         for (i, &arg_reg) in args.iter().enumerate() {
             if i < params.len() {
                 self.regs.ints[params[i]] = self.regs.ints[arg_reg];
@@ -194,59 +198,60 @@ impl VM {
 
             match op {
                 // ── 整数算术 ──
-                0x00 => { let (a,b,c)=decode_rrr(inst); self.regs.ints[a]=self.regs.ints[b].wrapping_add(self.regs.ints[c]); }
-                0x01 => { let (a,b,c)=decode_rrr(inst); self.regs.ints[a]=self.regs.ints[b].wrapping_sub(self.regs.ints[c]); }
-                0x02 => { let (a,b,c)=decode_rrr(inst); self.regs.ints[a]=self.regs.ints[b].wrapping_mul(self.regs.ints[c]); }
-                0x03 => { let (a,b,c)=decode_rrr(inst); if self.regs.ints[c]==0 {return Err(RuntimeError::DivisionByZero)} self.regs.ints[a]=self.regs.ints[b]/self.regs.ints[c]; }
-                0x04 => { let (a,b,c)=decode_rrr(inst); if self.regs.ints[c]==0 {return Err(RuntimeError::DivisionByZero)} self.regs.ints[a]=self.regs.ints[b]%self.regs.ints[c]; }
-                0x05 => { let (a,b)=decode_rr(inst); self.regs.ints[a] = -self.regs.ints[b]; }
+                0x00 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; self.regs.ints[a]=self.regs.ints[b].wrapping_add(self.regs.ints[c]); }
+                0x01 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; self.regs.ints[a]=self.regs.ints[b].wrapping_sub(self.regs.ints[c]); }
+                0x02 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; self.regs.ints[a]=self.regs.ints[b].wrapping_mul(self.regs.ints[c]); }
+                0x03 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; if self.regs.ints[c]==0 {return Err(RuntimeError::DivisionByZero)} self.regs.ints[a]=self.regs.ints[b]/self.regs.ints[c]; }
+                0x04 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; if self.regs.ints[c]==0 {return Err(RuntimeError::DivisionByZero)} self.regs.ints[a]=self.regs.ints[b]%self.regs.ints[c]; }
+                0x05 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; self.regs.ints[a] = -self.regs.ints[b]; }
 
                 // ── 浮点 ──
-                0x08 => { let (a,b,c)=decode_rrr(inst); self.regs.floats[a]=self.regs.floats[b]+self.regs.floats[c]; }
-                0x09 => { let (a,b,c)=decode_rrr(inst); self.regs.floats[a]=self.regs.floats[b]-self.regs.floats[c]; }
-                0x0A => { let (a,b,c)=decode_rrr(inst); self.regs.floats[a]=self.regs.floats[b]*self.regs.floats[c]; }
-                0x0B => { let (a,b,c)=decode_rrr(inst); self.regs.floats[a]=self.regs.floats[b]/self.regs.floats[c]; }
-                0x0C => { let (a,b)=decode_rr(inst); self.regs.floats[a] = -self.regs.floats[b]; }
+                0x08 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; let f=self.regs.floats[b]+self.regs.floats[c]; self.regs.floats[a]=f; self.regs.ints[a]=f.to_bits() as i64; }
+                0x09 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; let f=self.regs.floats[b]-self.regs.floats[c]; self.regs.floats[a]=f; self.regs.ints[a]=f.to_bits() as i64; }
+                0x0A => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; let f=self.regs.floats[b]*self.regs.floats[c]; self.regs.floats[a]=f; self.regs.ints[a]=f.to_bits() as i64; }
+                0x0B => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; let f=self.regs.floats[b]/self.regs.floats[c]; self.regs.floats[a]=f; self.regs.ints[a]=f.to_bits() as i64; }
+                0x0C => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let f=-self.regs.floats[b]; self.regs.floats[a]=f; self.regs.ints[a]=f.to_bits() as i64; }
 
                 // ── 比较 ──
-                0x10 => { let (a,b,c)=decode_rrr(inst); self.regs.ints[a]=(self.regs.ints[b]==self.regs.ints[c]) as i64; }
-                0x11 => { let (a,b,c)=decode_rrr(inst); self.regs.ints[a]=(self.regs.ints[b]<self.regs.ints[c]) as i64; }
-                0x12 => { let (a,b,c)=decode_rrr(inst); self.regs.ints[a]=(self.regs.ints[b]<=self.regs.ints[c]) as i64; }
-                0x13 => { let (a,b,c)=decode_rrr(inst); self.regs.floats[a]=(self.regs.floats[b]==self.regs.floats[c]) as u64 as f64; }
-                0x14 => { let (a,b,c)=decode_rrr(inst); self.regs.floats[a]=(self.regs.floats[b]<self.regs.floats[c]) as u64 as f64; }
+                0x10 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; self.regs.ints[a]=(self.regs.ints[b]==self.regs.ints[c]) as i64; }
+                0x11 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; self.regs.ints[a]=(self.regs.ints[b]<self.regs.ints[c]) as i64; }
+                0x12 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; self.regs.ints[a]=(self.regs.ints[b]<=self.regs.ints[c]) as i64; }
+                0x13 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; self.regs.floats[a]=(self.regs.floats[b]==self.regs.floats[c]) as u64 as f64; }
+                0x14 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; self.regs.floats[a]=(self.regs.floats[b]<self.regs.floats[c]) as u64 as f64; }
 
                 // ── Not ──
-                0x15 => { let (a,b)=decode_rr(inst); self.regs.ints[a] = (self.regs.ints[b] == 0) as i64; }
-                0x16 => { let (a,b,c)=decode_rrr(inst); self.regs.ints[a]=(self.regs.ints[b]!=self.regs.ints[c]) as i64; }
+                0x15 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; self.regs.ints[a] = (self.regs.ints[b] == 0) as i64; }
+                0x16 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; let c=(inst&0xFF) as usize; self.regs.ints[a]=(self.regs.ints[b]!=self.regs.ints[c]) as i64; }
 
                 // ── 字符串 ──
-                0x18 => { let (a,b)=decode_rr(inst); self.regs.ints[a]=self.regs.ints[b].wrapping_add(0); }
+                0x18 => { let a=((inst>>17)&0xFF) as usize; let b=((inst>>8)&0x1FF) as usize; self.regs.ints[a]=self.regs.ints[b].wrapping_add(0); }
 
                 // ── 转换 ──
-                0x20 => { let (d,s)=decode_rr(inst); self.regs.floats[d]=self.regs.ints[s] as f64; }
-                0x21 => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.floats[s] as i64; }
-                0x22 => { // itos
-                    let (d,s)=decode_rr(inst);
-                    let s = format!("{}", self.regs.ints[s]);
-                    let hid = self.alloc_heap(HeapObj::String(s));
+                0x20 => { let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize; let f=self.regs.ints[s] as f64; self.regs.floats[d]=f; self.regs.ints[d]=f.to_bits() as i64; }
+                0x21 => { let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize; let f=self.regs.floats[s]; self.regs.ints[d]=f as i64; self.regs.floats[d]=f; }
+                0x22 => { // itos — try float first since float ops dual-write
+                    let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize;
+                    let f = self.regs.floats[s];
+                    let st = if f != 0.0 { format!("{}", f) } else { format!("{}", self.regs.ints[s]) };
+                    let hid = self.alloc_heap(HeapObj::String(st));
                     self.regs.ints[d] = hid;
                 }
                 0x23 => { // ftos
-                    let (d,s)=decode_rr(inst);
+                    let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize;
                     let s = format!("{}", self.regs.floats[s]);
                     let hid = self.alloc_heap(HeapObj::String(s));
                     self.regs.ints[d] = hid;
                 }
-                0x24 => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.ints[s]; } // stoi placeholder
+                0x24 => { let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize; self.regs.ints[d]=self.regs.ints[s]; } // stoi placeholder
 
                 // ── 数据移动 ──
-                0x30 => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.ints[s]; }
+                0x30 => { let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize; self.regs.ints[d]=self.regs.ints[s]; self.regs.floats[d]=self.regs.floats[s]; }
                 0x31 => {
                     let d=((inst>>17)&0xFF) as usize;
                     self.regs.ints[d] = (inst & 0x1FFFF) as i64;
                 }
                 0x32 => {
-                    let (d,idx)=decode_rr(inst);
+                    let d=((inst>>17)&0xFF) as usize; let idx=((inst>>8)&0xFF) as usize;
                     match &self.consts[idx] {
                         Constant::Int(n) => self.regs.ints[d] = *n,
                         Constant::Float(f) => self.regs.floats[d] = *f,
@@ -281,14 +286,14 @@ impl VM {
 
                 // ── 字段访问 ──
                 0x36 => { // GetField(dst, src, idx)
-                    let (d,s,idx)=decode_rrr(inst);
+                    let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize; let idx=(inst&0xFF) as usize;
                     let hid = self.regs.ints[s];
                     if let HeapObj::Struct(_, fields) = self.heap_get(hid) {
                         self.regs.ints[d] = *fields.get(idx).unwrap_or(&0);
                     }
                 }
                 0x37 => { // SetField(dst, src, idx, val)
-                    let (d,s,idx)=decode_rrr(inst);
+                    let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize; let idx=(inst&0xFF) as usize;
                     let hid = self.regs.ints[s];
                     let val = self.regs.ints[d];
 
@@ -319,7 +324,7 @@ impl VM {
 
                 // ── 索引 ──
                 0x38 => { // IndexGet(dst, obj, idx)
-                    let (d,o,i)=decode_rrr(inst);
+                    let d=((inst>>17)&0xFF) as usize; let o=((inst>>8)&0x1FF) as usize; let i=(inst&0xFF) as usize;
                     let hid = self.regs.ints[o];
                     let index = self.regs.ints[i] as usize;
                     match self.heap_get(hid) {
@@ -331,8 +336,8 @@ impl VM {
                 }
 
                 // ── 装箱/拆箱 ──
-                0x3A => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.ints[s]; } // box
-                0x3B => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.ints[s]; } // unbox
+                0x3A => { let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize; self.regs.ints[d]=self.regs.ints[s]; self.regs.floats[d]=self.regs.floats[s]; } // box
+                0x3B => { let d=((inst>>17)&0xFF) as usize; let s=((inst>>8)&0x1FF) as usize; self.regs.ints[d]=self.regs.ints[s]; self.regs.floats[d]=self.regs.floats[s]; } // unbox
 
                 // ── 控制流 ──
                 0x40 => {
@@ -355,20 +360,19 @@ impl VM {
                     let cont_block = (inst & 0x1FFFF) as usize;
                     if self.frames.len() >= MAX_CALL_DEPTH { return Err(RuntimeError::StackOverflow); }
                     let callee_regs = self.func_reg_counts[func_idx];
-                    // Expand callee registers
                     let mut callee_ints = vec![0; callee_regs];
+                    let mut callee_floats = vec![0.0; callee_regs];
                     let args = &self.jump_args(ip - 1).to_vec();
-                    if self.debug { eprintln!("[CALL] func={} callee_regs={} args={:?} caller_ints[..10]={:?}", func_idx, callee_regs, args, &self.regs.ints[..std::cmp::min(10, self.regs.ints.len())]); }
                     for (i, &arg_reg) in args.iter().enumerate() {
-                        if i < callee_regs { callee_ints[i] = self.regs.ints[arg_reg]; }
+                        if i < callee_regs { callee_ints[i] = self.regs.ints[arg_reg]; callee_floats[i] = self.regs.floats[arg_reg]; }
                     }
-                    if self.debug { eprintln!("[CALL] callee_ints={:?}", callee_ints); }
-                    // Save caller ints and switch to callee
                     let saved_ints = std::mem::replace(&mut self.regs.ints, callee_ints);
+                    let saved_floats = std::mem::replace(&mut self.regs.floats, callee_floats);
                     self.frames.push(CallFrame {
                         func_idx: self.current_func,
                         ret_block: cont_block,
                         saved_ints,
+                        saved_floats,
                         result_reg: 0,
                     });
                     self.current_func = func_idx;
@@ -378,18 +382,35 @@ impl VM {
                 0x52 => { // ret
                     let r = ((inst >> 17) & 0xFF) as usize;
                     if let Some(frame) = self.frames.pop() {
-                        let result = self.regs.ints[r];
+                        let result_i = self.regs.ints[r];
+                        let result_f = self.regs.floats[r];
                         self.regs.ints = frame.saved_ints;
+                        self.regs.floats = frame.saved_floats;
                         self.current_func = frame.func_idx;
-                        // Store result at caller's expected slot
                         if self.regs.ints.len() <= frame.result_reg {
                             self.regs.ints.resize(frame.result_reg + 1, 0);
+                            self.regs.floats.resize(frame.result_reg + 1, 0.0);
                         }
-                        self.regs.ints[frame.result_reg] = result;
+                        self.regs.ints[frame.result_reg] = result_i;
+                        self.regs.floats[frame.result_reg] = result_f;
                         ip = self.block_ip(frame.ret_block);
                     } else {
                         return Ok(self.regs.ints[r]);
                     }
+                }
+
+                // ── native call ──
+                0x5F => {
+                    let fi = ((inst >> 17) & 0xFF) as usize;
+                    let ret_block = (inst & 0x1FFFF) as usize;
+                    let args: Vec<i64> = self.jump_args(ip - 1).iter()
+                        .map(|&r| self.regs.ints[r]).collect();
+                    if fi < self.natives.len() {
+                        let result = (self.natives[fi].1)(&args).unwrap_or(0);
+                        self.regs.ints[0] = result;
+                        self.regs.floats[0] = f64::from_bits(result as u64);
+                    }
+                    ip = self.block_ip(ret_block);
                 }
 
                 // ── async ──
@@ -403,6 +424,7 @@ impl VM {
                         func_idx: self.current_func,
                         ret_block: 0,
                         saved_ints: self.regs.ints.clone(),
+                        saved_floats: self.regs.floats.clone(),
                         result_reg: 0,
                     };
                     self.scheduler.suspend(cf, ip);
@@ -471,6 +493,7 @@ fn encode_term(term: &CpsTerminator) -> Result<u32, String> {
         CpsTerminator::Suspend => encode(0x61, 0, 0, 0),
         CpsTerminator::Return(r) => encode(0x52, *r as u32, 0, 0),
         CpsTerminator::Call(fi, _, ret) => encode(0x50, *fi as u32, 0, *ret as u32),
+        CpsTerminator::CallNative(fi, _, ret) => encode(0x5F, *fi as u32, 0, *ret as u32),
         CpsTerminator::TailCall(_, _) => encode(0x51, 0, 0, 0),
     })
 }

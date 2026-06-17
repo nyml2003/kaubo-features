@@ -199,6 +199,14 @@ impl CpsBuilder {
                 });
                 Ok((usize::MAX, usize::MAX, 0))
             }
+            Stmt::ImplBlock { struct_name, methods } => {
+                for m in methods {
+                    let func_idx = self.build_lambda_as_function(&m.body)?;
+                    let full_name = format!("{}.{}", struct_name, m.name);
+                    self.ctx.func_map.insert(full_name, func_idx);
+                }
+                Ok((usize::MAX, usize::MAX, 0))
+            }
             _ => Ok((usize::MAX, usize::MAX, 0)),
         }
     }
@@ -367,11 +375,33 @@ impl CpsBuilder {
                 let (entry, continu, obj_reg) = self.build_expr(object)?;
                 let dst = self.ctx.alloc();
                 let id = self.ctx.new_block();
+                let is_float = contains_to_float(object);
+                let sop = if is_float { CpsBinOp::FToS } else { CpsBinOp::IToS };
                 self.ctx.set_block(id, CpsBlock { id, params: vec![],
-                    instrs: vec![CpsInstr::BinOp(dst, CpsBinOp::IToS, obj_reg, 0)],
+                    instrs: vec![CpsInstr::BinOp(dst, sop, obj_reg, 0)],
                     term: cps_emit::emit_return(dst) });
                 self.ctx.chain(continu, id)?;
                 return Ok((entry, id, dst));
+            }
+            if field == "to_float" && args.is_empty() {
+                let (entry, continu, obj_reg) = self.build_expr(object)?;
+                let dst = self.ctx.alloc();
+                let id = self.ctx.new_block();
+                self.ctx.set_block(id, CpsBlock { id, params: vec![],
+                    instrs: vec![CpsInstr::BinOp(dst, CpsBinOp::IToF, obj_reg, 0)],
+                    term: cps_emit::emit_return(dst) });
+                self.ctx.chain(continu, id)?;
+                return Ok((entry, id, dst));
+            }
+            // Try struct method call: obj.method(args)
+            for sd in &self.structs.clone() {
+                let full_name = format!("{}.{}", sd.name, field);
+                if let Some(&func_idx) = self.ctx.func_map.get(&full_name) {
+                    // Build args: [self_obj, ...user_args]
+                    let mut all_args: Vec<Expr> = vec![object.as_ref().clone()];
+                    all_args.extend_from_slice(args);
+                    return self.build_call_with_idx(func_idx, &all_args);
+                }
             }
         }
 
@@ -401,24 +431,13 @@ impl CpsBuilder {
             if let Some(&func_idx) = self.ctx.func_map.get(name) {
                 return self.build_call_with_idx(func_idx, args);
             }
+            // Check native functions
+            if let Some(ni) = get_native(name) {
+                return self.build_native_call(ni, args);
+            }
+            return Err(format!("undefined function '{}'", name));
         }
-        // Fallback: evaluate args inline
-        let mut entry = 0;
-        let mut prev_c: Option<usize> = None;
-        let mut last_reg = 0;
-        for arg in args {
-            let (e, c, r) = self.build_expr(arg)?;
-            if entry == 0 { entry = e; }
-            if let Some(t) = prev_c { self.ctx.chain(t, e)?; }
-            prev_c = Some(c);
-            last_reg = r;
-        }
-        let r = self.ctx.alloc();
-        let id = self.ctx.new_block();
-        self.ctx.set_block(id, CpsBlock { id, params: vec![],
-            instrs: vec![CpsInstr::Move(r, last_reg)], term: cps_emit::emit_return(r) });
-        if let Some(t) = prev_c { self.ctx.chain(t, id)?; }
-        Ok((if entry != 0 { entry } else { id }, id, r))
+        Err(format!("call target is not a simple name"))
     }
 
     fn build_call_with_idx(&mut self, func_idx: usize, args: &[Expr]) -> Result<(usize, usize, usize), String> {
@@ -447,6 +466,22 @@ impl CpsBuilder {
         Ok((entry, move_block, result_reg))
     }
 
+    fn build_native_call(&mut self, native_idx: usize, args: &[Expr]) -> Result<(usize, usize, usize), String> {
+        if args.is_empty() { return Err("native call needs at least 1 arg".into()); }
+        let (entry, continu, reg) = self.build_expr(&args[0])?;
+        let result_reg = self.ctx.alloc();
+        let move_block = self.ctx.new_block();
+        self.ctx.set_block(move_block, CpsBlock { id: move_block, params: vec![],
+            instrs: vec![CpsInstr::Move(result_reg, 0)],
+            term: cps_emit::emit_return(result_reg) });
+        let call_block = self.ctx.new_block();
+        self.ctx.set_block(call_block, CpsBlock { id: call_block, params: vec![],
+            instrs: vec![],
+            term: CpsTerminator::CallNative(native_idx, vec![reg], move_block) });
+        self.ctx.chain(continu, call_block)?;
+        Ok((entry, move_block, result_reg))
+    }
+
     // ── Complex expressions (delegate to ctx) ──
 
     fn build_binary(&mut self, left: &Expr, op: BinOp, right: &Expr) -> Result<(usize, usize, usize), String> {
@@ -464,7 +499,7 @@ impl CpsBuilder {
         self.ctx.set_block(id, CpsBlock { id, params: vec![], instrs, term: cps_emit::emit_return(r) });
         if br != 0 { self.ctx.chain(cl, br)?; self.ctx.chain(cr, id)?; }
         else { self.ctx.chain(cl, id)?; }
-        let entry = if bl != 0 { bl } else if br != 0 { br } else { id };
+        let entry = bl;
         Ok((entry, id, r))
     }
 
@@ -682,6 +717,32 @@ fn bin_op_to_cps(op: BinOp) -> CpsBinOp {
     }
 }
 
+fn contains_to_float(expr: &Expr) -> bool {
+    match expr {
+        Expr::Member { field, .. } if field == "to_float" => true,
+        Expr::Call { func, .. } if contains_to_float(func) => true,
+        Expr::Binary { left, right, .. } => contains_to_float(left) || contains_to_float(right),
+        Expr::Unary { right, .. } => contains_to_float(right),
+        Expr::Block(stmts) => stmts.iter().any(|s| match s {
+            kaubo_syntax::ast::Stmt::ExprStmt(e) => contains_to_float(e),
+            _ => false,
+        }),
+        Expr::If { cond, then_branch, else_branch, .. } => {
+            contains_to_float(cond) || contains_to_float(then_branch)
+                || else_branch.as_ref().map_or(false, |e| contains_to_float(e))
+        }
+        _ => false,
+    }
+}
+
+fn get_native(name: &str) -> Option<usize> {
+    match name {
+        "sqrt" => Some(3), "sin" => Some(4), "cos" => Some(5),
+        "floor" => Some(6), "ceil" => Some(7),
+        _ => None,
+    }
+}
+
 fn is_heap_type(ty: &TypeExpr) -> bool {
     match ty {
         TypeExpr::Named(name) => {
@@ -700,7 +761,7 @@ fn remap_term_ids(block: &mut CpsBlock, map: &HashMap<usize, usize>) {
             if let Some(&n) = map.get(tb) { *tb = n; }
             if let Some(&n) = map.get(fb) { *fb = n; }
         }
-        CpsTerminator::Call(_, _, ret) => { if let Some(&n) = map.get(ret) { *ret = n; } }
+        CpsTerminator::Call(_, _, ret) | CpsTerminator::CallNative(_, _, ret) => { if let Some(&n) = map.get(ret) { *ret = n; } }
         _ => {}
     }
 }
