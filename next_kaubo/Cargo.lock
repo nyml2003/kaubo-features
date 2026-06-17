@@ -15,6 +15,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -42,6 +52,7 @@ name = "kaubo-ir"
 version = "0.1.0"
 dependencies = [
  "kaubo-syntax",
+ "serde",
 ]
 
 [[package]]
@@ -78,6 +89,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaubo-wasm"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "js-sys",
+ "kaubo-infer",
+ "kaubo-ir",
+ "kaubo-syntax",
+ "kaubo-vm",
+ "kaubo-web-api",
+ "once_cell",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "kaubo-web-api"
+version = "0.1.0"
+dependencies = [
+ "kaubo-infer",
+ "kaubo-syntax",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kaubo-workspace"
 version = "0.1.0"
 dependencies = [
@@ -92,6 +129,7 @@ dependencies = [
  "kaubo-ir",
  "kaubo-syntax",
  "kaubo-vm",
+ "serde_json",
 ]
 
 [[package]]
@@ -137,6 +175,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]

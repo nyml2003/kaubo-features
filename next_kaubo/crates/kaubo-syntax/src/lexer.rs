@@ -107,6 +107,59 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn scan_dot(&mut self, line: usize, col: usize) -> Token {
+        Token::new(TokenKind::Dot, ".".to_string(), line, col)
+    }
+
+    fn scan_minus_arrow(&mut self, line: usize, col: usize) -> Token {
+        if self.peek() == Some('>') {
+            self.advance();
+            Token::new(TokenKind::FatArrow, "->".into(), line, col)
+        } else {
+            Token::new(TokenKind::Minus, "-".into(), line, col)
+        }
+    }
+
+    fn scan_slash(&mut self, line: usize, col: usize) -> Token {
+        if self.peek() == Some('/') {
+            self.advance();
+            let comment = self.collect_line_comment();
+            return Token::new(TokenKind::Comment, comment, line, col);
+        }
+        if self.peek() == Some('*') {
+            self.advance();
+            let comment = self.collect_block_comment();
+            return Token::new(TokenKind::Comment, comment, line, col);
+        }
+        Token::new(TokenKind::Slash, "/".into(), line, col)
+    }
+
+    fn collect_line_comment(&mut self) -> String {
+        let mut s = String::new();
+        while let Some(c) = self.peek() {
+            if c == '\n' { break; }
+            s.push(c);
+            self.advance();
+        }
+        s
+    }
+
+    fn collect_block_comment(&mut self) -> String {
+        let mut s = String::new();
+        let mut depth = 1;
+        while let Some(c) = self.peek() {
+            s.push(c);
+            self.advance();
+            match c {
+                '/' if self.peek() == Some('*') => { s.push('*'); self.advance(); depth += 1; }
+                '*' if self.peek() == Some('/') => { s.push('/'); self.advance(); depth -= 1; if depth == 0 { return s; } }
+                '\n' => { self.line += 1; self.col = 1; }
+                _ => {}
+            }
+        }
+        s
+    }
+
     fn skip_line_comment(&mut self) {
         while let Some(c) = self.peek() {
             if c == '\n' { break; }
@@ -125,33 +178,6 @@ impl<'a> Lexer<'a> {
                 _ => {}
             }
         }
-    }
-
-    fn scan_dot(&mut self, line: usize, col: usize) -> Token {
-        Token::new(TokenKind::Dot, ".".to_string(), line, col)
-    }
-
-    fn scan_minus_arrow(&mut self, line: usize, col: usize) -> Token {
-        if self.peek() == Some('>') {
-            self.advance();
-            Token::new(TokenKind::FatArrow, "->".into(), line, col)
-        } else {
-            Token::new(TokenKind::Minus, "-".into(), line, col)
-        }
-    }
-
-    fn scan_slash(&mut self, line: usize, col: usize) -> Token {
-        if self.peek() == Some('/') {
-            self.advance();
-            self.skip_line_comment();
-            return self.next_token(); // skip, get next real token
-        }
-        if self.peek() == Some('*') {
-            self.advance();
-            self.skip_block_comment();
-            return self.next_token();
-        }
-        Token::new(TokenKind::Slash, "/".into(), line, col)
     }
 
     fn scan_eq(&mut self, line: usize, col: usize) -> Token {
@@ -345,7 +371,7 @@ mod tests {
     #[test]
     fn test_comments() {
         let ks = kinds("// line comment\n42 /* block */ 0");
-        assert_eq!(ks, vec![TokenKind::IntLiteral, TokenKind::IntLiteral]);
+        assert_eq!(ks, vec![TokenKind::Comment, TokenKind::IntLiteral, TokenKind::Comment, TokenKind::IntLiteral]);
     }
 
     #[test]

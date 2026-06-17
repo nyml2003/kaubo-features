@@ -129,11 +129,11 @@ fn remap_term_regs(term: &mut CpsTerminator, reg_map: &HashMap<usize, usize>) {
 mod tests {
     use super::*;
     use kaubo_syntax::parser::Parser;
-    use crate::lowering::lower_module;
+    use crate::cps_build::build_module;
 
     fn lower_and_flatten(src: &str) -> CpsModule {
         let m = Parser::new(src).parse().unwrap();
-        let mut cps = lower_module(&m).unwrap();
+        let mut cps = build_module(&m).unwrap();
         flatten_module(&mut cps);
         cps
     }

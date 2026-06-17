@@ -44,7 +44,7 @@ impl Parser {
             TokenKind::Impl => self.parse_impl(),
             TokenKind::Export => { self.bump(); Ok(Stmt::ExportStmt(Box::new(self.parse_top()?))) }
             TokenKind::Import => self.parse_import(),
-            TokenKind::Semicolon => { self.bump(); self.parse_top() }
+            TokenKind::Semicolon | TokenKind::Comment => { self.bump(); self.parse_top() }
             _ => {
                 let expr = self.parse_expr()?;
                 self.expect_semi()?;
@@ -341,6 +341,7 @@ impl Parser {
             match self.current_kind() {
                 TokenKind::Const => stmts.push(self.parse_const()?),
                 TokenKind::Var => stmts.push(self.parse_var()?),
+                TokenKind::Comment => { self.bump(); }
                 _ => {
                     let expr = self.parse_expr()?;
                     self.skip_semis();
@@ -455,7 +456,7 @@ impl Parser {
     }
 
     fn skip_semis(&mut self) {
-        while self.current_kind() == TokenKind::Semicolon { self.bump(); }
+        while matches!(self.current_kind(), TokenKind::Semicolon | TokenKind::Comment) { self.bump(); }
     }
 }
 

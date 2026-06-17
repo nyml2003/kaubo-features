@@ -37,17 +37,6 @@
               "match": "\\\\(n|r|t|\\\\|\"|')"
             }
           ]
-        },
-        {
-          "name": "string.quoted.single.kaubo",
-          "begin": "'",
-          "end": "'",
-          "patterns": [
-            {
-              "name": "constant.character.escape.kaubo",
-              "match": "\\\\(n|r|t|\\\\|\"|')"
-            }
-          ]
         }
       ]
     },
@@ -55,15 +44,15 @@
       "patterns": [
         {
           "name": "keyword.control.kaubo",
-          "match": "\\b(if|else|elif|while|for|return|in|break|continue|pass|yield)\\b"
+          "match": "\\b(if|else|while|for|return|in|break|continue|async|await)\\b"
         },
         {
-          "name": "keyword.struct.kaubo",
-          "match": "\\b(struct|impl|operator)\\b"
+          "name": "keyword.declaration.kaubo",
+          "match": "\\b(const|var|export|import|from|as|struct|impl|self)\\b"
         },
         {
-          "name": "keyword.other.kaubo",
-          "match": "\\b(var|module|pub|import|as|from|and|or|not|print|json|true|false|null)\\b"
+          "name": "keyword.logical.kaubo",
+          "match": "\\b(and|or|not)\\b"
         }
       ]
     },
@@ -95,7 +84,7 @@
       "patterns": [
         {
           "name": "keyword.operator.comparison.kaubo",
-          "match": "==|!=|>=|<=|=>"
+          "match": "==|!=|>=|<=|->|>>|\\|>"
         },
         {
           "name": "keyword.operator.kaubo",

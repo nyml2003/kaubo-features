@@ -1,8 +1,8 @@
 /* @ts-self-types="./kaubo_wasm.d.ts" */
 
 /**
- * Compile Kaubo source code, store chunk in memory.
- * Returns number of bytecode instructions (for display).
+ * Compile source to bytecode, return instruction count.
+ * Throws JsValue on parse/infer/build failure.
  * @param {string} source
  * @returns {number}
  */
@@ -17,14 +17,7 @@ export function compile(source) {
 }
 
 /**
- * Diagnose Kaubo source code — returns structured errors as JSON.
- *
- * Takes source code, runs lexer + parser + type checker.
- * Returns a JSON array of diagnostic objects:
- *   `[{"severity":"error","line":1,"column":3,"from":2,"to":5,"message":"..."}]`
- *
- * `from`/`to` are UTF-16 code unit offsets (compatible with CodeMirror / VSCode).
- * If no errors, returns `"[]"`.
+ * Parse + type-check, return JSON error array or "[]".
  * @param {string} source
  * @returns {string}
  */
@@ -44,12 +37,7 @@ export function diagnose(source) {
 }
 
 /**
- * Get hover information for the token at the given UTF-16 offset.
- *
- * Returns a JSON object with token kind, range, and description,
- * or `"null"` if no token found at that offset.
- *
- * Format: `{"kind":"keyword","from":0,"to":3,"description":"variable declaration"}`
+ * Get hover information for token at UTF-16 offset.
  * @param {string} source
  * @param {number} offset
  * @returns {string}
@@ -69,18 +57,12 @@ export function hover(source, offset) {
     }
 }
 
-/**
- * Initialize panic hook so errors show in browser console instead of `unreachable`
- */
 export function init() {
     wasm.init();
 }
 
 /**
- * Tokenize Kaubo source and return a JSON array of tokens.
- *
- * Each token: `{"kind":"keyword","from":0,"to":3}`
- * Positions are UTF-16 code unit offsets (compatible with JavaScript / CodeMirror).
+ * Tokenize source, return JSON array of {kind, from, to}.
  * @param {string} source
  * @returns {string}
  */
@@ -100,7 +82,8 @@ export function lex(source) {
 }
 
 /**
- * Run the most recently compiled chunk, returns stdout output
+ * Run previously compiled bytecode, return print() output.
+ * Throws JsValue on execution failure or if nothing was compiled.
  * @param {Uint8Array} _bytes
  * @returns {string}
  */
@@ -128,9 +111,6 @@ export function run(_bytes) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_be289d5034ed271b: function(arg0, arg1) {
-            throw new Error(getStringFromWasm0(arg0, arg1));
-        },
         __wbg_error_7534b8e9a36f1ab4: function(arg0, arg1) {
             let deferred0_0;
             let deferred0_1;

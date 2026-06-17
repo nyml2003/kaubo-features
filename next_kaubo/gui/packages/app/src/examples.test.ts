@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { examples } from "./examples";
 
 describe("examples", () => {
-  it("has 8 examples", () => {
-    expect(examples).toHaveLength(8);
+  it("has 9 examples", () => {
+    expect(examples).toHaveLength(9);
   });
 
   it("all examples have unique IDs", () => {

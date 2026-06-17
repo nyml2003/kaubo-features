@@ -4,10 +4,10 @@
     "body": ["var ${1:name} = ${2:value};"],
     "description": "Variable declaration"
   },
-  "var_typed": {
-    "prefix": "vart",
-    "body": ["var ${1:name}: ${2:Type} = ${3:value};"],
-    "description": "Variable declaration with type annotation"
+  "const": {
+    "prefix": "const",
+    "body": ["const ${1:name} = ${2:value};"],
+    "description": "Constant declaration"
   },
   "if": {
     "prefix": "if",
@@ -21,8 +21,8 @@
   },
   "if_elif": {
     "prefix": "ifel",
-    "body": ["if ${1:condition} {", "\t${2:body}", "} elif ${3:condition} {", "\t${4:body}", "} else {", "\t${5:body}", "}"],
-    "description": "If-elif-else statement"
+    "body": ["if ${1:condition} {", "\t${2:body}", "} else if ${3:condition} {", "\t${4:body}", "} else {", "\t${5:body}", "}"],
+    "description": "If-else if-else statement"
   },
   "while": {
     "prefix": "while",
@@ -39,11 +39,6 @@
     "body": ["|${1:params}| {", "\t${2:body}", "}"],
     "description": "Lambda expression"
   },
-  "typed_lambda": {
-    "prefix": "fnt",
-    "body": ["|${1:param}: ${2:Type}| -> ${3:ReturnType} {", "\t${4:body}", "}"],
-    "description": "Lambda with type annotations"
-  },
   "struct": {
     "prefix": "struct",
     "body": ["struct ${1:Name} {", "\t${2:field}: ${3:Type},", "}"],
@@ -51,8 +46,8 @@
   },
   "impl": {
     "prefix": "impl",
-    "body": ["impl ${1:Name} {", "\toperator ${2:op}(${3:params}) {", "\t\t${4:body}", "\t}", "}"],
-    "description": "Impl block with operator"
+    "body": ["impl ${1:Name} {", "\t${2:method}: |${3:self}, ${4:params}| {", "\t\t${5:body}", "\t},", "}"],
+    "description": "Impl block"
   },
   "fun_call": {
     "prefix": "call",
@@ -79,9 +74,29 @@
     "body": ["from \"${1:module}\" import { ${2:exports} };"],
     "description": "From-import statement"
   },
-  "print": {
+  "export": {
+    "prefix": "export",
+    "body": ["export ${1:const} ${2:name} = ${3:value};"],
+    "description": "Export declaration"
+  },
+  "async_fn": {
+    "prefix": "async",
+    "body": ["async |${1:params}| {", "\t${2:body}", "}"],
+    "description": "Async expression"
+  },
+  "await_expr": {
+    "prefix": "await",
+    "body": ["await ${1:expr};"],
+    "description": "Await expression"
+  },
+  "print_string": {
     "prefix": "print",
-    "body": ["print(${1:value});"],
-    "description": "Print statement"
+    "body": ["print(\"${1:value}\");"],
+    "description": "Print string"
+  },
+  "print_expr": {
+    "prefix": "prints",
+    "body": ["print(${1:expr}.to_string());"],
+    "description": "Print expression value"
   }
 }

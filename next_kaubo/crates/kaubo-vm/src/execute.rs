@@ -190,6 +190,8 @@ impl VM {
             let inst = self.instrs[ip]; ip += 1;
             let op = (inst >> 25) as u8;
 
+            if self.debug && cfg!(debug_assertions) { eprintln!("[VM fn={} ip={}] op={:#04x} inst={:#010x} ints[0..4]={:?}", self.current_func, ip-1, op, inst, &self.regs.ints[..4.min(self.regs.ints.len())]); }
+
             match op {
                 // ── 整数算术 ──
                 0x00 => { let (a,b,c)=decode_rrr(inst); self.regs.ints[a]=self.regs.ints[b].wrapping_add(self.regs.ints[c]); }
@@ -215,6 +217,7 @@ impl VM {
 
                 // ── Not ──
                 0x15 => { let (a,b)=decode_rr(inst); self.regs.ints[a] = (self.regs.ints[b] == 0) as i64; }
+                0x16 => { let (a,b,c)=decode_rrr(inst); self.regs.ints[a]=(self.regs.ints[b]!=self.regs.ints[c]) as i64; }
 
                 // ── 字符串 ──
                 0x18 => { let (a,b)=decode_rr(inst); self.regs.ints[a]=self.regs.ints[b].wrapping_add(0); }
@@ -222,8 +225,18 @@ impl VM {
                 // ── 转换 ──
                 0x20 => { let (d,s)=decode_rr(inst); self.regs.floats[d]=self.regs.ints[s] as f64; }
                 0x21 => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.floats[s] as i64; }
-                0x22 => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.ints[s]; } // itos placeholder
-                0x23 => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.floats[s] as i64; } // ftos placeholder
+                0x22 => { // itos
+                    let (d,s)=decode_rr(inst);
+                    let s = format!("{}", self.regs.ints[s]);
+                    let hid = self.alloc_heap(HeapObj::String(s));
+                    self.regs.ints[d] = hid;
+                }
+                0x23 => { // ftos
+                    let (d,s)=decode_rr(inst);
+                    let s = format!("{}", self.regs.floats[s]);
+                    let hid = self.alloc_heap(HeapObj::String(s));
+                    self.regs.ints[d] = hid;
+                }
                 0x24 => { let (d,s)=decode_rr(inst); self.regs.ints[d]=self.regs.ints[s]; } // stoi placeholder
 
                 // ── 数据移动 ──
@@ -339,7 +352,7 @@ impl VM {
                 // ── 调用 ──
                 0x50 => { // Call(func_idx, args, cont_block)
                     let func_idx = ((inst >> 17) & 0xFF) as usize;
-                    let cont_block = (inst & 0x1FFFFFF) as usize;
+                    let cont_block = (inst & 0x1FFFF) as usize;
                     if self.frames.len() >= MAX_CALL_DEPTH { return Err(RuntimeError::StackOverflow); }
                     let callee_regs = self.func_reg_counts[func_idx];
                     // Expand callee registers
@@ -426,7 +439,7 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
             CpsBinOp::DivInt=>0x03, CpsBinOp::ModInt=>0x04,
             CpsBinOp::FAdd=>0x08, CpsBinOp::FSub=>0x09, CpsBinOp::FMul=>0x0A, CpsBinOp::FDiv=>0x0B,
             CpsBinOp::FEq=>0x13, CpsBinOp::FLt=>0x14,
-            CpsBinOp::EqInt=>0x10, CpsBinOp::NeInt=>0x10,
+            CpsBinOp::EqInt=>0x10, CpsBinOp::NeInt=>0x16,
             CpsBinOp::LtInt=>0x11, CpsBinOp::LeInt=>0x12, CpsBinOp::GtInt=>0x12, CpsBinOp::GeInt=>0x12,
             CpsBinOp::IToF=>0x20, CpsBinOp::FToI=>0x21,
             CpsBinOp::IToS=>0x22, CpsBinOp::FToS=>0x23, CpsBinOp::SToI=>0x24,
@@ -654,5 +667,95 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
         let _ = vm.execute(0, 40).unwrap();
+    }
+
+    #[test]
+    fn test_itos() {
+        // IToS: convert i64 to heap string
+        let cps = simple_mod(
+            vec![
+                CpsInstr::LoadConst(0, 0),                    // r0 = 42
+                CpsInstr::BinOp(1, CpsBinOp::IToS, 0, 0),     // r1 = itos(r0)
+            ],
+            CpsTerminator::Return(1),
+            vec![Constant::Int(42)],
+            2,
+        );
+        let mut vm = VM::new(); vm.load(&cps).unwrap();
+        let r = vm.execute(0, 2).unwrap();
+        if let HeapObj::String(s) = vm.heap_get(r) {
+            assert_eq!(s, "42");
+        } else { panic!("expected heap string, got idx {}", r); }
+    }
+
+    #[test]
+    fn test_ftos() {
+        let cps = simple_mod(
+            vec![
+                CpsInstr::LoadConst(0, 0),                    // r0 = 3.14
+                CpsInstr::BinOp(1, CpsBinOp::FToS, 0, 0),     // r1 = ftos(r0)
+            ],
+            CpsTerminator::Return(1),
+            vec![Constant::Float(3.14)],
+            2,
+        );
+        let mut vm = VM::new(); vm.load(&cps).unwrap();
+        let r = vm.execute(0, 2).unwrap();
+        if let HeapObj::String(s) = vm.heap_get(r) {
+            assert_eq!(s, "3.14");
+        } else { panic!("expected heap string"); }
+    }
+
+    fn two_func_mod(lambda_instrs: Vec<CpsInstr>, lambda_term: CpsTerminator, lambda_regs: usize) -> CpsModule {
+        // main: calls lambda (func 0), reads result from reg 0
+        // lambda: executes lambda_instrs, ends with lambda_term
+        let main = CpsFunction {
+            name: "main".into(),
+            blocks: vec![CpsBlock {
+                id: 0, params: vec![], instrs: vec![],
+                term: CpsTerminator::Call(0, vec![], 1),
+            }, CpsBlock {
+                id: 1, params: vec![], instrs: vec![],
+                term: CpsTerminator::Return(0),
+            }],
+            entry: 0, reg_count: 2,
+        };
+        let lambda = CpsFunction {
+            name: "lambda".into(),
+            blocks: vec![CpsBlock {
+                id: 0, params: vec![], instrs: lambda_instrs,
+                term: lambda_term,
+            }],
+            entry: 0, reg_count: lambda_regs,
+        };
+        CpsModule {
+            functions: vec![lambda, main], // lambda first (func_idx=0), main last (entry)
+            constants: vec![Constant::Int(42), Constant::String("hi".into())],
+            structs: vec![],
+        }
+    }
+
+    #[test]
+    fn vm_call_var_return() {
+        let cps = two_func_mod(
+            vec![CpsInstr::LoadConst(1, 0)], // LoadConst(r1, const_int(42))
+            CpsTerminator::Return(1),
+            2,
+        );
+        let mut vm = VM::new(); vm.load(&cps).unwrap();
+        let result = vm.execute(1, 2).unwrap();
+        assert_eq!(result, 42, "lambda should return 42");
+    }
+
+    #[test]
+    fn vm_call_print_inside() {
+        let cps = two_func_mod(
+            vec![CpsInstr::LoadConst(0, 1), CpsInstr::Print(0)], // LoadConst(r0, "hi"), Print(r0)
+            CpsTerminator::Return(0),
+            1,
+        );
+        let mut vm = VM::new(); vm.load(&cps).unwrap();
+        vm.execute(1, 2).unwrap();
+        assert!(vm.output.iter().any(|s| s.contains("hi")), "print inside lambda: output={:?}", vm.output);
     }
 }

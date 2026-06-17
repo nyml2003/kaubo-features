@@ -139,11 +139,6 @@ export function createKauboStore() {
     });
     try {
       const len = doCompile(code());
-      if (len == null) {
-        setError("WASM not loaded yet");
-        setStatus("idle");
-        return;
-      }
       batch(() => {
         setStatus("ready");
         setOutput(`Compiled: ${String(len)} bytecodes\n`);
@@ -166,19 +161,8 @@ export function createKauboStore() {
     });
     requestAnimationFrame(() => {
       try {
-        const len = doCompile(code());
-        if (len == null) {
-          setError("WASM not loaded yet");
-          setStatus("idle");
-          return;
-        }
-
+        doCompile(code());
         const out = doRun();
-        if (out == null) {
-          setError("WASM not loaded yet");
-          setStatus("idle");
-          return;
-        }
         batch(() => {
           setStatus("ready");
           setOutput((prev) => prev + out);

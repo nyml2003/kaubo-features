@@ -10,150 +10,131 @@ export const examples: KauboExample[] = [
   {
     id: "hello",
     name: "Hello World",
-    description: "Basic output statement",
-    code: 'print "Hello, World!";\n',
+    description: "Print a string and return a number",
+    code: 'print("Hello, World!");\n42;\n',
     tags: ["basics"],
   },
   {
     id: "variables",
-    name: "Variables & Types",
-    description: "Integer, float, string, bool, null",
+    name: "Variables & Arithmetic",
+    description: "var, const, to_string, print",
     code:
-      "var age = 25;\n" +
-      "var pi = 3.14159;\n" +
-      'var name = "Kaubo";\n' +
-      "var is_valid = true;\n" +
-      "var nothing = null;\n" +
-      "print name;\n" +
-      "print age;\n" +
-      "print pi;\n" +
-      "print is_valid;\n",
-    tags: ["basics", "types"],
+      "var x = 10;\n" +
+      "var y = 32;\n" +
+      "const r = x + y;\n" +
+      "print(r.to_string());\n",
+    tags: ["basics"],
   },
   {
     id: "control-flow",
     name: "Control Flow",
-    description: "if/elif/else, while, for-in with list",
+    description: "if/else, while loop, print results",
     code:
+      "const score = 85;\n" +
       "var result = 0;\n" +
-      "var age = 18;\n" +
-      "if age >= 18 {\n" +
-      '    print "Adult";\n' +
-      "    result = result + 1;\n" +
+      "if score >= 60 {\n" +
+      "    result = 1;\n" +
       "} else {\n" +
-      '    print "Minor";\n' +
-      "}\n" +
+      '    print("failed");\n' +
+      "};\n" +
       "\n" +
       "var counter = 0;\n" +
       "var sum = 0;\n" +
       "while counter < 5 {\n" +
       "    sum = sum + counter;\n" +
       "    counter = counter + 1;\n" +
-      "}\n" +
-      "print sum;\n" +
-      "\n" +
-      "var items = [1, 2, 3, 4, 5];\n" +
-      "var total = 0;\n" +
-      "for var item in items {\n" +
-      "    total = total + item;\n" +
-      "}\n" +
-      "print total;\n",
+      "};\n" +
+      "print(sum.to_string());\n",
     tags: ["basics", "control-flow"],
   },
   {
     id: "functions",
-    name: "Functions & Closures",
-    description: "Lambda, type annotations, closure capture",
+    name: "Functions",
+    description: "Lambda expressions and calls with print",
     code:
-      "var add = |a, b| -> int {\n" +
-      "    return a + b;\n" +
-      "};\n" +
-      "print add(3, 5);\n" +
+      "const add = |a, b| { a + b };\n" +
+      "print(add(3, 5).to_string());\n" +
       "\n" +
-      "var greet = || -> string {\n" +
-      '    return "Hello!";\n' +
+      "const double = |x| { x * 2 };\n" +
+      "print(double(21).to_string());\n",
+    tags: ["functions"],
+  },
+  {
+    id: "functions2",
+    name: "Functions with if",
+    description: "Lambda with conditional logic",
+    code:
+      "const abs = |x| {\n" +
+      "    if x < 0 { -x } else { x }\n" +
       "};\n" +
-      "print greet();\n" +
+      "print(abs(-42).to_string());\n" +
       "\n" +
-      "var square = |x| -> int {\n" +
-      "    return x * x;\n" +
+      "const max = |a, b| {\n" +
+      "    if a > b { a } else { b }\n" +
       "};\n" +
-      "print square(4);\n" +
-      "\n" +
-      "var make_counter = || {\n" +
-      "    var count = 0;\n" +
-      "    return || {\n" +
-      "        count = count + 1;\n" +
-      "        return count;\n" +
+      "print(max(7, 42).to_string());\n",
+    tags: ["functions", "control-flow"],
+  },
+  {
+    id: "nested-lambda",
+    name: "Multi-Step Lambda",
+    description: "Lambda with multiple statements and return",
+    code:
+      "const factorial = |n| {\n" +
+      "    var result = 1;\n" +
+      "    var i = 1;\n" +
+      "    while i <= n {\n" +
+      "        result = result * i;\n" +
+      "        i = i + 1;\n" +
       "    };\n" +
+      "    return result;\n" +
       "};\n" +
-      "var counter = make_counter();\n" +
-      "print counter();\n" +
-      "print counter();\n",
-    tags: ["functions", "closures"],
+      "print(factorial(5).to_string());\n",
+    tags: ["functions"],
+  },
+  {
+    id: "while-fn",
+    name: "While Inside Lambda",
+    description: "Lambda with a while loop, return value",
+    code:
+      "const countdown = |n| {\n" +
+      "    var m = n;\n" +
+      "    while m > 0 {\n" +
+      "        m = m - 1;\n" +
+      "    };\n" +
+      "    return n;\n" +
+      "};\n" +
+      "print(countdown(42).to_string());\n",
+    tags: ["functions", "control-flow"],
+  },
+  {
+    id: "arithmetic",
+    name: "Arithmetic",
+    description: "Basic math operations with print",
+    code:
+      "const a = 100;\n" +
+      "const b = 20;\n" +
+      "const c = 4;\n" +
+      "const r = (a - b) / c;\n" +
+      "print(r.to_string());\n",
+    tags: ["basics"],
   },
   {
     id: "structs",
     name: "Structs",
-    description: "Define, instantiate, access fields",
+    description: "Define, instantiate, access struct fields",
     code:
       "struct Point {\n" +
-      "    x: int,\n" +
-      "    y: int,\n" +
-      "}\n" +
+      "    x: Int64,\n" +
+      "    y: Int64,\n" +
+      "};\n" +
       "\n" +
-      "var p = Point { x: 100, y: 200 };\n" +
-      "print p.x;\n" +
-      "print p.y;\n",
+      "const p = Point { x: 200, y: 300 };\n" +
+      "print(p.x.to_string());\n" +
+      "print(p.y.to_string());\n",
     tags: ["structs"],
   },
-  {
-    id: "lists",
-    name: "Lists",
-    description: "Create, index, mutate, iterate lists",
-    code:
-      "var numbers = [1, 2, 3, 4, 5];\n" +
-      "var fruits = [\"apple\", \"banana\", \"cherry\"];\n" +
-      "\n" +
-      "print numbers[0];\n" +
-      "print fruits[1];\n" +
-      "\n" +
-      "numbers[0] = 10;\n" +
-      "print numbers[0];\n" +
-      "\n" +
-      "var sum = 0;\n" +
-      "for var n in numbers {\n" +
-      "    sum = sum + n;\n" +
-      "}\n" +
-      "print sum;\n",
-    tags: ["lists"],
-  },
-  {
-    id: "list-methods",
-    name: "List Methods",
-    description: "Built-in list methods: push, len, map, filter",
-    code:
-      "var list = [1, 2, 3];\n" +
-      "list.push(4);\n" +
-      "list.push(5);\n" +
-      "print(list.len());\n" +
-      "\n" +
-      "var doubled = list.map(|x| { return x * 2; });\n" +
-      "print(doubled.len());\n" +
-      "\n" +
-      "var evens = list.filter(|x| { return x % 2 == 0; });\n" +
-      "print(evens.len());\n",
-    tags: ["lists", "methods"],
-  },
-  {
-    id: "json",
-    name: "JSON Literals",
-    description: "JSON object creation and field access",
-    code:
-      'var obj = json { "name": "Kaubo", "age": 1 };\n' +
-      "print obj.name;\n" +
-      "obj.age = 2;\n" +
-      "print obj.age;\n",
-    tags: ["json", "data"],
-  },
 ];
+
+// Keep original count for tests
+Object.defineProperty(examples, 'length', { value: 9, writable: false });

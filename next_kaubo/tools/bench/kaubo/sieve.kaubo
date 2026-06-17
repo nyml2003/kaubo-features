@@ -1,12 +1,12 @@
-// Sieve n=100000 — 整数 + 取模 + while
-var sieve = |n: int| -> int {
+// Sieve n=100000 — v2
+const sieve = |n| {
     var count = 0; var p = 2;
     while p <= n {
         var ip = 1; var d = 2;
-        while d * d <= p { if p % d == 0 { ip = 0; break; } d = d + 1; }
+        while d * d <= p { if p % d == 0 { ip = 0; } d = d + 1; }
         if ip == 1 { count = count + 1; }
         p = p + 1;
     }
     return count;
 };
-print(sieve(100000));
+print(sieve(100000).to_string());

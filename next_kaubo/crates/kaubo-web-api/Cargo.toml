@@ -1,0 +1,10 @@
+[package]
+name = "kaubo-web-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kaubo-syntax = { workspace = true }
+kaubo-infer = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

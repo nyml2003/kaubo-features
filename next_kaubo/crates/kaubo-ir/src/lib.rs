@@ -1,7 +1,8 @@
 //! kaubo-ir — v2 intermediate representation
 //!
-//! CPS blocks, types, AST→CPS lowering, flattening
+//! CPS blocks, types, AST→CPS build, flattening
 
 pub mod cps;
-pub mod lowering;
 pub mod flatten;
+pub mod cps_emit;
+pub mod cps_build;

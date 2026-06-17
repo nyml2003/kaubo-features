@@ -8,3 +8,4 @@ description = "Kaubo v2 CPS IR types and AST→CPS lowering"
 
 [dependencies]
 kaubo-syntax = { path = "../kaubo-syntax" }
+serde = { version = "1", features = ["derive"] }

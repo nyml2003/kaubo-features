@@ -7,19 +7,22 @@ export function useKaubo() {
     return { compile, run, diagnose };
   });
 
-  const doCompile = (source: string): number | null => {
+  const doCompile = (source: string): number => {
     const w = wasm();
-    return w ? w.compile(source) : null;
+    if (!w) throw new Error("WASM not loaded");
+    return w.compile(source);
   };
 
-  const doRun = (): string | null => {
+  const doRun = (): string => {
     const w = wasm();
-    return w ? w.run(new Uint8Array()) : null;
+    if (!w) throw new Error("WASM not loaded");
+    return w.run(new Uint8Array());
   };
 
-  const doDiagnose = (source: string): string | null => {
+  const doDiagnose = (source: string): string => {
     const w = wasm();
-    return w ? w.diagnose(source) : null;
+    if (!w) throw new Error("WASM not loaded");
+    return w.diagnose(source);
   };
 
   return { doCompile, doRun, doDiagnose, loading: () => wasm.loading };

@@ -11,3 +11,4 @@ kaubo-syntax = { path = "../crates/kaubo-syntax" }
 kaubo-infer = { path = "../crates/kaubo-infer" }
 kaubo-ir = { path = "../crates/kaubo-ir" }
 kaubo-vm = { path = "../crates/kaubo-vm" }
+serde_json = "1"

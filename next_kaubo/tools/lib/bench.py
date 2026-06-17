@@ -22,15 +22,15 @@ def _ensure_kaubo_built(release=False):
         return KAUBO_CLI
 
     profile = "release" if release else "debug"
-    target = ROOT / "target" / profile / "kaubo"
+    target = ROOT / "target" / profile / "kaubo2-cli"
     if not target.exists():
-        print(f"  Building kaubo ({profile}) ...")
+        print(f"  Building kaubo2 ({profile}) ...")
         r = subprocess.run(
-            ["cargo", "build", "-p", "kaubo-cli"] + (["--release"] if release else []),
+            ["cargo", "build", "-p", "kaubo2-cli"] + (["--release"] if release else []),
             cwd=str(ROOT), capture_output=True, text=True, timeout=300, env=_env()
         )
         if r.returncode != 0:
-            raise RuntimeError(f"Cannot build kaubo:\n{r.stderr[-500:]}")
+            raise RuntimeError(f"Cannot build kaubo2:\n{r.stderr[-500:]}")
         KAUBO_BUILT = True
     KAUBO_CLI = str(target)
     return KAUBO_CLI
@@ -72,7 +72,7 @@ def load_suites(config_path=None):
             "languages": {}
         }
         for lang, lang_cfg in cfg.items():
-            if lang in ("description", "expected", "iterations", "warmup"):
+            if lang in ("description", "expected", "iterations", "warmup", "timeout"):
                 continue
             suites[name]["languages"][lang] = dict(lang_cfg)
     return suites
@@ -122,6 +122,9 @@ def _run_kaubo(name, cfg, iterations, warmup, expected, release):
             break
 
         output = r.stdout.strip()
+        # Strip trailing "= \<result\>" line added by kauba2-cli
+        if '\n= ' in output:
+            output = output[:output.rfind('\n= ')]
         if i == 0 and warmup > 0:
             compile_ms = elapsed  # first run includes .kaubo compilation
             continue
@@ -175,10 +178,10 @@ def _run_rust(name, cfg, iterations, warmup, expected):
                           error=f"Rust build failed:\n{build.stderr[-300:]}")
 
     binary = rust_dir / "target" / "release" / "bench"
-    args = cfg.get("args", [])
+    suite_arg = cfg.get("function", name)
 
     # Rust binary handles internal timing — run once, parse avg_ns from last line
-    internal_loops = cfg.get("loops", 1000)  # default 1000 internal iterations
+    internal_loops = cfg.get("loops", 1000)
 
     times = []
     passed = True
@@ -188,7 +191,7 @@ def _run_rust(name, cfg, iterations, warmup, expected):
     for i in range(warmup + iterations):
         t0 = time.perf_counter()
         r = subprocess.run(
-            [str(binary)] + [str(a) for a in args] + [str(internal_loops)],
+            [str(binary), suite_arg, str(internal_loops)],
             capture_output=True, text=True, timeout=300, env=_env()
         )
         if r.returncode != 0:

@@ -88,6 +88,17 @@ fn closure_call_once(n: usize) -> usize {
     total
 }
 
+fn nested_loop_once(n: usize) -> usize {
+    let mut total = 0;
+    for i in 0..n { for j in 0..n { total += i * j; } }
+    total
+}
+
+fn fact_loop_once(n: usize) -> usize {
+    fn fac(m: usize) -> usize { (1..=m).product() }
+    (1..=n).map(|x| fac(x)).sum()
+}
+
 fn timed<F, R>(f: F, loops: usize) where F: Fn() -> R, R: Display {
     let _ = f();  // warmup
     let t0 = Instant::now();
@@ -120,6 +131,8 @@ fn main() {
         "string_concat"=> timed(|| string_concat_once(1000), loops),
         "json_access"  => timed(|| json_access_once(10000), loops),
         "closure_call" => timed(|| closure_call_once(100_000), loops),
+        "loop"         => timed(|| nested_loop_once(200), loops),
+        "fact"         => timed(|| fact_loop_once(12), loops),
         "all" => {
             let m_loops: usize = 5;
             timed(|| fib_iter(40), loops);

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use kaubo_syntax::parser::Parser;
 use kaubo_syntax::ast::Module;
 use kaubo_infer::infer_module;
-use kaubo_ir::lowering::lower_module;
+use kaubo_ir::cps_build::build_module;
 use kaubo_ir::cps::CpsModule;
 
 /// 编译上下文：解析 import → 编译多文件 → tree-shaking
@@ -63,7 +63,7 @@ impl ModuleGraph {
             infer_module(&module).map_err(|e| format!("infer {}: {:?}", path, e.msg))?;
 
             // Lower to CPS
-            let cps = lower_module(&module).map_err(|e| format!("lower {}: {}", path, e))?;
+            let cps = build_module(&module).map_err(|e| format!("build {}: {}", path, e))?;
             self.compiled.insert(path, cps);
         }
 

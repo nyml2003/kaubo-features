@@ -61,6 +61,24 @@ def closure_call(n=100000):
         f(0)
     return "ok"
 
+def nested_loop(n=200):
+    total = 0
+    for i in range(n):
+        for j in range(n):
+            total += i * j
+    return total
+
+def fact_loop(n=100):
+    def fac(m):
+        r = 1
+        for i in range(1, m + 1):
+            r *= i
+        return r
+    total = 0
+    for x in range(1, n + 1):
+        total += fac(x)
+    return total
+
 if __name__ == "__main__":
     import time, sys
     if len(sys.argv) > 1:

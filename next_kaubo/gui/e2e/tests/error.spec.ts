@@ -20,7 +20,7 @@ test("run valid code produces output", async ({ page }) => {
   const editor = page.locator(".cm-content");
   await editor.click();
   await page.keyboard.press("Control+a");
-  await page.keyboard.type('print(42);');
+  await page.keyboard.type('print("42");');
 
   await page.click("button:has-text('Run')");
   await page.waitForTimeout(3000);

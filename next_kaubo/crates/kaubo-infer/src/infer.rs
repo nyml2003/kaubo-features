@@ -56,13 +56,13 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
     for stmt in &module.stmts {
         match stmt {
             Stmt::ConstDecl { name, value, .. } => {
-                let (s, ty) = infer(&env, value, &struct_registry)?;
+                let (s, ty) = infer(&env, value, &struct_registry, &struct_fields)?;
                 let scheme = generalize(&env, &s.apply(&ty));
                 env.insert(name.clone(), scheme);
             }
             Stmt::VarDecl { name, value, .. } => {
                 let ty = if let Some(val) = value {
-                    let (s, t) = infer(&env, val, &struct_registry)?;
+                    let (s, t) = infer(&env, val, &struct_registry, &struct_fields)?;
                     s.apply(&t)
                 } else {
                     Type::Var(fresh_tvar())
@@ -80,12 +80,13 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
             Stmt::ImplBlock { struct_name, methods } => {
                 // Register methods on struct
                 for m in methods {
-                    let (s, ty) = infer(&env, &m.body, &struct_registry)?;
+                    let (s, ty) = infer(&env, &m.body, &struct_registry, &struct_fields)?;
                     let scheme = generalize(&env, &s.apply(&ty));
                     env.insert(format!("{}.{}", struct_name, m.name), scheme);
                 }
             }
-            Stmt::ExportStmt(_) | Stmt::Import { .. } | Stmt::ExprStmt(_) => {}
+            Stmt::ExprStmt(expr) => { infer(&env, expr, &struct_registry, &struct_fields)?; }
+            Stmt::ExportStmt(_) | Stmt::Import { .. } => {}
         }
     }
 
@@ -123,6 +124,7 @@ pub fn infer(
     env: &TypeEnv,
     expr: &Expr,
     structs: &HashMap<String, usize>,
+    struct_fields: &HashMap<usize, Vec<(String, Type)>>,
 ) -> InferResult<(Subst, Type)> {
     match expr {
         Expr::LitInt(_) => Ok((Subst::empty(), Type::Int64)),
@@ -152,7 +154,7 @@ pub fn infer(
                 env_local.insert(p.name.clone(), Scheme::monomorphic(pt));
             }
 
-            let (s_body, body_ty) = infer(&env_local, body, structs)?;
+            let (s_body, body_ty) = infer(&env_local, body, structs, struct_fields)?;
             s = s.compose(&s_body);
 
             let mut arrow_ty = body_ty;
@@ -163,10 +165,10 @@ pub fn infer(
         }
 
         Expr::Call { func, args } => {
-            let (mut s, func_ty) = infer(env, func, structs)?;
+            let (mut s, func_ty) = infer(env, func, structs, struct_fields)?;
             let mut arg_types = Vec::new();
             for arg in args {
-                let (s_arg, arg_ty) = infer(env, arg, structs)?;
+                let (s_arg, arg_ty) = infer(env, arg, structs, struct_fields)?;
                 s = s.compose(&s_arg);
                 arg_types.push(arg_ty);
             }
@@ -187,8 +189,8 @@ pub fn infer(
                 // We don't need to handle value type methods here since they're
                 // handled at the codegen level. The HM engine just infers the types.
             }
-            let (s1, t1) = infer(env, left, structs)?;
-            let (s2, t2) = infer(env, right, structs)?;
+            let (s1, t1) = infer(env, left, structs, struct_fields)?;
+            let (s2, t2) = infer(env, right, structs, struct_fields)?;
             let mut s = s1.compose(&s2);
             
             let result_type = match op {
@@ -213,7 +215,7 @@ pub fn infer(
         }
 
         Expr::Unary { op, right } => {
-            let (s, t) = infer(env, right, structs)?;
+            let (s, t) = infer(env, right, structs, struct_fields)?;
             Ok((s, match op { UnOp::Neg => t, UnOp::Not => Type::Bool }))
         }
 
@@ -224,7 +226,7 @@ pub fn infer(
             for stmt in stmts {
                 match stmt {
                     Stmt::ConstDecl { name, value, .. } => {
-                        let (s_val, ty) = infer(&local_env, value, structs)?;
+                        let (s_val, ty) = infer(&local_env, value, structs, struct_fields)?;
                         let scheme = generalize(&local_env, &s_val.apply(&ty));
                         local_env.insert(name.clone(), scheme);
                         s = s.compose(&s_val);
@@ -232,7 +234,7 @@ pub fn infer(
                     }
                     Stmt::VarDecl { name, value, .. } => {
                         let ty = if let Some(val) = value {
-                            let (s_val, t) = infer(&local_env, val, structs)?;
+                            let (s_val, t) = infer(&local_env, val, structs, struct_fields)?;
                             s = s.compose(&s_val);
                             t
                         } else { Type::Var(fresh_tvar()) };
@@ -240,7 +242,7 @@ pub fn infer(
                         result = Type::Null;
                     }
                     Stmt::ExprStmt(expr) => {
-                        let (s_e, ty) = infer(&local_env, expr, structs)?;
+                        let (s_e, ty) = infer(&local_env, expr, structs, struct_fields)?;
                         s = s.compose(&s_e);
                         result = ty;
                     }
@@ -251,46 +253,58 @@ pub fn infer(
         }
 
         Expr::If { cond, then_branch, else_branch } => {
-            let (s_c, _tc) = infer(env, cond, structs)?;
-            let (s_t, tt) = infer(env, then_branch, structs)?;
-            let (s_e, te) = if let Some(eb) = else_branch {
-                infer(env, eb, structs)?
+            let (s_c, _tc) = infer(env, cond, structs, struct_fields)?;
+            let (s_t, tt) = infer(env, then_branch, structs, struct_fields)?;
+            if let Some(eb) = else_branch {
+                let (s_e, te) = infer(env, eb, structs, struct_fields)?;
+                let mut s = s_c.compose(&s_t).compose(&s_e);
+                s = unify(&s.apply(&tt), &s.apply(&te)).map_err(|e| TypeError {
+                    msg: format!("if branches: {}", e), line: 0, col: 0
+                })?.compose(&s);
+                Ok((s.clone(), s.apply(&tt)))
             } else {
-                (Subst::empty(), Type::Null)
-            };
-            let mut s = s_c.compose(&s_t).compose(&s_e);
-            s = unify(&s.apply(&tt), &s.apply(&te)).map_err(|e| TypeError {
-                msg: format!("if branches: {}", e), line: 0, col: 0
-            })?.compose(&s);
-            Ok((s.clone(), s.apply(&tt)))
+                let s = s_c.compose(&s_t);
+                Ok((s.clone(), s.apply(&tt)))
+            }
         }
 
         Expr::While { cond, body } => {
-            let (s_c, _) = infer(env, cond, structs)?;
-            let (s_b, _) = infer(env, body, structs)?;
+            let (s_c, _) = infer(env, cond, structs, struct_fields)?;
+            let (s_b, _) = infer(env, body, structs, struct_fields)?;
             Ok((s_c.compose(&s_b), Type::Null))
         }
 
         Expr::For { var: _, iterable, body } => {
-            let (s_i, ti) = infer(env, iterable, structs)?;
+            let (s_i, ti) = infer(env, iterable, structs, struct_fields)?;
             // ti should be List<'a>
             if let Type::List(elem) = &ti {
                 let mut local_env = env.clone();
                 // Bind loop variable
-                let (s_b, _) = infer(&local_env, body, structs)?;
+                let (s_b, _) = infer(&local_env, body, structs, struct_fields)?;
                 Ok((s_i.compose(&s_b), Type::Null))
             } else {
                 Err(TypeError { msg: format!("for loop requires List, got {}", ti), line: 0, col: 0 })
             }
         }
 
-        Expr::Break | Expr::Continue | Expr::Return(_) => Ok((Subst::empty(), Type::Null)),
+        Expr::Break | Expr::Continue => Ok((Subst::empty(), Type::Null)),
+        Expr::Return(val) => {
+            if let Some(expr) = val {
+                infer(env, expr, structs, struct_fields)
+            } else {
+                Ok((Subst::empty(), Type::Null))
+            }
+        }
 
         Expr::Member { object, field } => {
-            let (s, ty) = infer(env, object, structs)?;
+            let (s, ty) = infer(env, object, structs, struct_fields)?;
             let applied = s.apply(&ty);
+            // to_string() on Int64 / Float64 returns String
+            if field == "to_string" && matches!(applied, Type::Int64 | Type::Float64) {
+                return Ok((s, Type::String));
+            }
             match applied {
-                Type::Record(id, fields) => {
+                Type::Record(_id, fields) => {
                     let ft = fields.iter().find(|(n, _)| n == field)
                         .map(|(_, t)| t.clone())
                         .ok_or_else(|| TypeError {
@@ -303,8 +317,8 @@ pub fn infer(
         }
 
         Expr::Index { object, index } => {
-            let (s1, t_obj) = infer(env, object, structs)?;
-            let (s2, _) = infer(env, index, structs)?;
+            let (s1, t_obj) = infer(env, object, structs, struct_fields)?;
+            let (s2, _) = infer(env, index, structs, struct_fields)?;
             let s = s1.compose(&s2);
             match s.apply(&t_obj) {
                 Type::List(elem) => Ok((s.clone(), s.apply(&elem))),
@@ -316,20 +330,20 @@ pub fn infer(
         Expr::StructLit { name, fields } => {
             let id = structs.get(name)
                 .ok_or_else(|| TypeError { msg: format!("unknown struct '{}'", name), line: 0, col: 0 })?;
-            let field_types = structs.get(name); // placeholder
+            let field_types = struct_fields.get(id).cloned().unwrap_or_default();
             let mut s = Subst::empty();
-            for (fname, fval) in fields {
-                let (s_f, _) = infer(env, fval, structs)?;
+            for (_fname, fval) in fields {
+                let (s_f, _) = infer(env, fval, structs, struct_fields)?;
                 s = s.compose(&s_f);
             }
-            Ok((s, Type::Record(*id, vec![])))
+            Ok((s, Type::Record(*id, field_types)))
         }
 
         Expr::ListLit(items) => {
             let mut s = Subst::empty();
             let elem_ty = Type::Var(fresh_tvar());
             for item in items {
-                let (s_i, ti) = infer(env, item, structs)?;
+                let (s_i, ti) = infer(env, item, structs, struct_fields)?;
                 s = s.compose(&s_i);
                 s = unify(&s.apply(&elem_ty), &s.apply(&ti)).map_err(|e| TypeError {
                     msg: format!("list element: {}", e), line: 0, col: 0
@@ -339,13 +353,13 @@ pub fn infer(
         }
 
         Expr::Assign { target, value } => {
-            let (s1, _) = infer(env, target, structs)?;
-            let (s2, _) = infer(env, value, structs)?;
+            let (s1, _) = infer(env, target, structs, struct_fields)?;
+            let (s2, _) = infer(env, value, structs, struct_fields)?;
             Ok((s1.compose(&s2), Type::Null))
         }
 
-        Expr::Async(body) => infer(env, body, structs),
-        Expr::Await(body) => infer(env, body, structs),
+        Expr::Async(body) => infer(env, body, structs, struct_fields),
+        Expr::Await(body) => infer(env, body, structs, struct_fields),
     }
 }
 
@@ -496,6 +510,13 @@ mod tests {
         let (env, _) = infer_src("struct Point { x: Float64, y: Float64 }; const p = Point { x: 1.0, y: 2.0 };").unwrap();
         let ty = format!("{}", env["p"].body);
         assert!(ty.contains("Point") || ty.contains("{"));
+    }
+
+    #[test]
+    fn test_to_string_returns_string() {
+        let (env, _) = infer_src("const s = 42.to_string();").unwrap();
+        let ty = format!("{}", env["s"].body);
+        assert_eq!(ty, "String");
     }
 
     fn infer_var(src: &str) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>)> {
