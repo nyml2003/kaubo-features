@@ -321,6 +321,36 @@ mod tests {
         assert_eq!(to, 3);
     }
 
+    #[test]
+    fn utf16_ranges_for_struct_tokens_do_not_overlap() {
+        let src = "struct Point { x: Int64 }";
+        let ranges = [
+            utf16_range(src, 1, 1, "struct"),
+            utf16_range(src, 1, 8, "Point"),
+            utf16_range(src, 1, 14, "{"),
+            utf16_range(src, 1, 16, "x"),
+            utf16_range(src, 1, 17, ":"),
+            utf16_range(src, 1, 19, "Int64"),
+            utf16_range(src, 1, 25, "}"),
+        ];
+
+        assert_eq!(
+            ranges,
+            [
+                (0, 6),
+                (7, 12),
+                (13, 14),
+                (15, 16),
+                (16, 17),
+                (18, 23),
+                (24, 25)
+            ]
+        );
+        for pair in ranges.windows(2) {
+            assert!(pair[0].1 <= pair[1].0, "overlapping ranges: {:?}", pair);
+        }
+    }
+
     // ── describe_token ──
 
     #[test]

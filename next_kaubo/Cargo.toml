@@ -1,5 +1,5 @@
 [workspace]
-members = ["kaubo-vfs", "kaubo-log", "crates/kaubo-token", "crates/kaubo-ast", "crates/kaubo-syntax", "crates/kaubo-infer", "crates/kaubo-cps", "crates/kaubo-ir", "crates/kaubo-vm", "crates/kaubo-pipeline", "crates/kaubo-module", "crates/kaubo-web-api", "crates/kaubo-wasm", "kaubo2-cli"]
+members = ["kaubo-vfs", "kaubo-log", "crates/kaubo-token", "crates/kaubo-ast", "crates/kaubo-syntax", "crates/kaubo-infer", "crates/kaubo-cps", "crates/kaubo-ir", "crates/kaubo-vm", "crates/kaubo-pipeline", "crates/kaubo-driver", "crates/kaubo-module", "crates/kaubo-web-api", "crates/kaubo-wasm", "kaubo2-cli"]
 resolver = "2"
 
 [workspace.package]
@@ -26,6 +26,7 @@ kaubo-cps = { path = "crates/kaubo-cps" }
 kaubo-ir = { path = "crates/kaubo-ir" }
 kaubo-vm = { path = "crates/kaubo-vm" }
 kaubo-pipeline = { path = "crates/kaubo-pipeline" }
+kaubo-driver = { path = "crates/kaubo-driver" }
 kaubo-web-api = { path = "crates/kaubo-web-api" }
 
 # kaubo-config (无依赖)

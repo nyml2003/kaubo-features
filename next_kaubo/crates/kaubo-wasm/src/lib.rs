@@ -1,12 +1,10 @@
-use kaubo_ir::cps::CpsModule;
 use kaubo_syntax::lexer::Lexer;
-use kaubo_syntax::parser::Parser;
 use kaubo_web_api::token::{classify_token, describe_token, utf16_range};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 
-static COMPILED: Lazy<Mutex<Option<CpsModule>>> = Lazy::new(|| Mutex::new(None));
+static COMPILED: Lazy<Mutex<Option<kaubo_driver::CpsModule>>> = Lazy::new(|| Mutex::new(None));
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -44,24 +42,14 @@ pub fn diagnose(source: &str) -> String {
 /// Throws JsValue on parse/infer/build failure.
 #[wasm_bindgen]
 pub fn compile(source: &str) -> Result<usize, JsValue> {
-    let module = Parser::new(source)
-        .parse()
-        .map_err(|e| JsValue::from_str(&e))?;
-    kaubo_infer::infer_module(&module).map_err(|e| JsValue::from_str(&e.msg))?;
-    let mut cps = kaubo_ir::cps_build::build_module(&module).map_err(|e| JsValue::from_str(&e))?;
-    kaubo_ir::flatten::flatten_module(&mut cps);
-    kaubo_ir::pass::run_passes(&mut cps, &[&kaubo_ir::pass::fold::ConstantFold]);
+    let cps =
+        kaubo_driver::compile_source(source).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     if cps.functions.is_empty() {
         return Err(JsValue::from_str("no functions in compiled module"));
     }
 
-    let mut count = 0usize;
-    for func in &cps.functions {
-        for block in &func.blocks {
-            count += block.instrs.len() + 1;
-        }
-    }
+    let count = kaubo_driver::instruction_count(&cps);
 
     *COMPILED.lock().unwrap() = Some(cps);
     Ok(count)
@@ -77,25 +65,12 @@ pub fn run(_bytes: &[u8]) -> Result<String, JsValue> {
         .take()
         .ok_or_else(|| JsValue::from_str("no compiled module"))?;
 
-    if cps.functions.is_empty() {
-        return Err(JsValue::from_str("compiled module has no functions"));
-    }
-
-    let mut vm = kaubo_vm::VM::new();
-    vm.load(&cps).map_err(|e| JsValue::from_str(&e))?;
-
-    let func_idx = cps.functions.len() - 1;
-    let reg_count = cps.functions[func_idx].reg_count;
-    let result = vm
-        .execute(func_idx, reg_count)
-        .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
-
-    let out = vm.output.join("\n");
+    let outcome = kaubo_driver::run_module(&cps).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let out = outcome.output.join("\n");
 
     // Re-store for potential re-use
     COMPILED.lock().unwrap().replace(cps);
 
-    let _ = result; // result value accessible via `out` if printed
     Ok(out)
 }
 
@@ -116,4 +91,34 @@ pub fn hover(source: &str, offset: usize) -> String {
         }
     }
     "null".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lex_struct_tokens_have_non_overlapping_ranges() {
+        let raw = lex("struct Point { x: Int64 }");
+        let tokens: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+
+        assert_eq!(tokens[0]["kind"], "keyword");
+        assert_eq!(tokens[0]["from"], 0);
+        assert_eq!(tokens[0]["to"], 6);
+        assert_eq!(tokens[1]["kind"], "identifier");
+        assert_eq!(tokens[1]["from"], 7);
+        assert_eq!(tokens[1]["to"], 12);
+        assert_eq!(tokens[2]["kind"], "operator");
+        assert_eq!(tokens[2]["from"], 13);
+        assert_eq!(tokens[2]["to"], 14);
+
+        for pair in tokens.windows(2) {
+            let previous_to = pair[0]["to"].as_u64().unwrap();
+            let next_from = pair[1]["from"].as_u64().unwrap();
+            assert!(
+                previous_to <= next_from,
+                "overlapping token ranges in {raw}"
+            );
+        }
+    }
 }

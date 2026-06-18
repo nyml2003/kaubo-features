@@ -53,6 +53,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaubo-driver"
+version = "0.1.0"
+dependencies = [
+ "kaubo-infer",
+ "kaubo-ir",
+ "kaubo-syntax",
+ "kaubo-vm",
+]
+
+[[package]]
 name = "kaubo-infer"
 version = "0.1.0"
 dependencies = [
@@ -119,10 +129,8 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",
- "kaubo-infer",
- "kaubo-ir",
+ "kaubo-driver",
  "kaubo-syntax",
- "kaubo-vm",
  "kaubo-web-api",
  "once_cell",
  "serde_json",
@@ -151,9 +159,7 @@ dependencies = [
 name = "kaubo2-cli"
 version = "0.1.0"
 dependencies = [
- "kaubo-infer",
- "kaubo-ir",
- "kaubo-syntax",
+ "kaubo-driver",
  "kaubo-vm",
 ]
 

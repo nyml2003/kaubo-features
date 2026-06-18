@@ -38,7 +38,7 @@ impl<'a> Lexer<'a> {
         let line = self.line;
         let col = self.col;
 
-        match self.chars.next() {
+        match self.bump() {
             None => Token::eof(line, col),
             Some(c) => self.scan_token(c, line, col),
         }
@@ -91,9 +91,19 @@ impl<'a> Lexer<'a> {
         self.chars.peek().copied()
     }
 
+    fn bump(&mut self) -> Option<char> {
+        let c = self.chars.next()?;
+        if c == '\n' {
+            self.line += 1;
+            self.col = 1;
+        } else {
+            self.col += 1;
+        }
+        Some(c)
+    }
+
     fn advance(&mut self) {
-        self.chars.next();
-        self.col += 1;
+        let _ = self.bump();
     }
 
     fn skip_whitespace_and_comments(&mut self) {
@@ -104,8 +114,6 @@ impl<'a> Lexer<'a> {
                 }
                 Some('\n') => {
                     self.advance();
-                    self.line += 1;
-                    self.col = 1;
                 }
                 _ => break,
             }
@@ -171,10 +179,7 @@ impl<'a> Lexer<'a> {
                         return s;
                     }
                 }
-                '\n' => {
-                    self.line += 1;
-                    self.col = 1;
-                }
+                '\n' => {}
                 _ => {}
             }
         }
@@ -233,13 +238,12 @@ impl<'a> Lexer<'a> {
 
     fn scan_string(&mut self, quote: char, line: usize, col: usize) -> Token {
         let mut s = String::new();
-        while let Some(c) = self.chars.next() {
-            self.col += 1;
+        while let Some(c) = self.bump() {
             if c == quote {
                 return Token::new(TokenKind::StringLiteral, s, line, col);
             }
             if c == '\\' {
-                match self.chars.next() {
+                match self.bump() {
                     Some('n') => s.push('\n'),
                     Some('r') => s.push('\r'),
                     Some('t') => s.push('\t'),
@@ -249,7 +253,6 @@ impl<'a> Lexer<'a> {
                     Some(other) => s.push(other),
                     None => break,
                 }
-                self.col += 1;
             } else {
                 s.push(c);
             }
@@ -324,6 +327,14 @@ mod tests {
         toks.into_iter()
             .filter(|t| t.kind != TokenKind::Eof)
             .map(|t| t.kind)
+            .collect()
+    }
+
+    fn tokens(src: &str) -> Vec<crate::token::Token> {
+        Lexer::new(src)
+            .tokenize()
+            .into_iter()
+            .filter(|t| t.kind != TokenKind::Eof)
             .collect()
     }
 
@@ -495,6 +506,28 @@ mod tests {
                 TokenKind::Eq,
                 TokenKind::IntLiteral,
                 TokenKind::Semicolon
+            ]
+        );
+    }
+
+    #[test]
+    fn token_positions_after_multichar_tokens_and_spaces() {
+        let toks = tokens("struct Point { x: Int64 }");
+        let positions: Vec<(TokenKind, &str, usize, usize)> = toks
+            .iter()
+            .map(|t| (t.kind, t.lexeme.as_str(), t.line, t.col))
+            .collect();
+
+        assert_eq!(
+            positions,
+            vec![
+                (TokenKind::Struct, "struct", 1, 1),
+                (TokenKind::Identifier, "Point", 1, 8),
+                (TokenKind::LBrace, "{", 1, 14),
+                (TokenKind::Identifier, "x", 1, 16),
+                (TokenKind::Colon, ":", 1, 17),
+                (TokenKind::Identifier, "Int64", 1, 19),
+                (TokenKind::RBrace, "}", 1, 25),
             ]
         );
     }

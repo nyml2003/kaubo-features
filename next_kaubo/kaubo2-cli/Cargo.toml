@@ -4,10 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Kaubo v2 CLI — full pipeline: parse → infer → lower → execute"
+description = "Kaubo v2 CLI — direct driver: parse → infer → lower → execute"
 
 [dependencies]
-kaubo-syntax = { path = "../crates/kaubo-syntax" }
-kaubo-infer = { path = "../crates/kaubo-infer" }
-kaubo-ir = { path = "../crates/kaubo-ir" }
-kaubo-vm = { path = "../crates/kaubo-vm" }
+kaubo-driver = { workspace = true }
+kaubo-vm = { workspace = true }

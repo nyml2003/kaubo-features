@@ -1,42 +1,12 @@
-//! kaubo2 — v2 pipeline: parse → infer → build → flatten → execute
-use kaubo_infer::infer_module;
-use kaubo_ir::cps::CpsModule;
-use kaubo_ir::cps_build::build_module;
-use kaubo_ir::flatten::flatten_module;
-use kaubo_ir::pass::binary;
-use kaubo_ir::pass::{fold::ConstantFold, run_passes};
-use kaubo_syntax::parser::Parser;
+//! kaubo2 — v2 direct driver: parse → infer → build → flatten → execute
 use std::env;
 use std::fs;
 
-fn compile_pipeline(source: &str) -> Result<CpsModule, String> {
-    let module = Parser::new(source)
-        .parse()
-        .map_err(|e| format!("parse: {}", e))?;
-    infer_module(&module).map_err(|e| format!("infer: {:?}", e))?;
-    let mut cps = build_module(&module).map_err(|e| format!("build: {}", e))?;
-    flatten_module(&mut cps);
-    run_passes(&mut cps, &[&ConstantFold]);
-    Ok(cps)
-}
-
-fn run_compiled(cps: &CpsModule) -> Result<(), String> {
-    if cps.functions.is_empty() {
-        return Ok(());
+fn render_run(outcome: &kaubo_driver::RunOutcome) {
+    for line in &outcome.output {
+        println!("{}", line);
     }
-    let mut vm = kaubo_vm::VM::new();
-    vm.load(cps).map_err(|e| format!("load: {}", e))?;
-    let func = cps.functions.last().unwrap();
-    match vm.execute(cps.functions.len() - 1, func.reg_count) {
-        Ok(r) => {
-            for l in &vm.output {
-                println!("{}", l);
-            }
-            println!("= {}", r);
-        }
-        Err(e) => eprintln!("error: {:?}", e),
-    }
-    Ok(())
+    println!("= {}", outcome.result);
 }
 
 fn run_args(args: &[String]) -> Result<(), String> {
@@ -51,9 +21,9 @@ fn run_args(args: &[String]) -> Result<(), String> {
     match sub {
         "compile" => {
             let source = fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
-            let cps = compile_pipeline(&source)?;
+            let cps = kaubo_driver::compile_source(&source).map_err(|e| e.to_string())?;
             let out = file.replace(".kaubo", ".kauboc");
-            let bytes = binary::encode_module(&cps);
+            let bytes = kaubo_driver::encode_module(&cps);
             let len = bytes.len();
             fs::write(&out, bytes).map_err(|e| format!("write {}: {}", out, e))?;
             println!("Compiled: ({:.1}KB)", len as f64 / 1024.0);
@@ -61,19 +31,20 @@ fn run_args(args: &[String]) -> Result<(), String> {
         "run" => {
             if file.ends_with(".kauboc") {
                 let bytes = fs::read(file).map_err(|e| format!("read {}: {}", file, e))?;
-                let cps = binary::decode_module(&bytes)?;
-                run_compiled(&cps)?;
+                let cps = kaubo_driver::decode_module(&bytes).map_err(|e| e.to_string())?;
+                let outcome = kaubo_driver::run_module(&cps).map_err(|e| e.to_string())?;
+                render_run(&outcome);
             } else {
                 let source =
                     fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
-                let cps = compile_pipeline(&source)?;
-                run_compiled(&cps)?;
+                let outcome = kaubo_driver::run_source(&source).map_err(|e| e.to_string())?;
+                render_run(&outcome);
             }
         }
         _ => {
             let source = fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
-            let cps = compile_pipeline(&source)?;
-            run_compiled(&cps)?;
+            let outcome = kaubo_driver::run_source(&source).map_err(|e| e.to_string())?;
+            render_run(&outcome);
         }
     }
     Ok(())
@@ -98,35 +69,15 @@ mod tests {
     }
 
     fn run_src(src: &str) -> Result<i64, String> {
-        let m = Parser::new(src).parse()?;
-        infer_module(&m).map_err(|e| format!("infer: {:?}", e))?;
-        let mut cps = build_module(&m)?;
-        flatten_module(&mut cps);
-        if cps.functions.is_empty() {
-            return Ok(0);
-        }
-        let mut vm = kaubo_vm::VM::new();
-        vm.load(&cps)?;
-        let e = cps.functions.len() - 1;
-        vm.execute(e, cps.functions[e].reg_count)
-            .map_err(|e| format!("{:?}", e))
+        kaubo_driver::run_source(src)
+            .map(|outcome| outcome.result)
+            .map_err(|e| e.to_string())
     }
 
     fn run_src_with_output(src: &str) -> Result<(i64, Vec<String>), String> {
-        let m = Parser::new(src).parse()?;
-        infer_module(&m).map_err(|e| format!("infer: {:?}", e))?;
-        let mut cps = build_module(&m)?;
-        flatten_module(&mut cps);
-        if cps.functions.is_empty() {
-            return Ok((0, vec![]));
-        }
-        let mut vm = kaubo_vm::VM::new();
-        vm.load(&cps)?;
-        let e = cps.functions.len() - 1;
-        let r = vm
-            .execute(e, cps.functions[e].reg_count)
-            .map_err(|e| format!("{:?}", e))?;
-        Ok((r, vm.output.clone()))
+        kaubo_driver::run_source(src)
+            .map(|outcome| (outcome.result, outcome.output))
+            .map_err(|e| e.to_string())
     }
 
     #[test]
@@ -278,7 +229,6 @@ mod tests {
 
     #[test]
     fn debug_impl_dis() {
-        use kaubo_ir::pass::{fold::ConstantFold, run_passes};
         let src = r#"
 struct Point { x: Int64, y: Int64 };
 impl Point {
@@ -292,11 +242,7 @@ const p1 = Point { x: 200, y: 300 };
 const p2 = Point { x: 300, y: 400 };
 print(p1.dis(p2).to_string());
 "#;
-        let m = Parser::new(src).parse().unwrap();
-        infer_module(&m).unwrap();
-        let mut cps = build_module(&m).unwrap();
-        flatten_module(&mut cps);
-        run_passes(&mut cps, &[&ConstantFold]);
+        let cps = kaubo_driver::compile_source(src).unwrap();
         eprintln!("=== CPS DUMP ===");
         for (fi, func) in cps.functions.iter().enumerate() {
             eprintln!(
