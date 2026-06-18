@@ -1,5 +1,5 @@
 [workspace]
-members = ["kaubo-vfs", "kaubo-log", "crates/kaubo-syntax", "crates/kaubo-infer", "crates/kaubo-ir", "crates/kaubo-vm", "crates/kaubo-module", "crates/kaubo-web-api", "crates/kaubo-wasm", "kaubo2-cli"]
+members = ["kaubo-vfs", "kaubo-log", "crates/kaubo-token", "crates/kaubo-ast", "crates/kaubo-syntax", "crates/kaubo-infer", "crates/kaubo-cps", "crates/kaubo-ir", "crates/kaubo-vm", "crates/kaubo-pipeline", "crates/kaubo-module", "crates/kaubo-web-api", "crates/kaubo-wasm", "kaubo2-cli"]
 resolver = "2"
 
 [workspace.package]
@@ -18,10 +18,14 @@ serde_json = "1"
 
 # kaubo-vfs 依赖 (无)
 
+kaubo-ast = { path = "crates/kaubo-ast" }
+kaubo-token = { path = "crates/kaubo-token" }
 kaubo-syntax = { path = "crates/kaubo-syntax" }
 kaubo-infer = { path = "crates/kaubo-infer" }
+kaubo-cps = { path = "crates/kaubo-cps" }
 kaubo-ir = { path = "crates/kaubo-ir" }
 kaubo-vm = { path = "crates/kaubo-vm" }
+kaubo-pipeline = { path = "crates/kaubo-pipeline" }
 kaubo-web-api = { path = "crates/kaubo-web-api" }
 
 # kaubo-config (无依赖)
@@ -40,4 +44,9 @@ license = "MIT"
 
 [dev-dependencies]
 kaubo-log = { path = "kaubo-log" }
+
+[profile.release]
+panic = "unwind"
+opt-level = "s"
+lto = true
 

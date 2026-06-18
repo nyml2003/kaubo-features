@@ -7,4 +7,4 @@ authors.workspace = true
 description = "Kaubo v2 Hindley-Milner type inference"
 
 [dependencies]
-kaubo-syntax = { path = "../kaubo-syntax" }
+kaubo-ast = { path = "../kaubo-ast" }

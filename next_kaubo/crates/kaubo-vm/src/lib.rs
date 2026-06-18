@@ -4,12 +4,12 @@
 //! 分层寄存器: int_regs / float_regs / ptr_regs
 //! 引用计数 GC
 
-pub mod regfile;
+pub mod async_runtime;
 pub mod execute;
 pub mod gc_heap;
-pub mod async_runtime;
+pub mod regfile;
 pub mod stdlib;
 
-pub use regfile::*;
-pub use execute::*;
 pub use async_runtime::*;
+pub use execute::*;
+pub use regfile::*;

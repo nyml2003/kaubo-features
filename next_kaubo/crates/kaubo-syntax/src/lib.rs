@@ -2,13 +2,13 @@
 //!
 //! 输出 AST，不做类型推断（类型推断在 kaubo-infer 中）
 
-pub mod token;
 pub mod ast;
 pub mod lexer;
 pub mod parser;
+pub mod token;
 
 // re-exports
-pub use token::TokenKind;
-pub use ast::{Expr, Module, Stmt, Param, FieldDef, MethodDef, BinOp, UnOp};
+pub use ast::{BinOp, Expr, FieldDef, MethodDef, Module, Param, Stmt, UnOp};
 pub use lexer::Lexer;
 pub use parser::Parser;
+pub use token::TokenKind;

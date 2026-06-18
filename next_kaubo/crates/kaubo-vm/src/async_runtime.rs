@@ -13,19 +13,23 @@ pub type TaskId = usize;
 #[derive(Debug, Clone)]
 pub struct SuspendedFrame {
     pub frame: CallFrame,
-    pub ip: usize,             // 挂起位置的 IP (resume 后从此继续)
+    pub ip: usize, // 挂起位置的 IP (resume 后从此继续)
 }
 
 /// 异步调度器 (v2.0: 简单队列模型)
 pub struct AsyncScheduler {
     tasks: Vec<(TaskId, SuspendedFrame)>,
     next_id: TaskId,
-    completed: Vec<(TaskId, i64)>,  // 已完成任务的结果
+    completed: Vec<(TaskId, i64)>, // 已完成任务的结果
 }
 
 impl AsyncScheduler {
     pub fn new() -> Self {
-        AsyncScheduler { tasks: vec![], next_id: 0, completed: vec![] }
+        AsyncScheduler {
+            tasks: vec![],
+            next_id: 0,
+            completed: vec![],
+        }
     }
 
     /// 注册挂起帧，返回任务 ID
@@ -85,10 +89,26 @@ mod tests {
     use super::*;
     use crate::execute::CallFrame;
 
+    fn frame() -> CallFrame {
+        CallFrame {
+            func_idx: 1,
+            ret_block: 2,
+            saved_ints: vec![1],
+            saved_floats: vec![2.0],
+            result_reg: 3,
+        }
+    }
+
     #[test]
     fn test_suspend_and_resume() {
         let mut sched = AsyncScheduler::new();
-        let cf = CallFrame { func_idx: 0, ret_block: 0, saved_ints: vec![], saved_floats: vec![], result_reg: 0 };
+        let cf = CallFrame {
+            func_idx: 0,
+            ret_block: 0,
+            saved_ints: vec![],
+            saved_floats: vec![],
+            result_reg: 0,
+        };
         let id = sched.suspend(cf, 42);
         assert_eq!(sched.tasks.len(), 1);
         let sf = sched.resume_frame(id).unwrap();
@@ -98,10 +118,48 @@ mod tests {
     #[test]
     fn test_complete() {
         let mut sched = AsyncScheduler::new();
-        let cf = CallFrame { func_idx: 0, ret_block: 0, saved_ints: vec![], saved_floats: vec![], result_reg: 0 };
+        let cf = CallFrame {
+            func_idx: 0,
+            ret_block: 0,
+            saved_ints: vec![],
+            saved_floats: vec![],
+            result_reg: 0,
+        };
         let id = sched.suspend(cf, 0);
         sched.complete(id, 100);
         assert!(sched.tasks.is_empty());
         assert_eq!(sched.poll(), Some((id, 100)));
+    }
+
+    #[test]
+    fn pending_completion_and_polling_work() {
+        let mut sched = AsyncScheduler::new();
+        let id = sched.suspend(frame(), 7);
+        assert!(sched.has_pending());
+        assert_eq!(sched.pending_ids(), vec![id]);
+        assert!(sched.resume_frame(999).is_none());
+
+        let task = sched.resume_frame(id).unwrap();
+        assert_eq!(task.ip, 7);
+        assert_eq!(task.frame.func_idx, 1);
+    }
+
+    #[test]
+    fn complete_flush_and_poll_cover_queue_paths() {
+        let mut sched = AsyncScheduler::new();
+        let id1 = sched.suspend(frame(), 1);
+        let id2 = sched.suspend(frame(), 2);
+        let flushed = sched.flush_all(99);
+        assert_eq!(flushed.len(), 2);
+        assert_eq!(sched.poll(), Some((id2, 99)));
+        assert_eq!(sched.poll(), Some((id1, 99)));
+        assert!(!sched.has_pending());
+
+        let id3 = sched.suspend(frame(), 3);
+        sched.complete(id1, 7);
+        sched.complete(id3, 8);
+        assert_eq!(sched.poll(), Some((id3, 8)));
+        assert_eq!(sched.poll(), Some((id1, 7)));
+        assert_eq!(sched.poll(), None);
     }
 }

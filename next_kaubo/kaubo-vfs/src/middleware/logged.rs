@@ -1,9 +1,9 @@
 //! Logging middleware for VFS operations
 
-use std::path::Path;
-use crate::VfsResult;
-use super::{Middleware, Next};
 use super::Stage;
+use super::{Middleware, Next};
+use crate::VfsResult;
+use std::path::Path;
 
 /// Middleware that logs VFS operations
 pub struct LoggedLayer;
@@ -25,7 +25,7 @@ impl Middleware for LoggedLayer {
     fn stage(&self) -> Stage {
         Stage::Outer
     }
-    
+
     fn read_file(&self, path: &Path, next: &dyn Next) -> VfsResult<Vec<u8>> {
         eprintln!("[VFS] read_file: {}", path.display());
         let result = next.read_file(path);
@@ -35,12 +35,16 @@ impl Middleware for LoggedLayer {
         }
         result
     }
-    
+
     fn write_file(&self, path: &Path, content: &[u8], next: &dyn Next) -> VfsResult<()> {
-        eprintln!("[VFS] write_file: {} ({} bytes)", path.display(), content.len());
+        eprintln!(
+            "[VFS] write_file: {} ({} bytes)",
+            path.display(),
+            content.len()
+        );
         next.write_file(path, content)
     }
-    
+
     fn exists(&self, path: &Path, next: &dyn Next) -> bool {
         let result = next.exists(path);
         eprintln!("[VFS] exists: {} = {}", path.display(), result);

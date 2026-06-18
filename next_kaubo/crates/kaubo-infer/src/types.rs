@@ -1,5 +1,5 @@
 //! Hindley-Milner type inference (Algorithm W)
-//! 
+//!
 //! v2.0: 支持 Int64, Float64, String, Bool, Null, Arrow, Record, List
 //! v2.1: 支持 ADT/Variant
 
@@ -20,7 +20,7 @@ pub enum Type {
     Bool,
     Null,
     Arrow(Box<Type>, Box<Type>),
-    Record(usize, Vec<(String, Type)>),  // struct_id, fields
+    Record(usize, Vec<(String, Type)>), // struct_id, fields
     List(Box<Type>),
 }
 
@@ -49,7 +49,10 @@ impl fmt::Display for Type {
             Type::Null => write!(f, "Null"),
             Type::Arrow(a, b) => write!(f, "({} → {})", a, b),
             Type::Record(_, fields) => {
-                let fs: Vec<_> = fields.iter().map(|(n, t)| format!("{}: {}", n, t)).collect();
+                let fs: Vec<_> = fields
+                    .iter()
+                    .map(|(n, t)| format!("{}: {}", n, t))
+                    .collect();
                 write!(f, "{{{}}}", fs.join(", "))
             }
             Type::List(t) => write!(f, "List<{}>", t),
@@ -58,8 +61,10 @@ impl fmt::Display for Type {
 }
 
 impl Subst {
-    pub fn empty() -> Self { Subst(HashMap::new()) }
-    
+    pub fn empty() -> Self {
+        Subst(HashMap::new())
+    }
+
     pub fn singleton(var: TypeVar, ty: Type) -> Self {
         let mut m = HashMap::new();
         m.insert(var, ty);
@@ -70,8 +75,13 @@ impl Subst {
         match ty {
             Type::Var(v) => self.0.get(v).cloned().unwrap_or_else(|| ty.clone()),
             Type::Arrow(a, b) => Type::Arrow(Box::new(self.apply(a)), Box::new(self.apply(b))),
-            Type::Record(id, fields) => Type::Record(*id, fields.iter()
-                .map(|(n, t)| (n.clone(), self.apply(t))).collect()),
+            Type::Record(id, fields) => Type::Record(
+                *id,
+                fields
+                    .iter()
+                    .map(|(n, t)| (n.clone(), self.apply(t)))
+                    .collect(),
+            ),
             Type::List(t) => Type::List(Box::new(self.apply(t))),
             other => other.clone(),
         }
@@ -92,6 +102,9 @@ impl Subst {
 
 impl Scheme {
     pub fn monomorphic(ty: Type) -> Self {
-        Scheme { bound: vec![], body: Box::new(ty) }
+        Scheme {
+            bound: vec![],
+            body: Box::new(ty),
+        }
     }
 }

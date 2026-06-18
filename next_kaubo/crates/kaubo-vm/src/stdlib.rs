@@ -11,11 +11,31 @@ pub fn register_all() -> Vec<(&'static str, NativeFn)> {
         ("print", print_fn),
         ("type_of", type_of_fn),
         ("assert", assert_fn),
-        ("sqrt", |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).sqrt().to_bits() as i64)),
-        ("sin",  |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).sin().to_bits() as i64)),
-        ("cos",  |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).cos().to_bits() as i64)),
-        ("floor", |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).floor().to_bits() as i64)),
-        ("ceil", |a| Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64)).ceil().to_bits() as i64)),
+        ("sqrt", |a| {
+            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
+                .sqrt()
+                .to_bits() as i64)
+        }),
+        ("sin", |a| {
+            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
+                .sin()
+                .to_bits() as i64)
+        }),
+        ("cos", |a| {
+            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
+                .cos()
+                .to_bits() as i64)
+        }),
+        ("floor", |a| {
+            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
+                .floor()
+                .to_bits() as i64)
+        }),
+        ("ceil", |a| {
+            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
+                .ceil()
+                .to_bits() as i64)
+        }),
     ]
 }
 
@@ -26,7 +46,7 @@ fn print_fn(args: &[i64]) -> Result<i64, String> {
 }
 
 /// type_of 函数 — 返回类型标识
-fn type_of_fn(args: &[i64]) -> Result<i64, String> {
+fn type_of_fn(_args: &[i64]) -> Result<i64, String> {
     // v2: 返回类型 tag (0=Int64, 1=Float64, 2=String)
     Ok(0) // simplified: always Int64
 }
@@ -35,7 +55,10 @@ fn type_of_fn(args: &[i64]) -> Result<i64, String> {
 fn assert_fn(args: &[i64]) -> Result<i64, String> {
     let cond = *args.first().unwrap_or(&0);
     if cond == 0 {
-        Err(args.get(1).map(|s| format!("assertion failed: {}", s)).unwrap_or_else(|| "assertion failed".into()))
+        Err(args
+            .get(1)
+            .map(|s| format!("assertion failed: {}", s))
+            .unwrap_or_else(|| "assertion failed".into()))
     } else {
         Ok(cond)
     }
@@ -63,6 +86,30 @@ mod tests {
     #[test]
     fn test_sqrt() {
         let sqrt = register_all()[3].1;
-        assert_eq!(sqrt(&[25.0f64.to_bits() as i64]), Ok(5.0f64.to_bits() as i64));
+        assert_eq!(
+            sqrt(&[25.0f64.to_bits() as i64]),
+            Ok(5.0f64.to_bits() as i64)
+        );
+    }
+
+    #[test]
+    fn register_all_exposes_expected_functions() {
+        let names: Vec<_> = register_all().into_iter().map(|(name, _)| name).collect();
+        assert_eq!(
+            names,
+            vec!["print", "type_of", "assert", "sqrt", "sin", "cos", "floor", "ceil"]
+        );
+    }
+
+    #[test]
+    fn type_of_is_stable_placeholder() {
+        assert_eq!(type_of_fn(&[]), Ok(0));
+    }
+
+    #[test]
+    fn math_helpers_accept_missing_args() {
+        for (_, func) in register_all().into_iter().skip(3) {
+            assert!(func(&[]).is_ok());
+        }
     }
 }

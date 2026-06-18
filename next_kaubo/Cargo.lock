@@ -41,17 +41,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaubo-ast"
+version = "0.1.0"
+
+[[package]]
+name = "kaubo-cps"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kaubo-infer"
 version = "0.1.0"
 dependencies = [
- "kaubo-syntax",
+ "kaubo-ast",
 ]
 
 [[package]]
 name = "kaubo-ir"
 version = "0.1.0"
 dependencies = [
- "kaubo-syntax",
+ "kaubo-ast",
+ "kaubo-cps",
  "serde",
 ]
 
@@ -74,7 +87,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaubo-pipeline"
+version = "0.1.0"
+
+[[package]]
 name = "kaubo-syntax"
+version = "0.1.0"
+dependencies = [
+ "kaubo-ast",
+ "kaubo-token",
+]
+
+[[package]]
+name = "kaubo-token"
 version = "0.1.0"
 
 [[package]]
@@ -85,7 +110,7 @@ version = "0.1.0"
 name = "kaubo-vm"
 version = "0.1.0"
 dependencies = [
- "kaubo-ir",
+ "kaubo-cps",
 ]
 
 [[package]]
@@ -110,6 +135,7 @@ version = "0.1.0"
 dependencies = [
  "kaubo-infer",
  "kaubo-syntax",
+ "kaubo-token",
  "serde",
  "serde_json",
 ]

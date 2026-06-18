@@ -1,13 +1,12 @@
 //! 模块系统 — import 解析 + 多文件编译 + tree-shaking + .kaubop 打包
 
+use kaubo_infer::infer_module;
+use kaubo_ir::cps::CpsModule;
+use kaubo_ir::cps_build::build_module;
+use kaubo_syntax::parser::Parser;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use kaubo_syntax::parser::Parser;
-use kaubo_syntax::ast::Module;
-use kaubo_infer::infer_module;
-use kaubo_ir::cps_build::build_module;
-use kaubo_ir::cps::CpsModule;
 
 /// 编译上下文：解析 import → 编译多文件 → tree-shaking
 pub struct ModuleGraph {
@@ -38,7 +37,9 @@ impl ModuleGraph {
         let mut seen = HashSet::new();
 
         while let Some(path) = stack.pop() {
-            if seen.contains(&path) { continue; }
+            if seen.contains(&path) {
+                continue;
+            }
             seen.insert(path.clone());
 
             // Load source
@@ -46,12 +47,16 @@ impl ModuleGraph {
             self.sources.insert(path.clone(), source.clone());
 
             // Parse
-            let module = Parser::new(&source).parse()
+            let module = Parser::new(&source)
+                .parse()
                 .map_err(|e| format!("parse {}: {}", path, e))?;
 
             // Collect imports
             for stmt in &module.stmts {
-                if let kaubo_syntax::ast::Stmt::Import { path: import_path, .. } = stmt {
+                if let kaubo_syntax::ast::Stmt::Import {
+                    path: import_path, ..
+                } = stmt
+                {
                     let resolved = self.resolve_relative(&path, import_path)?;
                     if !seen.contains(&resolved) {
                         stack.push(resolved);
@@ -80,7 +85,9 @@ impl ModuleGraph {
         let mut visited = HashSet::new();
 
         while let Some(path) = queue.pop() {
-            if visited.contains(&path) { continue; }
+            if visited.contains(&path) {
+                continue;
+            }
             visited.insert(path.clone());
 
             if let Some(cps) = self.compiled.get(&path) {
@@ -88,7 +95,8 @@ impl ModuleGraph {
 
                 // Find calls to imported modules
                 if let Some(source) = self.sources.get(&path) {
-                    let module = Parser::new(source).parse()
+                    let module = Parser::new(source)
+                        .parse()
                         .map_err(|_| format!("re-parse {}", path))?;
 
                     for stmt in &module.stmts {
@@ -127,8 +135,8 @@ impl ModuleGraph {
             modules_obj.insert(name.clone(), json);
         }
 
-        let manifest_str = serde_json::to_string_pretty(&manifest)
-            .map_err(|e| format!("json: {}", e))?;
+        let manifest_str =
+            serde_json::to_string_pretty(&manifest).map_err(|e| format!("json: {}", e))?;
         fs::write(output, manifest_str).map_err(|e| format!("write {}: {}", output, e))?;
 
         Ok(())
@@ -148,11 +156,15 @@ impl ModuleGraph {
 
     fn resolve_module(&self, name: &str) -> Result<String, String> {
         // If name already ends with .kaubo, use as-is
-        if name.ends_with(".kaubo") { return Ok(name.to_string()); }
+        if name.ends_with(".kaubo") {
+            return Ok(name.to_string());
+        }
         let path = format!("{}.kaubo", name);
         for base in &self.search_paths {
             let full = base.join(&path);
-            if full.exists() { return Ok(path); }
+            if full.exists() {
+                return Ok(path);
+            }
         }
         Err(format!("module '{}' not found", name))
     }
@@ -167,7 +179,6 @@ impl ModuleGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn write_file(path: &str, content: &str) {
         if let Some(parent) = Path::new(path).parent() {

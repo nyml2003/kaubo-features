@@ -10,16 +10,25 @@ struct GcSlot {
 
 impl GcHeap {
     pub fn new() -> Self {
-        GcHeap { slots: Vec::new(), free_list: Vec::new() }
+        GcHeap {
+            slots: Vec::new(),
+            free_list: Vec::new(),
+        }
     }
 
     pub fn alloc(&mut self, obj: crate::execute::HeapObj) -> usize {
         if let Some(idx) = self.free_list.pop() {
-            self.slots[idx] = GcSlot { rc: 1, obj: Some(obj) };
+            self.slots[idx] = GcSlot {
+                rc: 1,
+                obj: Some(obj),
+            };
             return idx;
         }
         let idx = self.slots.len();
-        self.slots.push(GcSlot { rc: 1, obj: Some(obj) });
+        self.slots.push(GcSlot {
+            rc: 1,
+            obj: Some(obj),
+        });
         idx
     }
 
@@ -46,11 +55,17 @@ impl GcHeap {
     }
 
     pub fn get(&self, idx: usize) -> &crate::execute::HeapObj {
-        self.slots[idx].obj.as_ref().expect("gc_heap: get on empty slot")
+        self.slots[idx]
+            .obj
+            .as_ref()
+            .expect("gc_heap: get on empty slot")
     }
 
     pub fn get_mut(&mut self, idx: usize) -> &mut crate::execute::HeapObj {
-        self.slots[idx].obj.as_mut().expect("gc_heap: get_mut on empty slot")
+        self.slots[idx]
+            .obj
+            .as_mut()
+            .expect("gc_heap: get_mut on empty slot")
     }
 
     pub fn try_get(&self, idx: usize) -> Option<&crate::execute::HeapObj> {

@@ -4,9 +4,9 @@
 
 #![cfg(feature = "alloc")]
 use crate::{Level, LogRingBuffer, Logger};
-use alloc::sync::Arc;
 #[cfg(any(feature = "stdout", feature = "stderr", feature = "file"))]
 use crate::{LogSink, Record};
+use alloc::sync::Arc;
 #[cfg(feature = "file")]
 use std::io::Write;
 

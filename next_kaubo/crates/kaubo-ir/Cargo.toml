@@ -7,5 +7,6 @@ authors.workspace = true
 description = "Kaubo v2 CPS IR types and AST→CPS lowering"
 
 [dependencies]
-kaubo-syntax = { path = "../kaubo-syntax" }
+kaubo-cps = { path = "../kaubo-cps" }
+kaubo-ast = { path = "../kaubo-ast" }
 serde = { version = "1", features = ["derive"] }

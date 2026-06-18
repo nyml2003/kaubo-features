@@ -184,7 +184,7 @@ mod tests {
         // MemoryFileSystem doesn't support directories yet
         assert!(!fs.is_dir(Path::new("/")));
         assert!(!fs.is_dir(Path::new("/some/dir")));
-        
+
         fs.write_file(Path::new("/some/file.txt"), b"x").unwrap();
         assert!(!fs.is_dir(Path::new("/some/file.txt")));
     }
@@ -245,7 +245,7 @@ mod tests {
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         // Just verify no panics occurred and file exists
         assert!(fs.exists(Path::new("/concurrent.txt")));
     }

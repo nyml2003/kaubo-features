@@ -1,11 +1,10 @@
 //! Lexer — Kaubo v2
 
-use std::str::Chars;
-use std::iter::Peekable;
 use crate::token::{Token, TokenKind};
+use std::iter::Peekable;
+use std::str::Chars;
 
 pub struct Lexer<'a> {
-    source: &'a str,
     chars: Peekable<Chars<'a>>,
     line: usize,
     col: usize,
@@ -14,7 +13,6 @@ pub struct Lexer<'a> {
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
         Self {
-            source,
             chars: source.chars().peekable(),
             line: 1,
             col: 1,
@@ -27,7 +25,9 @@ impl<'a> Lexer<'a> {
             let tok = self.next_token();
             let is_eof = tok.kind == TokenKind::Eof;
             tokens.push(tok);
-            if is_eof { break; }
+            if is_eof {
+                break;
+            }
         }
         tokens
     }
@@ -37,7 +37,7 @@ impl<'a> Lexer<'a> {
 
         let line = self.line;
         let col = self.col;
-        
+
         match self.chars.next() {
             None => Token::eof(line, col),
             Some(c) => self.scan_token(c, line, col),
@@ -91,17 +91,22 @@ impl<'a> Lexer<'a> {
         self.chars.peek().copied()
     }
 
-    fn advance(&mut self) { self.chars.next(); self.col += 1; }
-
-    fn bump(&mut self) {
-        self.advance();
+    fn advance(&mut self) {
+        self.chars.next();
+        self.col += 1;
     }
 
     fn skip_whitespace_and_comments(&mut self) {
         loop {
             match self.peek() {
-                Some(' ') | Some('\t') | Some('\r') => { self.advance(); }
-                Some('\n') => { self.advance(); self.line += 1; self.col = 1; }
+                Some(' ') | Some('\t') | Some('\r') => {
+                    self.advance();
+                }
+                Some('\n') => {
+                    self.advance();
+                    self.line += 1;
+                    self.col = 1;
+                }
                 _ => break,
             }
         }
@@ -137,7 +142,9 @@ impl<'a> Lexer<'a> {
     fn collect_line_comment(&mut self) -> String {
         let mut s = String::new();
         while let Some(c) = self.peek() {
-            if c == '\n' { break; }
+            if c == '\n' {
+                break;
+            }
             s.push(c);
             self.advance();
         }
@@ -151,33 +158,27 @@ impl<'a> Lexer<'a> {
             s.push(c);
             self.advance();
             match c {
-                '/' if self.peek() == Some('*') => { s.push('*'); self.advance(); depth += 1; }
-                '*' if self.peek() == Some('/') => { s.push('/'); self.advance(); depth -= 1; if depth == 0 { return s; } }
-                '\n' => { self.line += 1; self.col = 1; }
+                '/' if self.peek() == Some('*') => {
+                    s.push('*');
+                    self.advance();
+                    depth += 1;
+                }
+                '*' if self.peek() == Some('/') => {
+                    s.push('/');
+                    self.advance();
+                    depth -= 1;
+                    if depth == 0 {
+                        return s;
+                    }
+                }
+                '\n' => {
+                    self.line += 1;
+                    self.col = 1;
+                }
                 _ => {}
             }
         }
         s
-    }
-
-    fn skip_line_comment(&mut self) {
-        while let Some(c) = self.peek() {
-            if c == '\n' { break; }
-            self.advance();
-        }
-    }
-
-    fn skip_block_comment(&mut self) {
-        let mut depth = 1;
-        while let Some(c) = self.peek() {
-            self.advance();
-            match c {
-                '/' if self.peek() == Some('*') => { self.advance(); depth += 1; }
-                '*' if self.peek() == Some('/') => { self.advance(); depth -= 1; if depth == 0 { return; } }
-                '\n' => { self.line += 1; self.col = 1; }
-                _ => {}
-            }
-        }
     }
 
     fn scan_eq(&mut self, line: usize, col: usize) -> Token {
@@ -209,9 +210,15 @@ impl<'a> Lexer<'a> {
 
     fn scan_gt(&mut self, line: usize, col: usize) -> Token {
         match self.peek() {
-            Some('=') => { self.advance(); Token::new(TokenKind::Ge, ">=".into(), line, col) }
-            Some('>') => { self.advance(); Token::new(TokenKind::GtGt, ">>".into(), line, col) }
-            _ => Token::new(TokenKind::Gt, ">".into(), line, col)
+            Some('=') => {
+                self.advance();
+                Token::new(TokenKind::Ge, ">=".into(), line, col)
+            }
+            Some('>') => {
+                self.advance();
+                Token::new(TokenKind::GtGt, ">>".into(), line, col)
+            }
+            _ => Token::new(TokenKind::Gt, ">".into(), line, col),
         }
     }
 
@@ -228,7 +235,9 @@ impl<'a> Lexer<'a> {
         let mut s = String::new();
         while let Some(c) = self.chars.next() {
             self.col += 1;
-            if c == quote { return Token::new(TokenKind::StringLiteral, s, line, col); }
+            if c == quote {
+                return Token::new(TokenKind::StringLiteral, s, line, col);
+            }
             if c == '\\' {
                 match self.chars.next() {
                     Some('n') => s.push('\n'),
@@ -245,7 +254,12 @@ impl<'a> Lexer<'a> {
                 s.push(c);
             }
         }
-        Token::new(TokenKind::Error, format!("unterminated string: {}", s), line, col)
+        Token::new(
+            TokenKind::Error,
+            format!("unterminated string: {}", s),
+            line,
+            col,
+        )
     }
 
     fn scan_number(&mut self, first: char, line: usize, col: usize) -> Token {
@@ -273,7 +287,9 @@ impl<'a> Lexer<'a> {
                     if c.is_ascii_digit() || c == '_' {
                         s.push(c);
                         self.advance();
-                    } else { break; }
+                    } else {
+                        break;
+                    }
                 }
                 return Token::new(TokenKind::FloatLiteral, s, line, col);
             }
@@ -305,59 +321,119 @@ mod tests {
     fn kinds(src: &str) -> Vec<TokenKind> {
         let mut lex = Lexer::new(src);
         let toks = lex.tokenize();
-        toks.into_iter().filter(|t| t.kind != TokenKind::Eof).map(|t| t.kind).collect()
+        toks.into_iter()
+            .filter(|t| t.kind != TokenKind::Eof)
+            .map(|t| t.kind)
+            .collect()
     }
 
     #[test]
     fn test_keywords() {
-        assert_eq!(kinds("const var if else for in while break continue return"),
-            vec![TokenKind::Const, TokenKind::Var, TokenKind::If, TokenKind::Else,
-                 TokenKind::For, TokenKind::In, TokenKind::While, TokenKind::Break,
-                 TokenKind::Continue, TokenKind::Return]);
+        assert_eq!(
+            kinds("const var if else for in while break continue return"),
+            vec![
+                TokenKind::Const,
+                TokenKind::Var,
+                TokenKind::If,
+                TokenKind::Else,
+                TokenKind::For,
+                TokenKind::In,
+                TokenKind::While,
+                TokenKind::Break,
+                TokenKind::Continue,
+                TokenKind::Return
+            ]
+        );
     }
 
     #[test]
     fn test_types_and_bool() {
-        assert_eq!(kinds("true false null"),
-            vec![TokenKind::True, TokenKind::False, TokenKind::Null]);
+        assert_eq!(
+            kinds("true false null"),
+            vec![TokenKind::True, TokenKind::False, TokenKind::Null]
+        );
     }
 
     #[test]
     fn test_struct_methods() {
         let ks = kinds("struct impl export import from as async await self");
-        assert_eq!(ks, vec![
-            TokenKind::Struct, TokenKind::Impl, TokenKind::Export, TokenKind::Import,
-            TokenKind::From, TokenKind::As, TokenKind::Async_, TokenKind::Await, TokenKind::Self_,
-        ]);
+        assert_eq!(
+            ks,
+            vec![
+                TokenKind::Struct,
+                TokenKind::Impl,
+                TokenKind::Export,
+                TokenKind::Import,
+                TokenKind::From,
+                TokenKind::As,
+                TokenKind::Async_,
+                TokenKind::Await,
+                TokenKind::Self_,
+            ]
+        );
     }
 
     #[test]
     fn test_operators() {
-        assert_eq!(kinds("+ - * / % = == != < <= > >= not and or"),
-            vec![TokenKind::Plus, TokenKind::Minus, TokenKind::Asterisk, TokenKind::Slash,
-                 TokenKind::Percent, TokenKind::Eq, TokenKind::EqEq, TokenKind::NotEq,
-                 TokenKind::Lt, TokenKind::Le, TokenKind::Gt, TokenKind::Ge,
-                 TokenKind::Not, TokenKind::And, TokenKind::Or]);
+        assert_eq!(
+            kinds("+ - * / % = == != < <= > >= not and or"),
+            vec![
+                TokenKind::Plus,
+                TokenKind::Minus,
+                TokenKind::Asterisk,
+                TokenKind::Slash,
+                TokenKind::Percent,
+                TokenKind::Eq,
+                TokenKind::EqEq,
+                TokenKind::NotEq,
+                TokenKind::Lt,
+                TokenKind::Le,
+                TokenKind::Gt,
+                TokenKind::Ge,
+                TokenKind::Not,
+                TokenKind::And,
+                TokenKind::Or
+            ]
+        );
     }
 
     #[test]
     fn test_compound_operators() {
-        assert_eq!(kinds("-> |> >>"),
-            vec![TokenKind::FatArrow, TokenKind::Pipe, TokenKind::GtGt]);
+        assert_eq!(
+            kinds("-> |> >>"),
+            vec![TokenKind::FatArrow, TokenKind::Pipe, TokenKind::GtGt]
+        );
     }
 
     #[test]
     fn test_delimiters() {
-        assert_eq!(kinds("( ) { } [ ] , ; : ."),
-            vec![TokenKind::LParen, TokenKind::RParen, TokenKind::LBrace, TokenKind::RBrace,
-                 TokenKind::LBracket, TokenKind::RBracket, TokenKind::Comma, TokenKind::Semicolon,
-                 TokenKind::Colon, TokenKind::Dot]);
+        assert_eq!(
+            kinds("( ) { } [ ] , ; : ."),
+            vec![
+                TokenKind::LParen,
+                TokenKind::RParen,
+                TokenKind::LBrace,
+                TokenKind::RBrace,
+                TokenKind::LBracket,
+                TokenKind::RBracket,
+                TokenKind::Comma,
+                TokenKind::Semicolon,
+                TokenKind::Colon,
+                TokenKind::Dot
+            ]
+        );
     }
 
     #[test]
     fn test_literals() {
-        assert_eq!(kinds(r#"42 3.14 "hello" "#),
-            vec![TokenKind::IntLiteral, TokenKind::FloatLiteral, TokenKind::StringLiteral]);
+        assert_eq!(
+            kinds(r#"42 3.14 "hello" "#),
+            vec![
+                TokenKind::IntLiteral,
+                TokenKind::FloatLiteral,
+                TokenKind::StringLiteral
+            ]
+        );
     }
 
     #[test]
@@ -371,22 +447,55 @@ mod tests {
     #[test]
     fn test_comments() {
         let ks = kinds("// line comment\n42 /* block */ 0");
-        assert_eq!(ks, vec![TokenKind::Comment, TokenKind::IntLiteral, TokenKind::Comment, TokenKind::IntLiteral]);
+        assert_eq!(
+            ks,
+            vec![
+                TokenKind::Comment,
+                TokenKind::IntLiteral,
+                TokenKind::Comment,
+                TokenKind::IntLiteral
+            ]
+        );
     }
 
     #[test]
     fn test_deep_lambda() {
         // λ syntax from design doc
-        assert_eq!(kinds("|a,b| -> bool { a == b }"),
-            vec![TokenKind::Bar, TokenKind::Identifier, TokenKind::Comma, TokenKind::Identifier,
-                 TokenKind::Bar, TokenKind::FatArrow, TokenKind::Identifier, TokenKind::LBrace,
-                 TokenKind::Identifier, TokenKind::EqEq, TokenKind::Identifier, TokenKind::RBrace]);
+        assert_eq!(
+            kinds("|a,b| -> bool { a == b }"),
+            vec![
+                TokenKind::Bar,
+                TokenKind::Identifier,
+                TokenKind::Comma,
+                TokenKind::Identifier,
+                TokenKind::Bar,
+                TokenKind::FatArrow,
+                TokenKind::Identifier,
+                TokenKind::LBrace,
+                TokenKind::Identifier,
+                TokenKind::EqEq,
+                TokenKind::Identifier,
+                TokenKind::RBrace
+            ]
+        );
     }
 
     #[test]
     fn test_real_variable_decl() {
-        assert_eq!(kinds("const pi = 3.14159; var counter = 0;"),
-            vec![TokenKind::Const, TokenKind::Identifier, TokenKind::Eq, TokenKind::FloatLiteral, TokenKind::Semicolon,
-                 TokenKind::Var, TokenKind::Identifier, TokenKind::Eq, TokenKind::IntLiteral, TokenKind::Semicolon]);
+        assert_eq!(
+            kinds("const pi = 3.14159; var counter = 0;"),
+            vec![
+                TokenKind::Const,
+                TokenKind::Identifier,
+                TokenKind::Eq,
+                TokenKind::FloatLiteral,
+                TokenKind::Semicolon,
+                TokenKind::Var,
+                TokenKind::Identifier,
+                TokenKind::Eq,
+                TokenKind::IntLiteral,
+                TokenKind::Semicolon
+            ]
+        );
     }
 }

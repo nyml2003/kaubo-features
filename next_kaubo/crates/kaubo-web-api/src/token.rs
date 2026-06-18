@@ -1,16 +1,32 @@
 //! Web-facing token utilities: classification, UTF-16 offsets, descriptions.
 
-use kaubo_syntax::TokenKind;
+use kaubo_token::TokenKind;
 
 /// Map a TokenKind to one of 7 display classes for syntax highlighting.
 pub fn classify_token(kind: TokenKind) -> &'static str {
     match kind {
-        TokenKind::Const | TokenKind::Var | TokenKind::If | TokenKind::Else
-        | TokenKind::For | TokenKind::In | TokenKind::While | TokenKind::Break
-        | TokenKind::Continue | TokenKind::Return | TokenKind::Struct
-        | TokenKind::Impl | TokenKind::Export | TokenKind::Import
-        | TokenKind::From | TokenKind::As | TokenKind::Async_ | TokenKind::Await
-        | TokenKind::Self_ | TokenKind::And | TokenKind::Or | TokenKind::Not => "keyword",
+        TokenKind::Const
+        | TokenKind::Var
+        | TokenKind::If
+        | TokenKind::Else
+        | TokenKind::For
+        | TokenKind::In
+        | TokenKind::While
+        | TokenKind::Break
+        | TokenKind::Continue
+        | TokenKind::Return
+        | TokenKind::Struct
+        | TokenKind::Impl
+        | TokenKind::Export
+        | TokenKind::Import
+        | TokenKind::From
+        | TokenKind::As
+        | TokenKind::Async_
+        | TokenKind::Await
+        | TokenKind::Self_
+        | TokenKind::And
+        | TokenKind::Or
+        | TokenKind::Not => "keyword",
 
         TokenKind::IntLiteral | TokenKind::FloatLiteral => "number",
 
@@ -82,7 +98,7 @@ pub fn utf16_range(source: &str, line: usize, col: usize, lexeme: &str) -> (usiz
 }
 
 /// Handle CRLF (\r\n) — consume the \n after \r.
-fn escape_newline(chars: &mut std::iter::Peekable<std::str::Chars>) -> usize {
+fn escape_newline(_chars: &mut std::iter::Peekable<std::str::Chars>) -> usize {
     1 // \n always adds 1 in UTF-16
 }
 
@@ -167,12 +183,28 @@ mod tests {
     #[test]
     fn classify_keywords() {
         for k in &[
-            TokenKind::Const, TokenKind::Var, TokenKind::If, TokenKind::Else,
-            TokenKind::For, TokenKind::In, TokenKind::While, TokenKind::Break,
-            TokenKind::Continue, TokenKind::Return, TokenKind::Struct, TokenKind::Impl,
-            TokenKind::Export, TokenKind::Import, TokenKind::From, TokenKind::As,
-            TokenKind::Async_, TokenKind::Await, TokenKind::Self_,
-            TokenKind::And, TokenKind::Or, TokenKind::Not,
+            TokenKind::Const,
+            TokenKind::Var,
+            TokenKind::If,
+            TokenKind::Else,
+            TokenKind::For,
+            TokenKind::In,
+            TokenKind::While,
+            TokenKind::Break,
+            TokenKind::Continue,
+            TokenKind::Return,
+            TokenKind::Struct,
+            TokenKind::Impl,
+            TokenKind::Export,
+            TokenKind::Import,
+            TokenKind::From,
+            TokenKind::As,
+            TokenKind::Async_,
+            TokenKind::Await,
+            TokenKind::Self_,
+            TokenKind::And,
+            TokenKind::Or,
+            TokenKind::Not,
         ] {
             assert_class(*k, "keyword");
         }
@@ -209,13 +241,32 @@ mod tests {
     #[test]
     fn classify_operators() {
         for k in &[
-            TokenKind::Plus, TokenKind::Minus, TokenKind::Asterisk, TokenKind::Slash,
-            TokenKind::Percent, TokenKind::Eq, TokenKind::EqEq, TokenKind::NotEq,
-            TokenKind::Lt, TokenKind::Le, TokenKind::Gt, TokenKind::Ge,
-            TokenKind::LParen, TokenKind::RParen, TokenKind::LBrace, TokenKind::RBrace,
-            TokenKind::LBracket, TokenKind::RBracket, TokenKind::Comma, TokenKind::Semicolon,
-            TokenKind::Colon, TokenKind::Dot, TokenKind::Pipe, TokenKind::Bar,
-            TokenKind::FatArrow, TokenKind::GtGt,
+            TokenKind::Plus,
+            TokenKind::Minus,
+            TokenKind::Asterisk,
+            TokenKind::Slash,
+            TokenKind::Percent,
+            TokenKind::Eq,
+            TokenKind::EqEq,
+            TokenKind::NotEq,
+            TokenKind::Lt,
+            TokenKind::Le,
+            TokenKind::Gt,
+            TokenKind::Ge,
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::RBrace,
+            TokenKind::LBracket,
+            TokenKind::RBracket,
+            TokenKind::Comma,
+            TokenKind::Semicolon,
+            TokenKind::Colon,
+            TokenKind::Dot,
+            TokenKind::Pipe,
+            TokenKind::Bar,
+            TokenKind::FatArrow,
+            TokenKind::GtGt,
         ] {
             assert_class(*k, "operator");
         }

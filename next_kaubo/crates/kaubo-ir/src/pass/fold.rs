@@ -1,13 +1,15 @@
 //! Constant folding — evaluate constant expressions at compile time.
 
-use std::collections::HashMap;
-use crate::cps::*;
 use super::Pass;
+use crate::cps::*;
+use std::collections::HashMap;
 
 pub struct ConstantFold;
 
 impl Pass for ConstantFold {
-    fn name(&self) -> &'static str { "constant-fold" }
+    fn name(&self) -> &'static str {
+        "constant-fold"
+    }
     fn run(&self, module: &mut CpsModule) {
         for func in &mut module.functions {
             fold_function(func, &mut module.constants);
@@ -20,7 +22,9 @@ fn fold_function(func: &mut CpsFunction, constants: &mut Vec<Constant>) {
     let mut pred_count: HashMap<usize, usize> = HashMap::new();
     let mut pred: HashMap<usize, usize> = HashMap::new();
     for block in &func.blocks {
-        if block.id == usize::MAX { continue; }
+        if block.id == usize::MAX {
+            continue;
+        }
         match &block.term {
             CpsTerminator::Jump(t, _) => {
                 *pred_count.entry(*t).or_insert(0) += 1;
@@ -57,11 +61,20 @@ fn fold_function(func: &mut CpsFunction, constants: &mut Vec<Constant>) {
             // Enqueue successors
             match &block.term {
                 CpsTerminator::Jump(t, _) => {
-                    if !visited.contains(t) { visited.insert(*t); queue.push(*t); }
+                    if !visited.contains(t) {
+                        visited.insert(*t);
+                        queue.push(*t);
+                    }
                 }
                 CpsTerminator::Branch(_, t, _, f, _) => {
-                    if !visited.contains(t) { visited.insert(*t); queue.push(*t); }
-                    if !visited.contains(f) { visited.insert(*f); queue.push(*f); }
+                    if !visited.contains(t) {
+                        visited.insert(*t);
+                        queue.push(*t);
+                    }
+                    if !visited.contains(f) {
+                        visited.insert(*f);
+                        queue.push(*f);
+                    }
                 }
                 _ => {}
             }
@@ -69,7 +82,11 @@ fn fold_function(func: &mut CpsFunction, constants: &mut Vec<Constant>) {
     }
 }
 
-fn fold_block_with(block: &mut CpsBlock, constants: &mut Vec<Constant>, mut reg_val: HashMap<usize, i64>) -> HashMap<usize, i64> {
+fn fold_block_with(
+    block: &mut CpsBlock,
+    constants: &mut Vec<Constant>,
+    mut reg_val: HashMap<usize, i64>,
+) -> HashMap<usize, i64> {
     for instr in &mut block.instrs {
         let replacement = match instr {
             CpsInstr::LoadConst(r, idx) => {
@@ -87,8 +104,12 @@ fn fold_block_with(block: &mut CpsBlock, constants: &mut Vec<Constant>, mut reg_
                         let new_idx = add_or_get_const(constants, Constant::Int(result));
                         reg_val.insert(dst, result);
                         Some(CpsInstr::LoadConst(dst, new_idx))
-                    } else { None }
-                } else { None }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             }
             CpsInstr::UnOp(r, op, a) => {
                 let (dst, src) = (*r, *a);
@@ -98,8 +119,12 @@ fn fold_block_with(block: &mut CpsBlock, constants: &mut Vec<Constant>, mut reg_
                         let new_idx = add_or_get_const(constants, Constant::Int(result));
                         reg_val.insert(dst, result);
                         Some(CpsInstr::LoadConst(dst, new_idx))
-                    } else { None }
-                } else { None }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             }
             CpsInstr::Move(r, a) => {
                 let va = reg_val.get(a).copied();
@@ -122,8 +147,20 @@ fn eval_binop(op: CpsBinOp, a: i64, b: i64) -> Option<i64> {
         CpsBinOp::AddInt => Some(a.wrapping_add(b)),
         CpsBinOp::SubInt => Some(a.wrapping_sub(b)),
         CpsBinOp::MulInt => Some(a.wrapping_mul(b)),
-        CpsBinOp::DivInt => if b != 0 { Some(a / b) } else { None },
-        CpsBinOp::ModInt => if b != 0 { Some(a % b) } else { None },
+        CpsBinOp::DivInt => {
+            if b != 0 {
+                Some(a / b)
+            } else {
+                None
+            }
+        }
+        CpsBinOp::ModInt => {
+            if b != 0 {
+                Some(a % b)
+            } else {
+                None
+            }
+        }
         CpsBinOp::EqInt => Some((a == b) as i64),
         CpsBinOp::NeInt => Some((a != b) as i64),
         CpsBinOp::LtInt => Some((a < b) as i64),
@@ -144,7 +181,9 @@ fn eval_unop(op: CpsUnOp, a: i64) -> Option<i64> {
 
 fn add_or_get_const(constants: &mut Vec<Constant>, c: Constant) -> usize {
     for (i, existing) in constants.iter().enumerate() {
-        if const_eq(existing, &c) { return i; }
+        if const_eq(existing, &c) {
+            return i;
+        }
     }
     let i = constants.len();
     constants.push(c);
@@ -164,12 +203,12 @@ fn const_eq(a: &Constant, b: &Constant) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaubo_syntax::parser::Parser;
     use crate::cps_build::build_module;
     use crate::flatten::flatten_module;
+    use crate::test_fixtures;
 
     fn fold_src(src: &str) -> CpsModule {
-        let m = Parser::new(src).parse().unwrap();
+        let m = test_fixtures::module(src);
         let mut cps = build_module(&m).unwrap();
         flatten_module(&mut cps);
         ConstantFold.run(&mut cps);
@@ -180,11 +219,11 @@ mod tests {
     fn fold_add_constants() {
         let cps = fold_src("const x = 2 + 3;");
         let main = cps.functions.last().unwrap();
-        let has_add = main.blocks.iter()
-            .filter(|b| b.id != usize::MAX)
-            .any(|b|
-                b.instrs.iter().any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)))
-            );
+        let has_add = main.blocks.iter().filter(|b| b.id != usize::MAX).any(|b| {
+            b.instrs
+                .iter()
+                .any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)))
+        });
         assert!(!has_add, "2 + 3 should fold to LoadConst(5)");
     }
 
@@ -192,11 +231,11 @@ mod tests {
     fn fold_mul_constants() {
         let cps = fold_src("const x = 6 * 7;");
         let main = cps.functions.last().unwrap();
-        let has_mul = main.blocks.iter()
-            .filter(|b| b.id != usize::MAX)
-            .any(|b|
-                b.instrs.iter().any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::MulInt, _, _)))
-            );
+        let has_mul = main.blocks.iter().filter(|b| b.id != usize::MAX).any(|b| {
+            b.instrs
+                .iter()
+                .any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::MulInt, _, _)))
+        });
         assert!(!has_mul, "6 * 7 should fold to LoadConst(42)");
     }
 
@@ -204,11 +243,11 @@ mod tests {
     fn fold_comparison() {
         let cps = fold_src("const x = 5 < 10;");
         let main = cps.functions.last().unwrap();
-        let has_lt = main.blocks.iter()
-            .filter(|b| b.id != usize::MAX)
-            .any(|b|
-                b.instrs.iter().any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::LtInt, _, _)))
-            );
+        let has_lt = main.blocks.iter().filter(|b| b.id != usize::MAX).any(|b| {
+            b.instrs
+                .iter()
+                .any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::LtInt, _, _)))
+        });
         assert!(!has_lt, "5 < 10 should fold to LoadConst(1)");
     }
 
@@ -216,11 +255,11 @@ mod tests {
     fn fold_var_with_known_value() {
         let cps = fold_src("var x = 2; var y = x + 3;");
         let main = cps.functions.last().unwrap();
-        let has_add = main.blocks.iter()
-            .filter(|b| b.id != usize::MAX)
-            .any(|b|
-                b.instrs.iter().any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)))
-            );
+        let has_add = main.blocks.iter().filter(|b| b.id != usize::MAX).any(|b| {
+            b.instrs
+                .iter()
+                .any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)))
+        });
         assert!(!has_add, "x+3 with x=2 should fold (constant propagation)");
     }
 
@@ -229,23 +268,26 @@ mod tests {
         // x=2, then x=x+1 makes x known as 3, so x+3 should fold to 6
         let cps = fold_src("var x = 2; x = x + 1; var y = x + 3;");
         let main = cps.functions.last().unwrap();
-        let has_add = main.blocks.iter()
-            .filter(|b| b.id != usize::MAX)
-            .any(|b|
-                b.instrs.iter().any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)))
-            );
-        assert!(!has_add, "x+3 after x=x+1 should fold (x becomes known constant 3)");
+        let has_add = main.blocks.iter().filter(|b| b.id != usize::MAX).any(|b| {
+            b.instrs
+                .iter()
+                .any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)))
+        });
+        assert!(
+            !has_add,
+            "x+3 after x=x+1 should fold (x becomes known constant 3)"
+        );
     }
 
     #[test]
     fn fold_unary_neg() {
         let cps = fold_src("const x = -(42);");
         let main = cps.functions.last().unwrap();
-        let has_neg = main.blocks.iter()
+        let has_neg = main
+            .blocks
+            .iter()
             .filter(|b| b.id != usize::MAX)
-            .any(|b|
-                b.instrs.iter().any(|i| matches!(i, CpsInstr::UnOp(..)))
-            );
+            .any(|b| b.instrs.iter().any(|i| matches!(i, CpsInstr::UnOp(..))));
         assert!(!has_neg, "-(42) should fold to LoadConst(-42)");
     }
 }

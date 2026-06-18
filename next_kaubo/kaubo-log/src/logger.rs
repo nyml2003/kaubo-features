@@ -474,9 +474,7 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     fn test_file_sink_new_error() {
-        // 测试 FileSink::new 失败的情况（Err 分支）
-        // 使用一个无效的路径（在 Windows 上是非法文件名）
-        let result = FileSink::new("<invalid>:path");
+        let result = FileSink::new(std::env::temp_dir());
         assert!(result.is_err());
     }
 

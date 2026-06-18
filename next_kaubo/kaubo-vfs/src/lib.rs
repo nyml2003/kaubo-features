@@ -26,9 +26,9 @@ pub mod middleware;
 
 pub use error::{VfsError, VfsResult};
 pub use memory::MemoryFileSystem;
+pub use middleware::VfsBuilder;
 pub use native::NativeFileSystem;
 pub use r#trait::VirtualFileSystem;
-pub use middleware::VfsBuilder;
 
 /// Create a new memory-based file system.
 pub fn memory_fs() -> MemoryFileSystem {
@@ -38,4 +38,19 @@ pub fn memory_fs() -> MemoryFileSystem {
 /// Create a new native file system.
 pub fn native_fs() -> NativeFileSystem {
     NativeFileSystem::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn helper_constructors_return_working_fs() {
+        let memory = memory_fs();
+        assert!(!memory.exists(Path::new("/missing")));
+
+        let native = native_fs();
+        assert_eq!(native.is_dir(Path::new(".")), Path::new(".").is_dir());
+    }
 }

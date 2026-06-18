@@ -1,9 +1,9 @@
 //! Algorithm W — Hindley-Milner 类型推断
 
+use crate::types::*;
+use kaubo_ast::*;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use kaubo_syntax::ast::*;
-use crate::types::*;
 
 static TVAR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -11,7 +11,9 @@ pub fn fresh_tvar() -> TypeVar {
     TypeVar(TVAR_COUNTER.fetch_add(1, Ordering::Relaxed))
 }
 
-pub fn reset_tvar() { TVAR_COUNTER.store(0, Ordering::Relaxed); }
+pub fn reset_tvar() {
+    TVAR_COUNTER.store(0, Ordering::Relaxed);
+}
 
 static STRUCT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -30,10 +32,12 @@ pub type InferResult<T> = Result<T, TypeError>;
 
 // ── 主入口 ──
 
-pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>)> {
+pub fn infer_module(
+    module: &Module,
+) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>)> {
     reset_tvar();
     let mut env: TypeEnv = HashMap::new();
-    
+
     // Pass 1: collect struct definitions
     let mut struct_registry: HashMap<String, usize> = HashMap::new();
     let mut struct_fields: HashMap<usize, Vec<(String, Type)>> = HashMap::new();
@@ -43,7 +47,10 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
             struct_registry.insert(name.clone(), id);
             let mut fts = Vec::new();
             for f in fields {
-                fts.push((f.name.clone(), type_expr_to_type(&f.ty, &struct_registry, &struct_fields)?));
+                fts.push((
+                    f.name.clone(),
+                    type_expr_to_type(&f.ty, &struct_registry, &struct_fields)?,
+                ));
             }
             struct_fields.insert(id, fts);
         }
@@ -73,11 +80,17 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
                 let id = struct_registry[name];
                 let mut fts = Vec::new();
                 for f in fields {
-                    fts.push((f.name.clone(), type_expr_to_type(&f.ty, &struct_registry, &struct_fields)?));
+                    fts.push((
+                        f.name.clone(),
+                        type_expr_to_type(&f.ty, &struct_registry, &struct_fields)?,
+                    ));
                 }
                 struct_fields.insert(id, fts);
             }
-            Stmt::ImplBlock { struct_name, methods } => {
+            Stmt::ImplBlock {
+                struct_name,
+                methods,
+            } => {
                 // Register methods on struct
                 for m in methods {
                     let (s, ty) = infer(&env, &m.body, &struct_registry, &struct_fields)?;
@@ -85,7 +98,9 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
                     env.insert(format!("{}.{}", struct_name, m.name), scheme);
                 }
             }
-            Stmt::ExprStmt(expr) => { infer(&env, expr, &struct_registry, &struct_fields)?; }
+            Stmt::ExprStmt(expr) => {
+                infer(&env, expr, &struct_registry, &struct_fields)?;
+            }
             Stmt::ExportStmt(_) | Stmt::Import { .. } => {}
         }
     }
@@ -97,24 +112,33 @@ pub fn infer_module(module: &Module) -> InferResult<(TypeEnv, HashMap<usize, Vec
 
 fn inject_stdlib(env: &mut TypeEnv) {
     // print: String → Null
-    env.insert("print".into(), Scheme::monomorphic(
-        Type::Arrow(Box::new(Type::String), Box::new(Type::Null))
-    ));
+    env.insert(
+        "print".into(),
+        Scheme::monomorphic(Type::Arrow(Box::new(Type::String), Box::new(Type::Null))),
+    );
     // type_of: forall a. a → String
     let tv = fresh_tvar();
-    env.insert("type_of".into(), Scheme {
-        bound: vec![tv],
-        body: Box::new(Type::Arrow(Box::new(Type::Var(tv)), Box::new(Type::String))),
-    });
+    env.insert(
+        "type_of".into(),
+        Scheme {
+            bound: vec![tv],
+            body: Box::new(Type::Arrow(Box::new(Type::Var(tv)), Box::new(Type::String))),
+        },
+    );
     // assert: Bool → Null
-    env.insert("assert".into(), Scheme::monomorphic(
-        Type::Arrow(Box::new(Type::Bool), Box::new(Type::Null))
-    ));
+    env.insert(
+        "assert".into(),
+        Scheme::monomorphic(Type::Arrow(Box::new(Type::Bool), Box::new(Type::Null))),
+    );
     // sqrt/sin/cos: Float64 → Float64
     for name in &["sqrt", "sin", "cos", "floor", "ceil"] {
-        env.insert(name.to_string(), Scheme::monomorphic(
-            Type::Arrow(Box::new(Type::Float64), Box::new(Type::Float64))
-        ));
+        env.insert(
+            name.to_string(),
+            Scheme::monomorphic(Type::Arrow(
+                Box::new(Type::Float64),
+                Box::new(Type::Float64),
+            )),
+        );
     }
 }
 
@@ -134,12 +158,15 @@ pub fn infer(
         Expr::LitNull => Ok((Subst::empty(), Type::Null)),
 
         Expr::VarRef(name) => {
-            let scheme = env.get(name)
-                .ok_or_else(|| TypeError { msg: format!("unbound variable '{}'", name), line: 0, col: 0 })?;
+            let scheme = env.get(name).ok_or_else(|| TypeError {
+                msg: format!("unbound variable '{}'", name),
+                line: 0,
+                col: 0,
+            })?;
             Ok((Subst::empty(), instantiate(scheme)))
         }
 
-        Expr::Lambda { params, ret_ty, body } => {
+        Expr::Lambda { params, body, .. } => {
             let mut s = Subst::empty();
             let mut env_local = env.clone();
             let mut param_types = Vec::new();
@@ -177,33 +204,40 @@ pub fn infer(
             for at in arg_types.into_iter().rev() {
                 arrow = Type::Arrow(Box::new(at), Box::new(arrow));
             }
-            s = unify(&s.apply(&func_ty), &arrow).map_err(|e| TypeError {
-                msg: e, line: 0, col: 0
-            })?.compose(&s);
+            s = unify(&s.apply(&func_ty), &arrow)
+                .map_err(|e| TypeError {
+                    msg: e,
+                    line: 0,
+                    col: 0,
+                })?
+                .compose(&s);
             Ok((s.clone(), s.apply(&ret)))
         }
 
         Expr::Binary { left, op, right } => {
-            // Handle value-type methods (compile-time rewrites)
-            if let (Expr::VarRef(obj_name), _binop) = (left.as_ref(), op) {
-                // We don't need to handle value type methods here since they're
-                // handled at the codegen level. The HM engine just infers the types.
-            }
             let (s1, t1) = infer(env, left, structs, struct_fields)?;
             let (s2, t2) = infer(env, right, structs, struct_fields)?;
             let mut s = s1.compose(&s2);
-            
+
             let result_type = match op {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
-                    s = unify(&s.apply(&t1), &s.apply(&t2)).map_err(|e| TypeError {
-                        msg: format!("binary operator: {}", e), line: 0, col: 0
-                    })?.compose(&s);
+                    s = unify(&s.apply(&t1), &s.apply(&t2))
+                        .map_err(|e| TypeError {
+                            msg: format!("binary operator: {}", e),
+                            line: 0,
+                            col: 0,
+                        })?
+                        .compose(&s);
                     s.apply(&t1)
                 }
-                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
-                    | BinOp::And | BinOp::Or => {
-                    Type::Bool
-                }
+                BinOp::Eq
+                | BinOp::Ne
+                | BinOp::Lt
+                | BinOp::Le
+                | BinOp::Gt
+                | BinOp::Ge
+                | BinOp::And
+                | BinOp::Or => Type::Bool,
                 BinOp::Pipe | BinOp::GtGt => {
                     // Pipe: a |> f means f(a)
                     // For now just treat as pass-through
@@ -216,7 +250,13 @@ pub fn infer(
 
         Expr::Unary { op, right } => {
             let (s, t) = infer(env, right, structs, struct_fields)?;
-            Ok((s, match op { UnOp::Neg => t, UnOp::Not => Type::Bool }))
+            Ok((
+                s,
+                match op {
+                    UnOp::Neg => t,
+                    UnOp::Not => Type::Bool,
+                },
+            ))
         }
 
         Expr::Block(stmts) => {
@@ -237,7 +277,9 @@ pub fn infer(
                             let (s_val, t) = infer(&local_env, val, structs, struct_fields)?;
                             s = s.compose(&s_val);
                             t
-                        } else { Type::Var(fresh_tvar()) };
+                        } else {
+                            Type::Var(fresh_tvar())
+                        };
                         local_env.insert(name.clone(), Scheme::monomorphic(ty));
                         result = Type::Null;
                     }
@@ -252,15 +294,23 @@ pub fn infer(
             Ok((s, result))
         }
 
-        Expr::If { cond, then_branch, else_branch } => {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             let (s_c, _tc) = infer(env, cond, structs, struct_fields)?;
             let (s_t, tt) = infer(env, then_branch, structs, struct_fields)?;
             if let Some(eb) = else_branch {
                 let (s_e, te) = infer(env, eb, structs, struct_fields)?;
                 let mut s = s_c.compose(&s_t).compose(&s_e);
-                s = unify(&s.apply(&tt), &s.apply(&te)).map_err(|e| TypeError {
-                    msg: format!("if branches: {}", e), line: 0, col: 0
-                })?.compose(&s);
+                s = unify(&s.apply(&tt), &s.apply(&te))
+                    .map_err(|e| TypeError {
+                        msg: format!("if branches: {}", e),
+                        line: 0,
+                        col: 0,
+                    })?
+                    .compose(&s);
                 Ok((s.clone(), s.apply(&tt)))
             } else {
                 let s = s_c.compose(&s_t);
@@ -274,16 +324,24 @@ pub fn infer(
             Ok((s_c.compose(&s_b), Type::Null))
         }
 
-        Expr::For { var: _, iterable, body } => {
+        Expr::For {
+            var: _,
+            iterable,
+            body,
+        } => {
             let (s_i, ti) = infer(env, iterable, structs, struct_fields)?;
             // ti should be List<'a>
-            if let Type::List(elem) = &ti {
-                let mut local_env = env.clone();
+            if let Type::List(_) = &ti {
+                let local_env = env.clone();
                 // Bind loop variable
                 let (s_b, _) = infer(&local_env, body, structs, struct_fields)?;
                 Ok((s_i.compose(&s_b), Type::Null))
             } else {
-                Err(TypeError { msg: format!("for loop requires List, got {}", ti), line: 0, col: 0 })
+                Err(TypeError {
+                    msg: format!("for loop requires List, got {}", ti),
+                    line: 0,
+                    col: 0,
+                })
             }
         }
 
@@ -310,7 +368,11 @@ pub fn infer(
             match applied {
                 Type::Record(id, fields) => {
                     // Try struct field first
-                    if let Some(t) = fields.iter().find(|(n, _)| n == field).map(|(_, t)| t.clone()) {
+                    if let Some(t) = fields
+                        .iter()
+                        .find(|(n, _)| n == field)
+                        .map(|(_, t)| t.clone())
+                    {
                         return Ok((s, t));
                     }
                     // Try impl method: look up "{struct_name}.{field}" in env
@@ -328,9 +390,17 @@ pub fn infer(
                             }
                         }
                     }
-                    Err(TypeError { msg: format!("field '{}' not found", field), line: 0, col: 0 })
+                    Err(TypeError {
+                        msg: format!("field '{}' not found", field),
+                        line: 0,
+                        col: 0,
+                    })
                 }
-                _ => Err(TypeError { msg: format!("cannot access field '{}' on {}", field, ty), line: 0, col: 0 }),
+                _ => Err(TypeError {
+                    msg: format!("cannot access field '{}' on {}", field, ty),
+                    line: 0,
+                    col: 0,
+                }),
             }
         }
 
@@ -346,8 +416,11 @@ pub fn infer(
         }
 
         Expr::StructLit { name, fields } => {
-            let id = structs.get(name)
-                .ok_or_else(|| TypeError { msg: format!("unknown struct '{}'", name), line: 0, col: 0 })?;
+            let id = structs.get(name).ok_or_else(|| TypeError {
+                msg: format!("unknown struct '{}'", name),
+                line: 0,
+                col: 0,
+            })?;
             let field_types = struct_fields.get(id).cloned().unwrap_or_default();
             let mut s = Subst::empty();
             for (_fname, fval) in fields {
@@ -363,9 +436,13 @@ pub fn infer(
             for item in items {
                 let (s_i, ti) = infer(env, item, structs, struct_fields)?;
                 s = s.compose(&s_i);
-                s = unify(&s.apply(&elem_ty), &s.apply(&ti)).map_err(|e| TypeError {
-                    msg: format!("list element: {}", e), line: 0, col: 0
-                })?.compose(&s);
+                s = unify(&s.apply(&elem_ty), &s.apply(&ti))
+                    .map_err(|e| TypeError {
+                        msg: format!("list element: {}", e),
+                        line: 0,
+                        col: 0,
+                    })?
+                    .compose(&s);
             }
             Ok((s, Type::List(Box::new(elem_ty))))
         }
@@ -412,20 +489,31 @@ fn occurs_check(var: &TypeVar, ty: &Type) -> bool {
 
 pub fn generalize(env: &TypeEnv, ty: &Type) -> Scheme {
     let free = free_type_vars(ty);
-    let bound: Vec<TypeVar> = free.into_iter().filter(|v| {
-        !env.values().any(|s| free_type_vars(&s.body).contains(v))
-    }).collect();
-    Scheme { bound, body: Box::new(ty.clone()) }
+    let bound: Vec<TypeVar> = free
+        .into_iter()
+        .filter(|v| !env.values().any(|s| free_type_vars(&s.body).contains(v)))
+        .collect();
+    Scheme {
+        bound,
+        body: Box::new(ty.clone()),
+    }
 }
 
 fn free_type_vars(ty: &Type) -> Vec<TypeVar> {
     let mut fv = Vec::new();
     match ty {
         Type::Var(v) => fv.push(*v),
-        Type::Arrow(a, r) => { fv.append(&mut free_type_vars(a)); fv.append(&mut free_type_vars(r)); }
-        Type::List(t) => { fv.append(&mut free_type_vars(t)); }
+        Type::Arrow(a, r) => {
+            fv.append(&mut free_type_vars(a));
+            fv.append(&mut free_type_vars(r));
+        }
+        Type::List(t) => {
+            fv.append(&mut free_type_vars(t));
+        }
         Type::Record(_, fields) => {
-            for (_, t) in fields { fv.append(&mut free_type_vars(t)); }
+            for (_, t) in fields {
+                fv.append(&mut free_type_vars(t));
+            }
         }
         _ => {}
     }
@@ -445,7 +533,11 @@ pub fn instantiate(scheme: &Scheme) -> Type {
 
 // ── 类型表达式转内部类型 ──
 
-fn type_expr_to_type(te: &TypeExpr, structs: &HashMap<String, usize>, struct_fields: &HashMap<usize, Vec<(String, Type)>>) -> InferResult<Type> {
+fn type_expr_to_type(
+    te: &TypeExpr,
+    structs: &HashMap<String, usize>,
+    struct_fields: &HashMap<usize, Vec<(String, Type)>>,
+) -> InferResult<Type> {
     match te {
         TypeExpr::Named(n) => match n.as_str() {
             "Int64" => Ok(Type::Int64),
@@ -458,15 +550,26 @@ fn type_expr_to_type(te: &TypeExpr, structs: &HashMap<String, usize>, struct_fie
                     let fields = struct_fields.get(&id).cloned().unwrap_or_default();
                     Ok(Type::Record(id, fields))
                 } else {
-                    Err(TypeError { msg: format!("unknown type '{}'", n), line: 0, col: 0 })
+                    Err(TypeError {
+                        msg: format!("unknown type '{}'", n),
+                        line: 0,
+                        col: 0,
+                    })
                 }
             }
         },
-        TypeExpr::List(t) => Ok(Type::List(Box::new(type_expr_to_type(t, structs, struct_fields)?))),
+        TypeExpr::List(t) => Ok(Type::List(Box::new(type_expr_to_type(
+            t,
+            structs,
+            struct_fields,
+        )?))),
         TypeExpr::Arrow { params, ret } => {
             let mut arrow = type_expr_to_type(ret, structs, struct_fields)?;
             for p in params.iter().rev() {
-                arrow = Type::Arrow(Box::new(type_expr_to_type(p, structs, struct_fields)?), Box::new(arrow));
+                arrow = Type::Arrow(
+                    Box::new(type_expr_to_type(p, structs, struct_fields)?),
+                    Box::new(arrow),
+                );
             }
             Ok(arrow)
         }
@@ -478,11 +581,132 @@ fn type_expr_to_type(te: &TypeExpr, structs: &HashMap<String, usize>, struct_fie
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaubo_syntax::parser::Parser;
+
+    fn module(stmts: Vec<Stmt>) -> Module {
+        Module { stmts }
+    }
+
+    fn const_decl(name: &str, value: Expr) -> Stmt {
+        Stmt::ConstDecl {
+            name: name.to_string(),
+            ty_ann: None,
+            value,
+        }
+    }
+
+    fn var_decl(name: &str, value: Option<Expr>) -> Stmt {
+        Stmt::VarDecl {
+            name: name.to_string(),
+            ty_ann: None,
+            value,
+        }
+    }
+
+    fn param(name: &str, ty_ann: Option<TypeExpr>) -> Param {
+        Param {
+            name: name.to_string(),
+            ty_ann,
+        }
+    }
+
+    fn empty_structs() -> (HashMap<String, usize>, HashMap<usize, Vec<(String, Type)>>) {
+        (HashMap::new(), HashMap::new())
+    }
+
+    fn infer_expr(expr: Expr) -> InferResult<Type> {
+        let (structs, fields) = empty_structs();
+        let env = TypeEnv::new();
+        let (subst, ty) = infer(&env, &expr, &structs, &fields)?;
+        Ok(subst.apply(&ty))
+    }
+
+    fn infer_ast(module: Module) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>)> {
+        infer_module(&module)
+    }
 
     fn infer_src(src: &str) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>)> {
-        let m = Parser::new(src).parse().map_err(|e| TypeError { msg: e, line: 0, col: 0 })?;
-        infer_module(&m)
+        match src {
+            "const x = 42;" => infer_ast(module(vec![const_decl("x", Expr::LitInt(42))])),
+            "const x = 3.14;" => infer_ast(module(vec![const_decl("x", Expr::LitFloat(3.14))])),
+            "const s = \"hi\"; const b = true;" => infer_ast(module(vec![
+                const_decl("s", Expr::LitString("hi".to_string())),
+                const_decl("b", Expr::LitTrue),
+            ])),
+            "const add = |a, b| { a + b };" => infer_ast(module(vec![const_decl(
+                "add",
+                Expr::Lambda {
+                    params: vec![
+                        Param {
+                            name: "a".to_string(),
+                            ty_ann: None,
+                        },
+                        Param {
+                            name: "b".to_string(),
+                            ty_ann: None,
+                        },
+                    ],
+                    ret_ty: None,
+                    body: Box::new(Expr::Block(vec![Stmt::ExprStmt(Expr::Binary {
+                        left: Box::new(Expr::VarRef("a".to_string())),
+                        op: BinOp::Add,
+                        right: Box::new(Expr::VarRef("b".to_string())),
+                    })])),
+                },
+            )])),
+            "const id = |x| { x };" => infer_ast(module(vec![const_decl(
+                "id",
+                Expr::Lambda {
+                    params: vec![Param {
+                        name: "x".to_string(),
+                        ty_ann: None,
+                    }],
+                    ret_ty: None,
+                    body: Box::new(Expr::Block(vec![Stmt::ExprStmt(Expr::VarRef(
+                        "x".to_string(),
+                    ))])),
+                },
+            )])),
+            "struct Point { x: Float64, y: Float64 }; const p = Point { x: 1.0, y: 2.0 };" => {
+                infer_ast(module(vec![
+                    Stmt::StructDef {
+                        name: "Point".to_string(),
+                        fields: vec![
+                            FieldDef {
+                                name: "x".to_string(),
+                                ty: TypeExpr::Named("Float64".to_string()),
+                            },
+                            FieldDef {
+                                name: "y".to_string(),
+                                ty: TypeExpr::Named("Float64".to_string()),
+                            },
+                        ],
+                    },
+                    const_decl(
+                        "p",
+                        Expr::StructLit {
+                            name: "Point".to_string(),
+                            fields: vec![
+                                ("x".to_string(), Expr::LitFloat(1.0)),
+                                ("y".to_string(), Expr::LitFloat(2.0)),
+                            ],
+                        },
+                    ),
+                ]))
+            }
+            "const s = 42.to_string();" => infer_ast(module(vec![const_decl(
+                "s",
+                Expr::Member {
+                    object: Box::new(Expr::LitInt(42)),
+                    field: "to_string".to_string(),
+                },
+            )])),
+            "var x = 42;" => infer_ast(module(vec![Stmt::VarDecl {
+                name: "x".to_string(),
+                ty_ann: None,
+                value: Some(Expr::LitInt(42)),
+            }])),
+            _ => panic!("test fixture should construct AST directly for source: {src}"),
+        }
     }
 
     #[test]
@@ -532,7 +756,10 @@ mod tests {
 
     #[test]
     fn test_record_infer() {
-        let (env, _) = infer_src("struct Point { x: Float64, y: Float64 }; const p = Point { x: 1.0, y: 2.0 };").unwrap();
+        let (env, _) = infer_src(
+            "struct Point { x: Float64, y: Float64 }; const p = Point { x: 1.0, y: 2.0 };",
+        )
+        .unwrap();
         let ty = format!("{}", env["p"].body);
         assert!(ty.contains("Point") || ty.contains("{"));
     }
@@ -544,8 +771,337 @@ mod tests {
         assert_eq!(ty, "String");
     }
 
+    #[test]
+    fn var_without_initializer_gets_fresh_type_var() {
+        let (env, _) = infer_ast(module(vec![var_decl("x", None)])).unwrap();
+        assert!(matches!(*env["x"].body, Type::Var(_)));
+    }
+
+    #[test]
+    fn annotated_lambda_uses_type_exprs() {
+        let ty = infer_expr(Expr::Lambda {
+            params: vec![param("x", Some(TypeExpr::named("Int64")))],
+            ret_ty: None,
+            body: Box::new(Expr::VarRef("x".to_string())),
+        })
+        .unwrap();
+
+        assert_eq!(format!("{}", ty), "(Int64 → Int64)");
+    }
+
+    #[test]
+    fn call_infers_return_type_and_call_errors_on_non_function() {
+        let id = Expr::Lambda {
+            params: vec![param("x", None)],
+            ret_ty: None,
+            body: Box::new(Expr::VarRef("x".to_string())),
+        };
+        assert_eq!(
+            infer_expr(Expr::Call {
+                func: Box::new(id),
+                args: vec![Expr::LitString("ok".to_string())],
+            })
+            .unwrap(),
+            Type::String
+        );
+
+        let err = infer_expr(Expr::Call {
+            func: Box::new(Expr::LitInt(1)),
+            args: vec![Expr::LitInt(2)],
+        })
+        .unwrap_err();
+        assert!(err.msg.contains("cannot unify"));
+    }
+
+    #[test]
+    fn binary_unary_and_control_flow_exprs() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitInt(1)),
+                op: BinOp::Lt,
+                right: Box::new(Expr::LitInt(2)),
+            })
+            .unwrap(),
+            Type::Bool
+        );
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitString("a".to_string())),
+                op: BinOp::SAdd,
+                right: Box::new(Expr::LitString("b".to_string())),
+            })
+            .unwrap(),
+            Type::String
+        );
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitInt(1)),
+                op: BinOp::Pipe,
+                right: Box::new(Expr::LitInt(2)),
+            })
+            .unwrap(),
+            Type::Int64
+        );
+        assert_eq!(
+            infer_expr(Expr::Unary {
+                op: UnOp::Not,
+                right: Box::new(Expr::LitFalse),
+            })
+            .unwrap(),
+            Type::Bool
+        );
+        assert_eq!(infer_expr(Expr::Break).unwrap(), Type::Null);
+        assert_eq!(infer_expr(Expr::Continue).unwrap(), Type::Null);
+        assert_eq!(infer_expr(Expr::Return(None)).unwrap(), Type::Null);
+        assert_eq!(
+            infer_expr(Expr::Return(Some(Box::new(Expr::LitFloat(1.0))))).unwrap(),
+            Type::Float64
+        );
+    }
+
+    #[test]
+    fn blocks_if_while_and_for_are_inferred_locally() {
+        assert_eq!(
+            infer_expr(Expr::Block(vec![
+                const_decl("x", Expr::LitInt(1)),
+                var_decl("y", Some(Expr::LitInt(2))),
+                Stmt::ExprStmt(Expr::VarRef("x".to_string())),
+            ]))
+            .unwrap(),
+            Type::Int64
+        );
+        assert_eq!(
+            infer_expr(Expr::If {
+                cond: Box::new(Expr::LitTrue),
+                then_branch: Box::new(Expr::LitInt(1)),
+                else_branch: None,
+            })
+            .unwrap(),
+            Type::Int64
+        );
+        assert_eq!(
+            infer_expr(Expr::While {
+                cond: Box::new(Expr::LitFalse),
+                body: Box::new(Expr::Block(vec![])),
+            })
+            .unwrap(),
+            Type::Null
+        );
+        assert_eq!(
+            infer_expr(Expr::For {
+                var: param("item", None),
+                iterable: Box::new(Expr::ListLit(vec![Expr::LitInt(1)])),
+                body: Box::new(Expr::Block(vec![])),
+            })
+            .unwrap(),
+            Type::Null
+        );
+
+        let err = infer_expr(Expr::For {
+            var: param("item", None),
+            iterable: Box::new(Expr::LitInt(1)),
+            body: Box::new(Expr::Block(vec![])),
+        })
+        .unwrap_err();
+        assert!(err.msg.contains("for loop requires List"));
+    }
+
+    #[test]
+    fn mismatched_if_and_list_report_errors() {
+        let err = infer_expr(Expr::If {
+            cond: Box::new(Expr::LitTrue),
+            then_branch: Box::new(Expr::LitInt(1)),
+            else_branch: Some(Box::new(Expr::LitString("x".to_string()))),
+        })
+        .unwrap_err();
+        assert!(err.msg.contains("if branches"));
+
+        let err = infer_expr(Expr::ListLit(vec![
+            Expr::LitInt(1),
+            Expr::LitString("x".to_string()),
+        ]))
+        .unwrap_err();
+        assert!(err.msg.contains("list element"));
+    }
+
+    #[test]
+    fn struct_fields_methods_and_member_errors() {
+        let program = module(vec![
+            Stmt::StructDef {
+                name: "Point".to_string(),
+                fields: vec![FieldDef {
+                    name: "x".to_string(),
+                    ty: TypeExpr::named("Int64"),
+                }],
+            },
+            Stmt::ImplBlock {
+                struct_name: "Point".to_string(),
+                methods: vec![MethodDef {
+                    name: "value".to_string(),
+                    body: Expr::Lambda {
+                        params: vec![param("self", Some(TypeExpr::named("Point")))],
+                        ret_ty: None,
+                        body: Box::new(Expr::LitInt(7)),
+                    },
+                }],
+            },
+            const_decl(
+                "p",
+                Expr::StructLit {
+                    name: "Point".to_string(),
+                    fields: vec![("x".to_string(), Expr::LitInt(1))],
+                },
+            ),
+            const_decl(
+                "x",
+                Expr::Member {
+                    object: Box::new(Expr::VarRef("p".to_string())),
+                    field: "x".to_string(),
+                },
+            ),
+            const_decl(
+                "m",
+                Expr::Member {
+                    object: Box::new(Expr::VarRef("p".to_string())),
+                    field: "value".to_string(),
+                },
+            ),
+        ]);
+        let (env, _) = infer_ast(program).unwrap();
+        assert_eq!(format!("{}", env["x"].body), "Int64");
+        assert_eq!(format!("{}", env["m"].body), "Int64");
+
+        let err = infer_ast(module(vec![const_decl(
+            "bad",
+            Expr::StructLit {
+                name: "Missing".to_string(),
+                fields: vec![],
+            },
+        )]))
+        .unwrap_err();
+        assert!(err.msg.contains("unknown struct"));
+
+        let err = infer_expr(Expr::Member {
+            object: Box::new(Expr::LitInt(1)),
+            field: "x".to_string(),
+        })
+        .unwrap_err();
+        assert!(err.msg.contains("cannot access field"));
+    }
+
+    #[test]
+    fn member_builtins_index_assign_async_and_await() {
+        assert_eq!(
+            infer_expr(Expr::Member {
+                object: Box::new(Expr::LitInt(1)),
+                field: "to_float".to_string(),
+            })
+            .unwrap(),
+            Type::Float64
+        );
+        assert_eq!(
+            infer_expr(Expr::Index {
+                object: Box::new(Expr::ListLit(vec![Expr::LitInt(1)])),
+                index: Box::new(Expr::LitInt(0)),
+            })
+            .unwrap(),
+            Type::Int64
+        );
+        assert_eq!(
+            infer_expr(Expr::Index {
+                object: Box::new(Expr::LitString("abc".to_string())),
+                index: Box::new(Expr::LitInt(0)),
+            })
+            .unwrap(),
+            Type::String
+        );
+        assert!(matches!(
+            infer_expr(Expr::Index {
+                object: Box::new(Expr::LitInt(1)),
+                index: Box::new(Expr::LitInt(0)),
+            })
+            .unwrap(),
+            Type::Var(_)
+        ));
+        assert_eq!(
+            infer_expr(Expr::Assign {
+                target: Box::new(Expr::LitInt(1)),
+                value: Box::new(Expr::LitInt(2)),
+            })
+            .unwrap(),
+            Type::Null
+        );
+        assert_eq!(
+            infer_expr(Expr::Async(Box::new(Expr::LitTrue))).unwrap(),
+            Type::Bool
+        );
+        assert_eq!(
+            infer_expr(Expr::Await(Box::new(Expr::LitNull))).unwrap(),
+            Type::Null
+        );
+    }
+
+    #[test]
+    fn type_expr_unify_generalize_and_instantiate_edges() {
+        let mut structs = HashMap::new();
+        structs.insert("Node".to_string(), 1);
+        let mut fields = HashMap::new();
+        fields.insert(1, vec![("value".to_string(), Type::Int64)]);
+
+        assert_eq!(
+            type_expr_to_type(
+                &TypeExpr::List(Box::new(TypeExpr::named("Int64"))),
+                &structs,
+                &fields,
+            )
+            .unwrap(),
+            Type::List(Box::new(Type::Int64))
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                type_expr_to_type(
+                    &TypeExpr::Arrow {
+                        params: vec![TypeExpr::named("Int64")],
+                        ret: Box::new(TypeExpr::named("Bool")),
+                    },
+                    &structs,
+                    &fields,
+                )
+                .unwrap()
+            ),
+            "(Int64 → Bool)"
+        );
+        assert!(type_expr_to_type(&TypeExpr::named("Missing"), &structs, &fields).is_err());
+
+        assert!(unify(
+            &Type::Var(TypeVar(10)),
+            &Type::List(Box::new(Type::Var(TypeVar(10))))
+        )
+        .is_err());
+        assert!(unify(
+            &Type::Arrow(Box::new(Type::Int64), Box::new(Type::Bool)),
+            &Type::Arrow(Box::new(Type::Int64), Box::new(Type::String)),
+        )
+        .is_err());
+
+        let mut env = TypeEnv::new();
+        env.insert(
+            "kept".to_string(),
+            Scheme::monomorphic(Type::Var(TypeVar(1))),
+        );
+        let scheme = generalize(
+            &env,
+            &Type::Arrow(
+                Box::new(Type::Var(TypeVar(1))),
+                Box::new(Type::Var(TypeVar(2))),
+            ),
+        );
+        assert_eq!(scheme.bound, vec![TypeVar(2)]);
+        assert!(matches!(instantiate(&scheme), Type::Arrow(_, _)));
+    }
+
     fn infer_var(src: &str) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>)> {
-        let m = Parser::new(src).parse().map_err(|e| TypeError { msg: e, line: 0, col: 0 })?;
-        infer_module(&m)
+        infer_src(src)
     }
 }

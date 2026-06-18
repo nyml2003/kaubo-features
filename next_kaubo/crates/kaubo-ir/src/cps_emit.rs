@@ -8,15 +8,24 @@ use crate::cps::*;
 pub type EmitResult = (Vec<CpsInstr>, CpsTerminator);
 
 pub fn emit_literal(reg: usize, const_idx: usize) -> EmitResult {
-    (vec![CpsInstr::LoadConst(reg, const_idx)], CpsTerminator::Return(reg))
+    (
+        vec![CpsInstr::LoadConst(reg, const_idx)],
+        CpsTerminator::Return(reg),
+    )
 }
 
 pub fn emit_binary(dst: usize, op: CpsBinOp, left: usize, right: usize) -> EmitResult {
-    (vec![CpsInstr::BinOp(dst, op, left, right)], CpsTerminator::Return(dst))
+    (
+        vec![CpsInstr::BinOp(dst, op, left, right)],
+        CpsTerminator::Return(dst),
+    )
 }
 
 pub fn emit_unary(dst: usize, op: CpsUnOp, src: usize) -> EmitResult {
-    (vec![CpsInstr::UnOp(dst, op, src)], CpsTerminator::Return(dst))
+    (
+        vec![CpsInstr::UnOp(dst, op, src)],
+        CpsTerminator::Return(dst),
+    )
 }
 
 pub fn emit_varref(reg: usize) -> EmitResult {
@@ -32,23 +41,38 @@ pub fn emit_print(reg: usize) -> EmitResult {
 }
 
 pub fn emit_get_field(dst: usize, obj: usize, field_idx: u16) -> EmitResult {
-    (vec![CpsInstr::GetField(dst, obj, field_idx)], CpsTerminator::Return(dst))
+    (
+        vec![CpsInstr::GetField(dst, obj, field_idx)],
+        CpsTerminator::Return(dst),
+    )
 }
 
 pub fn emit_set_field(val: usize, obj: usize, field_idx: u16) -> EmitResult {
-    (vec![CpsInstr::SetField(val, obj, field_idx, 0)], CpsTerminator::Return(val))
+    (
+        vec![CpsInstr::SetField(val, obj, field_idx, 0)],
+        CpsTerminator::Return(val),
+    )
 }
 
 pub fn emit_new_struct(dst: usize, struct_id: usize, field_regs: Vec<usize>) -> EmitResult {
-    (vec![CpsInstr::NewStruct(dst, struct_id, field_regs)], CpsTerminator::Return(dst))
+    (
+        vec![CpsInstr::NewStruct(dst, struct_id, field_regs)],
+        CpsTerminator::Return(dst),
+    )
 }
 
 pub fn emit_new_list(dst: usize, elements: Vec<usize>) -> EmitResult {
-    (vec![CpsInstr::NewList(dst, elements)], CpsTerminator::Return(dst))
+    (
+        vec![CpsInstr::NewList(dst, elements)],
+        CpsTerminator::Return(dst),
+    )
 }
 
 pub fn emit_index_get(dst: usize, obj: usize, idx: usize) -> EmitResult {
-    (vec![CpsInstr::IndexGet(dst, obj, idx)], CpsTerminator::Return(dst))
+    (
+        vec![CpsInstr::IndexGet(dst, obj, idx)],
+        CpsTerminator::Return(dst),
+    )
 }
 
 pub fn emit_return(reg: usize) -> CpsTerminator {
@@ -98,21 +122,30 @@ mod tests {
     fn emit_binop_add_int() {
         let (instrs, term) = emit_binary(0, CpsBinOp::AddInt, 1, 2);
         assert_eq!(instrs.len(), 1);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::AddInt, 1, 2)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::AddInt, 1, 2)
+        ));
         assert!(matches!(term, CpsTerminator::Return(0)));
     }
 
     #[test]
     fn emit_binop_eq_int() {
         let (instrs, term) = emit_binary(3, CpsBinOp::EqInt, 0, 1);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(3, CpsBinOp::EqInt, 0, 1)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(3, CpsBinOp::EqInt, 0, 1)
+        ));
         assert!(matches!(term, CpsTerminator::Return(3)));
     }
 
     #[test]
     fn emit_binop_sub_int() {
         let (instrs, term) = emit_binary(2, CpsBinOp::SubInt, 0, 1);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(2, CpsBinOp::SubInt, 0, 1)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(2, CpsBinOp::SubInt, 0, 1)
+        ));
         assert!(matches!(term, CpsTerminator::Return(2)));
     }
 
@@ -186,7 +219,10 @@ mod tests {
     #[test]
     fn test_emit_itos() {
         let (instrs, term) = emit_binary(0, CpsBinOp::IToS, 1, 0);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::IToS, 1, 0)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::IToS, 1, 0)
+        ));
         assert!(matches!(term, CpsTerminator::Return(0)));
     }
 }

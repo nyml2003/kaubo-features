@@ -1,0 +1,9 @@
+[package]
+name = "kaubo-ast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Kaubo AST contract types"
+
+[dependencies]

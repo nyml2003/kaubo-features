@@ -5,8 +5,8 @@
 
 use crate::cps::CpsModule;
 
-pub mod fold;
 pub mod binary;
+pub mod fold;
 pub mod loop_inline;
 
 pub trait Pass {

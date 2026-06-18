@@ -1,16 +1,18 @@
 //! kaubo2 — v2 pipeline: parse → infer → build → flatten → execute
-use std::env;
-use std::fs;
-use kaubo_syntax::parser::Parser;
 use kaubo_infer::infer_module;
+use kaubo_ir::cps::CpsModule;
 use kaubo_ir::cps_build::build_module;
 use kaubo_ir::flatten::flatten_module;
-use kaubo_ir::cps::CpsModule;
-use kaubo_ir::pass::{run_passes, fold::ConstantFold};
 use kaubo_ir::pass::binary;
+use kaubo_ir::pass::{fold::ConstantFold, run_passes};
+use kaubo_syntax::parser::Parser;
+use std::env;
+use std::fs;
 
 fn compile_pipeline(source: &str) -> Result<CpsModule, String> {
-    let module = Parser::new(source).parse().map_err(|e| format!("parse: {}", e))?;
+    let module = Parser::new(source)
+        .parse()
+        .map_err(|e| format!("parse: {}", e))?;
     infer_module(&module).map_err(|e| format!("infer: {:?}", e))?;
     let mut cps = build_module(&module).map_err(|e| format!("build: {}", e))?;
     flatten_module(&mut cps);
@@ -19,25 +21,32 @@ fn compile_pipeline(source: &str) -> Result<CpsModule, String> {
 }
 
 fn run_compiled(cps: &CpsModule) -> Result<(), String> {
-    if cps.functions.is_empty() { return Ok(()); }
+    if cps.functions.is_empty() {
+        return Ok(());
+    }
     let mut vm = kaubo_vm::VM::new();
     vm.load(cps).map_err(|e| format!("load: {}", e))?;
     let func = cps.functions.last().unwrap();
     match vm.execute(cps.functions.len() - 1, func.reg_count) {
-        Ok(r) => { for l in &vm.output { println!("{}", l); } println!("= {}", r); }
+        Ok(r) => {
+            for l in &vm.output {
+                println!("{}", l);
+            }
+            println!("= {}", r);
+        }
         Err(e) => eprintln!("error: {:?}", e),
     }
     Ok(())
 }
 
-fn main() -> Result<(), String> {
-    let args: Vec<String> = env::args().collect();
+fn run_args(args: &[String]) -> Result<(), String> {
     let sub = args.get(1).map(|s| s.as_str()).unwrap_or("run");
     let file = match sub {
         "compile" => args.get(2),
         "run" => args.get(2),
         _ => args.get(1),
-    }.ok_or("Usage: kaubo2 [compile|run] <file>")?;
+    }
+    .ok_or("Usage: kaubo2 [compile|run] <file>")?;
 
     match sub {
         "compile" => {
@@ -55,7 +64,8 @@ fn main() -> Result<(), String> {
                 let cps = binary::decode_module(&bytes)?;
                 run_compiled(&cps)?;
             } else {
-                let source = fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
+                let source =
+                    fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
                 let cps = compile_pipeline(&source)?;
                 run_compiled(&cps)?;
             }
@@ -69,36 +79,86 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
+fn main() -> Result<(), String> {
+    let args: Vec<String> = env::args().collect();
+    run_args(&args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn temp_stem(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("kaubo_cli_{}_{}", name, std::process::id()))
+    }
+
+    fn args(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
     fn run_src(src: &str) -> Result<i64, String> {
         let m = Parser::new(src).parse()?;
         infer_module(&m).map_err(|e| format!("infer: {:?}", e))?;
-        let mut cps = build_module(&m)?; flatten_module(&mut cps);
-        if cps.functions.is_empty() { return Ok(0); }
-        let mut vm = kaubo_vm::VM::new(); vm.load(&cps)?;
+        let mut cps = build_module(&m)?;
+        flatten_module(&mut cps);
+        if cps.functions.is_empty() {
+            return Ok(0);
+        }
+        let mut vm = kaubo_vm::VM::new();
+        vm.load(&cps)?;
         let e = cps.functions.len() - 1;
-        vm.execute(e, cps.functions[e].reg_count).map_err(|e| format!("{:?}", e))
+        vm.execute(e, cps.functions[e].reg_count)
+            .map_err(|e| format!("{:?}", e))
     }
 
     fn run_src_with_output(src: &str) -> Result<(i64, Vec<String>), String> {
         let m = Parser::new(src).parse()?;
         infer_module(&m).map_err(|e| format!("infer: {:?}", e))?;
-        let mut cps = build_module(&m)?; flatten_module(&mut cps);
-        if cps.functions.is_empty() { return Ok((0, vec![])); }
-        let mut vm = kaubo_vm::VM::new(); vm.load(&cps)?;
+        let mut cps = build_module(&m)?;
+        flatten_module(&mut cps);
+        if cps.functions.is_empty() {
+            return Ok((0, vec![]));
+        }
+        let mut vm = kaubo_vm::VM::new();
+        vm.load(&cps)?;
         let e = cps.functions.len() - 1;
-        let r = vm.execute(e, cps.functions[e].reg_count).map_err(|e| format!("{:?}", e))?;
+        let r = vm
+            .execute(e, cps.functions[e].reg_count)
+            .map_err(|e| format!("{:?}", e))?;
         Ok((r, vm.output.clone()))
     }
 
-    #[test] fn e2e_lit() { assert_eq!(run_src("const x = 42;").unwrap(), 42); }
-    #[test] fn e2e_add() { assert_eq!(run_src("const x = 40 + 2;").unwrap_or(-1), 42); }
-    #[test] fn e2e_sub() { assert_eq!(run_src("const x = 50 - 8;").unwrap_or(-1), 42); }
-    #[test] fn e2e_mul() { assert_eq!(run_src("const x = 6 * 7;").unwrap_or(-1), 42); }
-    #[test] fn e2e_if_else() { assert_eq!(run_src("const x = if true { 42 } else { 0 };").unwrap_or(-1), 42); }
-    #[test] fn e2e_if_false() { assert_eq!(run_src("const x = if false { 0 } else { 42 };").unwrap_or(-1), 42); }
+    #[test]
+    fn e2e_lit() {
+        assert_eq!(run_src("const x = 42;").unwrap(), 42);
+    }
+    #[test]
+    fn e2e_add() {
+        assert_eq!(run_src("const x = 40 + 2;").unwrap_or(-1), 42);
+    }
+    #[test]
+    fn e2e_sub() {
+        assert_eq!(run_src("const x = 50 - 8;").unwrap_or(-1), 42);
+    }
+    #[test]
+    fn e2e_mul() {
+        assert_eq!(run_src("const x = 6 * 7;").unwrap_or(-1), 42);
+    }
+    #[test]
+    fn e2e_if_else() {
+        assert_eq!(
+            run_src("const x = if true { 42 } else { 0 };").unwrap_or(-1),
+            42
+        );
+    }
+    #[test]
+    fn e2e_if_false() {
+        assert_eq!(
+            run_src("const x = if false { 0 } else { 42 };").unwrap_or(-1),
+            42
+        );
+    }
 
     // ── Phase 1: 新 e2e 测试（先红）──
 
@@ -109,17 +169,26 @@ mod tests {
 
     #[test]
     fn e2e_const_multi_stmt() {
-        assert_eq!(run_src("const x = 10; const y = x + 22; y;").unwrap_or(-1), 32);
+        assert_eq!(
+            run_src("const x = 10; const y = x + 22; y;").unwrap_or(-1),
+            32
+        );
     }
 
     #[test]
     fn e2e_while_skip() {
-        assert_eq!(run_src("while false { const x = 0; }; const r = 5; r;").unwrap_or(-1), 5);
+        assert_eq!(
+            run_src("while false { const x = 0; }; const r = 5; r;").unwrap_or(-1),
+            5
+        );
     }
 
     #[test]
     fn e2e_while_count() {
-        assert_eq!(run_src("var n = 0; while n < 3 { n = n + 1; }; n;").unwrap_or(-1), 3);
+        assert_eq!(
+            run_src("var n = 0; while n < 3 { n = n + 1; }; n;").unwrap_or(-1),
+            3
+        );
     }
 
     #[test]
@@ -130,12 +199,86 @@ mod tests {
     #[test]
     fn e2e_print() {
         let result = run_src_with_output("print(\"hi\");").unwrap();
-        assert!(result.1.iter().any(|s| s.contains("hi")), "output should contain 'hi', got {:?}", result.1);
+        assert!(
+            result.1.iter().any(|s| s.contains("hi")),
+            "output should contain 'hi', got {:?}",
+            result.1
+        );
+    }
+
+    #[test]
+    fn cli_reports_usage_without_file() {
+        let err = run_args(&args(&["kaubo2"])).unwrap_err();
+        assert_eq!(err, "Usage: kaubo2 [compile|run] <file>");
+    }
+
+    #[test]
+    fn cli_compile_writes_binary_file() {
+        let src = temp_stem("compile").with_extension("kaubo");
+        let out = temp_stem("compile").with_extension("kauboc");
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&out);
+        fs::write(&src, "const x = 42;").unwrap();
+
+        run_args(&args(&["kaubo2", "compile", src.to_str().unwrap()])).unwrap();
+
+        assert!(out.exists());
+        assert!(!fs::read(&out).unwrap().is_empty());
+
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&out);
+    }
+
+    #[test]
+    fn cli_run_source_file() {
+        let src = temp_stem("run_source").with_extension("kaubo");
+        let _ = fs::remove_file(&src);
+        fs::write(&src, "const x = 42;").unwrap();
+
+        run_args(&args(&["kaubo2", "run", src.to_str().unwrap()])).unwrap();
+
+        let _ = fs::remove_file(&src);
+    }
+
+    #[test]
+    fn cli_run_compiled_file() {
+        let src = temp_stem("run_compiled").with_extension("kaubo");
+        let out = temp_stem("run_compiled").with_extension("kauboc");
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&out);
+        fs::write(&src, "const x = 42;").unwrap();
+
+        run_args(&args(&["kaubo2", "compile", src.to_str().unwrap()])).unwrap();
+        run_args(&args(&["kaubo2", "run", out.to_str().unwrap()])).unwrap();
+
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&out);
+    }
+
+    #[test]
+    fn cli_default_subcommand_runs_file() {
+        let src = temp_stem("default_run").with_extension("kaubo");
+        let _ = fs::remove_file(&src);
+        fs::write(&src, "const x = 42;").unwrap();
+
+        run_args(&args(&["kaubo2", src.to_str().unwrap()])).unwrap();
+
+        let _ = fs::remove_file(&src);
+    }
+
+    #[test]
+    fn cli_read_error_mentions_file() {
+        let missing = temp_stem("missing").with_extension("kaubo");
+        let _ = fs::remove_file(&missing);
+
+        let err = run_args(&args(&["kaubo2", "run", missing.to_str().unwrap()])).unwrap_err();
+        assert!(err.contains("read"));
+        assert!(err.contains(missing.to_str().unwrap()));
     }
 
     #[test]
     fn debug_impl_dis() {
-        use kaubo_ir::pass::{run_passes, fold::ConstantFold};
+        use kaubo_ir::pass::{fold::ConstantFold, run_passes};
         let src = r#"
 struct Point { x: Int64, y: Int64 };
 impl Point {
@@ -156,14 +299,23 @@ print(p1.dis(p2).to_string());
         run_passes(&mut cps, &[&ConstantFold]);
         eprintln!("=== CPS DUMP ===");
         for (fi, func) in cps.functions.iter().enumerate() {
-            eprintln!("fn {} '{}' entry={} regs={}",
-                fi, func.name, func.entry, func.reg_count);
+            eprintln!(
+                "fn {} '{}' entry={} regs={}",
+                fi, func.name, func.entry, func.reg_count
+            );
             for b in func.blocks.iter().filter(|b| b.id != usize::MAX) {
-                eprintln!("  blk{} {}: {:?} | {:?}",
-                    b.id, if b.id == func.entry {"(entry)"} else {""}, b.instrs, b.term);
+                eprintln!(
+                    "  blk{} {}: {:?} | {:?}",
+                    b.id,
+                    if b.id == func.entry { "(entry)" } else { "" },
+                    b.instrs,
+                    b.term
+                );
             }
         }
-        if cps.functions.is_empty() { panic!("no funcs"); }
+        if cps.functions.is_empty() {
+            panic!("no funcs");
+        }
         let mut vm = kaubo_vm::VM::new();
         vm.debug = true;
         vm.load(&cps).unwrap();

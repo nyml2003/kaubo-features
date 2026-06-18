@@ -1,8 +1,8 @@
 //! VFS Builder for constructing middleware chains
 
-use std::sync::Arc;
+use super::{LayeredVFS, Middleware};
 use crate::VirtualFileSystem;
-use super::{Middleware, LayeredVFS};
+use std::sync::Arc;
 
 /// Builder for constructing a VFS with middleware chain
 ///
@@ -28,7 +28,7 @@ impl VfsBuilder {
             middlewares: Vec::new(),
         }
     }
-    
+
     /// Add a middleware to the chain
     ///
     /// Middlewares are automatically sorted by stage when built.
@@ -36,16 +36,16 @@ impl VfsBuilder {
         self.middlewares.push(Box::new(middleware));
         self
     }
-    
+
     /// Build the final VFS with middleware chain
     ///
     /// Middlewares are sorted by stage (lower priority first).
     pub fn build(self) -> LayeredVFS {
         let mut middlewares = self.middlewares;
-        
+
         // Sort by stage priority
         middlewares.sort_by_key(|m| m.stage().priority());
-        
+
         LayeredVFS::new(self.backend, middlewares)
     }
 }

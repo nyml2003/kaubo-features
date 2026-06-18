@@ -4,8 +4,8 @@
 //! let-多态: const 绑密 generalize, var 绑密单态
 //! v2.1 收尾: ADT/Variant, match pattern 类型检查
 
-pub mod types;
 pub mod infer;
+pub mod types;
 
-pub use types::*;
 pub use infer::*;
+pub use types::*;
