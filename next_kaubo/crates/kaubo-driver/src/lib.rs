@@ -1,7 +1,6 @@
 //! Direct single-file compile and run driver.
 //!
-//! This crate centralizes the current linear path without using
-//! `kaubo-pipeline` scheduling.
+//! This crate centralizes the current linear path used by CLI and WASM.
 
 pub use kaubo_ir::cps::CpsModule;
 use kaubo_ir::cps_build::build_module;

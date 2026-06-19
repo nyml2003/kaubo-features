@@ -34,13 +34,7 @@ fn manifest_dependencies(manifest: &Path) -> BTreeSet<String> {
 #[test]
 fn contract_crates_do_not_depend_on_stage_crates() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let stage_crates = [
-        "kaubo-syntax",
-        "kaubo-infer",
-        "kaubo-ir",
-        "kaubo-vm",
-        "kaubo-pipeline",
-    ];
+    let stage_crates = ["kaubo-syntax", "kaubo-infer", "kaubo-ir", "kaubo-vm"];
     let contract_crates = [
         ("kaubo-ast", "crates/kaubo-ast/Cargo.toml"),
         ("kaubo-token", "crates/kaubo-token/Cargo.toml"),
@@ -70,7 +64,6 @@ fn stage_crates_do_not_depend_on_other_stage_crates() {
         ("kaubo-infer", "crates/kaubo-infer/Cargo.toml"),
         ("kaubo-ir", "crates/kaubo-ir/Cargo.toml"),
         ("kaubo-vm", "crates/kaubo-vm/Cargo.toml"),
-        ("kaubo-pipeline", "crates/kaubo-pipeline/Cargo.toml"),
     ];
 
     for (crate_name, manifest_path) in stage_crates {

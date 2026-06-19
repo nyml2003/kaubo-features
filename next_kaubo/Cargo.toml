@@ -1,6 +1,33 @@
 [workspace]
-members = ["kaubo-vfs", "kaubo-log", "crates/kaubo-token", "crates/kaubo-ast", "crates/kaubo-syntax", "crates/kaubo-infer", "crates/kaubo-cps", "crates/kaubo-ir", "crates/kaubo-vm", "crates/kaubo-pipeline", "crates/kaubo-driver", "crates/kaubo-language-service", "crates/kaubo-module", "crates/kaubo-web-api", "crates/kaubo-wasm", "kaubo2-cli"]
+members = [
+    "crates/kaubo-token",
+    "crates/kaubo-ast",
+    "crates/kaubo-syntax",
+    "crates/kaubo-infer",
+    "crates/kaubo-cps",
+    "crates/kaubo-ir",
+    "crates/kaubo-vm",
+    "crates/kaubo-driver",
+    "crates/kaubo-language-service",
+    "crates/kaubo-web-api",
+    "crates/kaubo-wasm",
+    "kaubo2-cli",
+]
 resolver = "2"
+default-members = [
+    "crates/kaubo-token",
+    "crates/kaubo-ast",
+    "crates/kaubo-syntax",
+    "crates/kaubo-infer",
+    "crates/kaubo-cps",
+    "crates/kaubo-ir",
+    "crates/kaubo-vm",
+    "crates/kaubo-driver",
+    "crates/kaubo-language-service",
+    "crates/kaubo-web-api",
+    "crates/kaubo-wasm",
+    "kaubo2-cli",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,13 +37,10 @@ authors = ["Kaubo Team"]
 repository = "https://github.com/kaubo-lang/kaubo"
 
 [workspace.dependencies]
-# 共享依赖
 thiserror = "2.0.17"
 once_cell = "1.19"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-# kaubo-vfs 依赖 (无)
 
 kaubo-ast = { path = "crates/kaubo-ast" }
 kaubo-token = { path = "crates/kaubo-token" }
@@ -25,27 +49,17 @@ kaubo-infer = { path = "crates/kaubo-infer" }
 kaubo-cps = { path = "crates/kaubo-cps" }
 kaubo-ir = { path = "crates/kaubo-ir" }
 kaubo-vm = { path = "crates/kaubo-vm" }
-kaubo-pipeline = { path = "crates/kaubo-pipeline" }
 kaubo-driver = { path = "crates/kaubo-driver" }
 kaubo-language-service = { path = "crates/kaubo-language-service" }
 kaubo-web-api = { path = "crates/kaubo-web-api" }
 
-# kaubo-config (无依赖)
-kaubo-vfs = { path = "kaubo-vfs" }
-kaubo-log = { path = "kaubo-log" }
-
-# kaubo-cli 依赖
 clap = { version = "4", features = ["derive"] }
 
-# 虚拟包配置（满足 Cargo 要求）
 [package]
 name = "kaubo-workspace"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-
-[dev-dependencies]
-kaubo-log = { path = "kaubo-log" }
 
 [profile.release]
 panic = "unwind"

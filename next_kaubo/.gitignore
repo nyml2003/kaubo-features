@@ -4,6 +4,7 @@ target/
 # Compiled Kaubo bytecode
 *.kaubod
 *.kaubor
+*.kauboc
 
 # Windows
 *.exe
@@ -30,3 +31,5 @@ target/
 assets
 *.tmp
 results/
+__pycache__/
+*.pyc
