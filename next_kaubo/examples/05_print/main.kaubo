@@ -1,4 +1,0 @@
-// 05. Print — output builtins
-print("Kaubo v2");
-print("Hello from examples!");
-42;
