@@ -5,17 +5,21 @@ import { bracketMatching, foldGutter, indentOnInput, foldKeymap } from "@codemir
 import { closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
 import { lintGutter, lintKeymap } from "@codemirror/lint";
 import { kauboLanguage } from "../../editor/kauboLang";
-import { lex } from "@kaubo/wasm";
+import { lex, semantic_tokens, complete } from "@kaubo/wasm";
 import styles from "./Editor.module.css";
 
 declare global {
   interface Window {
-    __kauboWasm?: { lex: typeof lex };
+    __kauboWasm?: {
+      lex: typeof lex;
+      semantic_tokens: typeof semantic_tokens;
+      complete: typeof complete;
+    };
   }
 }
 
 if (typeof window !== "undefined") {
-  window.__kauboWasm = { lex };
+  window.__kauboWasm = { lex, semantic_tokens, complete };
 }
 
 const tabSizeComp = new Compartment();

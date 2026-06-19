@@ -195,6 +195,7 @@ impl VM {
         for (i, &arg_reg) in args.iter().enumerate() {
             if i < params.len() {
                 self.regs.ints[params[i]] = self.regs.ints[arg_reg];
+                self.regs.floats[params[i]] = self.regs.floats[arg_reg];
             }
         }
     }
@@ -391,15 +392,10 @@ impl VM {
                     self.regs.floats[d] = f;
                 }
                 0x22 => {
-                    // itos — try float first since float ops dual-write
+                    // itos
                     let d = ((inst >> 17) & 0xFF) as usize;
                     let s = ((inst >> 8) & 0x1FF) as usize;
-                    let f = self.regs.floats[s];
-                    let st = if f != 0.0 {
-                        format!("{}", f)
-                    } else {
-                        format!("{}", self.regs.ints[s])
-                    };
+                    let st = format!("{}", self.regs.ints[s]);
                     let hid = self.alloc_heap(HeapObj::String(st));
                     self.regs.ints[d] = hid;
                 }
@@ -433,7 +429,10 @@ impl VM {
                     let idx = ((inst >> 8) & 0xFF) as usize;
                     match &self.consts[idx] {
                         Constant::Int(n) => self.regs.ints[d] = *n,
-                        Constant::Float(f) => self.regs.floats[d] = *f,
+                        Constant::Float(f) => {
+                            self.regs.floats[d] = *f;
+                            self.regs.ints[d] = f.to_bits() as i64;
+                        }
                         Constant::String(s) => {
                             let hid = self.alloc_heap(HeapObj::String(s.clone()));
                             self.regs.ints[d] = hid;
@@ -472,7 +471,9 @@ impl VM {
                     let idx = (inst & 0xFF) as usize;
                     let hid = self.regs.ints[s];
                     if let HeapObj::Struct(_, fields) = self.heap_get(hid) {
-                        self.regs.ints[d] = *fields.get(idx).unwrap_or(&0);
+                        let val = *fields.get(idx).unwrap_or(&0);
+                        self.regs.ints[d] = val;
+                        self.regs.floats[d] = f64::from_bits(val as u64);
                     }
                 }
                 0x37 => {
@@ -1095,6 +1096,29 @@ mod tests {
         let r = vm.execute(0, 2).unwrap();
         if let HeapObj::String(s) = vm.heap_get(r) {
             assert_eq!(s, "42");
+        } else {
+            panic!("expected heap string, got idx {}", r);
+        }
+    }
+
+    #[test]
+    fn itos_ignores_float_register_residue() {
+        let cps = simple_mod(
+            vec![
+                CpsInstr::LoadConst(0, 0),
+                CpsInstr::BinOp(1, CpsBinOp::IToF, 0, 0),
+                CpsInstr::Move(2, 0),
+                CpsInstr::BinOp(3, CpsBinOp::IToS, 2, 0),
+            ],
+            CpsTerminator::Return(3),
+            vec![Constant::Int(200)],
+            4,
+        );
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        let r = vm.execute(0, 4).unwrap();
+        if let HeapObj::String(s) = vm.heap_get(r) {
+            assert_eq!(s, "200");
         } else {
             panic!("expected heap string, got idx {}", r);
         }

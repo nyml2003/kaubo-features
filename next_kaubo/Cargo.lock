@@ -79,6 +79,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaubo-language-service"
+version = "0.1.0"
+dependencies = [
+ "kaubo-syntax",
+ "kaubo-web-api",
+ "serde",
+]
+
+[[package]]
 name = "kaubo-log"
 version = "0.1.0"
 dependencies = [
@@ -130,6 +139,7 @@ dependencies = [
  "console_error_panic_hook",
  "js-sys",
  "kaubo-driver",
+ "kaubo-language-service",
  "kaubo-syntax",
  "kaubo-web-api",
  "once_cell",

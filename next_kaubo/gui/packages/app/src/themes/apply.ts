@@ -8,6 +8,10 @@ const TOKEN_CSS_VARS: Record<keyof KauboTheme["tokens"], string> = {
   identifier: "--kb-identifier",
   atom: "--kb-atom",
   operator: "--kb-operator",
+  type: "--kb-type",
+  field: "--kb-field",
+  method: "--kb-method",
+  function: "--kb-function",
 };
 
 const CHROME_CSS_VARS: Record<"background" | "gutter" | "activeLine" | "selection" | "cursor" | "text", string> = {

@@ -12,10 +12,11 @@
 use crate::cps::*;
 use crate::cps_emit;
 use kaubo_ast::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub fn build_module(module: &Module) -> Result<CpsModule, String> {
     let mut b = CpsBuilder::new();
+    b.collect_signatures(module);
     b.ctx.new_block(); // entry block id 0
     let mut tail: Option<usize> = None;
 
@@ -71,6 +72,7 @@ pub struct FuncCtx {
     pub blocks: Vec<CpsBlock>,
     pub next_reg: usize,
     pub var_map: HashMap<String, usize>,
+    type_map: HashMap<String, ValueHint>,
     pub func_map: HashMap<String, usize>, // function name → func_idx
     pub loop_stack: Vec<(usize, usize)>,
 }
@@ -82,6 +84,7 @@ impl FuncCtx {
             blocks: vec![],
             next_reg: 1,
             var_map: HashMap::new(),
+            type_map: HashMap::new(),
             func_map: HashMap::new(),
             loop_stack: vec![],
         }
@@ -203,12 +206,34 @@ impl FuncCtx {
 
 // ── Module-level builder ──
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ValueHint {
+    Int,
+    Float,
+    String,
+    Bool,
+    Null,
+    Struct(String),
+    List,
+    Unknown,
+}
+
+impl ValueHint {
+    fn is_float(&self) -> bool {
+        matches!(self, ValueHint::Float)
+    }
+}
+
 pub struct CpsBuilder {
     pub functions: Vec<CpsFunction>,
     pub constants: Vec<Constant>,
     pub structs: Vec<StructDef>,
     const_map: HashMap<String, usize>,
     pub ctx: FuncCtx,
+    struct_names: HashSet<String>,
+    struct_field_types: HashMap<String, HashMap<String, ValueHint>>,
+    function_returns: HashMap<String, ValueHint>,
+    method_returns: HashMap<String, ValueHint>,
 }
 
 impl CpsBuilder {
@@ -219,6 +244,241 @@ impl CpsBuilder {
             structs: vec![],
             const_map: HashMap::new(),
             ctx: FuncCtx::new("main".into()),
+            struct_names: HashSet::new(),
+            struct_field_types: HashMap::new(),
+            function_returns: HashMap::new(),
+            method_returns: HashMap::new(),
+        }
+    }
+
+    fn collect_signatures(&mut self, module: &Module) {
+        for stmt in &module.stmts {
+            match stmt {
+                Stmt::StructDef { name, .. } => {
+                    self.struct_names.insert(name.clone());
+                }
+                Stmt::ConstDecl { name, value, .. }
+                | Stmt::VarDecl {
+                    name,
+                    value: Some(value),
+                    ..
+                } => {
+                    if let Expr::Lambda {
+                        ret_ty: Some(ret_ty),
+                        ..
+                    } = value
+                    {
+                        self.function_returns
+                            .insert(name.clone(), self.type_expr_hint(ret_ty));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for stmt in &module.stmts {
+            match stmt {
+                Stmt::StructDef { name, fields } => {
+                    let fields = fields
+                        .iter()
+                        .map(|field| (field.name.clone(), self.type_expr_hint(&field.ty)))
+                        .collect();
+                    self.struct_field_types.insert(name.clone(), fields);
+                }
+                Stmt::ImplBlock {
+                    struct_name,
+                    methods,
+                } => {
+                    for method in methods {
+                        if let Expr::Lambda {
+                            ret_ty: Some(ret_ty),
+                            ..
+                        } = &method.body
+                        {
+                            self.method_returns.insert(
+                                format!("{}.{}", struct_name, method.name),
+                                self.type_expr_hint(ret_ty),
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn type_expr_hint(&self, ty: &TypeExpr) -> ValueHint {
+        match ty {
+            TypeExpr::Named(name) => match name.as_str() {
+                "Int64" => ValueHint::Int,
+                "Float64" => ValueHint::Float,
+                "String" => ValueHint::String,
+                "Bool" => ValueHint::Bool,
+                "Null" => ValueHint::Null,
+                "List" => ValueHint::List,
+                _ if self.struct_names.contains(name) => ValueHint::Struct(name.clone()),
+                _ => ValueHint::Unknown,
+            },
+            TypeExpr::List(_) => ValueHint::List,
+            TypeExpr::Arrow { .. } => ValueHint::Unknown,
+        }
+    }
+
+    fn set_value_hint(&mut self, reg: usize, hint: ValueHint) {
+        if !matches!(hint, ValueHint::Unknown) {
+            self.ctx.type_map.insert(format!("__r{reg}"), hint);
+        }
+    }
+
+    fn reg_hint(&self, reg: usize) -> ValueHint {
+        self.ctx
+            .type_map
+            .get(&format!("__r{reg}"))
+            .cloned()
+            .unwrap_or(ValueHint::Unknown)
+    }
+
+    fn value_hint(&self, expr: &Expr) -> ValueHint {
+        match expr {
+            Expr::VarRef(name) => self
+                .ctx
+                .type_map
+                .get(name)
+                .cloned()
+                .unwrap_or(ValueHint::Unknown),
+            _ => self.expr_hint(expr),
+        }
+    }
+
+    fn decl_hint(&self, ty_ann: Option<&TypeExpr>, value: Option<&Expr>) -> ValueHint {
+        ty_ann
+            .map(|ty| self.type_expr_hint(ty))
+            .unwrap_or_else(|| value.map_or(ValueHint::Unknown, |expr| self.expr_hint(expr)))
+    }
+
+    fn expr_hint(&self, expr: &Expr) -> ValueHint {
+        match expr {
+            Expr::LitInt(_) => ValueHint::Int,
+            Expr::LitFloat(_) => ValueHint::Float,
+            Expr::LitString(_) => ValueHint::String,
+            Expr::LitTrue | Expr::LitFalse => ValueHint::Bool,
+            Expr::LitNull => ValueHint::Null,
+            Expr::VarRef(name) => self
+                .ctx
+                .type_map
+                .get(name)
+                .cloned()
+                .unwrap_or(ValueHint::Unknown),
+            Expr::StructLit { name, .. } => ValueHint::Struct(name.clone()),
+            Expr::ListLit(_) => ValueHint::List,
+            Expr::Binary { left, op, right } => match op {
+                BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
+                    if self.expr_hint(left).is_float() || self.expr_hint(right).is_float() {
+                        ValueHint::Float
+                    } else {
+                        ValueHint::Int
+                    }
+                }
+                BinOp::Mod => ValueHint::Int,
+                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                    ValueHint::Bool
+                }
+                BinOp::And | BinOp::Or => ValueHint::Bool,
+                BinOp::SAdd => ValueHint::String,
+                BinOp::Pipe | BinOp::GtGt => self.expr_hint(right),
+            },
+            Expr::Unary { op, right } => match op {
+                UnOp::Neg => self.expr_hint(right),
+                UnOp::Not => ValueHint::Bool,
+            },
+            Expr::Member { object, field } => {
+                if let ValueHint::Struct(struct_name) = self.expr_hint(object) {
+                    self.struct_field_types
+                        .get(&struct_name)
+                        .and_then(|fields| fields.get(field))
+                        .cloned()
+                        .unwrap_or(ValueHint::Unknown)
+                } else {
+                    ValueHint::Unknown
+                }
+            }
+            Expr::Call { func, args } => self.call_hint(func, args),
+            Expr::Block(stmts) => stmts
+                .iter()
+                .rev()
+                .find_map(|stmt| match stmt {
+                    Stmt::ConstDecl { value, .. }
+                    | Stmt::VarDecl {
+                        value: Some(value), ..
+                    } => Some(self.expr_hint(value)),
+                    Stmt::ExprStmt(expr) => Some(self.expr_hint(expr)),
+                    _ => None,
+                })
+                .unwrap_or(ValueHint::Null),
+            Expr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                let then_hint = self.expr_hint(then_branch);
+                let else_hint = else_branch
+                    .as_ref()
+                    .map(|expr| self.expr_hint(expr))
+                    .unwrap_or(ValueHint::Null);
+                if then_hint == else_hint {
+                    then_hint
+                } else if then_hint.is_float() || else_hint.is_float() {
+                    ValueHint::Float
+                } else {
+                    ValueHint::Unknown
+                }
+            }
+            Expr::Return(Some(value)) => self.expr_hint(value),
+            Expr::Return(None) => ValueHint::Null,
+            Expr::Index { .. } => ValueHint::Unknown,
+            Expr::Assign { value, .. } => self.expr_hint(value),
+            Expr::Lambda { .. } => ValueHint::Unknown,
+            Expr::While { .. } | Expr::For { .. } | Expr::Break | Expr::Continue => ValueHint::Null,
+            Expr::Async(body) | Expr::Await(body) => self.expr_hint(body),
+        }
+    }
+
+    fn call_hint(&self, func: &Expr, args: &[Expr]) -> ValueHint {
+        match func {
+            Expr::Member { object, field } if field == "to_string" && args.is_empty() => {
+                ValueHint::String
+            }
+            Expr::Member { object: _, field } if field == "to_float" && args.is_empty() => {
+                ValueHint::Float
+            }
+            Expr::Member { object, field } => {
+                if let ValueHint::Struct(struct_name) = self.expr_hint(object) {
+                    self.method_returns
+                        .get(&format!("{struct_name}.{field}"))
+                        .cloned()
+                        .unwrap_or(ValueHint::Unknown)
+                } else {
+                    ValueHint::Unknown
+                }
+            }
+            Expr::VarRef(name) => match name.as_str() {
+                "sqrt" | "sin" | "cos" | "floor" | "ceil" => ValueHint::Float,
+                "print" => ValueHint::Null,
+                _ => self
+                    .function_returns
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(ValueHint::Unknown),
+            },
+            _ => ValueHint::Unknown,
+        }
+    }
+
+    fn is_heap_type(&self, ty: &TypeExpr) -> bool {
+        match self.type_expr_hint(ty) {
+            ValueHint::String | ValueHint::Struct(_) | ValueHint::List => true,
+            ValueHint::Int | ValueHint::Float | ValueHint::Bool | ValueHint::Null => false,
+            ValueHint::Unknown => false,
         }
     }
 
@@ -240,7 +500,11 @@ impl CpsBuilder {
 
     fn build_top_stmt(&mut self, stmt: &Stmt) -> Result<(usize, usize, usize), String> {
         match stmt {
-            Stmt::ConstDecl { name, value, .. } => {
+            Stmt::ConstDecl {
+                name,
+                ty_ann,
+                value,
+            } => {
                 if matches!(value, Expr::Lambda { .. }) {
                     let func_idx = self.build_lambda_as_function(value)?;
                     self.ctx.func_map.insert(name.clone(), func_idx);
@@ -248,10 +512,17 @@ impl CpsBuilder {
                 } else {
                     let (entry, continu, reg) = self.build_expr(value)?;
                     self.ctx.var_map.insert(name.clone(), reg);
+                    self.ctx
+                        .type_map
+                        .insert(name.clone(), self.decl_hint(ty_ann.as_ref(), Some(value)));
                     Ok((entry, continu, reg))
                 }
             }
-            Stmt::VarDecl { name, value, .. } => {
+            Stmt::VarDecl {
+                name,
+                ty_ann,
+                value,
+            } => {
                 if let Some(v) = value {
                     if matches!(v, Expr::Lambda { .. }) {
                         let func_idx = self.build_lambda_as_function(v)?;
@@ -260,11 +531,17 @@ impl CpsBuilder {
                     } else {
                         let (entry, continu, reg) = self.build_expr(v)?;
                         self.ctx.var_map.insert(name.clone(), reg);
+                        self.ctx
+                            .type_map
+                            .insert(name.clone(), self.decl_hint(ty_ann.as_ref(), Some(v)));
                         Ok((entry, continu, reg))
                     }
                 } else {
                     let r = self.ctx.alloc();
                     self.ctx.var_map.insert(name.clone(), r);
+                    self.ctx
+                        .type_map
+                        .insert(name.clone(), self.decl_hint(ty_ann.as_ref(), None));
                     Ok((usize::MAX, usize::MAX, r))
                 }
             }
@@ -272,7 +549,7 @@ impl CpsBuilder {
             Stmt::StructDef { name, fields } => {
                 let mut bitmap: u64 = 0;
                 for (i, f) in fields.iter().enumerate() {
-                    if is_heap_type(&f.ty) {
+                    if self.is_heap_type(&f.ty) {
                         bitmap |= 1 << i;
                     }
                 }
@@ -305,7 +582,7 @@ impl CpsBuilder {
     // ── Expression dispatch ──
 
     fn build_expr(&mut self, expr: &Expr) -> Result<(usize, usize, usize), String> {
-        match expr {
+        let result = match expr {
             Expr::LitInt(n) => {
                 let r = self.ctx.alloc();
                 let c = self.add_const(Constant::Int(*n));
@@ -374,12 +651,18 @@ impl CpsBuilder {
             Expr::Index { object, index } => self.build_index(object, index),
             Expr::Assign { target, value } => self.build_assign(target, value),
             Expr::Async(body) | Expr::Await(body) => self.build_expr(body),
-        }
+        }?;
+        self.set_value_hint(result.2, self.expr_hint(expr));
+        Ok(result)
     }
 
     fn build_stmt(&mut self, stmt: &Stmt) -> Result<(usize, usize, usize), String> {
         match stmt {
-            Stmt::ConstDecl { name, value, .. } => {
+            Stmt::ConstDecl {
+                name,
+                ty_ann,
+                value,
+            } => {
                 if matches!(value, Expr::Lambda { .. }) {
                     let func_idx = self.build_lambda_as_function(value)?;
                     self.ctx.func_map.insert(name.clone(), func_idx);
@@ -387,10 +670,17 @@ impl CpsBuilder {
                 } else {
                     let (entry, continu, reg) = self.build_expr(value)?;
                     self.ctx.var_map.insert(name.clone(), reg);
+                    self.ctx
+                        .type_map
+                        .insert(name.clone(), self.decl_hint(ty_ann.as_ref(), Some(value)));
                     Ok((entry, continu, reg))
                 }
             }
-            Stmt::VarDecl { name, value, .. } => {
+            Stmt::VarDecl {
+                name,
+                ty_ann,
+                value,
+            } => {
                 if let Some(v) = value {
                     if matches!(v, Expr::Lambda { .. }) {
                         let func_idx = self.build_lambda_as_function(v)?;
@@ -399,11 +689,17 @@ impl CpsBuilder {
                     } else {
                         let (entry, continu, reg) = self.build_expr(v)?;
                         self.ctx.var_map.insert(name.clone(), reg);
+                        self.ctx
+                            .type_map
+                            .insert(name.clone(), self.decl_hint(ty_ann.as_ref(), Some(v)));
                         Ok((entry, continu, reg))
                     }
                 } else {
                     let r = self.ctx.alloc();
                     self.ctx.var_map.insert(name.clone(), r);
+                    self.ctx
+                        .type_map
+                        .insert(name.clone(), self.decl_hint(ty_ann.as_ref(), None));
                     Ok((usize::MAX, usize::MAX, r))
                 }
             }
@@ -420,6 +716,11 @@ impl CpsBuilder {
             let mut callee = FuncCtx::new(format!("lambda_{}", self.functions.len()));
             for (i, p) in params.iter().enumerate() {
                 callee.var_map.insert(p.name.clone(), i);
+                if let Some(ty) = &p.ty_ann {
+                    callee
+                        .type_map
+                        .insert(p.name.clone(), self.type_expr_hint(ty));
+                }
             }
             callee.next_reg = params.len().max(1);
 
@@ -463,6 +764,11 @@ impl CpsBuilder {
         let mut callee = FuncCtx::new(format!("lambda_{}", self.functions.len()));
         for (i, p) in params.iter().enumerate() {
             callee.var_map.insert(p.name.clone(), i + 1);
+            if let Some(ty) = &p.ty_ann {
+                callee
+                    .type_map
+                    .insert(p.name.clone(), self.type_expr_hint(ty));
+            }
         }
         callee.next_reg = params.len() + 1;
         callee.next_reg = params.len();
@@ -506,8 +812,8 @@ impl CpsBuilder {
                 let (entry, continu, obj_reg) = self.build_expr(object)?;
                 let dst = self.ctx.alloc();
                 let id = self.ctx.new_block();
-                let is_float = contains_to_float(object);
-                let sop = if is_float {
+                let object_hint = self.value_hint(object);
+                let sop = if object_hint.is_float() {
                     CpsBinOp::FToS
                 } else {
                     CpsBinOp::IToS
@@ -522,6 +828,7 @@ impl CpsBuilder {
                     },
                 );
                 self.ctx.chain(continu, id)?;
+                self.set_value_hint(dst, ValueHint::String);
                 return Ok((entry, id, dst));
             }
             if field == "to_float" && args.is_empty() {
@@ -538,6 +845,7 @@ impl CpsBuilder {
                     },
                 );
                 self.ctx.chain(continu, id)?;
+                self.set_value_hint(dst, ValueHint::Float);
                 return Ok((entry, id, dst));
             }
             // Try struct method call: obj.method(args)
@@ -547,7 +855,15 @@ impl CpsBuilder {
                     // Build args: [self_obj, ...user_args]
                     let mut all_args: Vec<Expr> = vec![object.as_ref().clone()];
                     all_args.extend_from_slice(args);
-                    return self.build_call_with_idx(func_idx, &all_args);
+                    let result = self.build_call_with_idx(func_idx, &all_args)?;
+                    self.set_value_hint(
+                        result.2,
+                        self.method_returns
+                            .get(&full_name)
+                            .cloned()
+                            .unwrap_or(ValueHint::Unknown),
+                    );
+                    return Ok(result);
                 }
             }
         }
@@ -589,11 +905,21 @@ impl CpsBuilder {
             }
             // Look up function index
             if let Some(&func_idx) = self.ctx.func_map.get(name) {
-                return self.build_call_with_idx(func_idx, args);
+                let result = self.build_call_with_idx(func_idx, args)?;
+                self.set_value_hint(
+                    result.2,
+                    self.function_returns
+                        .get(name)
+                        .cloned()
+                        .unwrap_or(ValueHint::Unknown),
+                );
+                return Ok(result);
             }
             // Check native functions
             if let Some(ni) = get_native(name) {
-                return self.build_native_call(ni, args);
+                let result = self.build_native_call(ni, args)?;
+                self.set_value_hint(result.2, native_return_hint(name));
+                return Ok(result);
             }
             return Err(format!("undefined function '{}'", name));
         }
@@ -702,11 +1028,16 @@ impl CpsBuilder {
         let (bl, cl, rl) = self.build_expr(left)?;
         let (br, cr, rr) = self.build_expr(right)?;
         let r = self.ctx.alloc();
+        let lhs_hint = self.reg_hint(rl);
+        let rhs_hint = self.reg_hint(rr);
+        let is_float = lhs_hint.is_float() || rhs_hint.is_float();
         // Gt/Ge: swap operands since VM only has Lt/Le
         let (binop, sl, sr) = match op {
+            BinOp::Gt if is_float => (CpsBinOp::FLt, rr, rl),
+            BinOp::Ge if is_float => (CpsBinOp::FLt, rl, rr),
             BinOp::Gt => (CpsBinOp::LtInt, rr, rl),
             BinOp::Ge => (CpsBinOp::LeInt, rr, rl),
-            _ => (bin_op_to_cps(op), rl, rr),
+            _ => (bin_op_to_cps(op, is_float), rl, rr),
         };
         let (instrs, _) = cps_emit::emit_binary(r, binop, sl, sr);
         let id = self.ctx.new_block();
@@ -726,6 +1057,16 @@ impl CpsBuilder {
             self.ctx.chain(cl, id)?;
         }
         let entry = bl;
+        let result_hint = if is_float {
+            ValueHint::Float
+        } else {
+            self.expr_hint(&Expr::Binary {
+                left: Box::new(left.clone()),
+                op,
+                right: Box::new(right.clone()),
+            })
+        };
+        self.set_value_hint(r, result_hint);
         Ok((entry, id, r))
     }
 
@@ -1061,8 +1402,15 @@ impl CpsBuilder {
             .map(|s| s.id)
             .unwrap_or(0);
         let mut instrs = vec![CpsInstr::NewStruct(dst, sid, regs.clone())];
-        for (i, &reg) in regs.iter().enumerate() {
-            instrs.push(CpsInstr::SetField(reg, dst, i as u16, 0));
+        for (i, (&reg, (_, value))) in regs.iter().zip(fields.iter()).enumerate() {
+            let field_reg = if self.value_hint(value).is_float() {
+                let boxed = self.ctx.alloc();
+                instrs.push(CpsInstr::BinOp(boxed, CpsBinOp::FToI, reg, 0));
+                boxed
+            } else {
+                reg
+            };
+            instrs.push(CpsInstr::SetField(field_reg, dst, i as u16, 0));
         }
         let id = self.ctx.new_block();
         self.ctx.set_block(
@@ -1134,44 +1482,26 @@ impl CpsBuilder {
     }
 }
 
-fn bin_op_to_cps(op: BinOp) -> CpsBinOp {
-    match op {
-        BinOp::Add => CpsBinOp::AddInt,
-        BinOp::Sub => CpsBinOp::SubInt,
-        BinOp::Mul => CpsBinOp::MulInt,
-        BinOp::Div => CpsBinOp::DivInt,
-        BinOp::Mod => CpsBinOp::ModInt,
-        BinOp::Eq => CpsBinOp::EqInt,
-        BinOp::Ne => CpsBinOp::NeInt,
-        BinOp::Lt => CpsBinOp::LtInt,
-        BinOp::Le => CpsBinOp::LeInt,
-        BinOp::Gt => CpsBinOp::GtInt,
-        BinOp::Ge => CpsBinOp::GeInt,
+fn bin_op_to_cps(op: BinOp, is_float: bool) -> CpsBinOp {
+    match (op, is_float) {
+        (BinOp::Add, true) => CpsBinOp::FAdd,
+        (BinOp::Sub, true) => CpsBinOp::FSub,
+        (BinOp::Mul, true) => CpsBinOp::FMul,
+        (BinOp::Div, true) => CpsBinOp::FDiv,
+        (BinOp::Eq, true) => CpsBinOp::FEq,
+        (BinOp::Lt, true) => CpsBinOp::FLt,
+        (BinOp::Add, false) => CpsBinOp::AddInt,
+        (BinOp::Sub, false) => CpsBinOp::SubInt,
+        (BinOp::Mul, false) => CpsBinOp::MulInt,
+        (BinOp::Div, false) => CpsBinOp::DivInt,
+        (BinOp::Mod, _) => CpsBinOp::ModInt,
+        (BinOp::Eq, false) => CpsBinOp::EqInt,
+        (BinOp::Ne, _) => CpsBinOp::NeInt,
+        (BinOp::Lt, false) => CpsBinOp::LtInt,
+        (BinOp::Le, _) => CpsBinOp::LeInt,
+        (BinOp::Gt, _) => CpsBinOp::GtInt,
+        (BinOp::Ge, _) => CpsBinOp::GeInt,
         _ => CpsBinOp::AddInt,
-    }
-}
-
-fn contains_to_float(expr: &Expr) -> bool {
-    match expr {
-        Expr::Member { field, .. } if field == "to_float" => true,
-        Expr::Call { func, .. } if contains_to_float(func) => true,
-        Expr::Binary { left, right, .. } => contains_to_float(left) || contains_to_float(right),
-        Expr::Unary { right, .. } => contains_to_float(right),
-        Expr::Block(stmts) => stmts.iter().any(|s| match s {
-            Stmt::ExprStmt(e) => contains_to_float(e),
-            _ => false,
-        }),
-        Expr::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            contains_to_float(cond)
-                || contains_to_float(then_branch)
-                || else_branch.as_ref().map_or(false, |e| contains_to_float(e))
-        }
-        _ => false,
     }
 }
 
@@ -1186,15 +1516,10 @@ fn get_native(name: &str) -> Option<usize> {
     }
 }
 
-fn is_heap_type(ty: &TypeExpr) -> bool {
-    match ty {
-        TypeExpr::Named(name) => {
-            name == "String"
-                || name == "List"
-                || name.chars().next().map_or(false, |c| c.is_uppercase())
-        }
-        TypeExpr::List(_) => true,
-        TypeExpr::Arrow { .. } => false,
+fn native_return_hint(name: &str) -> ValueHint {
+    match name {
+        "sqrt" | "sin" | "cos" | "floor" | "ceil" => ValueHint::Float,
+        _ => ValueHint::Unknown,
     }
 }
 
@@ -1560,6 +1885,46 @@ mod tests {
                 .any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::IToS, _, _)))
         });
         assert!(has_itos, "42.to_string() should emit IToS instruction");
+    }
+
+    #[test]
+    fn build_float_to_string_emits_ftos() {
+        let module = Module {
+            stmts: vec![const_decl(
+                "s",
+                call_member(Expr::LitFloat(3.14), "to_string"),
+            )],
+        };
+        let c = build_module(&module).unwrap();
+        let main = c.functions.last().unwrap();
+        let has_ftos = main.blocks.iter().any(|b| {
+            b.instrs
+                .iter()
+                .any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::FToS, _, _)))
+        });
+        assert!(has_ftos, "3.14.to_string() should emit FToS instruction");
+    }
+
+    #[test]
+    fn build_float_add_uses_float_instruction() {
+        let module = Module {
+            stmts: vec![const_decl(
+                "n",
+                Expr::Binary {
+                    left: Box::new(Expr::LitFloat(1.5)),
+                    op: BinOp::Add,
+                    right: Box::new(Expr::LitFloat(2.5)),
+                },
+            )],
+        };
+        let c = build_module(&module).unwrap();
+        let main = c.functions.last().unwrap();
+        let has_fadd = main.blocks.iter().any(|b| {
+            b.instrs
+                .iter()
+                .any(|i| matches!(i, CpsInstr::BinOp(_, CpsBinOp::FAdd, _, _)))
+        });
+        assert!(has_fadd, "Float64 addition should emit FAdd instruction");
     }
 
     #[test]

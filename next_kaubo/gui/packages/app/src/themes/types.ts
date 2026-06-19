@@ -15,6 +15,10 @@ export interface KauboTheme {
     identifier: string;
     atom: string;
     operator: string;
+    type: string;
+    field: string;
+    method: string;
+    function: string;
   };
 }
 

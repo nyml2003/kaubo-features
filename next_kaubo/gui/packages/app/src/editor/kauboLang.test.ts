@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@kaubo/wasm", () => ({
   lex: vi.fn(() => "[]"),
+  semantic_tokens: vi.fn(() => "[]"),
 }));
 
 import {
@@ -26,7 +27,7 @@ function getAt<T>(arr: readonly T[], idx: number): T {
 
 describe("CLASS_BY_KIND", () => {
   it("has all 7 token categories", () => {
-    expect(Object.keys(CLASS_BY_KIND)).toHaveLength(7);
+    expect(Object.keys(CLASS_BY_KIND)).toHaveLength(11);
     expect(CLASS_BY_KIND.keyword).toBeTruthy();
     expect(CLASS_BY_KIND.number).toBeTruthy();
     expect(CLASS_BY_KIND.string).toBeTruthy();
@@ -34,6 +35,10 @@ describe("CLASS_BY_KIND", () => {
     expect(CLASS_BY_KIND.identifier).toBeTruthy();
     expect(CLASS_BY_KIND.atom).toBeTruthy();
     expect(CLASS_BY_KIND.operator).toBeTruthy();
+    expect(CLASS_BY_KIND.type).toBeTruthy();
+    expect(CLASS_BY_KIND.field).toBeTruthy();
+    expect(CLASS_BY_KIND.method).toBeTruthy();
+    expect(CLASS_BY_KIND.function).toBeTruthy();
   });
 
   it("all values are cm-kaubo-* class names", () => {
@@ -77,6 +82,29 @@ describe("tokenToRange", () => {
   it("maps operator token to range", () => {
     const result = tokenToRange({ kind: "operator", from: 2, to: 3 });
     expect(result).toEqual({ from: 2, to: 3, cls: "cm-kaubo-operator" });
+  });
+
+  it("maps semantic tokens to ranges", () => {
+    expect(tokenToRange({ kind: "type", from: 0, to: 5 })).toEqual({
+      from: 0,
+      to: 5,
+      cls: "cm-kaubo-type",
+    });
+    expect(tokenToRange({ kind: "field", from: 6, to: 7 })).toEqual({
+      from: 6,
+      to: 7,
+      cls: "cm-kaubo-field",
+    });
+    expect(tokenToRange({ kind: "method", from: 8, to: 11 })).toEqual({
+      from: 8,
+      to: 11,
+      cls: "cm-kaubo-method",
+    });
+    expect(tokenToRange({ kind: "function", from: 12, to: 17 })).toEqual({
+      from: 12,
+      to: 17,
+      cls: "cm-kaubo-function",
+    });
   });
 
   it("returns null for unknown kind", () => {

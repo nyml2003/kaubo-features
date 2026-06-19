@@ -1,3 +1,6 @@
+use kaubo_language_service::{
+    completions as ls_completions, semantic_tokens as ls_semantic_tokens,
+};
 use kaubo_syntax::lexer::Lexer;
 use kaubo_web_api::token::{classify_token, describe_token, utf16_range};
 use once_cell::sync::Lazy;
@@ -93,6 +96,16 @@ pub fn hover(source: &str, offset: usize) -> String {
     "null".to_string()
 }
 
+#[wasm_bindgen]
+pub fn semantic_tokens(source: &str) -> String {
+    serde_json::to_string(&ls_semantic_tokens(source)).unwrap_or_else(|_| "[]".to_string())
+}
+
+#[wasm_bindgen]
+pub fn complete(source: &str, offset: usize) -> String {
+    serde_json::to_string(&ls_completions(source, offset)).unwrap_or_else(|_| "[]".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,5 +133,28 @@ mod tests {
                 "overlapping token ranges in {raw}"
             );
         }
+    }
+
+    #[test]
+    fn semantic_tokens_include_type_method_and_function_roles() {
+        let source = "struct Point { x: Int64 }\nimpl Point { dis: |self| { self.x } }\nconst p = Point { x: 1 };\np.dis();\nprint(p.x);";
+        let tokens: Vec<kaubo_language_service::SemanticToken> =
+            serde_json::from_str(&semantic_tokens(source)).unwrap();
+        let roles: Vec<String> = tokens.into_iter().map(|t| t.kind).collect();
+        assert!(roles.contains(&"type".to_string()));
+        assert!(roles.contains(&"method".to_string()));
+        assert!(roles.contains(&"function".to_string()));
+        assert!(roles.contains(&"field".to_string()));
+    }
+
+    #[test]
+    fn completion_exposes_struct_fields_and_methods() {
+        let source = "struct Point { x: Int64, y: Int64 }\nimpl Point { dis: |self| { self.x } }\nconst p = Point { x: 1, y: 2 };\np.";
+        let items: Vec<kaubo_language_service::CompletionItem> =
+            serde_json::from_str(&complete(source, source.len())).unwrap();
+        let labels: Vec<String> = items.into_iter().map(|item| item.label).collect();
+        assert!(labels.contains(&"x".to_string()));
+        assert!(labels.contains(&"y".to_string()));
+        assert!(labels.contains(&"dis".to_string()));
     }
 }

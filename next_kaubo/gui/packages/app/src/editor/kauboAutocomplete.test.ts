@@ -1,7 +1,19 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
 import { kauboCompletions } from "./kauboAutocomplete";
+
+vi.mock("@kaubo/wasm", () => ({
+  complete: vi.fn((source: string, offset: number) => {
+    if (source.slice(0, offset).endsWith("p.")) {
+      return JSON.stringify([
+        { label: "x", kind: "field", detail: "Point" },
+        { label: "dis", kind: "method", detail: "Point method" },
+      ]);
+    }
+    return "[]";
+  }),
+}));
 
 function makeContext(word: string, explicit?: boolean): CompletionContext {
   const doc = `var ${word}`;
@@ -9,6 +21,14 @@ function makeContext(word: string, explicit?: boolean): CompletionContext {
   return new CompletionContext(
     EditorState.create({ doc }),
     pos,
+    explicit ?? false
+  );
+}
+
+function makeRawContext(doc: string, explicit?: boolean): CompletionContext {
+  return new CompletionContext(
+    EditorState.create({ doc }),
+    doc.length,
     explicit ?? false
   );
 }
@@ -111,5 +131,13 @@ describe("kauboCompletions", () => {
       throw new Error("Missing boost values");
     }
     expect(passKw.boost > printFn.boost).toBe(true);
+  });
+
+  it("completes struct fields and methods after dot", () => {
+    const result = requireResult(makeRawContext("p."));
+    expect(labels(result)).toContain("x");
+    expect(labels(result)).toContain("dis");
+    expect(findOption(result, "x").type).toBe("property");
+    expect(findOption(result, "dis").type).toBe("method");
   });
 });

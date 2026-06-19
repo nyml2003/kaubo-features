@@ -1,4 +1,5 @@
 import { type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { complete as wasmComplete } from "@kaubo/wasm";
 
 const KEYWORDS = [
   "var", "if", "else", "elif", "while", "for", "return",
@@ -30,6 +31,18 @@ const CONSTANTS = [
 ];
 
 export function kauboCompletions(context: CompletionContext): CompletionResult | null {
+  const dot = context.matchBefore(/[\w]+\.\w*/);
+  if (dot) {
+    const items = completionsFromLanguageService(
+      context.state.doc.toString(),
+      context.pos
+    );
+    if (items.length > 0) {
+      const prefixStart = dot.text.lastIndexOf(".") + 1;
+      return { from: dot.from + prefixStart, options: items };
+    }
+  }
+
   const word = context.matchBefore(/\w*/);
   if (!word || (word.from === word.to && !context.explicit)) {
     return null;
@@ -82,4 +95,29 @@ export function kauboCompletions(context: CompletionContext): CompletionResult |
 
   if (options.length === 0) return null;
   return { from: word.from, options };
+}
+
+interface ServiceCompletion {
+  label: string;
+  kind: string;
+  detail?: string | null;
+}
+
+function completionsFromLanguageService(source: string, offset: number): Completion[] {
+  try {
+    const parsed = JSON.parse(wasmComplete(source, offset)) as ServiceCompletion[];
+    return parsed.map((item) => {
+      const completion: Completion = {
+        label: item.label,
+        type: item.kind === "field" ? "property" : item.kind,
+        boost: 3,
+      };
+      if (item.detail) {
+        completion.detail = item.detail;
+      }
+      return completion;
+    });
+  } catch {
+    return [];
+  }
 }

@@ -6,6 +6,7 @@ import type { KauboTheme } from "./types";
 const TOKEN_KEYS: (keyof KauboTheme["tokens"])[] = [
   "keyword", "number", "string", "comment",
   "identifier", "atom", "operator",
+  "type", "field", "method", "function",
 ];
 
 const CHROME_KEYS: (keyof Pick<KauboTheme, "background" | "gutter" | "activeLine" | "selection" | "cursor" | "text">)[] = [
@@ -38,8 +39,8 @@ describe("presets", () => {
         });
       }
 
-      it("has all 7 token kind colors", () => {
-        expect(Object.keys(theme.tokens)).toHaveLength(7);
+      it("has all 11 token kind colors", () => {
+        expect(Object.keys(theme.tokens)).toHaveLength(11);
       });
 
       for (const kind of TOKEN_KEYS) {

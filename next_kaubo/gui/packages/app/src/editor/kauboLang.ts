@@ -2,7 +2,7 @@ import { EditorView, Decoration, type DecorationSet, hoverTooltip, type Tooltip 
 import { StateField, type EditorState } from "@codemirror/state";
 import { linter, type Diagnostic } from "@codemirror/lint";
 import { autocompletion } from "@codemirror/autocomplete";
-import { lex, hover as wasmHover } from "@kaubo/wasm";
+import { semantic_tokens, hover as wasmHover } from "@kaubo/wasm";
 import { log } from "../lib/logger";
 import { kauboCompletions } from "./kauboAutocomplete";
 
@@ -27,6 +27,10 @@ export const CLASS_BY_KIND: Record<string, string> = {
   identifier: "cm-kaubo-identifier",
   atom: "cm-kaubo-atom",
   operator: "cm-kaubo-operator",
+  type: "cm-kaubo-type",
+  field: "cm-kaubo-field",
+  method: "cm-kaubo-method",
+  function: "cm-kaubo-function",
 };
 
 export interface DecorationRange {
@@ -112,7 +116,7 @@ function buildDecorationSet(ranges: DecorationRange[]): DecorationSet {
 function tokenize(source: string): DecorationSet {
   try {
     log.lex("deco", source.length);
-    const raw = lex(source);
+    const raw = semantic_tokens(source);
     const parsed: TokenSpan[] = JSON.parse(raw) as TokenSpan[];
     log.token("deco", parsed.length, parsed[0]);
     const ranges = tokensToRanges(parsed);

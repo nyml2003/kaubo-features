@@ -120,6 +120,36 @@ mod tests {
     }
 
     #[test]
+    fn run_source_prints_float_method_result_as_float_string() {
+        let source = r#"
+struct Point {
+    x: Int64,
+    y: Int64,
+};
+
+impl Point {
+  dis: |self: Point, other: Point| -> Float64 {
+    const dx = (self.x - other.x);
+    const dy = (self.y - other.y);
+    return sqrt((dx*dx + dy*dy).to_float()) + 1.0;
+  }
+};
+
+const p1 = Point { x: 200, y: 300 };
+const p2 = Point { x: 300, y: 400 };
+print(p1.dis(p2).to_string());
+"#;
+
+        let outcome = run_source(source).unwrap();
+        let printed = outcome.output.first().expect("program should print");
+        assert!(
+            printed.starts_with("142.421"),
+            "expected float output, got {printed}"
+        );
+        assert_ne!(printed, "4639179838183401144");
+    }
+
+    #[test]
     fn lambda_call_runs() {
         let outcome = run_source("const f = |x| { x + 1 }; f(41);").unwrap();
         assert_eq!(outcome.result, 42);

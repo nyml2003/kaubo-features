@@ -6,23 +6,30 @@
 use crate::ast::*;
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
+use std::collections::BTreeSet;
 
 pub type ParseResult<T> = Result<T, String>;
 
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    struct_names: BTreeSet<String>,
 }
 
 impl Parser {
     pub fn new(source: &str) -> Self {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize();
-        Self { tokens, pos: 0 }
+        Self::from_tokens(tokens)
     }
 
     pub fn from_tokens(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+        let struct_names = collect_struct_names(&tokens);
+        Self {
+            tokens,
+            pos: 0,
+            struct_names,
+        }
     }
 
     // ── 模块入口 ──
@@ -356,7 +363,7 @@ impl Parser {
                 }
                 TokenKind::LBrace => {
                     if let Expr::VarRef(ref name) = expr {
-                        if name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                        if self.struct_names.contains(name) {
                             let struct_name = name.clone();
                             self.bump();
                             let mut fields = Vec::new();
@@ -644,6 +651,16 @@ impl Parser {
     }
 }
 
+fn collect_struct_names(tokens: &[Token]) -> BTreeSet<String> {
+    tokens
+        .windows(2)
+        .filter_map(|window| {
+            (window[0].kind == TokenKind::Struct && window[1].kind == TokenKind::Identifier)
+                .then(|| window[1].lexeme.clone())
+        })
+        .collect()
+}
+
 // ── tests ──
 
 #[cfg(test)]
@@ -806,8 +823,32 @@ mod tests {
 
     #[test]
     fn test_struct_literal() {
-        let e = parse_expr_only("Point { x: 100, y: 200 }");
-        assert!(matches!(e, Expr::StructLit { .. }));
+        let m = parse_mod("struct Point { x: Int64 }; const p = Point { x: 100 };");
+        assert!(matches!(
+            &m.stmts[1],
+            Stmt::ConstDecl {
+                value: Expr::StructLit { name, .. },
+                ..
+            } if name == "Point"
+        ));
+    }
+
+    #[test]
+    fn test_lowercase_struct_literal_uses_declared_type() {
+        let m = parse_mod("struct point { x: Int64 }; const p = point { x: 100 };");
+        assert!(matches!(
+            &m.stmts[1],
+            Stmt::ConstDecl {
+                value: Expr::StructLit { name, .. },
+                ..
+            } if name == "point"
+        ));
+    }
+
+    #[test]
+    fn test_uppercase_call_is_not_struct_literal_without_declaration() {
+        let e = parse_expr_only("Point(1)");
+        assert!(matches!(e, Expr::Call { .. }));
     }
 
     #[test]

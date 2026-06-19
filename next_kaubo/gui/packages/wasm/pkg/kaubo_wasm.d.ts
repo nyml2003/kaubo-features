@@ -7,6 +7,8 @@
  */
 export function compile(source: string): number;
 
+export function complete(source: string, offset: number): string;
+
 /**
  * Parse + type-check, return JSON error array or "[]".
  */
@@ -30,16 +32,20 @@ export function lex(source: string): string;
  */
 export function run(_bytes: Uint8Array): string;
 
+export function semantic_tokens(source: string): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly compile: (a: number, b: number) => [number, number, number];
+    readonly complete: (a: number, b: number, c: number) => [number, number];
     readonly diagnose: (a: number, b: number) => [number, number];
     readonly hover: (a: number, b: number, c: number) => [number, number];
     readonly init: () => void;
     readonly lex: (a: number, b: number) => [number, number];
     readonly run: (a: number, b: number) => [number, number, number, number];
+    readonly semantic_tokens: (a: number, b: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

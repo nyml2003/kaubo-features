@@ -59,6 +59,10 @@
 .editor :global(.cm-kaubo-identifier) { color: var(--kb-identifier); }
 .editor :global(.cm-kaubo-atom)      { color: var(--kb-atom); }
 .editor :global(.cm-kaubo-operator)  { color: var(--kb-operator); }
+.editor :global(.cm-kaubo-type)      { color: var(--kb-type); font-weight: 600; }
+.editor :global(.cm-kaubo-field)     { color: var(--kb-field); }
+.editor :global(.cm-kaubo-method)    { color: var(--kb-method); }
+.editor :global(.cm-kaubo-function)  { color: var(--kb-function); }
 
 /* Fold & lint gutter */
 .editor :global(.cm-foldGutter) { color: var(--kb-comment); }

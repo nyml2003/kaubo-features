@@ -18,3 +18,4 @@ serde_json = { workspace = true }
 kaubo-syntax = { workspace = true }
 kaubo-driver = { workspace = true }
 kaubo-web-api = { workspace = true }
+kaubo-language-service = { workspace = true }
