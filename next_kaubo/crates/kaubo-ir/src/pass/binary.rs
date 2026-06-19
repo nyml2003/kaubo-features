@@ -379,11 +379,15 @@ fn decode_instr(r: &mut Cursor<&[u8]>) -> Result<CpsInstr, String> {
     Ok(match tag {
         0x00 => CpsInstr::BinOp(
             r_u16(r)? as usize,
-            u8_to_binop(r_u8(r)?),
+            u8_to_binop(r_u8(r)?)?,
             r_u16(r)? as usize,
             r_u16(r)? as usize,
         ),
-        0x01 => CpsInstr::UnOp(r_u16(r)? as usize, u8_to_unop(r_u8(r)?), r_u16(r)? as usize),
+        0x01 => CpsInstr::UnOp(
+            r_u16(r)? as usize,
+            u8_to_unop(r_u8(r)?)?,
+            r_u16(r)? as usize,
+        ),
         0x02 => CpsInstr::LoadConst(r_u16(r)? as usize, r_u32(r)? as usize),
         0x03 => CpsInstr::Move(r_u16(r)? as usize, r_u16(r)? as usize),
         0x04 => CpsInstr::NewStruct(r_u16(r)? as usize, r_u32(r)? as usize, vec![]),
@@ -537,11 +541,15 @@ fn binop_to_u8(op: CpsBinOp) -> u8 {
         CpsBinOp::IToS => 20,
         CpsBinOp::FToS => 21,
         CpsBinOp::SToI => 22,
+        CpsBinOp::FNe => 23,
+        CpsBinOp::FLe => 24,
+        CpsBinOp::FGt => 25,
+        CpsBinOp::FGe => 26,
     }
 }
 
-fn u8_to_binop(v: u8) -> CpsBinOp {
-    match v {
+fn u8_to_binop(v: u8) -> Result<CpsBinOp, String> {
+    Ok(match v {
         0 => CpsBinOp::AddInt,
         1 => CpsBinOp::SubInt,
         2 => CpsBinOp::MulInt,
@@ -565,8 +573,12 @@ fn u8_to_binop(v: u8) -> CpsBinOp {
         20 => CpsBinOp::IToS,
         21 => CpsBinOp::FToS,
         22 => CpsBinOp::SToI,
-        _ => CpsBinOp::AddInt,
-    }
+        23 => CpsBinOp::FNe,
+        24 => CpsBinOp::FLe,
+        25 => CpsBinOp::FGt,
+        26 => CpsBinOp::FGe,
+        _ => return Err(format!("bad binop tag {}", v)),
+    })
 }
 
 fn unop_to_u8(op: CpsUnOp) -> u8 {
@@ -576,13 +588,13 @@ fn unop_to_u8(op: CpsUnOp) -> u8 {
         CpsUnOp::Not => 2,
     }
 }
-fn u8_to_unop(v: u8) -> CpsUnOp {
-    match v {
+fn u8_to_unop(v: u8) -> Result<CpsUnOp, String> {
+    Ok(match v {
         0 => CpsUnOp::NegInt,
         1 => CpsUnOp::FNeg,
         2 => CpsUnOp::Not,
-        _ => CpsUnOp::Not,
-    }
+        _ => return Err(format!("bad unop tag {}", v)),
+    })
 }
 
 // ── Tests ──
@@ -698,7 +710,11 @@ mod tests {
             CpsBinOp::GtInt,
             CpsBinOp::GeInt,
             CpsBinOp::FEq,
+            CpsBinOp::FNe,
             CpsBinOp::FLt,
+            CpsBinOp::FLe,
+            CpsBinOp::FGt,
+            CpsBinOp::FGe,
             CpsBinOp::IToF,
             CpsBinOp::FToI,
             CpsBinOp::IToS,
@@ -710,20 +726,20 @@ mod tests {
             instrs.push(CpsInstr::BinOp(i, *op, 0, 1));
         }
         instrs.extend([
-            CpsInstr::UnOp(24, CpsUnOp::NegInt, 0),
-            CpsInstr::UnOp(25, CpsUnOp::FNeg, 0),
-            CpsInstr::UnOp(26, CpsUnOp::Not, 0),
-            CpsInstr::LoadConst(27, 0),
-            CpsInstr::Move(28, 27),
-            CpsInstr::NewStruct(29, 0, vec![0, 1]),
-            CpsInstr::GetField(30, 29, 1),
-            CpsInstr::SetField(31, 29, 1, 30),
-            CpsInstr::NewList(32, vec![0, 1]),
-            CpsInstr::IndexGet(33, 32, 0),
-            CpsInstr::IndexSet(32, 32, 0, 33),
-            CpsInstr::Box(34, 33),
-            CpsInstr::Unbox(35, 34),
-            CpsInstr::Print(35),
+            CpsInstr::UnOp(28, CpsUnOp::NegInt, 0),
+            CpsInstr::UnOp(29, CpsUnOp::FNeg, 0),
+            CpsInstr::UnOp(30, CpsUnOp::Not, 0),
+            CpsInstr::LoadConst(31, 0),
+            CpsInstr::Move(32, 31),
+            CpsInstr::NewStruct(33, 0, vec![0, 1]),
+            CpsInstr::GetField(34, 33, 1),
+            CpsInstr::SetField(35, 33, 1, 34),
+            CpsInstr::NewList(36, vec![0, 1]),
+            CpsInstr::IndexGet(37, 36, 0),
+            CpsInstr::IndexSet(36, 36, 0, 37),
+            CpsInstr::Box(38, 37),
+            CpsInstr::Unbox(39, 38),
+            CpsInstr::Print(39),
             CpsInstr::Nop,
         ]);
 
@@ -748,7 +764,7 @@ mod tests {
                 CpsFunction {
                     name: "main".to_string(),
                     entry: 0,
-                    reg_count: 40,
+                    reg_count: 44,
                     blocks: vec![
                         CpsBlock {
                             id: 0,
@@ -822,15 +838,15 @@ mod tests {
         assert_eq!(decoded.functions.len(), 2);
         assert_eq!(decoded.functions[0].blocks.len(), 7);
         assert_eq!(decoded.functions[0].blocks[0].params, vec![0, 1]);
-        assert_eq!(decoded.functions[0].blocks[0].instrs.len(), 38);
+        assert_eq!(decoded.functions[0].blocks[0].instrs.len(), 42);
         assert!(matches!(
             decoded.functions[0].blocks[0].instrs[0],
             CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)
         ));
-        assert!(matches!(
-            decoded.functions[0].blocks[0].instrs[22],
+        assert!(decoded.functions[0].blocks[0].instrs.iter().any(|instr| matches!(
+            instr,
             CpsInstr::BinOp(_, CpsBinOp::SToI, _, _)
-        ));
+        )));
         assert!(matches!(
             decoded.functions[0].blocks[1].term,
             CpsTerminator::Branch(_, 2, _, 3, _)
@@ -873,5 +889,8 @@ mod tests {
         let mut bytes = encode_module(&module);
         bytes[10] = 0xFF;
         assert!(decode_module(&bytes).unwrap_err().contains("bad const tag"));
+
+        assert!(u8_to_binop(0xFF).unwrap_err().contains("bad binop tag"));
+        assert!(u8_to_unop(0xFF).unwrap_err().contains("bad unop tag"));
     }
 }

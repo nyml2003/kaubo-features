@@ -17,6 +17,12 @@ pub fn encode(op: u8, dst: u32, src1: u32, src2: u32) -> u32 {
 pub enum RuntimeError {
     DivisionByZero,
     IndexOutOfBounds(i64, usize),
+    FieldOutOfBounds { index: usize, len: usize },
+    InvalidHeapHandle(i64),
+    TypeMismatch(String),
+    UnsupportedInstruction(String),
+    InvalidOpcode(u8),
+    NativeError(String),
     NullAccess,
     TypeAssertion(String),
     StackOverflow,
@@ -200,16 +206,43 @@ impl VM {
         }
     }
 
+    fn write_int(&mut self, reg: usize, value: i64) {
+        self.regs.ints[reg] = value;
+    }
+
+    fn write_bool(&mut self, reg: usize, value: bool) {
+        self.write_int(reg, value as i64);
+        self.regs.floats[reg] = value as u8 as f64;
+    }
+
+    fn write_float(&mut self, reg: usize, value: f64) {
+        self.regs.floats[reg] = value;
+        self.regs.ints[reg] = value.to_bits() as i64;
+    }
+
+    fn write_heap(&mut self, reg: usize, obj: HeapObj) {
+        let hid = self.alloc_heap(obj);
+        self.write_int(reg, hid);
+    }
+
     fn alloc_heap(&mut self, obj: HeapObj) -> i64 {
         self.heap.alloc(obj) as i64
     }
 
-    fn heap_get(&self, id: i64) -> &HeapObj {
-        self.heap.get(id as usize)
+    fn heap_get(&self, id: i64) -> Result<&HeapObj, RuntimeError> {
+        if id < 0 {
+            return Err(RuntimeError::InvalidHeapHandle(id));
+        }
+        self.heap
+            .try_get(id as usize)
+            .ok_or(RuntimeError::InvalidHeapHandle(id))
     }
 
-    fn heap_get_mut(&mut self, id: i64) -> &mut HeapObj {
-        self.heap.get_mut(id as usize)
+    fn heap_get_mut(&mut self, id: i64) -> Result<&mut HeapObj, RuntimeError> {
+        if id < 0 || self.heap.try_get(id as usize).is_none() {
+            return Err(RuntimeError::InvalidHeapHandle(id));
+        }
+        Ok(self.heap.get_mut(id as usize))
     }
 
     pub fn execute(&mut self, entry_func: usize, _reg_count: usize) -> Result<i64, RuntimeError> {
@@ -244,19 +277,19 @@ impl VM {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    self.regs.ints[a] = self.regs.ints[b].wrapping_add(self.regs.ints[c]);
+                    self.write_int(a, self.regs.ints[b].wrapping_add(self.regs.ints[c]));
                 }
                 0x01 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    self.regs.ints[a] = self.regs.ints[b].wrapping_sub(self.regs.ints[c]);
+                    self.write_int(a, self.regs.ints[b].wrapping_sub(self.regs.ints[c]));
                 }
                 0x02 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    self.regs.ints[a] = self.regs.ints[b].wrapping_mul(self.regs.ints[c]);
+                    self.write_int(a, self.regs.ints[b].wrapping_mul(self.regs.ints[c]));
                 }
                 0x03 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
@@ -265,7 +298,7 @@ impl VM {
                     if self.regs.ints[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
-                    self.regs.ints[a] = self.regs.ints[b] / self.regs.ints[c];
+                    self.write_int(a, self.regs.ints[b] / self.regs.ints[c]);
                 }
                 0x04 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
@@ -274,12 +307,12 @@ impl VM {
                     if self.regs.ints[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
-                    self.regs.ints[a] = self.regs.ints[b] % self.regs.ints[c];
+                    self.write_int(a, self.regs.ints[b] % self.regs.ints[c]);
                 }
                 0x05 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
-                    self.regs.ints[a] = -self.regs.ints[b];
+                    self.write_int(a, -self.regs.ints[b]);
                 }
 
                 // ── 浮点 ──
@@ -287,40 +320,30 @@ impl VM {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    let f = self.regs.floats[b] + self.regs.floats[c];
-                    self.regs.floats[a] = f;
-                    self.regs.ints[a] = f.to_bits() as i64;
+                    self.write_float(a, self.regs.floats[b] + self.regs.floats[c]);
                 }
                 0x09 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    let f = self.regs.floats[b] - self.regs.floats[c];
-                    self.regs.floats[a] = f;
-                    self.regs.ints[a] = f.to_bits() as i64;
+                    self.write_float(a, self.regs.floats[b] - self.regs.floats[c]);
                 }
                 0x0A => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    let f = self.regs.floats[b] * self.regs.floats[c];
-                    self.regs.floats[a] = f;
-                    self.regs.ints[a] = f.to_bits() as i64;
+                    self.write_float(a, self.regs.floats[b] * self.regs.floats[c]);
                 }
                 0x0B => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    let f = self.regs.floats[b] / self.regs.floats[c];
-                    self.regs.floats[a] = f;
-                    self.regs.ints[a] = f.to_bits() as i64;
+                    self.write_float(a, self.regs.floats[b] / self.regs.floats[c]);
                 }
                 0x0C => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
-                    let f = -self.regs.floats[b];
-                    self.regs.floats[a] = f;
-                    self.regs.ints[a] = f.to_bits() as i64;
+                    self.write_float(a, -self.regs.floats[b]);
                 }
 
                 // ── 比较 ──
@@ -328,67 +351,101 @@ impl VM {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    self.regs.ints[a] = (self.regs.ints[b] == self.regs.ints[c]) as i64;
+                    self.write_bool(a, self.regs.ints[b] == self.regs.ints[c]);
                 }
                 0x11 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    self.regs.ints[a] = (self.regs.ints[b] < self.regs.ints[c]) as i64;
+                    self.write_bool(a, self.regs.ints[b] < self.regs.ints[c]);
                 }
                 0x12 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    self.regs.ints[a] = (self.regs.ints[b] <= self.regs.ints[c]) as i64;
+                    self.write_bool(a, self.regs.ints[b] <= self.regs.ints[c]);
                 }
                 0x13 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    self.regs.floats[a] =
-                        (self.regs.floats[b] == self.regs.floats[c]) as u64 as f64;
+                    self.write_bool(a, self.regs.floats[b] == self.regs.floats[c]);
                 }
                 0x14 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    self.regs.floats[a] = (self.regs.floats[b] < self.regs.floats[c]) as u64 as f64;
+                    self.write_bool(a, self.regs.floats[b] < self.regs.floats[c]);
                 }
 
                 // ── Not ──
                 0x15 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
-                    self.regs.ints[a] = (self.regs.ints[b] == 0) as i64;
+                    self.write_bool(a, self.regs.ints[b] == 0);
                 }
                 0x16 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
                     let c = (inst & 0xFF) as usize;
-                    self.regs.ints[a] = (self.regs.ints[b] != self.regs.ints[c]) as i64;
+                    self.write_bool(a, self.regs.ints[b] != self.regs.ints[c]);
                 }
 
-                // ── 字符串 ──
-                0x18 => {
+                0x17 => {
                     let a = ((inst >> 17) & 0xFF) as usize;
                     let b = ((inst >> 8) & 0x1FF) as usize;
-                    self.regs.ints[a] = self.regs.ints[b].wrapping_add(0);
+                    let c = (inst & 0xFF) as usize;
+                    self.write_bool(a, self.regs.ints[b] > self.regs.ints[c]);
+                }
+
+                // ── 字符串 / 额外比较 ──
+                0x18 => {
+                    return Err(RuntimeError::UnsupportedInstruction(
+                        "string concatenation is not implemented".into(),
+                    ));
+                }
+                0x19 => {
+                    let a = ((inst >> 17) & 0xFF) as usize;
+                    let b = ((inst >> 8) & 0x1FF) as usize;
+                    let c = (inst & 0xFF) as usize;
+                    self.write_bool(a, self.regs.ints[b] >= self.regs.ints[c]);
+                }
+                0x1A => {
+                    let a = ((inst >> 17) & 0xFF) as usize;
+                    let b = ((inst >> 8) & 0x1FF) as usize;
+                    let c = (inst & 0xFF) as usize;
+                    self.write_bool(a, self.regs.floats[b] != self.regs.floats[c]);
+                }
+                0x1B => {
+                    let a = ((inst >> 17) & 0xFF) as usize;
+                    let b = ((inst >> 8) & 0x1FF) as usize;
+                    let c = (inst & 0xFF) as usize;
+                    self.write_bool(a, self.regs.floats[b] <= self.regs.floats[c]);
+                }
+                0x1C => {
+                    let a = ((inst >> 17) & 0xFF) as usize;
+                    let b = ((inst >> 8) & 0x1FF) as usize;
+                    let c = (inst & 0xFF) as usize;
+                    self.write_bool(a, self.regs.floats[b] > self.regs.floats[c]);
+                }
+                0x1D => {
+                    let a = ((inst >> 17) & 0xFF) as usize;
+                    let b = ((inst >> 8) & 0x1FF) as usize;
+                    let c = (inst & 0xFF) as usize;
+                    self.write_bool(a, self.regs.floats[b] >= self.regs.floats[c]);
                 }
 
                 // ── 转换 ──
                 0x20 => {
                     let d = ((inst >> 17) & 0xFF) as usize;
                     let s = ((inst >> 8) & 0x1FF) as usize;
-                    let f = self.regs.ints[s] as f64;
-                    self.regs.floats[d] = f;
-                    self.regs.ints[d] = f.to_bits() as i64;
+                    self.write_float(d, self.regs.ints[s] as f64);
                 }
                 0x21 => {
                     let d = ((inst >> 17) & 0xFF) as usize;
                     let s = ((inst >> 8) & 0x1FF) as usize;
                     let f = self.regs.floats[s];
-                    self.regs.ints[d] = f as i64;
+                    self.write_int(d, f as i64);
                     self.regs.floats[d] = f;
                 }
                 0x22 => {
@@ -396,22 +453,20 @@ impl VM {
                     let d = ((inst >> 17) & 0xFF) as usize;
                     let s = ((inst >> 8) & 0x1FF) as usize;
                     let st = format!("{}", self.regs.ints[s]);
-                    let hid = self.alloc_heap(HeapObj::String(st));
-                    self.regs.ints[d] = hid;
+                    self.write_heap(d, HeapObj::String(st));
                 }
                 0x23 => {
                     // ftos
                     let d = ((inst >> 17) & 0xFF) as usize;
                     let s = ((inst >> 8) & 0x1FF) as usize;
                     let s = format!("{}", self.regs.floats[s]);
-                    let hid = self.alloc_heap(HeapObj::String(s));
-                    self.regs.ints[d] = hid;
+                    self.write_heap(d, HeapObj::String(s));
                 }
                 0x24 => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
-                    self.regs.ints[d] = self.regs.ints[s];
-                } // stoi placeholder
+                    return Err(RuntimeError::UnsupportedInstruction(
+                        "string to int conversion is not implemented".into(),
+                    ));
+                }
 
                 // ── 数据移动 ──
                 0x30 => {
@@ -422,22 +477,22 @@ impl VM {
                 }
                 0x31 => {
                     let d = ((inst >> 17) & 0xFF) as usize;
-                    self.regs.ints[d] = (inst & 0x1FFFF) as i64;
+                    self.write_int(d, (inst & 0x1FFFF) as i64);
                 }
                 0x32 => {
                     let d = ((inst >> 17) & 0xFF) as usize;
                     let idx = ((inst >> 8) & 0xFF) as usize;
-                    match &self.consts[idx] {
-                        Constant::Int(n) => self.regs.ints[d] = *n,
-                        Constant::Float(f) => {
-                            self.regs.floats[d] = *f;
-                            self.regs.ints[d] = f.to_bits() as i64;
-                        }
-                        Constant::String(s) => {
-                            let hid = self.alloc_heap(HeapObj::String(s.clone()));
-                            self.regs.ints[d] = hid;
-                        }
-                        _ => {}
+                    let constant = self
+                        .consts
+                        .get(idx)
+                        .cloned()
+                        .ok_or_else(|| RuntimeError::Bug(format!("constant index {idx}")))?;
+                    match constant {
+                        Constant::Int(n) => self.write_int(d, n),
+                        Constant::Float(f) => self.write_float(d, f),
+                        Constant::String(s) => self.write_heap(d, HeapObj::String(s)),
+                        Constant::Bool(b) => self.write_bool(d, b),
+                        Constant::Null => self.write_int(d, 0),
                     }
                 }
 
@@ -445,22 +500,24 @@ impl VM {
                 0x34 => {
                     let d = ((inst >> 17) & 0xFF) as usize;
                     let sid = ((inst >> 8) & 0xFF) as usize;
-                    let nf = self.struct_field_counts.get(sid).copied().unwrap_or(0);
-                    let bitmap = self.struct_bitmaps.get(sid).copied().unwrap_or(0);
+                    let nf = self
+                        .struct_field_counts
+                        .get(sid)
+                        .copied()
+                        .ok_or_else(|| RuntimeError::Bug(format!("unknown struct id {sid}")))?;
+                    let bitmap = self.struct_bitmaps[sid];
                     let mut fields = vec![0i64; nf];
                     for i in 0..nf {
                         if (bitmap >> i) & 1 != 0 {
                             fields[i] = -1; // null sentinel for heap-type fields
                         }
                     }
-                    self.regs.ints[d] = self.alloc_heap(HeapObj::Struct(sid, fields));
+                    self.write_heap(d, HeapObj::Struct(sid, fields));
                 }
                 0x35 => {
-                    // NewList(dst, elements)
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let ne = ((inst >> 8) & 0xFF) as usize;
-                    let hid = self.alloc_heap(HeapObj::List(vec![0; ne]));
-                    self.regs.ints[d] = hid;
+                    return Err(RuntimeError::UnsupportedInstruction(
+                        "list literals are not implemented".into(),
+                    ));
                 }
 
                 // ── 字段访问 ──
@@ -470,11 +527,22 @@ impl VM {
                     let s = ((inst >> 8) & 0x1FF) as usize;
                     let idx = (inst & 0xFF) as usize;
                     let hid = self.regs.ints[s];
-                    if let HeapObj::Struct(_, fields) = self.heap_get(hid) {
-                        let val = *fields.get(idx).unwrap_or(&0);
-                        self.regs.ints[d] = val;
-                        self.regs.floats[d] = f64::from_bits(val as u64);
-                    }
+                    let val = match self.heap_get(hid)? {
+                        HeapObj::Struct(_, fields) => fields.get(idx).copied().ok_or(
+                            RuntimeError::FieldOutOfBounds {
+                                index: idx,
+                                len: fields.len(),
+                            },
+                        )?,
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "GetField expected struct, got {:?}",
+                                other
+                            )))
+                        }
+                    };
+                    self.write_int(d, val);
+                    self.regs.floats[d] = f64::from_bits(val as u64);
                 }
                 0x37 => {
                     // SetField(dst, src, idx, val)
@@ -485,14 +553,25 @@ impl VM {
                     let val = self.regs.ints[d];
 
                     // Read struct_id and old field value
-                    let (sid, old_val) = if let HeapObj::Struct(sid, fields) = self.heap_get(hid) {
-                        (*sid, fields.get(idx).copied().unwrap_or(0))
-                    } else {
-                        (0, 0)
+                    let (sid, old_val, len) = match self.heap_get(hid)? {
+                        HeapObj::Struct(sid, fields) => {
+                            let old_val = fields.get(idx).copied().ok_or(
+                                RuntimeError::FieldOutOfBounds {
+                                    index: idx,
+                                    len: fields.len(),
+                                },
+                            )?;
+                            (*sid, old_val, fields.len())
+                        }
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "SetField expected struct, got {:?}",
+                                other
+                            )))
+                        }
                     };
                     // Check if this field is a heap type
-                    let is_heap =
-                        (self.struct_bitmaps.get(sid).copied().unwrap_or(0) >> idx) & 1 != 0;
+                    let is_heap = (self.struct_bitmaps[sid] >> idx) & 1 != 0;
 
                     // Release old value if heap type
                     if is_heap && old_val >= 0 {
@@ -500,10 +579,11 @@ impl VM {
                     }
 
                     // Write new value
-                    if let HeapObj::Struct(_, fields) = self.heap_get_mut(hid) {
-                        if idx < fields.len() {
-                            fields[idx] = val;
+                    if let HeapObj::Struct(_, fields) = self.heap_get_mut(hid)? {
+                        if idx >= len {
+                            return Err(RuntimeError::FieldOutOfBounds { index: idx, len });
                         }
+                        fields[idx] = val;
                     }
 
                     // Retain new value if heap type
@@ -520,27 +600,38 @@ impl VM {
                     let i = (inst & 0xFF) as usize;
                     let hid = self.regs.ints[o];
                     let index = self.regs.ints[i] as usize;
-                    match self.heap_get(hid) {
+                    match self.heap_get(hid)? {
                         HeapObj::List(v) => {
-                            self.regs.ints[d] = *v
+                            let val = *v
                                 .get(index)
                                 .ok_or(RuntimeError::IndexOutOfBounds(index as i64, v.len()))?;
+                            self.write_int(d, val);
                         }
-                        _ => {}
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "IndexGet expected list, got {:?}",
+                                other
+                            )))
+                        }
                     }
+                }
+                0x39 => {
+                    return Err(RuntimeError::UnsupportedInstruction(
+                        "index assignment is not implemented".into(),
+                    ));
                 }
 
                 // ── 装箱/拆箱 ──
                 0x3A => {
                     let d = ((inst >> 17) & 0xFF) as usize;
                     let s = ((inst >> 8) & 0x1FF) as usize;
-                    self.regs.ints[d] = self.regs.ints[s];
+                    self.write_int(d, self.regs.ints[s]);
                     self.regs.floats[d] = self.regs.floats[s];
                 } // box
                 0x3B => {
                     let d = ((inst >> 17) & 0xFF) as usize;
                     let s = ((inst >> 8) & 0x1FF) as usize;
-                    self.regs.ints[d] = self.regs.ints[s];
+                    self.write_int(d, self.regs.ints[s]);
                     self.regs.floats[d] = self.regs.floats[s];
                 } // unbox
 
@@ -623,9 +714,11 @@ impl VM {
                         .map(|&r| self.regs.ints[r])
                         .collect();
                     if fi < self.natives.len() {
-                        let result = (self.natives[fi].1)(&args).unwrap_or(0);
-                        self.regs.ints[0] = result;
+                        let result = (self.natives[fi].1)(&args).map_err(RuntimeError::NativeError)?;
+                        self.write_int(0, result);
                         self.regs.floats[0] = f64::from_bits(result as u64);
+                    } else {
+                        return Err(RuntimeError::Bug(format!("unknown native index {fi}")));
                     }
                     ip = self.block_ip(ret_block);
                 }
@@ -633,7 +726,7 @@ impl VM {
                 // ── async ──
                 0x60 => {
                     if let Some((_, result)) = self.scheduler.poll() {
-                        self.regs.ints[0] = result;
+                        self.write_int(0, result);
                     }
                 }
                 0x61 => {
@@ -664,7 +757,7 @@ impl VM {
                     }
                 }
 
-                _ => {}
+                _ => return Err(RuntimeError::InvalidOpcode(op)),
             }
         }
     }
@@ -686,13 +779,17 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
                 CpsBinOp::FMul => 0x0A,
                 CpsBinOp::FDiv => 0x0B,
                 CpsBinOp::FEq => 0x13,
+                CpsBinOp::FNe => 0x1A,
                 CpsBinOp::FLt => 0x14,
+                CpsBinOp::FLe => 0x1B,
+                CpsBinOp::FGt => 0x1C,
+                CpsBinOp::FGe => 0x1D,
                 CpsBinOp::EqInt => 0x10,
                 CpsBinOp::NeInt => 0x16,
                 CpsBinOp::LtInt => 0x11,
                 CpsBinOp::LeInt => 0x12,
-                CpsBinOp::GtInt => 0x12,
-                CpsBinOp::GeInt => 0x12,
+                CpsBinOp::GtInt => 0x17,
+                CpsBinOp::GeInt => 0x19,
                 CpsBinOp::IToF => 0x20,
                 CpsBinOp::FToI => 0x21,
                 CpsBinOp::IToS => 0x22,
@@ -719,13 +816,18 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
         CpsInstr::NewStruct(d, sid, _) => encode(0x34, *d as u32, *sid as u32, 0),
         CpsInstr::GetField(d, o, idx) => encode(0x36, *d as u32, *o as u32, *idx as u32),
         CpsInstr::SetField(d, o, idx, _) => encode(0x37, *d as u32, *o as u32, *idx as u32),
-        CpsInstr::NewList(d, _) => encode(0x35, *d as u32, 0, 0),
+        CpsInstr::NewList(_, elements) => {
+            return Err(format!(
+                "list literals are not implemented ({} elements)",
+                elements.len()
+            ))
+        }
         CpsInstr::IndexGet(d, o, i) => encode(0x38, *d as u32, *o as u32, *i as u32),
-        CpsInstr::IndexSet(_, _, _, _) => encode(0x39, 0, 0, 0),
+        CpsInstr::IndexSet(_, _, _, _) => return Err("index assignment is not implemented".into()),
         CpsInstr::Box(d, s) => encode(0x3A, *d as u32, *s as u32, 0),
         CpsInstr::Unbox(d, s) => encode(0x3B, *d as u32, *s as u32, 0),
         CpsInstr::Print(r) => encode(0x7F, *r as u32, 0, 0),
-        CpsInstr::Nop => 0,
+        CpsInstr::Nop => return Err("nop is not executable".into()),
     })
 }
 
@@ -911,7 +1013,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&m).unwrap();
         let r = vm.execute(0, 1).unwrap();
-        if let HeapObj::String(s) = vm.heap_get(r) {
+        if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "hello");
         } else {
             panic!("expected string");
@@ -1094,7 +1196,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
         let r = vm.execute(0, 2).unwrap();
-        if let HeapObj::String(s) = vm.heap_get(r) {
+        if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "42");
         } else {
             panic!("expected heap string, got idx {}", r);
@@ -1117,7 +1219,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
         let r = vm.execute(0, 4).unwrap();
-        if let HeapObj::String(s) = vm.heap_get(r) {
+        if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "200");
         } else {
             panic!("expected heap string, got idx {}", r);
@@ -1138,7 +1240,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
         let r = vm.execute(0, 2).unwrap();
-        if let HeapObj::String(s) = vm.heap_get(r) {
+        if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "3.14");
         } else {
             panic!("expected heap string");
@@ -1157,8 +1259,8 @@ mod tests {
                 CpsInstr::BinOp(5, CpsBinOp::FDiv, 4, 1),
                 CpsInstr::BinOp(6, CpsBinOp::FEq, 5, 5),
                 CpsInstr::BinOp(7, CpsBinOp::FLt, 0, 1),
-                CpsInstr::BinOp(8, CpsBinOp::FToI, 6, 0),
-                CpsInstr::BinOp(9, CpsBinOp::FToI, 7, 0),
+                CpsInstr::Move(8, 6),
+                CpsInstr::Move(9, 7),
                 CpsInstr::BinOp(10, CpsBinOp::AddInt, 8, 9),
             ],
             CpsTerminator::Return(10),
@@ -1171,11 +1273,131 @@ mod tests {
     }
 
     #[test]
+    fn float_comparisons_write_boolean_int_registers() {
+        let cps = simple_mod(
+            vec![
+                CpsInstr::LoadConst(0, 0),
+                CpsInstr::LoadConst(1, 1),
+                CpsInstr::BinOp(2, CpsBinOp::FEq, 0, 0),
+                CpsInstr::BinOp(3, CpsBinOp::FNe, 0, 1),
+                CpsInstr::BinOp(4, CpsBinOp::FLt, 0, 1),
+                CpsInstr::BinOp(5, CpsBinOp::FLe, 0, 0),
+                CpsInstr::BinOp(6, CpsBinOp::FGt, 1, 0),
+                CpsInstr::BinOp(7, CpsBinOp::FGe, 1, 1),
+                CpsInstr::BinOp(8, CpsBinOp::AddInt, 2, 3),
+                CpsInstr::BinOp(8, CpsBinOp::AddInt, 8, 4),
+                CpsInstr::BinOp(8, CpsBinOp::AddInt, 8, 5),
+                CpsInstr::BinOp(8, CpsBinOp::AddInt, 8, 6),
+                CpsInstr::BinOp(8, CpsBinOp::AddInt, 8, 7),
+            ],
+            CpsTerminator::Return(8),
+            vec![Constant::Float(1.5), Constant::Float(2.0)],
+            9,
+        );
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        assert_eq!(vm.execute(0, 9).unwrap(), 6);
+    }
+
+    #[test]
+    fn load_bool_and_null_constants() {
+        let cps = simple_mod(
+            vec![
+                CpsInstr::LoadConst(0, 0),
+                CpsInstr::LoadConst(1, 1),
+                CpsInstr::LoadConst(2, 2),
+                CpsInstr::BinOp(3, CpsBinOp::AddInt, 0, 1),
+                CpsInstr::BinOp(4, CpsBinOp::AddInt, 3, 2),
+            ],
+            CpsTerminator::Return(4),
+            vec![Constant::Bool(true), Constant::Bool(false), Constant::Null],
+            5,
+        );
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        assert_eq!(vm.execute(0, 5).unwrap(), 1);
+    }
+
+    #[test]
+    fn invalid_heap_access_returns_runtime_errors() {
+        let get = simple_mod(
+            vec![
+                CpsInstr::LoadConst(0, 0),
+                CpsInstr::LoadConst(1, 1),
+                CpsInstr::IndexGet(2, 0, 1),
+            ],
+            CpsTerminator::Return(2),
+            vec![Constant::Int(99), Constant::Int(0)],
+            3,
+        );
+        let mut vm = VM::new();
+        vm.load(&get).unwrap();
+        assert!(matches!(
+            vm.execute(0, 3),
+            Err(RuntimeError::InvalidHeapHandle(99))
+        ));
+
+        let field = simple_mod_with_structs(
+            vec![
+                CpsInstr::NewStruct(0, 0, vec![]),
+                CpsInstr::GetField(1, 0, 1),
+            ],
+            CpsTerminator::Return(1),
+            vec![],
+            vec![StructDef {
+                id: 0,
+                name: "One".to_string(),
+                fields: vec![("x".to_string(), "Int64".to_string())],
+                type_bitmap: 0,
+            }],
+            2,
+        );
+        let mut vm = VM::new();
+        vm.load(&field).unwrap();
+        assert!(matches!(
+            vm.execute(0, 2),
+            Err(RuntimeError::FieldOutOfBounds { index: 1, len: 1 })
+        ));
+    }
+
+    #[test]
+    fn native_errors_are_returned_not_zeroed() {
+        let native = CpsModule {
+            functions: vec![CpsFunction {
+                name: "main".into(),
+                blocks: vec![
+                    CpsBlock {
+                        id: 0,
+                        params: vec![],
+                        instrs: vec![CpsInstr::LoadConst(0, 0)],
+                        term: CpsTerminator::CallNative(2, vec![0], 1),
+                    },
+                    CpsBlock {
+                        id: 1,
+                        params: vec![],
+                        instrs: vec![],
+                        term: CpsTerminator::Return(0),
+                    },
+                ],
+                entry: 0,
+                reg_count: 1,
+            }],
+            constants: vec![Constant::Int(0)],
+            structs: vec![],
+        };
+        let mut vm = VM::new();
+        vm.load(&native).unwrap();
+        assert!(matches!(
+            vm.execute(0, 1),
+            Err(RuntimeError::NativeError(_))
+        ));
+    }
+
+    #[test]
     fn test_index_out_of_bounds() {
         let cps = simple_mod(
             vec![
                 CpsInstr::LoadConst(0, 0),
-                CpsInstr::NewList(1, vec![]),
                 CpsInstr::IndexGet(2, 1, 0),
             ],
             CpsTerminator::Return(2),
@@ -1183,7 +1405,9 @@ mod tests {
             3,
         );
         let mut vm = VM::new();
+        vm.regs.ints[1] = vm.heap.alloc(HeapObj::List(vec![])) as i64;
         vm.load(&cps).unwrap();
+        vm.regs.ints[1] = 0;
         assert!(matches!(
             vm.execute(0, 3),
             Err(RuntimeError::IndexOutOfBounds(_, _))

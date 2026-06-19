@@ -464,6 +464,7 @@ impl CpsBuilder {
             Expr::VarRef(name) => match name.as_str() {
                 "sqrt" | "sin" | "cos" | "floor" | "ceil" => ValueHint::Float,
                 "print" => ValueHint::Null,
+                "assert" => ValueHint::Null,
                 _ => self
                     .function_returns
                     .get(name)
@@ -627,7 +628,7 @@ impl CpsBuilder {
                     );
                     Ok((id, id, reg))
                 } else {
-                    self.build_expr(&Expr::LitInt(0))
+                    Err(format!("undefined variable '{name}'"))
                 }
             }
             Expr::Binary { left, op, right } => self.build_binary(left, *op, right),
@@ -640,7 +641,7 @@ impl CpsBuilder {
                 else_branch,
             } => self.build_if(cond, then_branch, else_branch.as_deref()),
             Expr::While { cond, body } => self.build_while(cond, body),
-            Expr::For { body, .. } => self.build_expr(body),
+            Expr::For { .. } => Err("for loops are not implemented in lowering".into()),
             Expr::Break => self.build_break(),
             Expr::Continue => self.build_continue(),
             Expr::Return(val) => self.build_return(val.as_deref()),
@@ -902,6 +903,15 @@ impl CpsBuilder {
                     self.ctx.chain(continu, id)?;
                     return Ok((entry, id, reg));
                 }
+                return Err("print expects 1 argument".into());
+            }
+            if name == "type_of" {
+                return Err("type_of is not implemented".into());
+            }
+            if name == "assert" {
+                let result = self.build_native_call(2, args)?;
+                self.set_value_hint(result.2, ValueHint::Null);
+                return Ok(result);
             }
             // Look up function index
             if let Some(&func_idx) = self.ctx.func_map.get(name) {
@@ -991,6 +1001,9 @@ impl CpsBuilder {
         if args.is_empty() {
             return Err("native call needs at least 1 arg".into());
         }
+        if args.len() != 1 {
+            return Err("native calls currently support exactly 1 arg".into());
+        }
         let (entry, continu, reg) = self.build_expr(&args[0])?;
         let result_reg = self.ctx.alloc();
         let move_block = self.ctx.new_block();
@@ -1031,13 +1044,10 @@ impl CpsBuilder {
         let lhs_hint = self.reg_hint(rl);
         let rhs_hint = self.reg_hint(rr);
         let is_float = lhs_hint.is_float() || rhs_hint.is_float();
-        // Gt/Ge: swap operands since VM only has Lt/Le
         let (binop, sl, sr) = match op {
-            BinOp::Gt if is_float => (CpsBinOp::FLt, rr, rl),
-            BinOp::Ge if is_float => (CpsBinOp::FLt, rl, rr),
-            BinOp::Gt => (CpsBinOp::LtInt, rr, rl),
-            BinOp::Ge => (CpsBinOp::LeInt, rr, rl),
-            _ => (bin_op_to_cps(op, is_float), rl, rr),
+            BinOp::Gt if !is_float => (CpsBinOp::GtInt, rl, rr),
+            BinOp::Ge if !is_float => (CpsBinOp::GeInt, rl, rr),
+            _ => (bin_op_to_cps(op, is_float)?, rl, rr),
         };
         let (instrs, _) = cps_emit::emit_binary(r, binop, sl, sr);
         let id = self.ctx.new_block();
@@ -1057,15 +1067,11 @@ impl CpsBuilder {
             self.ctx.chain(cl, id)?;
         }
         let entry = bl;
-        let result_hint = if is_float {
-            ValueHint::Float
-        } else {
-            self.expr_hint(&Expr::Binary {
-                left: Box::new(left.clone()),
-                op,
-                right: Box::new(right.clone()),
-            })
-        };
+        let result_hint = self.expr_hint(&Expr::Binary {
+            left: Box::new(left.clone()),
+            op,
+            right: Box::new(right.clone()),
+        });
         self.set_value_hint(r, result_hint);
         Ok((entry, id, r))
     }
@@ -1318,14 +1324,25 @@ impl CpsBuilder {
     ) -> Result<(usize, usize, usize), String> {
         let (entry, continu, obj_reg) = self.build_expr(object)?;
         let dst = self.ctx.alloc();
-        // Find field index from struct definitions
-        let fi = self
+        let struct_name = match self.value_hint(object) {
+            ValueHint::Struct(name) => name,
+            other => {
+                return Err(format!(
+                    "cannot access field '{field}' on non-struct value {other:?}"
+                ))
+            }
+        };
+        let sd = self
             .structs
             .iter()
-            .flat_map(|s| s.fields.iter().enumerate())
-            .find(|(_, (n, _))| n == field)
-            .map(|(i, _)| i as u16)
-            .unwrap_or(0);
+            .find(|s| s.name == struct_name)
+            .ok_or_else(|| format!("unknown struct '{struct_name}'"))?;
+        let fi = sd
+            .fields
+            .iter()
+            .position(|(n, _)| n == field)
+            .ok_or_else(|| format!("field '{field}' not found on struct '{struct_name}'"))?
+            as u16;
         let (instrs, _) = cps_emit::emit_get_field(dst, obj_reg, fi);
         let id = self.ctx.new_block();
         self.ctx.set_block(
@@ -1342,6 +1359,9 @@ impl CpsBuilder {
     }
 
     fn build_list(&mut self, items: &[Expr]) -> Result<(usize, usize, usize), String> {
+        if !items.is_empty() {
+            return Err("list literals are not implemented".into());
+        }
         let mut entry = 0;
         let mut prev_c: Option<usize> = None;
         let mut regs = Vec::new();
@@ -1379,10 +1399,37 @@ impl CpsBuilder {
         struct_name: &str,
         fields: &[(String, Expr)],
     ) -> Result<(usize, usize, usize), String> {
+        let sd = self
+            .structs
+            .iter()
+            .find(|s| s.name == struct_name)
+            .cloned()
+            .ok_or_else(|| format!("unknown struct '{struct_name}'"))?;
+        for (name, _) in fields {
+            if !sd.fields.iter().any(|(declared, _)| declared == name) {
+                return Err(format!("field '{name}' not found on struct '{struct_name}'"));
+            }
+        }
+        for (declared, _) in &sd.fields {
+            if !fields.iter().any(|(name, _)| name == declared) {
+                return Err(format!(
+                    "missing field '{declared}' for struct '{struct_name}'"
+                ));
+            }
+        }
+
         let mut entry = 0;
         let mut prev_c: Option<usize> = None;
         let mut regs = Vec::new();
-        for (_, val) in fields {
+        let mut ordered_values: Vec<&Expr> = Vec::new();
+        for (declared, _) in &sd.fields {
+            let (_, val) = fields
+                .iter()
+                .find(|(name, _)| name == declared)
+                .expect("field presence checked above");
+            ordered_values.push(val);
+        }
+        for val in &ordered_values {
             let (e, c, r) = self.build_expr(val)?;
             if entry == 0 {
                 entry = e;
@@ -1394,15 +1441,8 @@ impl CpsBuilder {
             regs.push(r);
         }
         let dst = self.ctx.alloc();
-        // Find struct ID
-        let sid = self
-            .structs
-            .iter()
-            .find(|s| s.name == struct_name)
-            .map(|s| s.id)
-            .unwrap_or(0);
-        let mut instrs = vec![CpsInstr::NewStruct(dst, sid, regs.clone())];
-        for (i, (&reg, (_, value))) in regs.iter().zip(fields.iter()).enumerate() {
+        let mut instrs = vec![CpsInstr::NewStruct(dst, sd.id, regs.clone())];
+        for (i, (&reg, value)) in regs.iter().zip(ordered_values.iter()).enumerate() {
             let field_reg = if self.value_hint(value).is_float() {
                 let boxed = self.ctx.alloc();
                 instrs.push(CpsInstr::BinOp(boxed, CpsBinOp::FToI, reg, 0));
@@ -1462,10 +1502,10 @@ impl CpsBuilder {
             if let Some(&reg) = self.ctx.var_map.get(name) {
                 reg
             } else {
-                self.ctx.alloc()
+                return Err(format!("undefined assignment target '{name}'"));
             }
         } else {
-            self.ctx.alloc()
+            return Err("only variable assignment is implemented".into());
         };
         let id = self.ctx.new_block();
         self.ctx.set_block(
@@ -1482,26 +1522,33 @@ impl CpsBuilder {
     }
 }
 
-fn bin_op_to_cps(op: BinOp, is_float: bool) -> CpsBinOp {
+fn bin_op_to_cps(op: BinOp, is_float: bool) -> Result<CpsBinOp, String> {
     match (op, is_float) {
-        (BinOp::Add, true) => CpsBinOp::FAdd,
-        (BinOp::Sub, true) => CpsBinOp::FSub,
-        (BinOp::Mul, true) => CpsBinOp::FMul,
-        (BinOp::Div, true) => CpsBinOp::FDiv,
-        (BinOp::Eq, true) => CpsBinOp::FEq,
-        (BinOp::Lt, true) => CpsBinOp::FLt,
-        (BinOp::Add, false) => CpsBinOp::AddInt,
-        (BinOp::Sub, false) => CpsBinOp::SubInt,
-        (BinOp::Mul, false) => CpsBinOp::MulInt,
-        (BinOp::Div, false) => CpsBinOp::DivInt,
-        (BinOp::Mod, _) => CpsBinOp::ModInt,
-        (BinOp::Eq, false) => CpsBinOp::EqInt,
-        (BinOp::Ne, _) => CpsBinOp::NeInt,
-        (BinOp::Lt, false) => CpsBinOp::LtInt,
-        (BinOp::Le, _) => CpsBinOp::LeInt,
-        (BinOp::Gt, _) => CpsBinOp::GtInt,
-        (BinOp::Ge, _) => CpsBinOp::GeInt,
-        _ => CpsBinOp::AddInt,
+        (BinOp::Add, true) => Ok(CpsBinOp::FAdd),
+        (BinOp::Sub, true) => Ok(CpsBinOp::FSub),
+        (BinOp::Mul, true) => Ok(CpsBinOp::FMul),
+        (BinOp::Div, true) => Ok(CpsBinOp::FDiv),
+        (BinOp::Eq, true) => Ok(CpsBinOp::FEq),
+        (BinOp::Ne, true) => Ok(CpsBinOp::FNe),
+        (BinOp::Lt, true) => Ok(CpsBinOp::FLt),
+        (BinOp::Le, true) => Ok(CpsBinOp::FLe),
+        (BinOp::Gt, true) => Ok(CpsBinOp::FGt),
+        (BinOp::Ge, true) => Ok(CpsBinOp::FGe),
+        (BinOp::Add, false) => Ok(CpsBinOp::AddInt),
+        (BinOp::Sub, false) => Ok(CpsBinOp::SubInt),
+        (BinOp::Mul, false) => Ok(CpsBinOp::MulInt),
+        (BinOp::Div, false) => Ok(CpsBinOp::DivInt),
+        (BinOp::Mod, false) => Ok(CpsBinOp::ModInt),
+        (BinOp::Eq, false) => Ok(CpsBinOp::EqInt),
+        (BinOp::Ne, false) => Ok(CpsBinOp::NeInt),
+        (BinOp::Lt, false) => Ok(CpsBinOp::LtInt),
+        (BinOp::Le, false) => Ok(CpsBinOp::LeInt),
+        (BinOp::Gt, false) => Ok(CpsBinOp::GtInt),
+        (BinOp::Ge, false) => Ok(CpsBinOp::GeInt),
+        (BinOp::Mod, true) => Err("modulo is not supported for Float64".into()),
+        (BinOp::SAdd, _) => Err("string concatenation is not implemented".into()),
+        (BinOp::And | BinOp::Or, _) => Err("logical binary operators are not implemented".into()),
+        (BinOp::Pipe | BinOp::GtGt, _) => Err("pipe operators are not implemented".into()),
     }
 }
 
@@ -1864,9 +1911,8 @@ mod tests {
 
     #[test]
     fn build_list_not_empty() {
-        let c = build_src("const xs = [1, 2, 3];");
-        assert!(!c.constants.is_empty());
-        assert!(c.functions[0].blocks.len() >= 2);
+        let err = build_module(&fixture_module("const xs = [1, 2, 3];")).unwrap_err();
+        assert!(err.contains("list literals"));
     }
 
     #[test]

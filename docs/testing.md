@@ -4,44 +4,46 @@
 
 ## 当前标准命令
 
-Rust 核心：
+仓库根目录的 `Makefile.toml` 是测试和运维的统一入口。确认本机已安装 `cargo-make` 后运行：
 
 ```bash
-cd next_kaubo
-cargo check --workspace --all-targets
-cargo test --workspace
+cargo make ci
 ```
 
-Web app：
+如果只想确认入口工具：
 
 ```bash
-cd next_kaubo/gui
-pnpm --filter @kaubo/app test
-pnpm --filter @kaubo/app build
-pnpm test:e2e
+cargo make --version
 ```
 
-VSCode 扩展：
+标准验证：
 
 ```bash
-cd vscode-extension
-npm test
+cargo make ci       # Rust check/test + Web test/build + VSCode test
+cargo make ci-full  # ci + Web e2e
 ```
 
-覆盖率：
+分层任务：
 
 ```bash
-cd next_kaubo
-python3 ops/quality/coverage.py --html
+cargo make rust-check
+cargo make rust-test
+cargo make web-test
+cargo make web-build
+cargo make web-e2e
+cargo make vscode-test
 ```
 
-Benchmark：
+Ops 任务：
 
 ```bash
-cd next_kaubo
-python3 ops/benchmark/runner.py bench --release
-python3 ops/benchmark/runner.py bench --suite fib --iterations 1 --no-warmup --lang kaubo
+cargo make ops
+cargo make ops-coverage-html
+cargo make ops-bench
+cargo make ops-bench-check
 ```
+
+底层脚本仍在 `next_kaubo/ops/`；需要调试脚本本身时，可以直接进入 `next_kaubo` 调用对应 Python 文件。
 
 ## 分层测试归属
 

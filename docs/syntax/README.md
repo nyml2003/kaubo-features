@@ -1,0 +1,44 @@
+# Kaubo 语法特性目录
+
+目标读者：需要按特性理解当前实现语言子集的维护者和使用者。
+
+这组文档描述当前代码已经实现或已经暴露的语法表面，不是最终语言规范。每篇文档都会尽量区分三类状态：
+
+- **主路径可运行**：parser、infer、lowering 和 VM/driver 主路径已有覆盖。
+- **部分实现**：能 parse 或能 infer 一部分，但 lowering/runtime 不完整。
+- **语法表面**：AST、编辑器或 snippet 中出现，但不能当作可运行语言能力。
+
+VSCode TextMate grammar 和 snippets 只用于编辑器体验，不是语法规范。遇到差异时，以 `kaubo-token`、`kaubo-syntax`、`kaubo-infer`、`kaubo-ir` 和 `kaubo-vm` 的主路径为准。
+
+## 阅读顺序
+
+1. [词法](01-lexical.md)
+2. [文件和语句](02-statements.md)
+3. [类型语法](03-types.md)
+4. [表达式](04-expressions.md)
+5. [函数和 Lambda](05-functions.md)
+6. [控制流](06-control-flow.md)
+7. [Struct 和 Impl](07-structs-and-impls.md)
+8. [模块语法](08-modules.md)
+9. [标准库和内建方法](09-builtins.md)
+10. [部分实现的语法表面](10-partial-features.md)
+11. [边界例子](11-edge-cases.md)
+
+## 当前主路径能力
+
+当前相对稳定的可运行路径包括：
+
+- 基础字面量：整数、浮点数、字符串、布尔值、`null`。
+- `const` / `var`、赋值、块表达式。
+- lambda、函数调用、`return`。
+- `if/else`、`while`、`break`、`continue`。
+- 基础算术和比较。
+- struct 声明、struct literal、字段访问。
+- impl 方法和 member 方法调用。
+- `print`、`assert`、math built-ins、`to_string`、`to_float`。
+
+## 当前需要谨慎的区域
+
+- 模块语法目前主要是 parse-only，不做文件加载、链接或命名空间解析。
+- list/index、`for`、`and/or`、pipe、`>>`、async/await 等不应写成完整可运行能力。
+- `type_of` 有类型层占位，但 lowering/runtime 明确未实现。

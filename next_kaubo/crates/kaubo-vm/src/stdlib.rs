@@ -12,29 +12,24 @@ pub fn register_all() -> Vec<(&'static str, NativeFn)> {
         ("type_of", type_of_fn),
         ("assert", assert_fn),
         ("sqrt", |a| {
-            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
-                .sqrt()
-                .to_bits() as i64)
+            let value = *a.first().ok_or("sqrt expects 1 argument")?;
+            Ok((f64::from_bits(value as u64)).sqrt().to_bits() as i64)
         }),
         ("sin", |a| {
-            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
-                .sin()
-                .to_bits() as i64)
+            let value = *a.first().ok_or("sin expects 1 argument")?;
+            Ok((f64::from_bits(value as u64)).sin().to_bits() as i64)
         }),
         ("cos", |a| {
-            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
-                .cos()
-                .to_bits() as i64)
+            let value = *a.first().ok_or("cos expects 1 argument")?;
+            Ok((f64::from_bits(value as u64)).cos().to_bits() as i64)
         }),
         ("floor", |a| {
-            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
-                .floor()
-                .to_bits() as i64)
+            let value = *a.first().ok_or("floor expects 1 argument")?;
+            Ok((f64::from_bits(value as u64)).floor().to_bits() as i64)
         }),
         ("ceil", |a| {
-            Ok((f64::from_bits(*a.get(0).unwrap_or(&0) as u64))
-                .ceil()
-                .to_bits() as i64)
+            let value = *a.first().ok_or("ceil expects 1 argument")?;
+            Ok((f64::from_bits(value as u64)).ceil().to_bits() as i64)
         }),
     ]
 }
@@ -42,18 +37,19 @@ pub fn register_all() -> Vec<(&'static str, NativeFn)> {
 /// print 函数 — 返回要打印的值 (由 VM 捕获输出)
 fn print_fn(args: &[i64]) -> Result<i64, String> {
     // v2: print returns the value, VM captures it
-    Ok(*args.first().unwrap_or(&0))
+    args.first()
+        .copied()
+        .ok_or_else(|| "print expects 1 argument".into())
 }
 
 /// type_of 函数 — 返回类型标识
 fn type_of_fn(_args: &[i64]) -> Result<i64, String> {
-    // v2: 返回类型 tag (0=Int64, 1=Float64, 2=String)
-    Ok(0) // simplified: always Int64
+    Err("type_of is not implemented".into())
 }
 
 /// assert 函数
 fn assert_fn(args: &[i64]) -> Result<i64, String> {
-    let cond = *args.first().unwrap_or(&0);
+    let cond = *args.first().ok_or("assert expects at least 1 argument")?;
     if cond == 0 {
         Err(args
             .get(1)
@@ -103,13 +99,13 @@ mod tests {
 
     #[test]
     fn type_of_is_stable_placeholder() {
-        assert_eq!(type_of_fn(&[]), Ok(0));
+        assert!(type_of_fn(&[]).is_err());
     }
 
     #[test]
-    fn math_helpers_accept_missing_args() {
+    fn math_helpers_reject_missing_args() {
         for (_, func) in register_all().into_iter().skip(3) {
-            assert!(func(&[]).is_ok());
+            assert!(func(&[]).is_err());
         }
     }
 }

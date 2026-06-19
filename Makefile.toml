@@ -1,0 +1,144 @@
+[config]
+default_to_workspace = false
+
+[env]
+RUST_BACKTRACE = "1"
+
+[tasks.default]
+description = "Run the standard local CI checks."
+alias = "ci"
+
+[tasks.ci]
+description = "Run Rust, Web, and VSCode checks."
+dependencies = [
+  "rust-check",
+  "rust-test",
+  "web-test",
+  "web-build",
+  "vscode-test",
+]
+
+[tasks.ci-full]
+description = "Run standard CI plus browser e2e tests."
+dependencies = ["ci", "web-e2e"]
+
+[tasks.rust-check]
+description = "Check the Rust workspace."
+cwd = "next_kaubo"
+command = "cargo"
+args = ["check", "--workspace", "--all-targets"]
+
+[tasks.rust-test]
+description = "Test the Rust workspace."
+cwd = "next_kaubo"
+command = "cargo"
+args = ["test", "--workspace"]
+
+[tasks.web-test]
+description = "Run Web app unit tests."
+cwd = "next_kaubo/gui"
+command = "pnpm"
+args = ["--filter", "@kaubo/app", "test"]
+
+[tasks.web-build]
+description = "Build the Web app."
+cwd = "next_kaubo/gui"
+command = "pnpm"
+args = ["--filter", "@kaubo/app", "build"]
+
+[tasks.web-e2e]
+description = "Run Web browser e2e tests."
+cwd = "next_kaubo/gui"
+command = "pnpm"
+args = ["test:e2e"]
+
+[tasks.vscode-test]
+description = "Run VSCode extension tests."
+cwd = "vscode-extension"
+command = "npm"
+args = ["test"]
+
+[tasks.ops]
+description = "Run safe ops smoke checks."
+dependencies = [
+  "ops-coverage-help",
+  "ops-bench-help",
+  "ops-release-help",
+  "ops-deploy-help",
+]
+
+[tasks.ops-coverage]
+description = "Run Rust coverage through the ops wrapper."
+cwd = "next_kaubo"
+command = "python3"
+args = ["ops/quality/coverage.py"]
+
+[tasks.ops-coverage-html]
+description = "Generate an HTML Rust coverage report."
+cwd = "next_kaubo"
+command = "python3"
+args = ["ops/quality/coverage.py", "--html"]
+
+[tasks.ops-coverage-help]
+description = "Show coverage tool help."
+cwd = "next_kaubo"
+command = "python3"
+args = ["ops/quality/coverage.py", "--help"]
+
+[tasks.ops-bench]
+description = "Run the default benchmark suite."
+cwd = "next_kaubo"
+command = "python3"
+args = ["ops/benchmark/runner.py", "bench", "--release"]
+
+[tasks.ops-bench-check]
+description = "Check benchmark results against the saved baseline."
+cwd = "next_kaubo"
+command = "python3"
+args = ["ops/benchmark/runner.py", "bench", "--release", "--check"]
+
+[tasks.ops-bench-help]
+description = "Show benchmark tool help."
+cwd = "next_kaubo"
+command = "python3"
+args = ["ops/benchmark/runner.py", "--help"]
+
+[tasks.ops-release]
+description = "Run the release publisher. Pass explicit publish.py arguments."
+cwd = "next_kaubo"
+script_runner = "@shell"
+script = '''
+if [ "$#" -eq 0 ]; then
+  python3 ops/release/publish.py --help
+  echo
+  echo "error: pass explicit release arguments, for example: cargo make ops-release --bump patch"
+  exit 2
+fi
+python3 ops/release/publish.py "$@"
+'''
+
+[tasks.ops-release-help]
+description = "Show release tool help."
+cwd = "next_kaubo"
+command = "python3"
+args = ["ops/release/publish.py", "--help"]
+
+[tasks.ops-deploy]
+description = "Run the deploy script. Pass explicit deploy.py arguments."
+cwd = "next_kaubo"
+script_runner = "@shell"
+script = '''
+if [ "$#" -eq 0 ]; then
+  python3 ops/deploy/deploy.py --help
+  echo
+  echo "error: pass explicit deploy arguments, for example: cargo make ops-deploy 0.5.0 --repo owner/repo"
+  exit 2
+fi
+python3 ops/deploy/deploy.py "$@"
+'''
+
+[tasks.ops-deploy-help]
+description = "Show deploy tool help."
+cwd = "next_kaubo"
+command = "python3"
+args = ["ops/deploy/deploy.py", "--help"]

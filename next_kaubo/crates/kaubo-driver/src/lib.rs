@@ -149,6 +149,63 @@ print(p1.dis(p2).to_string());
     }
 
     #[test]
+    fn float_comparisons_drive_branches() {
+        let outcome = run_source(
+            r#"
+const a = if 1.0 < 2.0 { 10 } else { 20 };
+const b = if 2.0 <= 2.0 { 1 } else { 100 };
+const c = if 3.0 > 2.0 { 2 } else { 200 };
+const d = if 3.0 >= 3.0 { 3 } else { 300 };
+const e = if 3.0 != 4.0 { 4 } else { 400 };
+a + b + c + d + e;
+"#,
+        )
+        .unwrap();
+        assert_eq!(outcome.result, 20);
+    }
+
+    #[test]
+    fn struct_literals_use_declared_field_order() {
+        let outcome = run_source(
+            r#"
+struct Pair { left: Int64, right: Int64 };
+const p = Pair { right: 20, left: 10 };
+p.left + p.right;
+"#,
+        )
+        .unwrap();
+        assert_eq!(outcome.result, 30);
+    }
+
+    #[test]
+    fn build_errors_are_explicit_for_unsupported_runtime_paths() {
+        let unknown_var = compile_source("const x = missing_name;").unwrap_err();
+        assert!(matches!(
+            unknown_var,
+            DriverError::Infer(_) | DriverError::Build(_)
+        ));
+        assert!(unknown_var.to_string().contains("missing_name"));
+
+        let unknown_field = compile_source(
+            r#"
+struct Point { x: Int64 };
+const p = Point { x: 1 };
+p.y;
+"#,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            unknown_field,
+            DriverError::Infer(_) | DriverError::Build(_)
+        ));
+        assert!(unknown_field.to_string().contains("field 'y'"));
+
+        let list = compile_source("const xs = [1, 2];").unwrap_err();
+        assert!(matches!(list, DriverError::Build(_)));
+        assert!(list.to_string().contains("list literals"));
+    }
+
+    #[test]
     fn lambda_call_runs() {
         let outcome = run_source("const f = |x| { x + 1 }; f(41);").unwrap();
         assert_eq!(outcome.result, 42);

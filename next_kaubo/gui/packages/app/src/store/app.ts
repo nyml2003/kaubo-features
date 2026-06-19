@@ -13,6 +13,7 @@ print(add(2, 3));
 `;
 
 const DIAGNOSE_DEBOUNCE_MS = 400;
+const WASM_NOT_LOADED_MESSAGE = "WASM not loaded yet";
 
 function getStoredTheme(): ThemeName {
   try {
@@ -131,6 +132,13 @@ export function createKauboStore() {
     scheduleDiagnose(newCode);
   };
 
+  function requireWasmResult<T>(value: T | null | undefined): T {
+    if (value == null) {
+      throw new Error(WASM_NOT_LOADED_MESSAGE);
+    }
+    return value;
+  }
+
   const compile = () => {
     batch(() => {
       setStatus("compiling");
@@ -138,7 +146,7 @@ export function createKauboStore() {
       setError(null);
     });
     try {
-      const len = doCompile(code());
+      const len = requireWasmResult(doCompile(code()));
       batch(() => {
         setStatus("ready");
         setOutput(`Compiled: ${String(len)} bytecodes\n`);
@@ -161,8 +169,8 @@ export function createKauboStore() {
     });
     requestAnimationFrame(() => {
       try {
-        doCompile(code());
-        const out = doRun();
+        requireWasmResult(doCompile(code()));
+        const out = requireWasmResult(doRun());
         batch(() => {
           setStatus("ready");
           setOutput((prev) => prev + out);

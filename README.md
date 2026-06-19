@@ -36,38 +36,38 @@ source -> parser -> infer -> CPS build -> flatten -> constant fold -> VM
 
 ## 快速验证
 
-Rust 核心：
+项目统一使用 `cargo-make` 编排验证和运维任务。确认本机已安装 `cargo-make` 后，在仓库根目录运行：
 
 ```bash
-cd next_kaubo
-cargo check --workspace --all-targets
-cargo test --workspace
+cargo make ci
 ```
 
-Web app：
+如果只想确认入口工具：
 
 ```bash
-cd next_kaubo/gui
-pnpm --filter @kaubo/app test
-pnpm --filter @kaubo/app build
-pnpm test:e2e
+cargo make --version
 ```
 
-VSCode 扩展：
+常用任务：
 
 ```bash
-cd vscode-extension
-npm test
+cargo make rust-check
+cargo make rust-test
+cargo make web-test
+cargo make web-build
+cargo make vscode-test
+cargo make ci-full
 ```
 
 Ops 工具：
 
 ```bash
-cd next_kaubo
-python3 ops/benchmark/runner.py bench --release
-python3 ops/quality/coverage.py --help
-python3 ops/release/publish.py --help
-python3 ops/deploy/deploy.py --help
+cargo make ops
+cargo make ops-coverage-html
+cargo make ops-bench
+cargo make ops-bench-check
+cargo make ops-release --bump patch
+cargo make ops-deploy 0.5.0 --repo owner/repo
 ```
 
 ## 文档
@@ -75,7 +75,7 @@ python3 ops/deploy/deploy.py --help
 - [架构](docs/architecture.md)
 - [运行时](docs/runtime.md)
 - [Language Service](docs/language-service.md)
-- [语言参考](docs/language-reference.md)
+- [语法特性](docs/syntax/README.md)
 - [Web 和 VSCode](docs/web-and-vscode.md)
 - [测试](docs/testing.md)
 - [发布和部署](docs/deploy.md)
