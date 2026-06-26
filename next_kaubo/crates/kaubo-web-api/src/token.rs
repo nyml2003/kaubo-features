@@ -24,6 +24,7 @@ pub fn classify_token(kind: TokenKind) -> &'static str {
         | TokenKind::Async_
         | TokenKind::Await
         | TokenKind::Self_
+        | TokenKind::Match
         | TokenKind::And
         | TokenKind::Or
         | TokenKind::Not => "keyword",
@@ -124,6 +125,7 @@ pub fn describe_token(kind: TokenKind) -> &'static str {
         TokenKind::Async_ => "async expression",
         TokenKind::Await => "await expression",
         TokenKind::Self_ => "self reference",
+        TokenKind::Match => "match keyword",
 
         TokenKind::IntLiteral => "integer literal",
         TokenKind::FloatLiteral => "float literal",
@@ -163,6 +165,11 @@ pub fn describe_token(kind: TokenKind) -> &'static str {
         TokenKind::Bar => "bar (lambda parameter delimiter)",
         TokenKind::FatArrow => "arrow (return type)",
         TokenKind::GtGt => "compose operator",
+        TokenKind::QuestionQuestion => "null coalescing operator",
+        TokenKind::QuestionDot => "optional member access",
+        TokenKind::QuestionLBracket => "optional index access",
+        TokenKind::TemplateString => "template string content",
+        TokenKind::DotDotDot => "spread operator",
         TokenKind::Comment => "comment",
         TokenKind::Whitespace => "whitespace",
         TokenKind::Eof => "end of file",
@@ -202,6 +209,7 @@ mod tests {
             TokenKind::Async_,
             TokenKind::Await,
             TokenKind::Self_,
+            TokenKind::Match,
             TokenKind::And,
             TokenKind::Or,
             TokenKind::Not,

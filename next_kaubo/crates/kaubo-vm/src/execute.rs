@@ -398,11 +398,20 @@ impl VM {
                     self.write_bool(a, self.regs.ints[b] > self.regs.ints[c]);
                 }
 
-                // ── 字符串 / 额外比较 ──
+                // ── 字符串拼接 ──
                 0x18 => {
-                    return Err(RuntimeError::UnsupportedInstruction(
-                        "string concatenation is not implemented".into(),
-                    ));
+                    let a = ((inst >> 17) & 0xFF) as usize;
+                    let b = ((inst >> 8) & 0x1FF) as usize;
+                    let c = (inst & 0xFF) as usize;
+                    let lhs = self.heap_get(self.regs.ints[b])?.clone();
+                    let rhs = self.heap_get(self.regs.ints[c])?.clone();
+                    let result = match (lhs, rhs) {
+                        (HeapObj::String(l), HeapObj::String(r)) => HeapObj::String(l + &r),
+                        _ => return Err(RuntimeError::TypeMismatch(
+                            "SAdd requires two string operands".into(),
+                        )),
+                    };
+                    self.write_heap(a, result);
                 }
                 0x19 => {
                     let a = ((inst >> 17) & 0xFF) as usize;

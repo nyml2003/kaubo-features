@@ -445,7 +445,7 @@ impl CpsBuilder {
 
     fn call_hint(&self, func: &Expr, args: &[Expr]) -> ValueHint {
         match func {
-            Expr::Member { object, field } if field == "to_string" && args.is_empty() => {
+            Expr::Member { object: _, field } if field == "to_string" && args.is_empty() => {
                 ValueHint::String
             }
             Expr::Member { object: _, field } if field == "to_float" && args.is_empty() => {
@@ -648,7 +648,13 @@ impl CpsBuilder {
             Expr::Member { object, field } => self.build_member(object, field),
             Expr::Call { func, args } => self.build_call(func, args),
             Expr::ListLit(items) => self.build_list(items),
-            Expr::StructLit { name, fields } => self.build_struct_lit(name, fields),
+            Expr::StructLit { name, fields, spread } => {
+                if let Some(spread_expr) = spread {
+                    self.build_struct_lit_with_spread(name, fields, spread_expr)
+                } else {
+                    self.build_struct_lit(name, fields)
+                }
+            }
             Expr::Index { object, index } => self.build_index(object, index),
             Expr::Assign { target, value } => self.build_assign(target, value),
             Expr::Async(body) | Expr::Await(body) => self.build_expr(body),
@@ -807,24 +813,26 @@ impl CpsBuilder {
     // ── build_call — uses func_map to find function index ──
 
     fn build_call(&mut self, func: &Expr, args: &[Expr]) -> Result<(usize, usize, usize), String> {
-        // to_string() — compile-time rewrite to IToS / FToS
+        // to_string() — compile-time rewrite to IToS / FToS / Move
         if let Expr::Member { object, field } = func {
             if field == "to_string" && args.is_empty() {
                 let (entry, continu, obj_reg) = self.build_expr(object)?;
                 let dst = self.ctx.alloc();
                 let id = self.ctx.new_block();
-                let object_hint = self.value_hint(object);
-                let sop = if object_hint.is_float() {
-                    CpsBinOp::FToS
+                let hint = self.value_hint(object);
+                let instrs = if hint == ValueHint::String {
+                    vec![CpsInstr::Move(dst, obj_reg)]
+                } else if hint.is_float() {
+                    vec![CpsInstr::BinOp(dst, CpsBinOp::FToS, obj_reg, 0)]
                 } else {
-                    CpsBinOp::IToS
+                    vec![CpsInstr::BinOp(dst, CpsBinOp::IToS, obj_reg, 0)]
                 };
                 self.ctx.set_block(
                     id,
                     CpsBlock {
                         id,
                         params: vec![],
-                        instrs: vec![CpsInstr::BinOp(dst, sop, obj_reg, 0)],
+                        instrs,
                         term: cps_emit::emit_return(dst),
                     },
                 );
@@ -1468,6 +1476,78 @@ impl CpsBuilder {
         Ok((if entry != 0 { entry } else { id }, id, dst))
     }
 
+    fn build_struct_lit_with_spread(
+        &mut self,
+        struct_name: &str,
+        fields: &[(String, Expr)],
+        spread_expr: &Expr,
+    ) -> Result<(usize, usize, usize), String> {
+        let sd = self
+            .structs
+            .iter()
+            .find(|s| s.name == struct_name)
+            .cloned()
+            .ok_or_else(|| format!("unknown struct '{struct_name}'"))?;
+
+        // Check no unknown fields
+        for (name, _) in fields {
+            if !sd.fields.iter().any(|(declared, _)| declared == name) {
+                return Err(format!("field '{name}' not found on struct '{struct_name}'"));
+            }
+        }
+
+        // Build spread source
+        let (s_entry, s_continu, spread_reg) = self.build_expr(spread_expr)?;
+
+        let mut entry = s_entry;
+        let mut prev_c = Some(s_continu);
+        let mut regs = Vec::new();
+        let mut instrs = Vec::new();
+
+        // For each declared field, use explicit value or get from spread
+        for (i, (declared, _)) in sd.fields.iter().enumerate() {
+            if let Some((_, val)) = fields.iter().find(|(name, _)| name == declared) {
+                // Explicit field value
+                let (e, c, r) = self.build_expr(val)?;
+                if entry == 0 {
+                    entry = e;
+                }
+                if let Some(t) = prev_c {
+                    self.ctx.chain(t, e)?;
+                }
+                prev_c = Some(c);
+                regs.push(r);
+            } else {
+                // Get field from spread source
+                let field_reg = self.ctx.alloc();
+                instrs.push(CpsInstr::GetField(field_reg, spread_reg, i as u16));
+                regs.push(field_reg);
+            }
+        }
+
+        let dst = self.ctx.alloc();
+        instrs.push(CpsInstr::NewStruct(dst, sd.id, regs.clone()));
+        // SetField for float boxing (simplified)
+        for (i, &reg) in regs.iter().enumerate() {
+            instrs.push(CpsInstr::SetField(reg, dst, i as u16, 0));
+        }
+
+        let id = self.ctx.new_block();
+        self.ctx.set_block(
+            id,
+            CpsBlock {
+                id,
+                params: vec![],
+                instrs,
+                term: cps_emit::emit_return(dst),
+            },
+        );
+        if let Some(t) = prev_c {
+            self.ctx.chain(t, id)?;
+        }
+        Ok((if entry != 0 { entry } else { id }, id, dst))
+    }
+
     fn build_index(
         &mut self,
         object: &Expr,
@@ -1546,7 +1626,7 @@ fn bin_op_to_cps(op: BinOp, is_float: bool) -> Result<CpsBinOp, String> {
         (BinOp::Gt, false) => Ok(CpsBinOp::GtInt),
         (BinOp::Ge, false) => Ok(CpsBinOp::GeInt),
         (BinOp::Mod, true) => Err("modulo is not supported for Float64".into()),
-        (BinOp::SAdd, _) => Err("string concatenation is not implemented".into()),
+        (BinOp::SAdd, _) => Ok(CpsBinOp::SAdd),
         (BinOp::And | BinOp::Or, _) => Err("logical binary operators are not implemented".into()),
         (BinOp::Pipe | BinOp::GtGt, _) => Err("pipe operators are not implemented".into()),
     }

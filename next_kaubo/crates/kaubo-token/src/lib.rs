@@ -24,6 +24,7 @@ pub enum TokenKind {
     Async_,   // async
     Await,    // await
     Self_,    // self
+    Match,    // match
 
     // ── 字面量 ──
     Identifier,    // 标识符
@@ -64,10 +65,15 @@ pub enum TokenKind {
     Dot,       // .
 
     // ── 复合运算符 ──
-    Pipe,     // |>
-    Bar,      // | (lambda 分隔符)
-    FatArrow, // ->
-    GtGt,     // >>
+    Pipe,              // |>
+    Bar,               // | (lambda 分隔符)
+    FatArrow,          // ->
+    GtGt,              // >>
+    QuestionQuestion,  // ??
+    QuestionDot,       // ?.
+    QuestionLBracket,  // ?[
+    TemplateString,    // `...` template string content
+    DotDotDot,         // ...
 
     // ── 特殊 ──
     Eof,        // 文件结尾
@@ -99,6 +105,7 @@ impl TokenKind {
             "async" => Self::Async_,
             "await" => Self::Await,
             "self" => Self::Self_,
+            "match" => Self::Match,
             "true" => Self::True,
             "false" => Self::False,
             "null" => Self::Null,
@@ -259,15 +266,15 @@ mod tests {
         use TokenKind::*;
         let kinds = [
             Const, Var, If, Else, For, In, While, Break, Continue, Return,
-            Struct, Impl, Export, Import, From, As, Async_, Await, Self_,
+            Struct, Impl, Export, Import, From, As, Async_, Await, Self_, Match,
             Identifier, IntLiteral, FloatLiteral, StringLiteral, True, False, Null,
             Plus, Minus, Asterisk, Slash, Percent,
             Eq, EqEq, NotEq, Lt, Le, Gt, Ge, Not, And, Or,
             LParen, RParen, LBrace, RBrace, LBracket, RBracket,
             Comma, Semicolon, Colon, Dot,
-            Pipe, Bar, FatArrow, GtGt,
+            Pipe, Bar, FatArrow, GtGt, QuestionQuestion, QuestionDot, QuestionLBracket, TemplateString, DotDotDot,
             Eof, Comment, Whitespace, Error,
         ];
-        assert_eq!(kinds.len(), 59);
+        assert_eq!(kinds.len(), 65);
     }
 }

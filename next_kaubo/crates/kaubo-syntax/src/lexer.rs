@@ -71,6 +71,8 @@ impl<'a> Lexer<'a> {
             '<' => self.scan_lt(line, col),
             '>' => self.scan_gt(line, col),
             '|' => self.scan_pipe(line, col),
+            '?' => self.scan_question(line, col),
+            '`' => self.scan_template_string(line, col),
 
             // ── 字符串 ──
             '"' | '\'' => self.scan_string(c, line, col),
@@ -121,6 +123,13 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_dot(&mut self, line: usize, col: usize) -> Token {
+        // Peek ahead for ... (DotDotDot)
+        let mut peek_iter = self.chars.clone();
+        if peek_iter.next() == Some('.') && peek_iter.next() == Some('.') {
+            self.advance(); // second dot
+            self.advance(); // third dot
+            return Token::new(TokenKind::DotDotDot, "...".into(), line, col);
+        }
         Token::new(TokenKind::Dot, ".".to_string(), line, col)
     }
 
@@ -224,6 +233,48 @@ impl<'a> Lexer<'a> {
                 Token::new(TokenKind::GtGt, ">>".into(), line, col)
             }
             _ => Token::new(TokenKind::Gt, ">".into(), line, col),
+        }
+    }
+
+    fn scan_template_string(&mut self, line: usize, col: usize) -> Token {
+        let mut s = String::new();
+        while let Some(c) = self.bump() {
+            if c == '`' {
+                return Token::new(TokenKind::TemplateString, s, line, col);
+            }
+            if c == '\\' {
+                if let Some(next) = self.bump() {
+                    s.push(match next {
+                        'n' => '\n',
+                        'r' => '\r',
+                        't' => '\t',
+                        '\\' => '\\',
+                        '`' => '`',
+                        other => other,
+                    });
+                }
+            } else {
+                s.push(c);
+            }
+        }
+        Token::new(TokenKind::Error, "unterminated template string".into(), line, col)
+    }
+
+    fn scan_question(&mut self, line: usize, col: usize) -> Token {
+        match self.peek() {
+            Some('?') => {
+                self.advance();
+                Token::new(TokenKind::QuestionQuestion, "??".into(), line, col)
+            }
+            Some('.') => {
+                self.advance();
+                Token::new(TokenKind::QuestionDot, "?.".into(), line, col)
+            }
+            Some('[') => {
+                self.advance();
+                Token::new(TokenKind::QuestionLBracket, "?[".into(), line, col)
+            }
+            _ => Token::new(TokenKind::Error, "?".into(), line, col),
         }
     }
 
@@ -1043,7 +1094,7 @@ mod tests {
 
     #[test]
     fn test_unknown_characters_each_is_error() {
-        let unknown = ['@', '#', '$', '~', '`', '^', '\\'];
+        let unknown = ['@', '#', '$', '~', '^', '\\'];
         for ch in unknown {
             let src = ch.to_string();
             let toks = tokens(&src);

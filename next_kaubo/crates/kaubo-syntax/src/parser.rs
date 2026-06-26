@@ -14,6 +14,7 @@ pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     struct_names: BTreeSet<String>,
+    opt_chain_counter: usize,
 }
 
 impl Parser {
@@ -29,6 +30,7 @@ impl Parser {
             tokens,
             pos: 0,
             struct_names,
+            opt_chain_counter: 0,
         }
     }
 
@@ -192,6 +194,17 @@ impl Parser {
         left = self.chain_postfix(left)?;
 
         loop {
+            // Special: ?? null-coalescing (bp=2, left-assoc)
+            if self.current_kind() == TokenKind::QuestionQuestion {
+                if 2 < min_bp {
+                    break;
+                }
+                self.bump();
+                let right = self.parse_pratt(3)?;
+                left = self.desugar_null_coalesce(left, right);
+                continue;
+            }
+
             let (lbp, op) = match self.current_kind() {
                 TokenKind::Semicolon
                 | TokenKind::RBrace
@@ -311,6 +324,7 @@ impl Parser {
                 self.bump();
                 Ok(Expr::Return(Some(Box::new(self.parse_expr()?))))
             }
+            TokenKind::Match => self.parse_match(),
             TokenKind::Async_ => {
                 self.bump();
                 Ok(Expr::Async(Box::new(self.parse_expr()?)))
@@ -320,6 +334,7 @@ impl Parser {
                 Ok(Expr::Await(Box::new(self.parse_expr()?)))
             }
 
+            TokenKind::TemplateString => self.parse_template(),
             TokenKind::Identifier | TokenKind::Self_ => Ok(Expr::VarRef(self.consume_lexeme())),
 
             _ => Err(format!(
@@ -361,16 +376,49 @@ impl Parser {
                         index: Box::new(index),
                     };
                 }
+                TokenKind::QuestionDot => {
+                    self.bump();
+                    let field = self.expect_ident()?;
+                    expr = self.desugar_opt_chain(expr, |e| Expr::Member {
+                        object: Box::new(e),
+                        field: field.clone(),
+                    });
+                }
+                TokenKind::QuestionLBracket => {
+                    self.bump();
+                    let index = self.parse_expr()?;
+                    self.expect(TokenKind::RBracket)?;
+                    expr = self.desugar_opt_chain(expr, |e| Expr::Index {
+                        object: Box::new(e),
+                        index: Box::new(index.clone()),
+                    });
+                }
                 TokenKind::LBrace => {
                     if let Expr::VarRef(ref name) = expr {
                         if self.struct_names.contains(name) {
                             let struct_name = name.clone();
                             self.bump();
                             let mut fields = Vec::new();
+                            let mut spread: Option<Box<Expr>> = None;
                             while self.current_kind() != TokenKind::RBrace {
+                                if self.current_kind() == TokenKind::DotDotDot {
+                                    self.bump();
+                                    spread = Some(Box::new(self.parse_expr()?));
+                                    if self.current_kind() == TokenKind::Comma {
+                                        self.bump();
+                                    }
+                                    continue;
+                                }
                                 let fname = self.expect_ident()?;
-                                self.expect(TokenKind::Colon)?;
-                                let val = self.parse_expr()?;
+                                // 简写属性: { x } ≡ { x: x }
+                                let val = if self.current_kind() == TokenKind::Comma
+                                    || self.current_kind() == TokenKind::RBrace
+                                {
+                                    Expr::VarRef(fname.clone())
+                                } else {
+                                    self.expect(TokenKind::Colon)?;
+                                    self.parse_expr()?
+                                };
                                 fields.push((fname, val));
                                 if self.current_kind() == TokenKind::Comma {
                                     self.bump();
@@ -380,6 +428,7 @@ impl Parser {
                             expr = Expr::StructLit {
                                 name: struct_name,
                                 fields,
+                                spread,
                             };
                         } else {
                             break;
@@ -517,6 +566,65 @@ impl Parser {
         })
     }
 
+    fn parse_match(&mut self) -> ParseResult<Expr> {
+        self.bump(); // match
+        let scrutinee = self.parse_expr()?;
+        self.expect(TokenKind::LBrace)?;
+        let mut arms: Vec<(Option<Expr>, Expr)> = Vec::new(); // (pattern|None=wildcard, body)
+        while self.current_kind() != TokenKind::RBrace {
+            let pattern = if self.current_kind() == TokenKind::Identifier
+                && self.current().lexeme == "_"
+            {
+                self.bump();
+                None // wildcard
+            } else {
+                Some(self.parse_expr()?)
+            };
+            self.expect(TokenKind::FatArrow)?;
+            let body = self.parse_expr()?;
+            arms.push((pattern, body));
+            if self.current_kind() == TokenKind::Comma {
+                self.bump();
+            }
+        }
+        self.bump(); // }
+        self.desugar_match(scrutinee, arms)
+    }
+
+    fn desugar_match(&mut self, scrutinee: Expr, arms: Vec<(Option<Expr>, Expr)>) -> ParseResult<Expr> {
+        // { var __mN = scrutinee; if __mN == pat1 { ... } else ... }
+        let tmp = format!("__m{}", self.opt_chain_counter);
+        self.opt_chain_counter += 1;
+
+        let mut result: Option<Expr> = None;
+        for (pattern, body) in arms.into_iter().rev() {
+            result = Some(match pattern {
+                Some(pat) => Expr::If {
+                    cond: Box::new(Expr::Binary {
+                        left: Box::new(Expr::VarRef(tmp.clone())),
+                        op: BinOp::Eq,
+                        right: Box::new(pat),
+                    }),
+                    then_branch: Box::new(body),
+                    else_branch: result.map(Box::new),
+                },
+                None => {
+                    // wildcard: the else branch
+                    body
+                }
+            });
+        }
+
+        Ok(Expr::Block(vec![
+            Stmt::VarDecl {
+                name: tmp.clone(),
+                ty_ann: None,
+                value: Some(scrutinee),
+            },
+            Stmt::ExprStmt(result.unwrap_or(Expr::LitNull)),
+        ]))
+    }
+
     fn parse_for(&mut self) -> ParseResult<Expr> {
         self.bump();
         let varname = self.expect_ident()?;
@@ -532,6 +640,70 @@ impl Parser {
             iterable: Box::new(iterable),
             body: Box::new(body),
         })
+    }
+
+    fn parse_template(&mut self) -> ParseResult<Expr> {
+        let template = self.consume_lexeme();
+        // template: "hello {name}, age {age + 1}"
+        // Build: "hello " + name.to_string() + ", age " + (age + 1).to_string()
+        let mut parts: Vec<Expr> = Vec::new();
+        let mut current = String::new();
+        let chars: Vec<char> = template.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            if chars[i] == '{' {
+                if !current.is_empty() {
+                    parts.push(Expr::LitString(std::mem::take(&mut current)));
+                }
+                // find matching }
+                let mut depth = 1;
+                let mut expr_str = String::new();
+                i += 1;
+                while i < chars.len() && depth > 0 {
+                    match chars[i] {
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    expr_str.push(chars[i]);
+                    i += 1;
+                }
+                // Parse the expression and wrap in .to_string()
+                let mut sub = Parser::new(&expr_str);
+                let expr = sub.parse_expr()?;
+                parts.push(Expr::Call {
+                    func: Box::new(Expr::Member {
+                        object: Box::new(expr),
+                        field: "to_string".to_string(),
+                    }),
+                    args: vec![],
+                });
+            } else {
+                current.push(chars[i]);
+            }
+            i += 1;
+        }
+
+        if !current.is_empty() || parts.is_empty() {
+            parts.push(Expr::LitString(std::mem::take(&mut current)));
+        }
+
+        // Fold with SAdd
+        let mut result = parts.remove(0);
+        for part in parts {
+            result = Expr::Binary {
+                left: Box::new(result),
+                op: BinOp::SAdd,
+                right: Box::new(part),
+            };
+        }
+        Ok(result)
     }
 
     // ── 类型 ──
@@ -554,6 +726,43 @@ impl Parser {
             Ok(Some(self.parse_type()?))
         } else {
             Ok(None)
+        }
+    }
+
+    fn desugar_opt_chain(&mut self, obj: Expr, accessor: impl FnOnce(Expr) -> Expr) -> Expr {
+        let tmp = format!("__o{}", self.opt_chain_counter);
+        self.opt_chain_counter += 1;
+        // { var tmp = obj; if tmp != null { accessor(tmp) } else { null } }
+        Expr::Block(vec![
+            Stmt::VarDecl {
+                name: tmp.clone(),
+                ty_ann: None,
+                value: Some(obj),
+            },
+            Stmt::ExprStmt(Expr::If {
+                cond: Box::new(Expr::Binary {
+                    left: Box::new(Expr::VarRef(tmp.clone())),
+                    op: BinOp::Ne,
+                    right: Box::new(Expr::LitNull),
+                }),
+                then_branch: Box::new(accessor(Expr::VarRef(tmp))),
+                else_branch: Some(Box::new(Expr::LitNull)),
+            }),
+        ])
+    }
+
+    fn desugar_null_coalesce(&mut self, left: Expr, right: Expr) -> Expr {
+        // if left != null { left } else { right }
+        // Note: left is evaluated twice; acceptable for variable refs and field accesses.
+        // A proper single-evaluation version needs type-level support for nullable union types.
+        Expr::If {
+            cond: Box::new(Expr::Binary {
+                left: Box::new(left.clone()),
+                op: BinOp::Ne,
+                right: Box::new(Expr::LitNull),
+            }),
+            then_branch: Box::new(left),
+            else_branch: Some(Box::new(right)),
         }
     }
 
@@ -1509,7 +1718,7 @@ mod tests {
         match &m.stmts[1] {
             Stmt::ConstDecl { value, .. } => {
                 match value {
-                    Expr::StructLit { name, fields } => {
+                    Expr::StructLit { name, fields, .. } => {
                         assert_eq!(name, "Pair");
                         assert_eq!(fields.len(), 1);
                         assert_eq!(fields[0].0, "first");
@@ -1517,6 +1726,43 @@ mod tests {
                     _ => panic!("expected struct lit, got {value:?}"),
                 }
             }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_struct_literal_shorthand_property() {
+        let m = parse_mod("struct Point { x: Int64, y: Int64 }; const p = Point { x, y };");
+        match &m.stmts[1] {
+            Stmt::ConstDecl { value, .. } => match value {
+                Expr::StructLit { name, fields, .. } => {
+                    assert_eq!(name, "Point");
+                    assert_eq!(fields.len(), 2);
+                    assert_eq!(fields[0].0, "x");
+                    assert_eq!(fields[0].1, Expr::VarRef("x".to_string()));
+                    assert_eq!(fields[1].0, "y");
+                    assert_eq!(fields[1].1, Expr::VarRef("y".to_string()));
+                }
+                _ => panic!("expected struct lit, got {value:?}"),
+            },
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_struct_literal_mixed_shorthand_and_explicit() {
+        let m = parse_mod("struct Point { x: Int64, y: Int64 }; const p = Point { x, y: 10 };");
+        match &m.stmts[1] {
+            Stmt::ConstDecl { value, .. } => match value {
+                Expr::StructLit { fields, .. } => {
+                    assert_eq!(fields.len(), 2);
+                    assert_eq!(fields[0].0, "x");
+                    assert_eq!(fields[0].1, Expr::VarRef("x".to_string()));
+                    assert_eq!(fields[1].0, "y");
+                    assert_eq!(fields[1].1, Expr::LitInt(10));
+                }
+                _ => panic!(),
+            },
             _ => panic!(),
         }
     }
@@ -1612,6 +1858,153 @@ mod tests {
         // int too large for i64
         let result = Parser::new("const x = 99999999999999999999;").parse();
         assert!(result.is_err());
+    }
+
+    // ── Await / Async ──
+
+    #[test]
+    fn test_null_coalesce_basic() {
+        let e = parse_expr_only("a ?? b");
+        // Should desugar to: if a != null { a } else { b }
+        match e {
+            Expr::If { cond, then_branch, else_branch } => {
+                assert!(matches!(*cond, Expr::Binary { op: BinOp::Ne, .. }));
+                assert_eq!(*then_branch, Expr::VarRef("a".to_string()));
+                assert!(else_branch.is_some());
+            }
+            _ => panic!("expected if from ?? desugar, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_null_coalesce_chained() {
+        // a ?? b ?? c → (a ?? b) ?? c → if (a!=null) { a } else { if (b!=null) { b } else { c } }
+        let e = parse_expr_only("a ?? b ?? c");
+        match e {
+            Expr::If { .. } => {}
+            _ => panic!("expected if, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_null_coalesce_with_assignment() {
+        // x = a ?? "default" → x = if a != null { a } else { "default" }
+        let e = parse_expr_only("x = a ?? \"default\"");
+        match e {
+            Expr::Assign { target, value } => {
+                assert_eq!(*target, Expr::VarRef("x".to_string()));
+                assert!(matches!(*value, Expr::If { .. }));
+            }
+            _ => panic!("expected assign with ??, got {e:?}"),
+        }
+    }
+
+    // ── Optional chaining ──
+
+    #[test]
+    fn test_opt_chain_basic() {
+        // a?.b → { var __o0=a; if __o0!=null { __o0.b } else { null } }
+        let e = parse_expr_only("a?.b");
+        match e {
+            Expr::Block(stmts) => {
+                assert_eq!(stmts.len(), 2);
+                assert!(matches!(stmts[0], Stmt::VarDecl { .. }));
+            }
+            _ => panic!("expected block from ?., got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_opt_chain_multi() {
+        // a?.b?.c → two nested blocks
+        let e = parse_expr_only("a?.b?.c");
+        match e {
+            Expr::Block(stmts) => {
+                // outer block: var __o1 = (inner block); if ...
+                match &stmts[0] {
+                    Stmt::VarDecl { value, .. } => {
+                        assert!(matches!(value, Some(Expr::Block(_))),
+                            "inner should be block from first ?.");
+                    }
+                    _ => panic!("expected var decl"),
+                }
+            }
+            _ => panic!("expected block from ?., got {e:?}"),
+        }
+    }
+
+    // ── Struct spread ──
+
+    #[test]
+    fn test_struct_literal_with_spread() {
+        let m = parse_mod("struct Point { x: Int64, y: Int64 }; const p2 = Point { ...p1, y: 3 };");
+        match &m.stmts[1] {
+            Stmt::ConstDecl { value, .. } => match value {
+                Expr::StructLit { name, fields, spread } => {
+                    assert_eq!(name, "Point");
+                    assert_eq!(fields.len(), 1);
+                    assert_eq!(fields[0].0, "y");
+                    assert!(spread.is_some());
+                }
+                _ => panic!("expected StructLit, got {value:?}"),
+            },
+            _ => panic!(),
+        }
+    }
+
+    // ── Template strings ──
+
+    #[test]
+    // ── Match expressions ──
+
+    #[test]
+    fn test_match_basic() {
+        let e = parse_expr_only("match x { 0 -> \"zero\", 1 -> \"one\", _ -> \"many\" }");
+        // Should desugar to block with var + if/else chain
+        match e {
+            Expr::Block(stmts) => {
+                assert_eq!(stmts.len(), 2);
+                assert!(matches!(stmts[0], Stmt::VarDecl { .. }));
+            }
+            _ => panic!("expected block from match, got {e:?}"),
+        }
+    }
+
+    fn test_template_string_basic() {
+        let e = parse_expr_only("`hello {name}`");
+        // Should desugar to: "hello " + name.to_string()
+        match e {
+            Expr::Binary { op: BinOp::SAdd, .. } => {}
+            _ => panic!("expected SAdd chain from template, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_template_string_multiple_exprs() {
+        let e = parse_expr_only("`{a} + {b} = {a + b}`");
+        match e {
+            Expr::Binary { op: BinOp::SAdd, .. } => {}
+            _ => panic!("expected SAdd chain, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_template_string_no_exprs() {
+        let e = parse_expr_only("`hello world`");
+        // Pure string, no interpolation
+        match e {
+            Expr::LitString(s) => assert_eq!(s, "hello world"),
+            _ => panic!("expected LitString, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_opt_chain_index() {
+        let e = parse_expr_only("a?[0]");
+        match e {
+            Expr::Block(_) => {}
+            _ => panic!("expected block from ?[, got {e:?}"),
+        }
     }
 
     // ── Await / Async ──

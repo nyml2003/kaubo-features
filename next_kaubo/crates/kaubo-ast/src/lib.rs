@@ -97,6 +97,7 @@ pub enum Expr {
     StructLit {
         name: String,
         fields: Vec<(String, Expr)>,
+        spread: Option<Box<Expr>>,
     },
     ListLit(Vec<Expr>),
 
