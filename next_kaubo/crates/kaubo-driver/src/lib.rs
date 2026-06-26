@@ -237,4 +237,150 @@ p.y;
         let outcome = run_module(&decoded).unwrap();
         assert_eq!(outcome.result, 42);
     }
+
+    #[test]
+    fn run_if_true_branch() {
+        let outcome = run_source("const x = if true { 1 } else { 0 };").unwrap();
+        assert_eq!(outcome.result, 1);
+    }
+
+    #[test]
+    fn run_if_false_branch() {
+        let outcome = run_source("const x = if false { 1 } else { 0 };").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn run_arithmetic_chain() {
+        let outcome = run_source("const x = 1 + 2 * 3 - 4 / 2;").unwrap();
+        assert_eq!(outcome.result, 5); // 1 + 6 - 2 = 5
+    }
+
+    #[test]
+    fn run_nested_if() {
+        let outcome = run_source(
+            "const x = if true { if false { 1 } else { 2 } } else { 3 };",
+        )
+        .unwrap();
+        assert_eq!(outcome.result, 2);
+    }
+
+    #[test]
+    fn run_bool_not() {
+        let outcome = run_source("const x = if not false { 42 } else { 0 };").unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn run_int_comparisons() {
+        let outcome = run_source(
+            "const a = if 1 < 2 { 10 } else { 0 };
+             const b = if 2 <= 2 { 10 } else { 0 };
+             const c = if 3 > 2 { 10 } else { 0 };
+             const d = if 3 >= 3 { 10 } else { 0 };
+             const e = if 5 != 4 { 10 } else { 0 };
+             const f = if 5 == 5 { 10 } else { 0 };
+             a + b + c + d + e + f;",
+        )
+        .unwrap();
+        assert_eq!(outcome.result, 60);
+    }
+
+    #[test]
+    fn run_multiple_prints() {
+        let outcome = run_source("print(\"a\"); print(\"b\"); print(\"c\");").unwrap();
+        assert_eq!(outcome.output, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn run_negate_int() {
+        let outcome = run_source("const x = -(42);").unwrap();
+        assert_eq!(outcome.result, -42);
+    }
+
+    #[test]
+    fn run_empty_module_returns_zero() {
+        let outcome = run_source("").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn run_const_with_const_ref() {
+        let outcome = run_source("const a = 10; const b = a + 20; b;").unwrap();
+        assert_eq!(outcome.result, 30);
+    }
+
+    #[test]
+    fn parse_error_in_module_returns_error() {
+        let err = compile_source("const x = ;").unwrap_err();
+        assert!(matches!(err, DriverError::Parse(_)));
+    }
+
+    #[test]
+    fn run_lambda_add() {
+        let outcome = run_source("const add = |a, b| { a + b }; add(40, 2);").unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn run_multi_stmt_module() {
+        let outcome = run_source("const a = 10; const b = 20; const c = 30; a + b + c;").unwrap();
+        assert_eq!(outcome.result, 60);
+    }
+
+    #[test]
+    fn run_modulo() {
+        let outcome = run_source("const x = 10 % 3;").unwrap();
+        assert_eq!(outcome.result, 1);
+    }
+
+    #[test]
+    fn run_string_return() {
+        // string literals compile and run without error
+        let outcome = run_source("const s = \"hello\"; 0;").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn run_instruction_count_is_positive() {
+        let cps = compile_source("const x = 40 + 2;").unwrap();
+        assert!(instruction_count(&cps) > 2);
+    }
+
+    #[test]
+    fn encode_empty_module() {
+        let cps = compile_source("").unwrap();
+        let bytes = encode_module(&cps);
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn build_error_on_unknown_var() {
+        let err = compile_source("const x = unknown_var;").unwrap_err();
+        assert!(err.to_string().contains("unknown_var"));
+    }
+
+    #[test]
+    fn run_zero() {
+        let outcome = run_source("0;").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn run_const_true() {
+        let outcome = run_source("const t = true; if t { 1 } else { 0 };").unwrap();
+        assert_eq!(outcome.result, 1);
+    }
+
+    #[test]
+    fn run_const_false() {
+        let outcome = run_source("const f = false; if f { 1 } else { 0 };").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn run_null_is_zero() {
+        let outcome = run_source("null;").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
 }

@@ -33,6 +33,7 @@ pub struct Scheme {
 
 /// 类型代换 — Var → Type
 #[derive(Debug, Clone)]
+#[derive(PartialEq)]
 pub struct Subst(HashMap<TypeVar, Type>);
 
 /// 类型环境 — Name → Scheme

@@ -480,4 +480,84 @@ mod tests {
         assert!(labels.contains(&"y"));
         assert!(labels.contains(&"dis"));
     }
+
+    #[test]
+    fn semantic_tokens_empty_source() {
+        let tokens = semantic_tokens("");
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn semantic_tokens_keywords() {
+        let source = "const var if else while for in break continue return";
+        let tokens = semantic_tokens(source);
+        let kinds: Vec<&str> = tokens.iter().map(|t| t.kind.as_str()).collect();
+        assert!(kinds.iter().all(|k| *k == "keyword"));
+    }
+
+    #[test]
+    fn semantic_tokens_number_classification() {
+        let source = "42 3.14";
+        let tokens = semantic_tokens(source);
+        let kinds: Vec<&str> = tokens.iter().map(|t| t.kind.as_str()).collect();
+        assert_eq!(kinds, vec!["number", "number"]);
+    }
+
+    #[test]
+    fn semantic_tokens_string_classification() {
+        let source = r#""hello""#;
+        let tokens = semantic_tokens(source);
+        let kinds: Vec<&str> = tokens.iter().map(|t| t.kind.as_str()).collect();
+        assert_eq!(kinds, vec!["string"]);
+    }
+
+    #[test]
+    fn semantic_tokens_comment_classification() {
+        let source = "// comment\n42";
+        let tokens = semantic_tokens(source);
+        let kinds: Vec<&str> = tokens.iter().map(|t| t.kind.as_str()).collect();
+        assert_eq!(kinds, vec!["comment", "number"]);
+    }
+
+    #[test]
+    fn semantic_tokens_block_comment() {
+        let source = "/* block */ 42";
+        let tokens = semantic_tokens(source);
+        let kinds: Vec<&str> = tokens.iter().map(|t| t.kind.as_str()).collect();
+        assert_eq!(kinds, vec!["comment", "number"]);
+    }
+
+    #[test]
+    fn completions_no_dot_returns_empty() {
+        let items = completions("print", 5);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn completions_empty_source() {
+        let items = completions("", 0);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn completions_on_non_struct_object() {
+        let items = completions("42.", 3);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn semantic_tokens_operator_classification() {
+        let source = "+ - * / % = == != < <= > >=";
+        let tokens = semantic_tokens(source);
+        let kinds: Vec<&str> = tokens.iter().map(|t| t.kind.as_str()).collect();
+        assert!(kinds.iter().all(|k| *k == "operator"));
+    }
+
+    #[test]
+    fn semantic_tokens_atom_classification() {
+        let source = "true false null";
+        let tokens = semantic_tokens(source);
+        let kinds: Vec<&str> = tokens.iter().map(|t| t.kind.as_str()).collect();
+        assert_eq!(kinds, vec!["atom", "atom", "atom"]);
+    }
 }

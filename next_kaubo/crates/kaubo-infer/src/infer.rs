@@ -1023,26 +1023,546 @@ mod tests {
             .unwrap(),
             Type::Var(_)
         ));
-        assert_eq!(
-            infer_expr(Expr::Assign {
-                target: Box::new(Expr::LitInt(1)),
-                value: Box::new(Expr::LitInt(2)),
-            })
-            .unwrap(),
-            Type::Null
-        );
-        assert_eq!(
-            infer_expr(Expr::Async(Box::new(Expr::LitTrue))).unwrap(),
-            Type::Bool
-        );
-        assert_eq!(
-            infer_expr(Expr::Await(Box::new(Expr::LitNull))).unwrap(),
-            Type::Null
-        );
+        assert_eq!(infer_expr(Expr::Assign { target: Box::new(Expr::LitInt(1)), value: Box::new(Expr::LitInt(42)) }).unwrap(), Type::Null);
+        assert_eq!(infer_expr(Expr::Async(Box::new(Expr::LitInt(1)))).unwrap(), Type::Int64);
+        assert_eq!(infer_expr(Expr::Await(Box::new(Expr::LitFloat(3.14)))).unwrap(), Type::Float64);
     }
 
     #[test]
     fn type_expr_unify_generalize_and_instantiate_edges() {
+        let t_int = Type::Int64;
+        let t_var = Type::Var(TypeVar(99999));
+        let sub = unify(&t_var, &t_int).unwrap();
+        assert_eq!(sub.apply(&t_var), Type::Int64);
+
+        let empty_env = TypeEnv::new();
+        let scheme = generalize(&empty_env, &Type::Int64);
+        assert!(scheme.bound.is_empty());
+        let inst = instantiate(&scheme);
+        assert_eq!(inst, Type::Int64);
+
+        let scheme_var = generalize(&empty_env, &Type::Var(TypeVar(1)));
+        assert_eq!(scheme_var.bound.len(), 1);
+    }
+
+    // ── Unification scenarios ──
+
+    #[test]
+    fn unify_identical_types() {
+        let s = unify(&Type::Int64, &Type::Int64).unwrap();
+        assert_eq!(s, Subst::empty());
+    }
+
+    #[test]
+    fn unify_var_with_int() {
+        let s = unify(&Type::Var(TypeVar(0)), &Type::Int64).unwrap();
+        assert_eq!(s.apply(&Type::Var(TypeVar(0))), Type::Int64);
+    }
+
+    #[test]
+    fn unify_int_with_var() {
+        let s = unify(&Type::Int64, &Type::Var(TypeVar(0))).unwrap();
+        assert_eq!(s.apply(&Type::Var(TypeVar(0))), Type::Int64);
+    }
+
+    #[test]
+    fn unify_arrow_types() {
+        let t1 = Type::Arrow(
+            Box::new(Type::Int64),
+            Box::new(Type::Bool),
+        );
+        let t2 = Type::Arrow(
+            Box::new(Type::Int64),
+            Box::new(Type::Bool),
+        );
+        assert!(unify(&t1, &t2).is_ok());
+    }
+
+    #[test]
+    fn unify_arrow_types_different_args() {
+        let t1 = Type::Arrow(
+            Box::new(Type::Int64),
+            Box::new(Type::Bool),
+        );
+        let t2 = Type::Arrow(
+            Box::new(Type::Float64),
+            Box::new(Type::Bool),
+        );
+        assert!(unify(&t1, &t2).is_err());
+    }
+
+    #[test]
+    fn unify_list_types() {
+        let s = unify(
+            &Type::List(Box::new(Type::Var(TypeVar(0)))),
+            &Type::List(Box::new(Type::Int64)),
+        )
+        .unwrap();
+        assert_eq!(
+            s.apply(&Type::List(Box::new(Type::Var(TypeVar(0))))),
+            Type::List(Box::new(Type::Int64))
+        );
+    }
+
+    #[test]
+    fn unify_record_same_id() {
+        let s = unify(
+            &Type::Record(1, vec![("x".into(), Type::Int64)]),
+            &Type::Record(1, vec![("y".into(), Type::Float64)]),
+        )
+        .unwrap();
+        // Records with same id unify (fields not checked structurally)
+        assert_eq!(s, Subst::empty());
+    }
+
+    #[test]
+    fn unify_incompatible_types_error() {
+        assert!(unify(&Type::Int64, &Type::String).is_err());
+        assert!(unify(&Type::Bool, &Type::Null).is_err());
+        assert!(unify(&Type::Int64, &Type::List(Box::new(Type::Int64))).is_err());
+    }
+
+    #[test]
+    fn occurs_check_prevents_infinite_types() {
+        let v = TypeVar(0);
+        let infinite = Type::Arrow(
+            Box::new(Type::Var(v)),
+            Box::new(Type::Var(v)),
+        );
+        // This should fail the occurs check
+        assert!(unify(&Type::Var(v), &infinite).is_err());
+    }
+
+    // ── Schema generalization and instantiation ──
+
+    #[test]
+    fn generalize_closed_type_is_monomorphic() {
+        let env = TypeEnv::new();
+        let scheme = generalize(&env, &Type::Int64);
+        assert!(scheme.bound.is_empty());
+    }
+
+    #[test]
+    fn generalize_open_type_is_polymorphic() {
+        let env = TypeEnv::new();
+        let scheme = generalize(&env, &Type::Arrow(
+            Box::new(Type::Var(TypeVar(7))),
+            Box::new(Type::Var(TypeVar(7))),
+        ));
+        assert_eq!(scheme.bound.len(), 1);
+    }
+
+    #[test]
+    fn generalize_respects_env_free_vars() {
+        let mut env = TypeEnv::new();
+        let scheme = generalize(&env, &Type::Var(TypeVar(0)));
+        assert_eq!(scheme.bound.len(), 1); // free in env → should be generalized
+        env.insert("f".into(), scheme);
+        // Now generalize again — var 0 is free in env, not generalized
+        let scheme2 = generalize(&env, &Type::Var(TypeVar(0)));
+        assert!(scheme2.bound.is_empty());
+    }
+
+    #[test]
+    fn instantiate_creates_fresh_vars() {
+        let t = Type::Arrow(
+            Box::new(Type::Var(TypeVar(0))),
+            Box::new(Type::Var(TypeVar(0))),
+        );
+        let env = TypeEnv::new();
+        let scheme = generalize(&env, &t);
+        let inst = instantiate(&scheme);
+        // Should produce an arrow with fresh type vars
+        match &inst {
+            Type::Arrow(a, r) => {
+                assert!(matches!(**a, Type::Var(_)));
+                assert!(matches!(**r, Type::Var(_)));
+            }
+            _ => panic!("expected arrow"),
+        }
+    }
+
+    // ── Type inference: expressions ──
+
+    #[test]
+    fn infer_lit_null() {
+        assert_eq!(infer_expr(Expr::LitNull).unwrap(), Type::Null);
+    }
+
+    #[test]
+    fn infer_lit_string() {
+        assert_eq!(infer_expr(Expr::LitString("hello".into())).unwrap(), Type::String);
+    }
+
+    #[test]
+    fn infer_binop_add_int() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitInt(1)),
+                op: BinOp::Add,
+                right: Box::new(Expr::LitInt(2)),
+            })
+            .unwrap(),
+            Type::Int64
+        );
+    }
+
+    #[test]
+    fn infer_binop_sub_int() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitInt(5)),
+                op: BinOp::Sub,
+                right: Box::new(Expr::LitInt(3)),
+            })
+            .unwrap(),
+            Type::Int64
+        );
+    }
+
+    #[test]
+    fn infer_binop_mul_float() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitFloat(2.0)),
+                op: BinOp::Mul,
+                right: Box::new(Expr::LitFloat(3.0)),
+            })
+            .unwrap(),
+            Type::Float64
+        );
+    }
+
+    #[test]
+    fn infer_binop_div_int() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitInt(10)),
+                op: BinOp::Div,
+                right: Box::new(Expr::LitInt(3)),
+            })
+            .unwrap(),
+            Type::Int64
+        );
+    }
+
+    #[test]
+    fn infer_binop_mod_int() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitInt(10)),
+                op: BinOp::Mod,
+                right: Box::new(Expr::LitInt(3)),
+            })
+            .unwrap(),
+            Type::Int64
+        );
+    }
+
+    #[test]
+    fn infer_binop_eq_returns_bool() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitInt(1)),
+                op: BinOp::Eq,
+                right: Box::new(Expr::LitInt(2)),
+            })
+            .unwrap(),
+            Type::Bool
+        );
+    }
+
+    #[test]
+    fn infer_binop_ne_returns_bool() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitFloat(1.0)),
+                op: BinOp::Ne,
+                right: Box::new(Expr::LitFloat(2.0)),
+            })
+            .unwrap(),
+            Type::Bool
+        );
+    }
+
+    #[test]
+    fn infer_binop_and_returns_bool() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitTrue),
+                op: BinOp::And,
+                right: Box::new(Expr::LitFalse),
+            })
+            .unwrap(),
+            Type::Bool
+        );
+    }
+
+    #[test]
+    fn infer_binop_or_returns_bool() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitFalse),
+                op: BinOp::Or,
+                right: Box::new(Expr::LitTrue),
+            })
+            .unwrap(),
+            Type::Bool
+        );
+    }
+
+    #[test]
+    fn infer_binop_pipe() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitInt(1)),
+                op: BinOp::Pipe,
+                right: Box::new(Expr::LitInt(2)),
+            })
+            .unwrap(),
+            Type::Int64
+        );
+    }
+
+    #[test]
+    fn infer_binop_gtgt() {
+        assert_eq!(
+            infer_expr(Expr::Binary {
+                left: Box::new(Expr::LitString("a".into())),
+                op: BinOp::GtGt,
+                right: Box::new(Expr::LitString("b".into())),
+            })
+            .unwrap(),
+            Type::String
+        );
+    }
+
+    #[test]
+    fn infer_unary_neg_int() {
+        assert_eq!(
+            infer_expr(Expr::Unary {
+                op: UnOp::Neg,
+                right: Box::new(Expr::LitInt(1)),
+            })
+            .unwrap(),
+            Type::Int64
+        );
+    }
+
+    #[test]
+    fn infer_unary_not_returns_bool() {
+        assert_eq!(
+            infer_expr(Expr::Unary {
+                op: UnOp::Not,
+                right: Box::new(Expr::LitFalse),
+            })
+            .unwrap(),
+            Type::Bool
+        );
+    }
+
+    // ── Control flow inference ──
+
+    #[test]
+    fn infer_if_else_branches_unify() {
+        let e = Expr::If {
+            cond: Box::new(Expr::LitTrue),
+            then_branch: Box::new(Expr::LitInt(1)),
+            else_branch: Some(Box::new(Expr::LitInt(0))),
+        };
+        assert_eq!(infer_expr(e).unwrap(), Type::Int64);
+    }
+
+    #[test]
+    fn infer_if_without_else_returns_then_branch_type() {
+        let e = Expr::If {
+            cond: Box::new(Expr::LitTrue),
+            then_branch: Box::new(Expr::LitInt(1)),
+            else_branch: None,
+        };
+        // if without else: then_branch type propagates
+        assert_eq!(infer_expr(e).unwrap(), Type::Int64);
+    }
+
+    #[test]
+    fn infer_while_is_null() {
+        let e = Expr::While {
+            cond: Box::new(Expr::LitTrue),
+            body: Box::new(Expr::LitInt(1)),
+        };
+        assert_eq!(infer_expr(e).unwrap(), Type::Null);
+    }
+
+    #[test]
+    fn infer_block_returns_last_expr_type() {
+        let e = Expr::Block(vec![
+            Stmt::ExprStmt(Expr::LitInt(1)),
+            Stmt::ExprStmt(Expr::LitString("result".into())),
+        ]);
+        assert_eq!(infer_expr(e).unwrap(), Type::String);
+    }
+
+    #[test]
+    fn infer_empty_block_is_null() {
+        let e = Expr::Block(vec![]);
+        assert_eq!(infer_expr(e).unwrap(), Type::Null);
+    }
+
+    // ── Struct and member inference ──
+
+    #[test]
+    fn infer_struct_lit_validates_fields() {
+        // Struct lit without struct in registry → error
+        let err = infer_expr(Expr::StructLit {
+            name: "Missing".into(),
+            fields: vec![],
+        })
+        .unwrap_err();
+        assert!(err.msg.contains("unknown struct"));
+    }
+
+    #[test]
+    fn infer_field_access_on_record() {
+        let (structs, fields) = {
+            let mut s = HashMap::new();
+            let mut f = HashMap::new();
+            s.insert("X".into(), 1);
+            f.insert(1, vec![("val".into(), Type::Int64)]);
+            (s, f)
+        };
+        let env = TypeEnv::new();
+        // Infer StructLit to get a Record type, then access field
+        let lit = Expr::StructLit {
+            name: "X".into(),
+            fields: vec![("val".into(), Expr::LitInt(42))],
+        };
+        let (sub, ty) = infer(&env, &lit, &structs, &fields).unwrap();
+        assert_eq!(sub.apply(&ty), Type::Record(1, vec![("val".into(), Type::Int64)]));
+    }
+
+    #[test]
+    fn infer_field_access_errors_on_non_record() {
+        let err = infer_expr(Expr::Member {
+            object: Box::new(Expr::LitInt(42)),
+            field: "unknown".into(),
+        })
+        .unwrap_err();
+        assert!(err.msg.contains("cannot access field"));
+    }
+
+    // ── List inference ──
+
+    #[test]
+    fn infer_empty_list_is_var() {
+        let ty = infer_expr(Expr::ListLit(vec![])).unwrap();
+        assert!(matches!(ty, Type::List(_)));
+    }
+
+    #[test]
+    fn infer_list_unifies_elements() {
+        let ty = infer_expr(Expr::ListLit(vec![
+            Expr::LitInt(1),
+            Expr::LitInt(2),
+            Expr::LitInt(3),
+        ]))
+        .unwrap();
+        assert_eq!(ty, Type::List(Box::new(Type::Int64)));
+    }
+
+    #[test]
+    fn infer_list_mixed_types_errors() {
+        let err = infer_expr(Expr::ListLit(vec![
+            Expr::LitInt(1),
+            Expr::LitString("x".into()),
+        ]))
+        .unwrap_err();
+        assert!(err.msg.contains("list element"));
+    }
+
+    // ── Call inference ──
+
+    #[test]
+    fn infer_call_with_matching_args() {
+        // Lambda with 1 arg called with 1 arg — should infer
+        let func = Expr::Lambda {
+            params: vec![param("x", None)],
+            ret_ty: None,
+            body: Box::new(Expr::VarRef("x".into())),
+        };
+        let call = Expr::Call {
+            func: Box::new(func),
+            args: vec![Expr::LitInt(1)],
+        };
+        assert_eq!(infer_expr(call).unwrap(), Type::Int64);
+    }
+
+    #[test]
+    fn infer_call_with_matching_args_returns_body_type() {
+        // Lambda with 2 params called with 2 args
+        let func = Expr::Lambda {
+            params: vec![param("x", None), param("y", None)],
+            ret_ty: None,
+            body: Box::new(Expr::LitFloat(3.14)),
+        };
+        let call = Expr::Call {
+            func: Box::new(func),
+            args: vec![Expr::LitInt(1), Expr::LitInt(2)],
+        };
+        assert_eq!(infer_expr(call).unwrap(), Type::Float64);
+    }
+
+    // ── Assign inference ──
+
+    #[test]
+    fn infer_assign_is_null() {
+        // Assign returns Null regardless of target/value types
+        let e = Expr::Assign {
+            target: Box::new(Expr::LitInt(1)),
+            value: Box::new(Expr::LitInt(0)),
+        };
+        assert_eq!(infer_expr(e).unwrap(), Type::Null);
+    }
+
+    // ── Reset TVAR ──
+
+    #[test]
+    fn reset_tvar_clears_counter() {
+        let _ = fresh_tvar();
+        let _ = fresh_tvar();
+        let _ = fresh_tvar();
+        reset_tvar();
+        let new_tvar = fresh_tvar();
+        assert_eq!(new_tvar, TypeVar(0));
+    }
+
+    // ── Stdlib presence ──
+
+    #[test]
+    fn stdlib_includes_print() {
+        let mut env = TypeEnv::new();
+        inject_stdlib(&mut env);
+        assert!(env.contains_key("print"));
+        assert!(env.contains_key("sqrt"));
+        assert!(env.contains_key("sin"));
+        assert!(env.contains_key("cos"));
+    }
+
+    // ── Polymorphic var ──
+
+    #[test]
+    fn var_without_init_is_fresh_var() {
+        let (env, _) = infer_ast(module(vec![var_decl("x", None)])).unwrap();
+        assert!(matches!(*env["x"].body, Type::Var(_)));
+    }
+
+    #[test]
+    fn monomorphic_var_after_assign() {
+        let (env, _) = infer_ast(module(vec![var_decl("x", Some(Expr::LitFloat(1.0)))])).unwrap();
+        assert_eq!(*env["x"].body, Type::Float64);
+    }
+
+    #[test]
+    fn type_expr_to_type_edge_cases() {
         let mut structs = HashMap::new();
         structs.insert("Node".to_string(), 1);
         let mut fields = HashMap::new();

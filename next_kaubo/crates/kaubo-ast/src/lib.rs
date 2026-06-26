@@ -3,12 +3,12 @@
 //! This crate owns syntax tree data structures shared by parser, infer, IR,
 //! and adapters. It does not parse or infer on its own.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub stmts: Vec<Stmt>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     ConstDecl {
         name: String,
@@ -37,7 +37,7 @@ pub enum Stmt {
     ExprStmt(Expr),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     LitInt(i64),
     LitFloat(f64),
@@ -134,25 +134,25 @@ pub enum UnOp {
     Not,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub name: String,
     pub ty_ann: Option<TypeExpr>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
     pub name: String,
     pub ty: TypeExpr,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MethodDef {
     pub name: String,
     pub body: Expr,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeExpr {
     Named(String),
     List(Box<TypeExpr>),
@@ -233,5 +233,127 @@ mod tests {
             Stmt::ExprStmt(Expr::VarRef(name)) => assert_eq!(name, "answer"),
             other => panic!("unexpected second stmt: {other:?}"),
         }
+    }
+
+    // ── TypeExpr Display ──
+
+    #[test]
+    fn type_expr_named_to_string() {
+        assert_eq!(TypeExpr::named("Int64").to_string(), "Int64");
+        assert_eq!(TypeExpr::named("String").to_string(), "String");
+        assert_eq!(TypeExpr::named("Bool").to_string(), "Bool");
+    }
+
+    #[test]
+    fn type_expr_list_to_string() {
+        let list_int = TypeExpr::List(Box::new(TypeExpr::named("Int64")));
+        assert_eq!(list_int.to_string(), "List<Int64>");
+    }
+
+    #[test]
+    fn type_expr_arrow_to_string() {
+        let arrow = TypeExpr::Arrow {
+            params: vec![TypeExpr::named("Int64")],
+            ret: Box::new(TypeExpr::named("Bool")),
+        };
+        assert_eq!(arrow.to_string(), "|Int64| -> Bool");
+    }
+
+    #[test]
+    fn type_expr_deep_nesting_to_string() {
+        let ty = TypeExpr::Arrow {
+            params: vec![
+                TypeExpr::List(Box::new(TypeExpr::List(Box::new(TypeExpr::named("Int64"))))),
+            ],
+            ret: Box::new(TypeExpr::Arrow {
+                params: vec![TypeExpr::named("String")],
+                ret: Box::new(TypeExpr::named("Bool")),
+            }),
+        };
+        assert_eq!(ty.to_string(), "|List<List<Int64>>| -> |String| -> Bool");
+    }
+
+    // ── BinOp and UnOp derivations ──
+
+    #[test]
+    fn binop_copy_and_eq() {
+        let a = BinOp::Add;
+        let b = a;
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn unop_copy_and_eq() {
+        let a = UnOp::Neg;
+        let b = a;
+        assert_eq!(a, b);
+    }
+
+    // ── Expr constructors ──
+
+    #[test]
+    fn expr_lit_int_partial_eq() {
+        assert_eq!(Expr::LitInt(42), Expr::LitInt(42));
+        assert_ne!(Expr::LitInt(42), Expr::LitInt(0));
+    }
+
+    #[test]
+    fn expr_var_ref_partial_eq() {
+        assert_eq!(Expr::VarRef("x".into()), Expr::VarRef("x".into()));
+        assert_ne!(Expr::VarRef("x".into()), Expr::VarRef("y".into()));
+    }
+
+    #[test]
+    fn expr_lambda_partial_eq() {
+        let l1 = Expr::Lambda {
+            params: vec![Param {
+                name: "x".into(),
+                ty_ann: None,
+            }],
+            ret_ty: None,
+            body: Box::new(Expr::VarRef("x".into())),
+        };
+        let l2 = Expr::Lambda {
+            params: vec![Param {
+                name: "x".into(),
+                ty_ann: None,
+            }],
+            ret_ty: None,
+            body: Box::new(Expr::VarRef("x".into())),
+        };
+        assert_eq!(l1, l2);
+    }
+
+    // ── Stmt constructors ──
+
+    #[test]
+    fn stmt_partial_eq() {
+        let s1 = Stmt::ConstDecl {
+            name: "x".into(),
+            ty_ann: None,
+            value: Expr::LitInt(1),
+        };
+        let s2 = Stmt::ConstDecl {
+            name: "x".into(),
+            ty_ann: None,
+            value: Expr::LitInt(1),
+        };
+        assert_eq!(s1, s2);
+    }
+
+    // ── Module PartialEq ──
+
+    #[test]
+    fn module_partial_eq() {
+        let m1 = Module { stmts: vec![] };
+        let m2 = Module { stmts: vec![] };
+        assert_eq!(m1, m2);
+    }
+
+    #[test]
+    fn module_debug_format() {
+        let m = Module { stmts: vec![] };
+        let s = format!("{m:?}");
+        assert!(s.contains("Module"));
     }
 }

@@ -225,4 +225,79 @@ mod tests {
         ));
         assert!(matches!(term, CpsTerminator::Return(0)));
     }
+
+    #[test]
+    fn emit_binop_mul_int() {
+        let (instrs, _) = emit_binary(0, CpsBinOp::MulInt, 1, 2);
+        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::MulInt, 1, 2)));
+    }
+
+    #[test]
+    fn emit_binop_div_int() {
+        let (instrs, _) = emit_binary(0, CpsBinOp::DivInt, 1, 2);
+        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::DivInt, 1, 2)));
+    }
+
+    #[test]
+    fn emit_binop_mod_int() {
+        let (instrs, _) = emit_binary(0, CpsBinOp::ModInt, 1, 2);
+        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::ModInt, 1, 2)));
+    }
+
+    #[test]
+    fn emit_binop_lt_int() {
+        let (instrs, _) = emit_binary(0, CpsBinOp::LtInt, 1, 2);
+        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::LtInt, 1, 2)));
+    }
+
+    #[test]
+    fn emit_binop_le_int() {
+        let (instrs, _) = emit_binary(0, CpsBinOp::LeInt, 1, 2);
+        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::LeInt, 1, 2)));
+    }
+
+    #[test]
+    fn emit_binop_gt_int() {
+        let (instrs, _) = emit_binary(0, CpsBinOp::GtInt, 1, 2);
+        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::GtInt, 1, 2)));
+    }
+
+    #[test]
+    fn emit_binop_ge_int() {
+        let (instrs, _) = emit_binary(0, CpsBinOp::GeInt, 1, 2);
+        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::GeInt, 1, 2)));
+    }
+
+    #[test]
+    fn emit_binop_ne_int() {
+        let (instrs, _) = emit_binary(0, CpsBinOp::NeInt, 1, 2);
+        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::NeInt, 1, 2)));
+    }
+
+    #[test]
+    fn emit_binop_ftos() {
+        let (instrs, _) = emit_binary(0, CpsBinOp::FToS, 1, 0);
+        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::FToS, 1, 0)));
+    }
+
+    #[test]
+    fn emit_unary_neg_int() {
+        let (instrs, term) = emit_unary(7, CpsUnOp::NegInt, 3);
+        assert!(matches!(instrs[0], CpsInstr::UnOp(7, CpsUnOp::NegInt, 3)));
+        assert!(matches!(term, CpsTerminator::Return(7)));
+    }
+
+    #[test]
+    fn emit_varref_multiple_regs() {
+        let (instrs, term) = emit_varref(10);
+        assert!(instrs.is_empty());
+        assert!(matches!(term, CpsTerminator::Return(10)));
+    }
+
+    #[test]
+    fn emit_newstruct_with_fields() {
+        let (instrs, term) = emit_new_struct(3, 7, vec![1, 2, 3]);
+        assert!(matches!(instrs[0], CpsInstr::NewStruct(3, 7, _)));
+        assert!(matches!(term, CpsTerminator::Return(3)));
+    }
 }

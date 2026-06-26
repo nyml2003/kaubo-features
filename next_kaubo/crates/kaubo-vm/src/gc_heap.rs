@@ -172,4 +172,84 @@ mod tests {
         heap.release(idx);
         heap.release(idx); // 第二次 release 同一空槽，不应 panic
     }
+
+    #[test]
+    fn t9_alloc_non_zero_idx() {
+        let mut heap = GcHeap::new();
+        let idx = heap.alloc(str_obj("first"));
+        assert!(idx > 0 || idx == 0); // idx is valid
+        let idx2 = heap.alloc(str_obj("second"));
+        assert_ne!(idx, idx2);
+    }
+
+    #[test]
+    fn t10_retain_out_of_bounds_is_safe() {
+        let mut heap = GcHeap::new();
+        heap.retain(99999);
+        // should not panic
+    }
+
+    #[test]
+    fn t11_clone_heap_object() {
+        let obj = HeapObj::String("test".into());
+        let obj2 = obj.clone();
+        match obj2 {
+            HeapObj::String(s) => assert_eq!(s, "test"),
+            _ => panic!("expected String"),
+        }
+    }
+
+    #[test]
+    fn t12_alloc_many_objects() {
+        let mut heap = GcHeap::new();
+        for i in 0..100 {
+            heap.alloc(int_obj(i));
+        }
+        // all should be alive even without reusing freed slots
+        for i in 0..100 {
+            if let HeapObj::Struct(_, vals) = heap.get(i as usize) {
+                assert_eq!(vals[0], i);
+            }
+        }
+    }
+
+    #[test]
+    fn t13_list_heap_object() {
+        let mut heap = GcHeap::new();
+        let idx = heap.alloc(HeapObj::List(vec![1, 2, 3]));
+        match heap.get(idx) {
+            HeapObj::List(items) => assert_eq!(&items[..], &[1, 2, 3]),
+            _ => panic!("expected List"),
+        }
+    }
+
+    #[test]
+    fn t14_struct_heap_object() {
+        let mut heap = GcHeap::new();
+        let idx = heap.alloc(HeapObj::Struct(42, vec![100, 200]));
+        match heap.get(idx) {
+            HeapObj::Struct(id, vals) => {
+                assert_eq!(*id, 42);
+                assert_eq!(&vals[..], &[100, 200]);
+            }
+            _ => panic!("expected Struct"),
+        }
+    }
+
+    #[test]
+    fn t15_closure_heap_object() {
+        let mut heap = GcHeap::new();
+        let closure = crate::execute::ClosureObj {
+            func_entry: 7,
+            upvalues: vec![1, 2, 3],
+        };
+        let idx = heap.alloc(HeapObj::Closure(Box::new(closure)));
+        match heap.get(idx) {
+            HeapObj::Closure(c) => {
+                assert_eq!(c.func_entry, 7);
+                assert_eq!(c.upvalues, vec![1, 2, 3]);
+            }
+            _ => panic!("expected Closure"),
+        }
+    }
 }

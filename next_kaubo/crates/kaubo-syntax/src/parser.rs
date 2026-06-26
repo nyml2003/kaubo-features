@@ -226,9 +226,9 @@ impl Parser {
             self.bump();
 
             let right_bp = if self.current_kind() == TokenKind::Eq {
-                lbp - 1
+                lbp - 1 // right-associative: a = b = c → a = (b = c)
             } else {
-                lbp
+                lbp + 1 // left-associative: a + b + c → (a + b) + c
             };
             let right = self.parse_pratt(right_bp)?;
 
@@ -861,5 +861,802 @@ mod tests {
     fn test_async_expr() {
         let e = parse_expr_only("async |id| { await f(id) }");
         assert!(matches!(e, Expr::Async(_)));
+    }
+
+    // ── Statement-level tests ──
+
+    #[test]
+    fn test_var_without_value() {
+        let m = parse_mod("var x: Int64;");
+        match &m.stmts[0] {
+            Stmt::VarDecl { name, value, .. } => {
+                assert_eq!(name, "x");
+                assert!(value.is_none());
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_var_without_type() {
+        let m = parse_mod("var x = 42;");
+        match &m.stmts[0] {
+            Stmt::VarDecl { name, ty_ann, .. } => {
+                assert_eq!(name, "x");
+                assert!(ty_ann.is_none());
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_const_with_type_annotation() {
+        let m = parse_mod("const pi: Float64 = 3.14159;");
+        match &m.stmts[0] {
+            Stmt::ConstDecl { name, ty_ann, .. } => {
+                assert_eq!(name, "pi");
+                assert!(matches!(ty_ann, Some(TypeExpr::Named(n)) if n == "Float64"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_multiple_top_level_statements() {
+        let m = parse_mod("const a = 1;\nconst b = 2;\nconst c = 3;");
+        assert_eq!(m.stmts.len(), 3);
+    }
+
+    #[test]
+    fn test_empty_module() {
+        let m = parse_mod("");
+        assert!(m.stmts.is_empty());
+    }
+
+    #[test]
+    fn test_empty_module_with_semicolons() {
+        // Semicolons-only module currently produces a parse error
+        // because parse_top() on Eof falls through to parse_expr().
+        // This is a known limitation.
+        let result = Parser::new("; ; ;").parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_module_skips_comments_between_stmts() {
+        let m = parse_mod("const a = 1;\n// a comment\nconst b = 2;");
+        assert_eq!(m.stmts.len(), 2);
+    }
+
+    #[test]
+    fn test_struct_single_field() {
+        let m = parse_mod("struct Nothing { value: Int64 }");
+        match &m.stmts[0] {
+            Stmt::StructDef { name, fields } => {
+                assert_eq!(name, "Nothing");
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0].name, "value");
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_struct_with_trailing_comma() {
+        let m = parse_mod("struct Point { x: Int64, y: Int64, }");
+        match &m.stmts[0] {
+            Stmt::StructDef { name, fields } => {
+                assert_eq!(name, "Point");
+                assert_eq!(fields.len(), 2);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_impl_block_multiple_methods() {
+        let m = parse_mod(
+            "impl Point { norm: |self| { 0.0 }, dist: |self, other| { return 0.0; } }",
+        );
+        match &m.stmts[0] {
+            Stmt::ImplBlock {
+                struct_name,
+                methods,
+            } => {
+                assert_eq!(struct_name, "Point");
+                assert_eq!(methods.len(), 2);
+                assert_eq!(methods[0].name, "norm");
+                assert_eq!(methods[1].name, "dist");
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_import_with_names() {
+        let m = parse_mod("import { map, filter } from \"std/iter\";");
+        match &m.stmts[0] {
+            Stmt::Import { path, names, alias } => {
+                assert_eq!(path, "std/iter");
+                assert_eq!(&names[..], &["map", "filter"]);
+                assert!(alias.is_none());
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_import_with_alias() {
+        let m = parse_mod("import \"std/math\" as math;");
+        match &m.stmts[0] {
+            Stmt::Import { path, alias, names } => {
+                assert_eq!(path, "std/math");
+                assert_eq!(alias.as_deref(), Some("math"));
+                assert!(names.is_empty());
+            }
+            _ => panic!(),
+        }
+    }
+
+    // ── Expression primitives ──
+
+    #[test]
+    fn test_expr_lit_true() {
+        let e = parse_expr_only("true");
+        assert!(matches!(e, Expr::LitTrue));
+    }
+
+    #[test]
+    fn test_expr_lit_false() {
+        let e = parse_expr_only("false");
+        assert!(matches!(e, Expr::LitFalse));
+    }
+
+    #[test]
+    fn test_expr_lit_null() {
+        let e = parse_expr_only("null");
+        assert!(matches!(e, Expr::LitNull));
+    }
+
+    #[test]
+    fn test_expr_lit_int_zero() {
+        let e = parse_expr_only("0");
+        assert_eq!(e, Expr::LitInt(0));
+    }
+
+    #[test]
+    fn test_expr_lit_int_large() {
+        let e = parse_expr_only("9223372036854775807");
+        assert_eq!(e, Expr::LitInt(9223372036854775807));
+    }
+
+    #[test]
+    fn test_expr_lit_float() {
+        let e = parse_expr_only("3.14159");
+        assert_eq!(e, Expr::LitFloat(3.14159));
+    }
+
+    #[test]
+    fn test_expr_lit_string() {
+        let e = parse_expr_only(r#""hello world""#);
+        assert_eq!(e, Expr::LitString("hello world".to_string()));
+    }
+
+    #[test]
+    fn test_expr_var_ref() {
+        let e = parse_expr_only("myVariable");
+        assert_eq!(e, Expr::VarRef("myVariable".to_string()));
+    }
+
+    #[test]
+    fn test_expr_self_ref() {
+        let e = parse_expr_only("self");
+        assert_eq!(e, Expr::VarRef("self".to_string()));
+    }
+
+    // ── Unary expressions ──
+
+    #[test]
+    fn test_unary_neg() {
+        let e = parse_expr_only("-x");
+        assert!(matches!(e, Expr::Unary { op: UnOp::Neg, .. }));
+    }
+
+    #[test]
+    fn test_unary_not() {
+        let e = parse_expr_only("not x");
+        assert!(matches!(e, Expr::Unary { op: UnOp::Not, .. }));
+    }
+
+    #[test]
+    fn test_unary_double_neg() {
+        let e = parse_expr_only("--x");
+        match e {
+            Expr::Unary { op: UnOp::Neg, right } => {
+                assert!(matches!(*right, Expr::Unary { op: UnOp::Neg, .. }));
+            }
+            _ => panic!("expected double neg, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_unary_neg_literal() {
+        let e = parse_expr_only("-42");
+        match e {
+            Expr::Unary { op: UnOp::Neg, right } => {
+                assert_eq!(*right, Expr::LitInt(42));
+            }
+            _ => panic!("expected neg literal, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_unary_not_literal() {
+        let e = parse_expr_only("not true");
+        match e {
+            Expr::Unary { op: UnOp::Not, right } => {
+                assert_eq!(*right, Expr::LitTrue);
+            }
+            _ => panic!("expected not true, got {e:?}"),
+        }
+    }
+
+    // ── Binary expressions: all operators ──
+
+    macro_rules! binop_test {
+        ($name:ident, $src:literal, $expected_op:ident) => {
+            #[test]
+            fn $name() {
+                let e = parse_expr_only($src);
+                assert!(matches!(e, Expr::Binary { op: BinOp::$expected_op, .. }),
+                        "expected {}, got {e:?}", stringify!($expected_op));
+            }
+        };
+    }
+
+    binop_test!(test_binop_add, "a + b", Add);
+    binop_test!(test_binop_sub, "a - b", Sub);
+    binop_test!(test_binop_mul, "a * b", Mul);
+    binop_test!(test_binop_div, "a / b", Div);
+    binop_test!(test_binop_mod, "a % b", Mod);
+    binop_test!(test_binop_eq, "a == b", Eq);
+    binop_test!(test_binop_ne, "a != b", Ne);
+    binop_test!(test_binop_lt, "a < b", Lt);
+    binop_test!(test_binop_le, "a <= b", Le);
+    binop_test!(test_binop_gt, "a > b", Gt);
+    binop_test!(test_binop_ge, "a >= b", Ge);
+    binop_test!(test_binop_and, "a and b", And);
+    binop_test!(test_binop_or, "a or b", Or);
+    binop_test!(test_binop_pipe, "a |> b", Pipe);
+    binop_test!(test_binop_gtgt, "a >> b", GtGt);
+
+    // ── Operator precedence ──
+
+    #[test]
+    fn test_precedence_mul_before_add() {
+        let e = parse_expr_only("a + b * c");
+        // (a + (b * c))
+        match e {
+            Expr::Binary { op: BinOp::Add, left, right } => {
+                assert!(matches!(*left, Expr::VarRef(_)));
+                assert!(matches!(*right, Expr::Binary { op: BinOp::Mul, .. }));
+            }
+            _ => panic!("expected a + (b * c), got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_precedence_comparison_before_and() {
+        let e = parse_expr_only("a < b and c < d");
+        match e {
+            Expr::Binary { op: BinOp::And, .. } => {}
+            _ => panic!("expected comparison before and, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_precedence_assignment_lowest() {
+        let e = parse_expr_only("x = a + b");
+        assert!(matches!(e, Expr::Assign { .. }));
+    }
+
+    #[test]
+    fn test_left_associativity_add() {
+        let e = parse_expr_only("a + b + c");
+        // ((a + b) + c): outer left is inner Add
+        match e {
+            Expr::Binary {
+                op: BinOp::Add,
+                left,
+                right,
+            } => {
+                assert!(matches!(*left, Expr::Binary { op: BinOp::Add, .. }));
+                assert!(matches!(*right, Expr::VarRef(_)));
+            }
+            _ => panic!("expected left-assoc add, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_left_associativity_sub() {
+        let e = parse_expr_only("a - b - c");
+        // ((a - b) - c)
+        match e {
+            Expr::Binary {
+                op: BinOp::Sub,
+                left,
+                right,
+            } => {
+                assert!(matches!(*left, Expr::Binary { op: BinOp::Sub, .. }));
+                assert!(matches!(*right, Expr::VarRef(_)));
+            }
+            _ => panic!("expected left-assoc sub, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_grouping_with_parens() {
+        let e = parse_expr_only("(a + b) * c");
+        match e {
+            Expr::Binary { op: BinOp::Mul, left, .. } => {
+                assert!(matches!(*left, Expr::Binary { op: BinOp::Add, .. }));
+            }
+            _ => panic!("expected (a+b) * c, got {e:?}"),
+        }
+    }
+
+    // ── Postfix chain ──
+
+    #[test]
+    fn test_call_no_args() {
+        let e = parse_expr_only("f()");
+        match e {
+            Expr::Call { func, args } => {
+                assert_eq!(*func, Expr::VarRef("f".to_string()));
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected call, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_call_multiple_args() {
+        let e = parse_expr_only("f(a, b, c)");
+        match e {
+            Expr::Call { func, args } => {
+                assert_eq!(*func, Expr::VarRef("f".to_string()));
+                assert_eq!(args.len(), 3);
+            }
+            _ => panic!("expected call, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_nested_call() {
+        let e = parse_expr_only("f(g(x))");
+        match e {
+            Expr::Call { func, args } => {
+                assert_eq!(*func, Expr::VarRef("f".to_string()));
+                assert_eq!(args.len(), 1);
+                match &args[0] {
+                    Expr::Call { func, .. } => {
+                        assert_eq!(**func, Expr::VarRef("g".to_string()));
+                    }
+                    _ => panic!("expected nested call"),
+                }
+            }
+            _ => panic!("expected call, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_member_dot() {
+        let e = parse_expr_only("obj.field");
+        match e {
+            Expr::Member { object, field } => {
+                assert_eq!(*object, Expr::VarRef("obj".to_string()));
+                assert_eq!(field, "field");
+            }
+            _ => panic!("expected member, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_member_dot_chain() {
+        let e = parse_expr_only("a.b.c");
+        match e {
+            Expr::Member { object, field } => {
+                assert_eq!(field, "c");
+                assert!(matches!(*object, Expr::Member { .. }));
+            }
+            _ => panic!("expected member chain, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_method_call_on_value() {
+        let e = parse_expr_only("42.as_float()");
+        match e {
+            Expr::Call { func, args } => {
+                assert!(matches!(*func, Expr::Member { object, .. } if *object == Expr::LitInt(42)));
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected method call, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_index_bracket() {
+        let e = parse_expr_only("arr[0]");
+        match e {
+            Expr::Index { object, index } => {
+                assert_eq!(*object, Expr::VarRef("arr".to_string()));
+                assert_eq!(*index, Expr::LitInt(0));
+            }
+            _ => panic!("expected index, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_index_nested() {
+        let e = parse_expr_only("matrix[i][j]");
+        match e {
+            Expr::Index { object, .. } => {
+                assert!(matches!(*object, Expr::Index { .. }));
+            }
+            _ => panic!("expected nested index, got {e:?}"),
+        }
+    }
+
+    // ── Control flow ──
+
+    #[test]
+    fn test_if_without_else() {
+        let e = parse_expr_only("if x > 0 { return x }");
+        match e {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                assert!(else_branch.is_none());
+                assert!(matches!(*cond, Expr::Binary { .. }));
+                assert!(matches!(*then_branch, Expr::Block(_)));
+            }
+            _ => panic!("expected if without else, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_if_nested() {
+        let e = parse_expr_only("if a > 0 { if b > 0 { 1 } else { 0 } } else { -1 }");
+        match e {
+            Expr::If { else_branch, .. } => {
+                assert!(else_branch.is_some());
+            }
+            _ => panic!("expected nested if, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_while_body_is_block() {
+        let e = parse_expr_only("while i < 10 { i = i + 1; x = x * 2 }");
+        match e {
+            Expr::While { body, .. } => {
+                match &*body {
+                    Expr::Block(stmts) => assert_eq!(stmts.len(), 2),
+                    _ => panic!("expected block body"),
+                }
+            }
+            _ => panic!("expected while, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_for_loop_full() {
+        let e = parse_expr_only("for x in xs { print(x) }");
+        match e {
+            Expr::For {
+                var,
+                iterable,
+                body,
+            } => {
+                assert_eq!(var.name, "x");
+                assert_eq!(*iterable, Expr::VarRef("xs".to_string()));
+                assert!(matches!(*body, Expr::Block(_)));
+            }
+            _ => panic!("expected for loop, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_break_expr() {
+        let e = parse_expr_only("break");
+        assert_eq!(e, Expr::Break);
+    }
+
+    #[test]
+    fn test_continue_expr() {
+        let e = parse_expr_only("continue");
+        assert_eq!(e, Expr::Continue);
+    }
+
+    #[test]
+    fn test_return_with_value() {
+        let e = parse_expr_only("return 42");
+        match e {
+            Expr::Return(Some(val)) => assert_eq!(*val, Expr::LitInt(42)),
+            _ => panic!("expected return 42, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_return_expr() {
+        // Return always takes an expression in this parser
+        let e = parse_expr_only("return x");
+        assert!(matches!(e, Expr::Return(Some(_))));
+    }
+
+    // ── Lambda expressions ──
+
+    #[test]
+    fn test_lambda_no_params() {
+        let e = parse_expr_only("|| { 42 }");
+        match e {
+            Expr::Lambda { params, body, .. } => {
+                assert!(params.is_empty());
+                assert!(matches!(*body, Expr::Block(_)));
+            }
+            _ => panic!("expected lambda, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_lambda_single_param() {
+        let e = parse_expr_only("|x| { x + 1 }");
+        match e {
+            Expr::Lambda { params, .. } => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0].name, "x");
+            }
+            _ => panic!("expected lambda, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_lambda_params_with_types() {
+        let e = parse_expr_only("|a: Int64, b: Float64| -> Float64 { a }");
+        match e {
+            Expr::Lambda { params, ret_ty, .. } => {
+                assert_eq!(params.len(), 2);
+                assert!(params[0].ty_ann.is_some());
+                assert!(params[1].ty_ann.is_some());
+                assert!(ret_ty.is_some());
+            }
+            _ => panic!("expected lambda with types, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_nested_lambda() {
+        let e = parse_expr_only("|a| { |b| { a + b } }");
+        match e {
+            Expr::Lambda { params, body, .. } => {
+                assert_eq!(params.len(), 1);
+                match &*body {
+                    Expr::Block(stmts) => {
+                        assert_eq!(stmts.len(), 1);
+                    }
+                    _ => panic!("expected block body"),
+                }
+            }
+            _ => panic!("expected nested lambda, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_lambda_direct_body_no_block() {
+        let e = parse_expr_only("|a| a + 1");
+        match e {
+            Expr::Lambda { params, body, .. } => {
+                assert_eq!(params.len(), 1);
+                assert!(matches!(*body, Expr::Binary { .. }));
+            }
+            _ => panic!("expected lambda, got {e:?}"),
+        }
+    }
+
+    // ── List literal ──
+
+    #[test]
+    fn test_list_empty() {
+        let e = parse_expr_only("[]");
+        match e {
+            Expr::ListLit(items) => assert!(items.is_empty()),
+            _ => panic!("expected empty list, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_list_single() {
+        let e = parse_expr_only("[42]");
+        match e {
+            Expr::ListLit(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0], Expr::LitInt(42));
+            }
+            _ => panic!("expected single element list, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_list_nested() {
+        let e = parse_expr_only("[[1, 2], [3, 4]]");
+        match e {
+            Expr::ListLit(items) => {
+                assert_eq!(items.len(), 2);
+                assert!(matches!(items[0], Expr::ListLit(_)));
+            }
+            _ => panic!("expected nested list, got {e:?}"),
+        }
+    }
+
+    // ── Struct literal ──
+
+    #[test]
+    fn test_struct_literal_single_field() {
+        let m = parse_mod("struct Pair { first: Int64 }; const p = Pair { first: 10 };");
+        match &m.stmts[1] {
+            Stmt::ConstDecl { value, .. } => {
+                match value {
+                    Expr::StructLit { name, fields } => {
+                        assert_eq!(name, "Pair");
+                        assert_eq!(fields.len(), 1);
+                        assert_eq!(fields[0].0, "first");
+                    }
+                    _ => panic!("expected struct lit, got {value:?}"),
+                }
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_struct_literal_dot_access() {
+        let m = parse_mod(
+            "struct Point { x: Int64 }; const val = Point { x: 100 }.x;",
+        );
+        match &m.stmts[1] {
+            Stmt::ConstDecl { value, .. } => {
+                assert!(matches!(value, Expr::Member { field, .. } if field == "x"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_struct_not_declared_is_not_struct_lit() {
+        // Without a prior struct declaration, Foo { ... } should parse as
+        // var ref "Foo" followed by a block expression (or fail)
+        // Actually: chain_postfix checks struct_names. Foo not in set → breaks.
+        // So "Foo { x: 1 }" would be varref "Foo" then block parse fails.
+        // Let's test that a struct-declared name is required
+        let result = Parser::new("const p = Unknown { x: 1 };").parse();
+        // Should fail because { is not a valid expression continuation without struct decl
+        assert!(result.is_err());
+    }
+
+    // ── Type annotation ──
+
+    #[test]
+    fn test_type_named() {
+        let m = parse_mod("const x: Int64 = 42;");
+        match &m.stmts[0] {
+            Stmt::ConstDecl { ty_ann, .. } => {
+                assert_eq!(*ty_ann, Some(TypeExpr::Named("Int64".to_string())));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_type_list() {
+        let m = parse_mod("const xs: List<Int64> = [];");
+        match &m.stmts[0] {
+            Stmt::ConstDecl { ty_ann, .. } => {
+                assert_eq!(
+                    *ty_ann,
+                    Some(TypeExpr::List(Box::new(TypeExpr::Named(
+                        "Int64".to_string()
+                    ))))
+                );
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_var_type_annotation() {
+        let m = parse_mod("var name: String;");
+        match &m.stmts[0] {
+            Stmt::VarDecl { ty_ann, .. } => {
+                assert_eq!(*ty_ann, Some(TypeExpr::Named("String".to_string())));
+            }
+            _ => panic!(),
+        }
+    }
+
+    // ── Error cases ──
+
+    #[test]
+    fn test_error_missing_semicolon() {
+        let result = Parser::new("const x = 42").parse();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expected ;"));
+    }
+
+    #[test]
+    fn test_error_unexpected_token() {
+        let result = Parser::new("const = 42;").parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_error_missing_colon_in_struct() {
+        let result = Parser::new("struct Bad { x Int64 };").parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_error_invalid_int() {
+        // int too large for i64
+        let result = Parser::new("const x = 99999999999999999999;").parse();
+        assert!(result.is_err());
+    }
+
+    // ── Await / Async ──
+
+    #[test]
+    fn test_await_expr() {
+        let e = parse_expr_only("await f()");
+        assert!(matches!(e, Expr::Await(_)));
+    }
+
+    #[test]
+    fn test_async_await_chain() {
+        let e = parse_expr_only("await async f()");
+        match e {
+            Expr::Await(inner) => {
+                assert!(matches!(*inner, Expr::Async(_)));
+            }
+            _ => panic!("expected await async, got {e:?}"),
+        }
+    }
+
+    // ── Print expression statement ──
+
+    #[test]
+    fn test_print_call_as_stmt() {
+        let m = parse_mod("print(42);");
+        match &m.stmts[0] {
+            Stmt::ExprStmt(e) => {
+                assert!(matches!(e, Expr::Call { .. }));
+            }
+            _ => panic!("expected expr stmt, got {:?}", m.stmts[0]),
+        }
+    }
+
+    // ── Export expressions ──
+
+    #[test]
+    fn test_export_const() {
+        let m = parse_mod("export const VERSION = 1;");
+        assert!(matches!(&m.stmts[0], Stmt::ExportStmt(_)));
+    }
+
+    #[test]
+    fn test_export_var() {
+        let m = parse_mod("export var state = 0;");
+        assert!(matches!(&m.stmts[0], Stmt::ExportStmt(_)));
     }
 }

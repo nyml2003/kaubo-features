@@ -57,4 +57,21 @@ mod tests {
         let rf = RegFile::new(2, 5);
         assert_eq!(rf.to_string(), "RegFile(ints:2, floats:5)");
     }
+
+    #[test]
+    fn ensure_capacity_grows() {
+        let mut rf = RegFile::new(1, 1);
+        rf.ensure_capacity(5, 3);
+        assert!(rf.ints.len() >= 5);
+        assert!(rf.floats.len() >= 3);
+    }
+
+    #[test]
+    fn new_regfile_is_zero_initialized() {
+        let rf = RegFile::new(10, 10);
+        for i in 0..10 {
+            assert_eq!(rf.ints[i], 0);
+            assert_eq!(rf.floats[i], 0.0);
+        }
+    }
 }

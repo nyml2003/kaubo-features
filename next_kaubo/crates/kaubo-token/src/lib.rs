@@ -166,4 +166,108 @@ mod tests {
         assert_eq!(token.line, 3);
         assert_eq!(token.col, 8);
     }
+
+    // ── from_ident: 所有关键字 ──
+
+    #[test]
+    fn from_ident_keywords() {
+        assert_eq!(TokenKind::from_ident("const"), TokenKind::Const);
+        assert_eq!(TokenKind::from_ident("var"), TokenKind::Var);
+        assert_eq!(TokenKind::from_ident("if"), TokenKind::If);
+        assert_eq!(TokenKind::from_ident("else"), TokenKind::Else);
+        assert_eq!(TokenKind::from_ident("for"), TokenKind::For);
+        assert_eq!(TokenKind::from_ident("in"), TokenKind::In);
+        assert_eq!(TokenKind::from_ident("while"), TokenKind::While);
+        assert_eq!(TokenKind::from_ident("break"), TokenKind::Break);
+        assert_eq!(TokenKind::from_ident("continue"), TokenKind::Continue);
+        assert_eq!(TokenKind::from_ident("return"), TokenKind::Return);
+        assert_eq!(TokenKind::from_ident("struct"), TokenKind::Struct);
+        assert_eq!(TokenKind::from_ident("impl"), TokenKind::Impl);
+        assert_eq!(TokenKind::from_ident("export"), TokenKind::Export);
+        assert_eq!(TokenKind::from_ident("import"), TokenKind::Import);
+        assert_eq!(TokenKind::from_ident("from"), TokenKind::From);
+        assert_eq!(TokenKind::from_ident("as"), TokenKind::As);
+        assert_eq!(TokenKind::from_ident("async"), TokenKind::Async_);
+        assert_eq!(TokenKind::from_ident("await"), TokenKind::Await);
+    }
+
+    #[test]
+    fn from_ident_literals() {
+        assert_eq!(TokenKind::from_ident("true"), TokenKind::True);
+        assert_eq!(TokenKind::from_ident("false"), TokenKind::False);
+        assert_eq!(TokenKind::from_ident("null"), TokenKind::Null);
+    }
+
+    #[test]
+    fn from_ident_logical_operators() {
+        assert_eq!(TokenKind::from_ident("not"), TokenKind::Not);
+        assert_eq!(TokenKind::from_ident("and"), TokenKind::And);
+        assert_eq!(TokenKind::from_ident("or"), TokenKind::Or);
+    }
+
+    #[test]
+    fn from_ident_case_sensitive() {
+        // Keywords are case-sensitive
+        assert_eq!(TokenKind::from_ident("Const"), TokenKind::Identifier);
+        assert_eq!(TokenKind::from_ident("VAR"), TokenKind::Identifier);
+        assert_eq!(TokenKind::from_ident("True"), TokenKind::Identifier);
+        assert_eq!(TokenKind::from_ident("NULL"), TokenKind::Identifier);
+    }
+
+    #[test]
+    fn from_ident_identifiers() {
+        assert_eq!(TokenKind::from_ident("x"), TokenKind::Identifier);
+        assert_eq!(TokenKind::from_ident("myVar"), TokenKind::Identifier);
+        assert_eq!(TokenKind::from_ident("Point"), TokenKind::Identifier);
+        assert_eq!(TokenKind::from_ident("_hidden"), TokenKind::Identifier);
+        assert_eq!(TokenKind::from_ident("test2"), TokenKind::Identifier);
+    }
+
+    // ── Token 构造 ──
+
+    #[test]
+    fn token_new_preserves_all_fields() {
+        let t = Token::new(TokenKind::Identifier, "hello".into(), 5, 10);
+        assert_eq!(t.kind, TokenKind::Identifier);
+        assert_eq!(t.lexeme, "hello");
+        assert_eq!(t.line, 5);
+        assert_eq!(t.col, 10);
+    }
+
+    #[test]
+    fn token_eof_is_constructible() {
+        let t = Token::eof(2, 4);
+        assert_eq!(t.kind, TokenKind::Eof);
+        assert_eq!(t.lexeme, "");
+        assert_eq!(t.line, 2);
+        assert_eq!(t.col, 4);
+    }
+
+    #[test]
+    fn token_debug_format_includes_fields() {
+        let t = Token::new(TokenKind::Plus, "+".into(), 1, 1);
+        let s = format!("{t:?}");
+        assert!(s.contains("Plus"));
+        assert!(s.contains("+"));
+    }
+
+    // ── TokenKind count and representation ──
+
+    #[test]
+    fn token_kind_repr_fits_u8() {
+        // If repr(u8), all discriminants must fit in u8
+        use TokenKind::*;
+        let kinds = [
+            Const, Var, If, Else, For, In, While, Break, Continue, Return,
+            Struct, Impl, Export, Import, From, As, Async_, Await, Self_,
+            Identifier, IntLiteral, FloatLiteral, StringLiteral, True, False, Null,
+            Plus, Minus, Asterisk, Slash, Percent,
+            Eq, EqEq, NotEq, Lt, Le, Gt, Ge, Not, And, Or,
+            LParen, RParen, LBrace, RBrace, LBracket, RBracket,
+            Comma, Semicolon, Colon, Dot,
+            Pipe, Bar, FatArrow, GtGt,
+            Eof, Comment, Whitespace, Error,
+        ];
+        assert_eq!(kinds.len(), 59);
+    }
 }

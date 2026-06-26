@@ -531,4 +531,616 @@ mod tests {
             ]
         );
     }
+
+    // ── 关键字: 逐个验证 ──
+
+    #[test]
+    fn test_keyword_const() {
+        assert_eq!(kinds("const"), vec![TokenKind::Const]);
+    }
+    #[test]
+    fn test_keyword_var() {
+        assert_eq!(kinds("var"), vec![TokenKind::Var]);
+    }
+    #[test]
+    fn test_keyword_if() {
+        assert_eq!(kinds("if"), vec![TokenKind::If]);
+    }
+    #[test]
+    fn test_keyword_else() {
+        assert_eq!(kinds("else"), vec![TokenKind::Else]);
+    }
+    #[test]
+    fn test_keyword_while() {
+        assert_eq!(kinds("while"), vec![TokenKind::While]);
+    }
+    #[test]
+    fn test_keyword_for() {
+        assert_eq!(kinds("for"), vec![TokenKind::For]);
+    }
+    #[test]
+    fn test_keyword_in() {
+        assert_eq!(kinds("in"), vec![TokenKind::In]);
+    }
+    #[test]
+    fn test_keyword_break() {
+        assert_eq!(kinds("break"), vec![TokenKind::Break]);
+    }
+    #[test]
+    fn test_keyword_continue() {
+        assert_eq!(kinds("continue"), vec![TokenKind::Continue]);
+    }
+    #[test]
+    fn test_keyword_return() {
+        assert_eq!(kinds("return"), vec![TokenKind::Return]);
+    }
+    #[test]
+    fn test_keyword_struct() {
+        assert_eq!(kinds("struct"), vec![TokenKind::Struct]);
+    }
+    #[test]
+    fn test_keyword_impl() {
+        assert_eq!(kinds("impl"), vec![TokenKind::Impl]);
+    }
+    #[test]
+    fn test_keyword_export() {
+        assert_eq!(kinds("export"), vec![TokenKind::Export]);
+    }
+    #[test]
+    fn test_keyword_import() {
+        assert_eq!(kinds("import"), vec![TokenKind::Import]);
+    }
+    #[test]
+    fn test_keyword_from() {
+        assert_eq!(kinds("from"), vec![TokenKind::From]);
+    }
+    #[test]
+    fn test_keyword_as() {
+        assert_eq!(kinds("as"), vec![TokenKind::As]);
+    }
+    #[test]
+    fn test_keyword_async() {
+        assert_eq!(kinds("async"), vec![TokenKind::Async_]);
+    }
+    #[test]
+    fn test_keyword_await() {
+        assert_eq!(kinds("await"), vec![TokenKind::Await]);
+    }
+    #[test]
+    fn test_keyword_self() {
+        assert_eq!(kinds("self"), vec![TokenKind::Self_]);
+    }
+
+    // ── 关键字大小写敏感 ──
+
+    #[test]
+    fn test_keywords_are_case_sensitive() {
+        // "Const" with capital C should be an identifier, not the 'const' keyword
+        assert_eq!(kinds("Const"), vec![TokenKind::Identifier]);
+        assert_eq!(kinds("IF"), vec![TokenKind::Identifier]);
+        assert_eq!(kinds("While"), vec![TokenKind::Identifier]);
+        assert_eq!(kinds("Struct"), vec![TokenKind::Identifier]);
+    }
+
+    // ── 字面量 ──
+
+    #[test]
+    fn test_int_literal_single_digit() {
+        assert_eq!(kinds("0"), vec![TokenKind::IntLiteral]);
+        assert_eq!(kinds("7"), vec![TokenKind::IntLiteral]);
+    }
+
+    #[test]
+    fn test_int_literal_multi_digit() {
+        assert_eq!(kinds("1234567890"), vec![TokenKind::IntLiteral]);
+    }
+
+    #[test]
+    fn test_int_literal_underscores() {
+        let toks = tokens("1_000_000");
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::IntLiteral);
+        assert_eq!(toks[0].lexeme, "1_000_000");
+    }
+
+    #[test]
+    fn test_float_literal_simple() {
+        assert_eq!(kinds("3.14"), vec![TokenKind::FloatLiteral]);
+    }
+
+    #[test]
+    fn test_float_literal_leading_zero() {
+        assert_eq!(kinds("0.5"), vec![TokenKind::FloatLiteral]);
+    }
+
+    #[test]
+    fn test_float_literal_trailing_underscore() {
+        let toks = tokens("1_000.5");
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::FloatLiteral);
+        assert_eq!(toks[0].lexeme, "1_000.5");
+    }
+
+    #[test]
+    fn test_int_dot_ambiguity_int_then_dot() {
+        // 42. followed by whitespace: "42." -> int 42 then dot
+        // Actually "." alone after a number with nothing after is ambiguous;
+        // we need to see what our lexer does: no digit after dot → int + dot
+        let toks = tokens("42. ");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].kind, TokenKind::IntLiteral);
+        assert_eq!(toks[0].lexeme, "42");
+        assert_eq!(toks[1].kind, TokenKind::Dot);
+    }
+
+    #[test]
+    fn test_int_dot_method_call() {
+        // 42.to_string() → int, dot, ident, (, )
+        let ks = kinds("42.to_string()");
+        assert_eq!(
+            ks,
+            vec![
+                TokenKind::IntLiteral,
+                TokenKind::Dot,
+                TokenKind::Identifier,
+                TokenKind::LParen,
+                TokenKind::RParen,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_float_with_decimal_then_method() {
+        // 42.0.to_string() → float, dot, ident, (, )
+        let ks = kinds("42.0.to_string()");
+        assert_eq!(
+            ks,
+            vec![
+                TokenKind::FloatLiteral,
+                TokenKind::Dot,
+                TokenKind::Identifier,
+                TokenKind::LParen,
+                TokenKind::RParen,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_string_literal_empty() {
+        let toks = tokens(r#""""#);
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::StringLiteral);
+        assert_eq!(toks[0].lexeme, "");
+    }
+
+    #[test]
+    fn test_string_literal_single_char() {
+        let toks = tokens(r#""x""#);
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::StringLiteral);
+        assert_eq!(toks[0].lexeme, "x");
+    }
+
+    #[test]
+    fn test_string_literal_single_quotes() {
+        // single-quoted strings are also supported
+        let toks = tokens("'hello'");
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::StringLiteral);
+        assert_eq!(toks[0].lexeme, "hello");
+    }
+
+    #[test]
+    fn test_string_literal_unicode() {
+        let toks = tokens(r#""你好世界""#);
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::StringLiteral);
+        assert_eq!(toks[0].lexeme, "你好世界");
+    }
+
+    #[test]
+    fn test_string_unterminated_is_error() {
+        let toks = tokens(r#""unclosed"#);
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::Error);
+        assert!(toks[0].lexeme.contains("unterminated"));
+    }
+
+    #[test]
+    fn test_string_escape_backslash_n() {
+        let toks = tokens(r#""\n""#);
+        assert_eq!(toks[0].lexeme, "\n");
+    }
+
+    #[test]
+    fn test_string_escape_backslash_t() {
+        let toks = tokens(r#""\t""#);
+        assert_eq!(toks[0].lexeme, "\t");
+    }
+
+    #[test]
+    fn test_string_escape_backslash_r() {
+        let toks = tokens(r#""\r""#);
+        assert_eq!(toks[0].lexeme, "\r");
+    }
+
+    #[test]
+    fn test_string_escape_literal_backslash() {
+        let toks = tokens(r#""\\""#);
+        assert_eq!(toks[0].lexeme, "\\");
+    }
+
+    #[test]
+    fn test_bool_literals() {
+        assert_eq!(kinds("true"), vec![TokenKind::True]);
+        assert_eq!(kinds("false"), vec![TokenKind::False]);
+    }
+
+    #[test]
+    fn test_null_literal() {
+        assert_eq!(kinds("null"), vec![TokenKind::Null]);
+    }
+
+    // ── 注释 ──
+
+    #[test]
+    fn test_line_comment_content() {
+        let toks = tokens("// this is a comment\n42");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+        assert_eq!(toks[0].lexeme, " this is a comment");
+        assert_eq!(toks[1].kind, TokenKind::IntLiteral);
+    }
+
+    #[test]
+    fn test_line_comment_at_eof() {
+        let toks = tokens("// no newline at end");
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+        assert_eq!(toks[0].lexeme, " no newline at end");
+    }
+
+    #[test]
+    fn test_block_comment_content() {
+        let toks = tokens("/* hello */");
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+        assert_eq!(toks[0].lexeme, " hello */");
+    }
+
+    #[test]
+    fn test_block_comment_multiline() {
+        let toks = tokens("/* line1\n   line2 */\n42");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+        assert!(toks[0].lexeme.contains("line1"));
+        assert!(toks[0].lexeme.contains("line2"));
+        assert_eq!(toks[1].kind, TokenKind::IntLiteral);
+    }
+
+    #[test]
+    fn test_block_comment_nested() {
+        let toks = tokens("/* outer /* inner */ still outer */\n42");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+        assert!(toks[0].lexeme.contains(" outer "));
+        assert!(toks[0].lexeme.contains(" inner "));
+        assert!(toks[0].lexeme.contains(" still outer "));
+        assert_eq!(toks[1].kind, TokenKind::IntLiteral);
+    }
+
+    #[test]
+    fn test_block_comment_unclosed() {
+        // unclosed block comment consumes until EOF
+        let toks = tokens("/* never ends :(");
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+    }
+
+    #[test]
+    fn test_block_comment_deeply_nested() {
+        let toks = tokens("/* a /* b /* c */ d */ e */\n42");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+        assert_eq!(toks[1].kind, TokenKind::IntLiteral);
+    }
+
+    // ── 标识符 ──
+
+    #[test]
+    fn test_identifier_single_char() {
+        assert_eq!(kinds("x"), vec![TokenKind::Identifier]);
+    }
+
+    #[test]
+    fn test_identifier_snake_case() {
+        assert_eq!(kinds("my_var"), vec![TokenKind::Identifier]);
+    }
+
+    #[test]
+    fn test_identifier_with_numbers() {
+        assert_eq!(kinds("arg2"), vec![TokenKind::Identifier]);
+    }
+
+    #[test]
+    fn test_identifier_starting_with_underscore() {
+        assert_eq!(kinds("_private"), vec![TokenKind::Identifier]);
+    }
+
+    #[test]
+    fn test_identifier_uppercase() {
+        // Not a keyword — should be identifier
+        assert_eq!(kinds("Point"), vec![TokenKind::Identifier]);
+    }
+
+    #[test]
+    fn test_identifier_camelCase() {
+        assert_eq!(kinds("myFunction"), vec![TokenKind::Identifier]);
+    }
+
+    #[test]
+    fn test_identifier_all_caps() {
+        assert_eq!(kinds("MAX_VALUE"), vec![TokenKind::Identifier]);
+    }
+
+    // ── 运算符: 完整覆盖 ──
+
+    #[test]
+    fn test_each_single_char_operator_individually() {
+        assert_eq!(kinds("+"), vec![TokenKind::Plus]);
+        assert_eq!(kinds("-"), vec![TokenKind::Minus]);
+        assert_eq!(kinds("*"), vec![TokenKind::Asterisk]);
+        assert_eq!(kinds("/"), vec![TokenKind::Slash]);
+        assert_eq!(kinds("%"), vec![TokenKind::Percent]);
+    }
+
+    #[test]
+    fn test_each_double_char_operator_individually() {
+        assert_eq!(kinds("=="), vec![TokenKind::EqEq]);
+        assert_eq!(kinds("!="), vec![TokenKind::NotEq]);
+        assert_eq!(kinds("<="), vec![TokenKind::Le]);
+        assert_eq!(kinds(">="), vec![TokenKind::Ge]);
+        assert_eq!(kinds("->"), vec![TokenKind::FatArrow]);
+        assert_eq!(kinds("|>"), vec![TokenKind::Pipe]);
+        assert_eq!(kinds(">>"), vec![TokenKind::GtGt]);
+    }
+
+    #[test]
+    fn test_standalone_bang_is_error() {
+        // '!' alone without '=' should produce an error token
+        let toks = tokens("!");
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::Error);
+    }
+
+    #[test]
+    fn test_not_operator_is_keyword_not() {
+        assert_eq!(kinds("not"), vec![TokenKind::Not]);
+    }
+
+    #[test]
+    fn test_and_operator_is_keyword() {
+        assert_eq!(kinds("and"), vec![TokenKind::And]);
+    }
+
+    #[test]
+    fn test_or_operator_is_keyword() {
+        assert_eq!(kinds("or"), vec![TokenKind::Or]);
+    }
+
+    // ── 定界符: 逐个验证 ──
+
+    #[test]
+    fn test_each_delimiter_individually() {
+        assert_eq!(kinds("("), vec![TokenKind::LParen]);
+        assert_eq!(kinds(")"), vec![TokenKind::RParen]);
+        assert_eq!(kinds("{"), vec![TokenKind::LBrace]);
+        assert_eq!(kinds("}"), vec![TokenKind::RBrace]);
+        assert_eq!(kinds("["), vec![TokenKind::LBracket]);
+        assert_eq!(kinds("]"), vec![TokenKind::RBracket]);
+        assert_eq!(kinds(","), vec![TokenKind::Comma]);
+        assert_eq!(kinds(";"), vec![TokenKind::Semicolon]);
+        assert_eq!(kinds(":"), vec![TokenKind::Colon]);
+        assert_eq!(kinds("."), vec![TokenKind::Dot]);
+    }
+
+    // ── 位置/span ──
+
+    #[test]
+    fn test_positions_after_whitespace() {
+        let toks = tokens("   x   y");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].line, 1);
+        assert_eq!(toks[0].col, 4);
+        assert_eq!(toks[1].line, 1);
+        assert_eq!(toks[1].col, 8);
+    }
+
+    #[test]
+    fn test_positions_multiline() {
+        let toks = tokens("x\ny\nz");
+        assert_eq!(toks.len(), 3);
+        assert_eq!((toks[0].line, toks[0].col), (1, 1));
+        assert_eq!((toks[1].line, toks[1].col), (2, 1));
+        assert_eq!((toks[2].line, toks[2].col), (3, 1));
+    }
+
+    #[test]
+    fn test_positions_multiline_with_spaces() {
+        let toks = tokens("const a = 1;\nvar b = 2;");
+        // line 1: const(1,1) a(1,7) =(1,9) 1(1,11) ;(1,12)
+        // line 2: var(2,1) b(2,5) =(2,7) 2(2,9) ;(2,10)
+        assert_eq!(toks[0].kind, TokenKind::Const);
+        assert_eq!((toks[0].line, toks[0].col), (1, 1));
+        assert_eq!(toks[1].kind, TokenKind::Identifier);
+        assert_eq!((toks[1].line, toks[1].col), (1, 7));
+        assert_eq!(toks[5].kind, TokenKind::Var);
+        assert_eq!((toks[5].line, toks[5].col), (2, 1));
+    }
+
+    #[test]
+    fn test_positions_after_line_comment() {
+        let toks = tokens("// comment\nx");
+        assert_eq!(toks.len(), 2); // comment + identifier
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+        assert_eq!((toks[0].line, toks[0].col), (1, 1));
+        assert_eq!(toks[1].kind, TokenKind::Identifier);
+        assert_eq!((toks[1].line, toks[1].col), (2, 1));
+    }
+
+    #[test]
+    fn test_positions_after_block_comment() {
+        let toks = tokens("/* comment */x");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+        assert_eq!((toks[0].line, toks[0].col), (1, 1));
+        assert_eq!(toks[1].kind, TokenKind::Identifier);
+        assert_eq!((toks[1].line, toks[1].col), (1, 14));
+    }
+
+    #[test]
+    fn test_positions_multi_char_operators() {
+        // -> takes two columns
+        let toks = tokens("x -> y");
+        assert_eq!(toks.len(), 3);
+        assert_eq!(toks[0].kind, TokenKind::Identifier);
+        assert_eq!((toks[0].line, toks[0].col), (1, 1));
+        assert_eq!(toks[1].kind, TokenKind::FatArrow);
+        assert_eq!((toks[1].line, toks[1].col), (1, 3));
+        assert_eq!(toks[2].kind, TokenKind::Identifier);
+        assert_eq!((toks[2].line, toks[2].col), (1, 6));
+    }
+
+    // ── 边缘情况 ──
+
+    #[test]
+    fn test_empty_source() {
+        let toks = tokens("");
+        assert!(toks.is_empty());
+    }
+
+    #[test]
+    fn test_only_whitespace() {
+        let toks = tokens("   \t\n  \r\n  ");
+        assert!(toks.is_empty());
+    }
+
+    #[test]
+    fn test_only_comments() {
+        let toks = tokens("// a comment\n/* another */");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].kind, TokenKind::Comment);
+        assert_eq!(toks[1].kind, TokenKind::Comment);
+    }
+
+    #[test]
+    fn test_unknown_character_is_error() {
+        // Characters not recognized should produce Error tokens
+        let toks = tokens("@");
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].kind, TokenKind::Error);
+    }
+
+    #[test]
+    fn test_unknown_characters_each_is_error() {
+        let unknown = ['@', '#', '$', '~', '`', '^', '\\'];
+        for ch in unknown {
+            let src = ch.to_string();
+            let toks = tokens(&src);
+            assert_eq!(
+                toks[0].kind,
+                TokenKind::Error,
+                "expected Error for '{}'",
+                ch
+            );
+        }
+    }
+
+    #[test]
+    fn test_lexeme_preserves_value_for_literals() {
+        let toks = tokens("42 3.14 \"hello\" true");
+        assert_eq!(toks[0].lexeme, "42");
+        assert_eq!(toks[1].lexeme, "3.14");
+        assert_eq!(toks[2].lexeme, "hello");
+        assert_eq!(toks[3].lexeme, "true");
+    }
+
+    #[test]
+    fn test_lexeme_preserves_operator_text() {
+        let toks = tokens("<= >= == !=");
+        assert_eq!(toks[0].lexeme, "<=");
+        assert_eq!(toks[1].lexeme, ">=");
+        assert_eq!(toks[2].lexeme, "==");
+        assert_eq!(toks[3].lexeme, "!=");
+    }
+
+    #[test]
+    fn test_lexeme_preserves_identifier() {
+        let toks = tokens("myVariable another_one");
+        assert_eq!(toks[0].lexeme, "myVariable");
+        assert_eq!(toks[1].lexeme, "another_one");
+    }
+
+    // ── 复合场景 ──
+
+    #[test]
+    fn test_full_struct_declaration() {
+        let ks = kinds("struct Point { x: Int64, y: Int64 }");
+        assert_eq!(
+            ks,
+            vec![
+                TokenKind::Struct,
+                TokenKind::Identifier,
+                TokenKind::LBrace,
+                TokenKind::Identifier,
+                TokenKind::Colon,
+                TokenKind::Identifier,
+                TokenKind::Comma,
+                TokenKind::Identifier,
+                TokenKind::Colon,
+                TokenKind::Identifier,
+                TokenKind::RBrace,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_full_function_declaration() {
+        let ks = kinds("const add = |a: Int64, b: Int64| -> Int64 { return a + b; }");
+        assert_eq!(ks[0], TokenKind::Const);
+        assert_eq!(ks[1], TokenKind::Identifier); // add
+        assert_eq!(ks[2], TokenKind::Eq);
+        assert_eq!(ks[3], TokenKind::Bar);
+        assert_eq!(ks[4], TokenKind::Identifier); // a
+        assert_eq!(ks[5], TokenKind::Colon);
+        assert_eq!(ks[6], TokenKind::Identifier); // Int64
+        assert_eq!(ks[7], TokenKind::Comma);
+        assert!(ks.contains(&TokenKind::FatArrow));
+        assert!(ks.contains(&TokenKind::Return));
+        assert!(ks.contains(&TokenKind::RBrace));
+    }
+
+    #[test]
+    fn test_if_else_chain() {
+        let ks = kinds("if x > 0 { return 1; } else { return 0; }");
+        assert_eq!(ks[0], TokenKind::If);
+        assert!(ks.contains(&TokenKind::Else));
+        assert_eq!(ks[ks.len() - 1], TokenKind::RBrace);
+    }
+
+    #[test]
+    fn test_while_loop() {
+        let ks = kinds("while i < n { i = i + 1; }");
+        assert_eq!(ks[0], TokenKind::While);
+        assert_eq!(ks[1], TokenKind::Identifier);
+        assert_eq!(ks[2], TokenKind::Lt);
+    }
+
+    #[test]
+    fn test_for_loop() {
+        let ks = kinds("for x in xs { print(x); }");
+        assert_eq!(ks[0], TokenKind::For);
+        assert_eq!(ks[2], TokenKind::In);
+        assert_eq!(ks[4], TokenKind::LBrace);
+    }
 }

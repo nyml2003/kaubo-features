@@ -108,4 +108,101 @@ mod tests {
             assert!(func(&[]).is_err());
         }
     }
+
+    #[test]
+    fn test_sin() {
+        let sin = register_all()[4].1;
+        let result = sin(&[std::f64::consts::PI.to_bits() as i64]).unwrap();
+        let val = f64::from_bits(result as u64);
+        // sin(pi) should be close to 0
+        assert!(val.abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cos() {
+        let cos = register_all()[5].1;
+        let result = cos(&[0.0f64.to_bits() as i64]).unwrap();
+        let val = f64::from_bits(result as u64);
+        assert!((val - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_floor() {
+        let floor = register_all()[6].1;
+        let result = floor(&[3.7f64.to_bits() as i64]).unwrap();
+        let val = f64::from_bits(result as u64);
+        assert_eq!(val, 3.0);
+    }
+
+    #[test]
+    fn test_ceil() {
+        let ceil = register_all()[7].1;
+        let result = ceil(&[3.2f64.to_bits() as i64]).unwrap();
+        let val = f64::from_bits(result as u64);
+        assert_eq!(val, 4.0);
+    }
+
+    #[test]
+    fn test_print_requires_one_arg() {
+        assert!(print_fn(&[]).is_err());
+    }
+
+    #[test]
+    fn test_sqrt_of_four() {
+        let sqrt = register_all()[3].1;
+        assert_eq!(
+            sqrt(&[4.0f64.to_bits() as i64]).unwrap(),
+            2.0f64.to_bits() as i64
+        );
+    }
+
+    #[test]
+    fn test_sqrt_of_zero() {
+        let sqrt = register_all()[3].1;
+        assert_eq!(
+            sqrt(&[0.0f64.to_bits() as i64]).unwrap(),
+            0.0f64.to_bits() as i64
+        );
+    }
+
+    #[test]
+    fn test_sin_of_zero() {
+        let sin = register_all()[4].1;
+        assert_eq!(sin(&[0]).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_cos_of_zero() {
+        let cos = register_all()[5].1;
+        let result = cos(&[0]).unwrap();
+        let val = f64::from_bits(result as u64);
+        assert!((val - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_floor_of_int() {
+        let floor = register_all()[6].1;
+        let result = floor(&[5.0f64.to_bits() as i64]).unwrap();
+        assert_eq!(f64::from_bits(result as u64), 5.0);
+    }
+
+    #[test]
+    fn test_ceil_of_int() {
+        let ceil = register_all()[7].1;
+        let result = ceil(&[5.0f64.to_bits() as i64]).unwrap();
+        assert_eq!(f64::from_bits(result as u64), 5.0);
+    }
+
+    #[test]
+    fn test_assert_with_message() {
+        let err = assert_fn(&[0, 42]).unwrap_err();
+        assert!(err.contains("42"));
+    }
+
+    #[test]
+    fn test_assert_truthy_returns_cond() {
+        assert_eq!(assert_fn(&[42]), Ok(42));
+        assert_eq!(assert_fn(&[1]), Ok(1));
+        assert_eq!(assert_fn(&[-1]), Ok(-1));
+    }
 }
