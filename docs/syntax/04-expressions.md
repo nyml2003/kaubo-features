@@ -56,6 +56,45 @@ a >= b
 
 当前 parser 也接受 `and`、`or`、`|>`、`>>`，但 lowering 不完整。详见 [部分实现的语法表面](10-partial-features.md)。
 
+## 模板字符串
+
+反引号 `` ` `` 界定，`{expr}` 内嵌表达式：
+
+```kaubo
+const msg = `hello {name}, age {age}`;
+const calc = `{a} + {b} = {a + b}`;
+```
+
+脱糖为 `.to_string()` 调用 + `+` 拼接。内嵌表达式可以是任意 kaubo 表达式。
+
+## Null 合并 `??`
+
+```kaubo
+const name = input ?? "default";
+const deep = a ?? b ?? c;    // 左结合: (a ?? b) ?? c
+```
+
+脱糖为 `if left != null { left } else { right }`。
+注意 kaubo 中 `null` 和 `0` 在 VM 中同值（均为 `i64(0)`），`??` 对字面量 `0` 无法正确判别，
+需等 nullable 类型系统（enum `Option<T>`）落地后修复。
+
+## 可选链 `?.` `?[`
+
+```kaubo
+const name = user?.profile?.name;
+const item = list?[0];
+```
+
+脱糖为临时变量 + null 检查 + 字段/index 访问的链式 if/else。
+
+## 字符串拼接
+
+`+` 用于字符串拼接时走 CPS `SAdd` 指令，字符串拼接在 VM 中为堆分配+拼接：
+
+```kaubo
+const g = "hello, " + name;
+```
+
 ## 赋值
 
 变量赋值：

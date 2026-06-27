@@ -36,6 +36,20 @@ const p: Point = Point { x: 1, y: 2 };
 
 struct 名当前由普通标识符承载，大小写不是 parser 的硬性要求。
 
+## Enum 类型
+
+`enum` 声明代数数据类型，变体可以是单元变体或带字段变体：
+
+```kaubo
+enum Color { Red, Green };
+enum Option { Some(value: Int64), None };
+```
+
+- 单元变体（无字段）作为常量使用：`const c = Red;`
+- 带字段变体作为构造器调用：`const x = Some(42);`
+- 变体在运行时表示为带 tag 的堆对象，不同变体可区分
+- 变体名称在同一个程序中必须唯一（当前不支持跨 enum 的同名变体）
+
 ## List<T>
 
 类型语法支持 `List<T>`：

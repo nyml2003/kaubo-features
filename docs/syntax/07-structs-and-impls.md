@@ -19,6 +19,30 @@ const p = Point { x: 200, y: 300 };
 
 literal 必须提供声明中的所有字段，未知字段会返回错误。
 
+### 简写属性
+
+当字段名与变量名相同时可省略 `: value`：
+
+```kaubo
+const x = 200;
+const y = 300;
+const p = Point { x, y };        // 等价于 Point { x: x, y: y }
+const q = Point { x, y: 400 };   // 混合使用
+```
+
+### 结构体 spread
+
+使用 `...` 从已有 struct 复制字段：
+
+```kaubo
+const p1 = Point { x: 1, y: 2 };
+const p2 = Point { ...p1, y: 3 };   // Point { x: 1, y: 3 }  显式字段覆盖 spread
+```
+
+spread 按 struct 声明字段序展开，后续显式字段覆盖同名展开字段。
+
+### 字段顺序
+
 字段写入按 struct 声明顺序进行：
 
 ```kaubo
