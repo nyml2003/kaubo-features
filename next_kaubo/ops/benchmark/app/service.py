@@ -108,17 +108,30 @@ def bench_node(case: Case, cfg: Config) -> float:
     _validate_output(LANGUAGES["node"], case)
     src = case.path / "main.js"
     code = src.read_text(encoding="utf-8")
-    # Wrap: call function N times, time each, print avg in μs
+    # Extract the function-call expression from console.log(...), e.g.
+    # "console.log(loop(200))" → call = "loop(200)"
+    lines = code.strip().split("\n")
+    last = lines[-1].strip()
+    # last looks like: console.log(loop(200))  or  console.log(sieve(100000))
+    inner = last[len("console.log("):]
+    if inner.endswith(")"):
+        inner = inner[:-1]
+    call_expr = inner.strip()  # e.g. "loop(200)"
+
+    # Push results onto an array to prevent V8 from dead-code-eliminating
+    # the entire computation (array push has observable side effects).
     wrapper = f'''
 {code}
-let _fn = {case.name};  // by convention, the exported function has the case name
-for (let i = 0; i < {cfg.warmup}; i++) _fn();
+let _sink = [];          // observable side effect → DCE barrier
+for (let i = 0; i < {cfg.warmup}; i++) _sink.push({call_expr});
+_sink.length = 0;        // reset for timing
 let times = [];
 for (let i = 0; i < {cfg.iterations}; i++) {{
     let t0 = performance.now();
-    _fn();
+    _sink.push({call_expr});
     times.push((performance.now() - t0) * 1000);
 }}
+if (_sink[0] === undefined) process.exit(1);  // force read
 console.log(times.reduce((a,b) => a + b, 0) / times.length);
 '''
     r = subprocess.run(
