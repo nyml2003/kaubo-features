@@ -18,6 +18,7 @@ pub enum TokenKind {
     Struct,   // struct
     Enum,     // enum
     Impl,     // impl
+    Interface, // interface
     Export,   // export
     Import,   // import
     From,     // from
@@ -100,6 +101,7 @@ impl TokenKind {
             "struct" => Self::Struct,
             "enum" => Self::Enum,
             "impl" => Self::Impl,
+            "interface" => Self::Interface,
             "export" => Self::Export,
             "import" => Self::Import,
             "from" => Self::From,

@@ -60,6 +60,7 @@ impl Parser {
             TokenKind::Struct => self.parse_struct(),
             TokenKind::Enum => self.parse_enum(),
             TokenKind::Impl => self.parse_impl(),
+            TokenKind::Interface => self.parse_interface(),
             TokenKind::Export => {
                 self.bump();
                 Ok(Stmt::ExportStmt(Box::new(self.parse_top()?)))
@@ -173,9 +174,52 @@ impl Parser {
         Ok(Stmt::EnumDef { name, variants })
     }
 
+    fn parse_interface(&mut self) -> ParseResult<Stmt> {
+        self.bump(); // interface
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::LBrace)?;
+        let mut methods = Vec::new();
+        while self.current_kind() != TokenKind::RBrace {
+            let mname = self.expect_ident()?;
+            self.expect(TokenKind::Colon)?;
+            // Parse method signature: |params| -> ReturnType
+            self.expect(TokenKind::Bar)?;
+            let mut params = Vec::new();
+            while self.current_kind() != TokenKind::Bar {
+                let pname = self.expect_ident()?;
+                self.expect(TokenKind::Colon)?;
+                let pty = self.parse_type()?;
+                params.push(Param { name: pname, ty_ann: Some(pty) });
+                if self.current_kind() == TokenKind::Comma {
+                    self.bump();
+                }
+            }
+            self.bump(); // |
+            let return_type = if self.current_kind() == TokenKind::FatArrow {
+                self.bump(); // ->
+                Some(self.parse_type()?)
+            } else {
+                None
+            };
+            methods.push(MethodSig { name: mname, params, return_type });
+            self.expect(TokenKind::Semicolon)?;
+        }
+        self.bump(); // }
+        self.skip_semis();
+        Ok(Stmt::InterfaceDef { name, methods })
+    }
+
     fn parse_impl(&mut self) -> ParseResult<Stmt> {
         self.bump(); // impl
-        let struct_name = self.expect_ident()?;
+        let first = self.expect_ident()?;
+        // impl Interface for Struct { ... } or impl Struct { ... }
+        let (struct_name, interface_name) = if self.current_kind() == TokenKind::For {
+            self.bump(); // for
+            let struct_name = self.expect_ident()?;
+            (struct_name, Some(first))
+        } else {
+            (first, None)
+        };
         self.expect(TokenKind::LBrace)?;
         let mut methods = Vec::new();
         while self.current_kind() != TokenKind::RBrace {
@@ -183,7 +227,9 @@ impl Parser {
             self.expect(TokenKind::Colon)?;
             let body = self.parse_expr()?;
             methods.push(MethodDef { name: mname, body });
-            if self.current_kind() == TokenKind::Comma {
+            if self.current_kind() == TokenKind::Semicolon {
+                self.bump();
+            } else if self.current_kind() == TokenKind::Comma {
                 self.bump();
             }
         }
@@ -191,6 +237,7 @@ impl Parser {
         self.skip_semis();
         Ok(Stmt::ImplBlock {
             struct_name,
+            interface_name,
             methods,
         })
     }
@@ -1217,7 +1264,7 @@ mod tests {
         match &m.stmts[0] {
             Stmt::ImplBlock {
                 struct_name,
-                methods,
+                methods, ..
             } => {
                 assert_eq!(struct_name, "Point");
                 assert_eq!(methods.len(), 1);
@@ -1433,7 +1480,7 @@ mod tests {
         match &m.stmts[0] {
             Stmt::ImplBlock {
                 struct_name,
-                methods,
+                methods, ..
             } => {
                 assert_eq!(struct_name, "Point");
                 assert_eq!(methods.len(), 2);

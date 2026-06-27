@@ -315,7 +315,7 @@ impl CpsBuilder {
                 }
                 Stmt::ImplBlock {
                     struct_name,
-                    methods,
+                    methods, ..
                 } => {
                     for method in methods {
                         if let Expr::Lambda {
@@ -637,7 +637,7 @@ impl CpsBuilder {
             }
             Stmt::ImplBlock {
                 struct_name,
-                methods,
+                methods, ..
             } => {
                 for m in methods {
                     let func_idx = self.build_lambda_as_function(&m.body)?;
@@ -1015,47 +1015,7 @@ impl CpsBuilder {
             if let Some(enum_name) = self.variant_to_enum.get(name).cloned() {
                 return self.build_variant_construct(&enum_name, name, args);
             }
-            if name == "print" {
-                if let Some(arg) = args.first() {
-                    // print("str") — inline
-                    if let Expr::LitString(s) = arg {
-                        let r = self.ctx.alloc();
-                        let c = self.add_const(Constant::String(s.clone()));
-                        let id = self.ctx.new_block();
-                        self.ctx.set_block(
-                            id,
-                            CpsBlock {
-                                id,
-                                params: vec![],
-                                instrs: vec![CpsInstr::LoadConst(r, c), CpsInstr::Print(r)],
-                                term: cps_emit::emit_return(r),
-                            },
-                        );
-                        return Ok((id, id, r));
-                    }
-                    // print(x) where x is not a string literal — build the arg then print
-                    let (entry, continu, reg) = self.build_expr(arg)?;
-                    let id = self.ctx.new_block();
-                    self.ctx.set_block(
-                        id,
-                        CpsBlock {
-                            id,
-                            params: vec![],
-                            instrs: vec![CpsInstr::Print(reg)],
-                            term: cps_emit::emit_return(reg),
-                        },
-                    );
-                    self.ctx.chain(continu, id)?;
-                    return Ok((entry, id, reg));
-                }
-                return Err("print expects 1 argument".into());
-            }
-            if name == "assert" {
-                let result = self.build_native_call(2, args)?;
-                self.set_value_hint(result.2, ValueHint::Null);
-                return Ok(result);
-            }
-            // Look up function index
+            // Look up user-defined function first (allows shadowing builtins)
             if let Some(&func_idx) = self.ctx.func_map.get(name) {
                 let result = self.build_call_with_idx(func_idx, args)?;
                 self.set_value_hint(
@@ -1067,11 +1027,39 @@ impl CpsBuilder {
                 );
                 return Ok(result);
             }
-            // Check native functions
-            if let Some(ni) = get_native(name) {
-                let result = self.build_native_call(ni, args)?;
-                self.set_value_hint(result.2, native_return_hint(name));
-                return Ok(result);
+            // ── builtins dispatch (fallback) ──
+            if let Some(bi) = get_builtin(name) {
+                let hint = builtin_return_hint(name);
+                return match bi {
+                    Builtin::Print => {
+                        if args.len() != 1 {
+                            return Err("print expects 1 argument".into());
+                        }
+                        let (entry, continu, reg) = self.build_expr(&args[0])?;
+                        let id = self.ctx.new_block();
+                        self.ctx.set_block(
+                            id,
+                            CpsBlock {
+                                id,
+                                params: vec![],
+                                instrs: vec![CpsInstr::Print(reg)],
+                                term: cps_emit::emit_return(reg),
+                            },
+                        );
+                        self.ctx.chain(continu, id)?;
+                        self.set_value_hint(reg, hint);
+                        Ok((entry, id, reg))
+                    }
+                    Builtin::Native(ni) => {
+                        let result = self.build_native_call(ni, args)?;
+                        self.set_value_hint(result.2, hint);
+                        Ok(result)
+                    }
+                    Builtin::Inline(instr) => {
+                        let _ = instr;
+                        Err("inline builtins not yet routed".into())
+                    }
+                };
             }
             return Err(format!("undefined function '{name}'"));
         }
@@ -1140,13 +1128,20 @@ impl CpsBuilder {
         native_idx: usize,
         args: &[Expr],
     ) -> Result<(usize, usize, usize), String> {
-        if args.is_empty() {
-            return Err("native call needs at least 1 arg".into());
+        let mut entry = 0;
+        let mut prev_c: Option<usize> = None;
+        let mut arg_regs = Vec::new();
+        for arg in args {
+            let (e, c, r) = self.build_expr(arg)?;
+            if entry == 0 {
+                entry = e;
+            }
+            if let Some(t) = prev_c {
+                self.ctx.chain(t, e)?;
+            }
+            prev_c = Some(c);
+            arg_regs.push(r);
         }
-        if args.len() != 1 {
-            return Err("native calls currently support exactly 1 arg".into());
-        }
-        let (entry, continu, reg) = self.build_expr(&args[0])?;
         let result_reg = self.ctx.alloc();
         let move_block = self.ctx.new_block();
         self.ctx.set_block(
@@ -1165,10 +1160,15 @@ impl CpsBuilder {
                 id: call_block,
                 params: vec![],
                 instrs: vec![],
-                term: CpsTerminator::CallNative(native_idx, vec![reg], move_block),
+                term: CpsTerminator::CallNative(native_idx, arg_regs, move_block),
             },
         );
-        self.ctx.chain(continu, call_block)?;
+        if let Some(t) = prev_c {
+            self.ctx.chain(t, call_block)?;
+        }
+        if entry == 0 {
+            entry = call_block;
+        }
         Ok((entry, move_block, result_reg))
     }
 
@@ -2040,6 +2040,44 @@ impl CpsBuilder {
     }
 }
 
+// ── builtins dispatch ──
+
+enum Builtin {
+    /// Emit a CPS instruction directly — reserved for @intToString, @floatToString, etc.
+    #[allow(dead_code)]
+    Inline(CpsInstr),
+    /// Build args + emit CallNative(native_index)
+    Native(usize),
+    /// Print: build arg → CpsInstr::Print
+    Print,
+}
+
+/// Look up a function name in the builtins table.
+/// Returns None if not a builtin — caller falls through to user-defined functions.
+fn get_builtin(name: &str) -> Option<Builtin> {
+    match name {
+        "print" => Some(Builtin::Print),
+        "assert" => Some(Builtin::Native(2)),
+        "type_of" => Some(Builtin::Native(1)),
+        "sqrt" => Some(Builtin::Native(3)),
+        "sin" => Some(Builtin::Native(4)),
+        "cos" => Some(Builtin::Native(5)),
+        "floor" => Some(Builtin::Native(6)),
+        "ceil" => Some(Builtin::Native(7)),
+        _ => None,
+    }
+}
+
+fn builtin_return_hint(name: &str) -> ValueHint {
+    match name {
+        "print" => ValueHint::Null,
+        "assert" => ValueHint::Null,
+        "type_of" => ValueHint::Int,
+        "sqrt" | "sin" | "cos" | "floor" | "ceil" => ValueHint::Float,
+        _ => ValueHint::Unknown,
+    }
+}
+
 fn bin_op_to_cps(op: BinOp, is_float: bool) -> Result<CpsBinOp, String> {
     match (op, is_float) {
         (BinOp::Add, true) => Ok(CpsBinOp::FAdd),
@@ -2067,26 +2105,6 @@ fn bin_op_to_cps(op: BinOp, is_float: bool) -> Result<CpsBinOp, String> {
         (BinOp::SAdd, _) => Ok(CpsBinOp::SAdd),
         (BinOp::And | BinOp::Or, _) => Err("logical binary operators are not implemented".into()),
         (BinOp::Pipe | BinOp::GtGt, _) => Err("pipe operators are not implemented".into()),
-    }
-}
-
-fn get_native(name: &str) -> Option<usize> {
-    match name {
-        "type_of" => Some(1),
-        "sqrt" => Some(3),
-        "sin" => Some(4),
-        "cos" => Some(5),
-        "floor" => Some(6),
-        "ceil" => Some(7),
-        _ => None,
-    }
-}
-
-fn native_return_hint(name: &str) -> ValueHint {
-    match name {
-        "type_of" => ValueHint::Int,
-        "sqrt" | "sin" | "cos" | "floor" | "ceil" => ValueHint::Float,
-        _ => ValueHint::Unknown,
     }
 }
 
@@ -2291,6 +2309,14 @@ mod tests {
                         call_stmt("f", vec![Expr::LitInt(5)]),
                     ]
                 }
+                "print(\"hi\");" => vec![call_stmt("print", vec![Expr::LitString("hi".to_string())])],
+                "const x = sqrt(4.0);" => vec![const_decl(
+                    "x",
+                    Expr::Call {
+                        func: Box::new(Expr::VarRef("sqrt".to_string())),
+                        args: vec![Expr::LitFloat(4.0)],
+                    },
+                )],
                 _ => panic!("missing AST fixture for {src}"),
             },
         }
@@ -2557,6 +2583,89 @@ mod tests {
             "while should create header+body+exit+cond blocks, got {}",
             lambda.blocks.len()
         );
+    }
+
+    // ── builtin dispatch ──
+
+    #[test]
+    fn build_print_emits_print_opcode() {
+        let c = build_src("print(\"hi\");");
+        let has_print = c.functions[0].blocks.iter().any(|b| {
+            b.instrs
+                .iter()
+                .any(|i| matches!(i, CpsInstr::Print(_)))
+        });
+        assert!(has_print, "print should emit CpsInstr::Print");
+    }
+
+    #[test]
+    fn build_sqrt_calls_native() {
+        let cps = build_src("const x = sqrt(4.0);");
+        let has_call_native = cps.functions[0].blocks.iter().any(|b| {
+            matches!(b.term, CpsTerminator::CallNative(3, _, _)) // sqrt = native idx 3
+        });
+        assert!(
+            has_call_native,
+            "sqrt should emit CallNative(3)"
+        );
+    }
+
+    #[test]
+    fn get_builtin_table_returns_all_eight() {
+        let builtins = [
+            ("print", true),
+            ("assert", true),
+            ("type_of", true),
+            ("sqrt", true),
+            ("sin", true),
+            ("cos", true),
+            ("floor", true),
+            ("ceil", true),
+        ];
+        for (name, expected) in builtins {
+            assert_eq!(
+                get_builtin(name).is_some(),
+                expected,
+                "{name}: builtin lookup mismatch"
+            );
+        }
+        assert!(get_builtin("unknown_fn").is_none());
+        assert!(get_builtin("").is_none());
+    }
+
+    #[test]
+    fn builtin_return_hints_match_expected() {
+        assert_eq!(builtin_return_hint("print"), ValueHint::Null);
+        assert_eq!(builtin_return_hint("assert"), ValueHint::Null);
+        assert_eq!(builtin_return_hint("type_of"), ValueHint::Int);
+        assert_eq!(builtin_return_hint("sqrt"), ValueHint::Float);
+        assert_eq!(builtin_return_hint("sin"), ValueHint::Float);
+        assert_eq!(builtin_return_hint("cos"), ValueHint::Float);
+        assert_eq!(builtin_return_hint("floor"), ValueHint::Float);
+        assert_eq!(builtin_return_hint("ceil"), ValueHint::Float);
+        assert_eq!(builtin_return_hint("unknown"), ValueHint::Unknown);
+    }
+
+    #[test]
+    fn build_native_call_multi_arg() {
+        // Test that build_native_call handles 0, 1, 2 args without panicking
+        let mut b = CpsBuilder::new();
+        b.ctx = FuncCtx::new("test".into());
+        let no_args: Vec<Expr> = vec![];
+        let result = b.build_native_call(0, &no_args);
+        assert!(result.is_ok(), "0 args should not panic, got {:?}", result.err());
+
+        let mut b = CpsBuilder::new();
+        b.ctx = FuncCtx::new("test".into());
+        let one_arg = vec![Expr::LitInt(42)];
+        let result = b.build_native_call(0, &one_arg);
+        assert!(result.is_ok(), "1 arg should work, got {:?}", result.err());
+
+        let mut b = CpsBuilder::new();
+        b.ctx = FuncCtx::new("test".into());
+        let two_args = vec![Expr::LitInt(1), Expr::LitInt(2)];
+        let result = b.build_native_call(0, &two_args);
+        assert!(result.is_ok(), "2 args should work, got {:?}", result.err());
     }
 
 }

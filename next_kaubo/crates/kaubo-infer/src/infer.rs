@@ -43,7 +43,9 @@ pub fn infer_module(
     reset_tvar();
     let mut env: TypeEnv = HashMap::new();
 
-    // Pass 1: collect struct and enum definitions
+    // Pass 1: collect struct, enum, and interface definitions
+    let mut interface_registry: HashMap<String, Vec<(String, Vec<(String, Type)>, Option<Type>)>> =
+        HashMap::new();
     let mut struct_registry: HashMap<String, usize> = HashMap::new();
     let mut struct_fields: HashMap<usize, Vec<(String, Type)>> = HashMap::new();
     let mut enum_registry: HashMap<String, usize> = HashMap::new();
@@ -77,6 +79,32 @@ pub fn infer_module(
                 vts.push((v.name.clone(), fts));
             }
             enum_variants.insert(id, vts);
+        }
+        if let Stmt::InterfaceDef { name, methods } = stmt {
+            let mut sigs: Vec<(String, Vec<(String, Type)>, Option<Type>)> = Vec::new();
+            for m in methods {
+                let mut param_types = Vec::new();
+                for p in &m.params {
+                    let pt = if let Some(TypeExpr::Named(s)) = &p.ty_ann {
+                        if s == "Self" {
+                            Type::Var(fresh_tvar()) // Self is a placeholder
+                        } else {
+                            type_expr_to_type(&p.ty_ann.clone().unwrap(), &struct_registry, &struct_fields)?
+                        }
+                    } else {
+                        Type::Var(fresh_tvar())
+                    };
+                    param_types.push((p.name.clone(), pt));
+                }
+                let ret = m.return_type.as_ref().map(|t| {
+                    if let TypeExpr::Named(s) = t {
+                        if s == "Self" { return Type::Var(fresh_tvar()); }
+                    }
+                    type_expr_to_type(t, &struct_registry, &struct_fields).unwrap_or(Type::Null)
+                });
+                sigs.push((m.name.clone(), param_types, ret));
+            }
+            interface_registry.insert(name.clone(), sigs);
         }
     }
 
@@ -146,8 +174,27 @@ pub fn infer_module(
             }
             Stmt::ImplBlock {
                 struct_name,
+                interface_name,
                 methods,
             } => {
+                // Check interface completeness if implementing a trait
+                if let Some(ref iface_name) = interface_name {
+                    if let Some(required) = interface_registry.get(iface_name) {
+                        let implemented: std::collections::HashSet<&str> =
+                            methods.iter().map(|m| m.name.as_str()).collect();
+                        for (mname, _, _) in required {
+                            if !implemented.contains(mname.as_str()) {
+                                return Err(TypeError {
+                                    msg: format!(
+                                        "impl '{iface_name}' for '{struct_name}' missing method '{mname}'"
+                                    ),
+                                    line: 0,
+                                    col: 0,
+                                });
+                            }
+                        }
+                    }
+                }
                 // Register methods on struct
                 for m in methods {
                     let (s, ty) = infer(&env, &m.body, &struct_registry, &struct_fields, &enum_registry, &enum_variants)?;
@@ -158,7 +205,7 @@ pub fn infer_module(
             Stmt::ExprStmt(expr) => {
                 infer(&env, expr, &struct_registry, &struct_fields, &enum_registry, &enum_variants)?;
             }
-            Stmt::ExportStmt(_) | Stmt::Import { .. } => {}
+            Stmt::ExportStmt(_) | Stmt::Import { .. } | Stmt::InterfaceDef { .. } => {}
         }
     }
 
@@ -1187,6 +1234,7 @@ mod tests {
             },
             Stmt::ImplBlock {
                 struct_name: "Point".to_string(),
+                interface_name: None,
                 methods: vec![MethodDef {
                     name: "value".to_string(),
                     body: Expr::Lambda {
@@ -1567,7 +1615,7 @@ mod tests {
         let func = Expr::Lambda {
             params: vec![Param {
                 name: "x".to_string(),
-                ty: Some(TypeExpr::Named("Int64".to_string())),
+                ty_ann: Some(TypeExpr::Named("Int64".to_string())),
             }],
             body: Box::new(Expr::Binary {
                 left: Box::new(Expr::VarRef("x".to_string())),

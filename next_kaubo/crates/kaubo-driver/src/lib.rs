@@ -694,4 +694,93 @@ val;
         "#).unwrap_err();
         assert!(err.to_string().contains("missing"));
     }
+
+    // ── builtin function E2E ──
+
+    #[test]
+    fn builtin_print_outputs_string() {
+        let outcome = run_source("print(\"hello\");").unwrap();
+        assert_eq!(outcome.output, vec!["hello".to_string()]);
+    }
+
+    #[test]
+    fn builtin_print_with_expression() {
+        let outcome = run_source("print(42.to_string());").unwrap();
+        assert_eq!(outcome.output, vec!["42".to_string()]);
+    }
+
+    #[test]
+    fn builtin_sqrt_works() {
+        let outcome = run_source("sqrt(25.0);").unwrap();
+        assert_eq!(outcome.result, 5.0f64.to_bits() as i64);
+    }
+
+    #[test]
+    fn builtin_sin_works() {
+        let outcome = run_source("sin(0.0);").unwrap();
+        assert_eq!(outcome.result, 0.0f64.to_bits() as i64);
+    }
+
+    #[test]
+    fn builtin_cos_works() {
+        let outcome = run_source("cos(0.0);").unwrap();
+        assert_eq!(outcome.result, 1.0f64.to_bits() as i64);
+    }
+
+    #[test]
+    fn builtin_floor_works() {
+        let outcome = run_source("const f = floor(3.7); 0;").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn builtin_ceil_works() {
+        let outcome = run_source("const f = ceil(3.2); 0;").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn builtin_assert_pass() {
+        let outcome = run_source("assert(true); const r = 42; r;").unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn builtin_assert_fail_is_runtime_error() {
+        let err = run_source("assert(false);").unwrap_err();
+        assert!(matches!(err, DriverError::Runtime(_)));
+        assert!(err.to_string().contains("assertion failed"));
+    }
+
+    #[test]
+    fn builtin_type_of_scalar() {
+        let outcome = run_source("type_of(42);").unwrap();
+        assert_eq!(outcome.result, 0); // 0 = scalar
+    }
+
+    #[test]
+    fn builtin_type_of_string() {
+        let outcome = run_source("type_of(\"hello\");").unwrap();
+        assert_eq!(outcome.result, 1); // 1 = String
+    }
+
+    #[test]
+    fn undefined_function_errors() {
+        let err = compile_source("const x = no_such_fn(42);").unwrap_err();
+        assert!(
+            err.to_string().contains("no_such_fn"),
+            "error should mention the function name, got: {err}"
+        );
+    }
+
+    #[test]
+    fn builtin_vs_user_function_shadowing() {
+        // User-defined function with same name as builtin should be prioritized
+        let outcome = run_source(r#"
+            const sqrt = |x| { x + 100.0 };
+            const r = sqrt(0.0);
+            r;
+        "#).unwrap();
+        assert_eq!(outcome.result, 100.0f64.to_bits() as i64);
+    }
 }

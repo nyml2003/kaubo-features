@@ -17,6 +17,7 @@ pub fn classify_token(kind: TokenKind) -> &'static str {
         | TokenKind::Return
         | TokenKind::Struct
         | TokenKind::Impl
+        | TokenKind::Interface
         | TokenKind::Export
         | TokenKind::Import
         | TokenKind::From
@@ -114,6 +115,7 @@ pub fn describe_token(kind: TokenKind) -> &'static str {
         TokenKind::Struct => "struct definition",
         TokenKind::Enum => "enum definition",
         TokenKind::Impl => "impl block",
+        TokenKind::Interface => "interface definition",
         TokenKind::Export => "export declaration",
         TokenKind::Import => "import statement",
         TokenKind::From => "from keyword (import)",
@@ -198,6 +200,7 @@ mod tests {
             TokenKind::Return,
             TokenKind::Struct,
             TokenKind::Impl,
+            TokenKind::Interface,
             TokenKind::Export,
             TokenKind::Import,
             TokenKind::From,
