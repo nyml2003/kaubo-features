@@ -248,10 +248,13 @@ impl VM {
                 }
                 let args = match &block.term {
                     CpsTerminator::Jump(_, a) => a.clone(),
-                    CpsTerminator::Branch(_, _, a, _, _) => {
-                        let mut all = a.clone();
-                        all.push(0);
-                        all
+                    CpsTerminator::Branch(_, _, ta, _, fa) => {
+                        // Store both arg sets: [true_count, true_args..., false_count, false_args...]
+                        let mut v = vec![ta.len()];
+                        v.extend_from_slice(ta);
+                        v.push(fa.len());
+                        v.extend_from_slice(fa);
+                        v
                     }
                     CpsTerminator::Call(_, a, _) => a.clone(),
                     CpsTerminator::CallNative(_, a, _) => a.clone(),
@@ -390,7 +393,7 @@ impl VM {
                     if self.regs.ints[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
-                    self.write_int(a, self.regs.ints[b] / self.regs.ints[c]);
+                    self.write_int(a, self.regs.ints[b].wrapping_div(self.regs.ints[c]));
                 }
                 Opcode::ModInt => {
                                         let a = inst.dst();
@@ -399,12 +402,12 @@ impl VM {
                     if self.regs.ints[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
-                    self.write_int(a, self.regs.ints[b] % self.regs.ints[c]);
+                    self.write_int(a, self.regs.ints[b].wrapping_rem(self.regs.ints[c]));
                 }
                 Opcode::NegInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
-                    self.write_int(a, -self.regs.ints[b]);
+                    self.write_int(a, self.regs.ints[b].wrapping_neg());
                 }
 
                 // ── 浮点 ──
@@ -582,7 +585,7 @@ impl VM {
                 }
                 Opcode::LoadConst => {
                                         let d = inst.dst();
-                                        let idx = (inst.0 >> 8) as u8 as usize;
+                                        let idx = inst.src1();
                     let constant = self
                         .consts
                         .get(idx)
@@ -674,22 +677,31 @@ impl VM {
                     // Check if this field is a heap type
                     let is_heap = (self.struct_bitmaps[sid] >> idx) & 1 != 0;
 
-                    // Release old value if heap type
-                    if is_heap && old_val >= 0 {
-                        self.heap.release(old_val as usize);
-                    }
-
-                    // Write new value
-                    if let HeapObj::Struct(_, fields) = self.heap_get_mut(hid)? {
-                        if idx >= len {
-                            return Err(RuntimeError::FieldOutOfBounds { index: idx, len });
+                    // GC: release old value, retain new value (if heap type and not self-assign)
+                    if is_heap {
+                        // -1 is the null sentinel; self-assign of same handle is a no-op
+                        let self_assign = old_val == val && old_val != -1;
+                        if !self_assign && old_val != -1 {
+                            self.heap.release(old_val as usize);
                         }
-                        fields[idx] = val;
-                    }
-
-                    // Retain new value if heap type
-                    if is_heap && val >= 0 {
-                        self.heap.retain(val as usize);
+                        // Write new value
+                        if let HeapObj::Struct(_, fields) = self.heap_get_mut(hid)? {
+                            if idx >= len {
+                                return Err(RuntimeError::FieldOutOfBounds { index: idx, len });
+                            }
+                            fields[idx] = val;
+                        }
+                        if !self_assign && val != -1 {
+                            self.heap.retain(val as usize);
+                        }
+                    } else {
+                        // Non-heap field: just write
+                        if let HeapObj::Struct(_, fields) = self.heap_get_mut(hid)? {
+                            if idx >= len {
+                                return Err(RuntimeError::FieldOutOfBounds { index: idx, len });
+                            }
+                            fields[idx] = val;
+                        }
                     }
                 }
 
@@ -772,41 +784,59 @@ impl VM {
                     let fi = inst.src2(); // field idx
                     let hid = self.regs.ints[s];
                     let val = self.regs.ints[d];
-                    match self.heap_get_mut(hid)? {
-                        HeapObj::Variant(_, _, fields) => {
-                            if fi >= fields.len() {
-                                return Err(RuntimeError::FieldOutOfBounds {
-                                    index: fi,
-                                    len: fields.len(),
-                                });
-                            }
-                            fields[fi] = val;
+                    let (enum_id, tag, old_val, len, is_heap) = match self.heap_get(hid)? {
+                        HeapObj::Variant(eid, t, fields) => {
+                            let old = fields.get(fi).copied().ok_or(
+                                RuntimeError::FieldOutOfBounds { index: fi, len: fields.len() },
+                            )?;
+                            let bitmap = self.enum_variant_bitmaps
+                                .get(*eid)
+                                .and_then(|bm| bm.get(*t as usize))
+                                .copied()
+                                .unwrap_or(0);
+                            let heap = (bitmap >> fi) & 1 != 0;
+                            (*eid, *t, old, fields.len(), heap)
                         }
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
                                 "SetVariantField expected variant, got {other:?}"
                             )))
                         }
+                    };
+                    if is_heap {
+                        // GC: release old, write new, retain new (skip if self-assign)
+                        let self_assign = old_val == val && old_val != -1;
+                        if !self_assign && old_val != -1 {
+                            self.heap.release(old_val as usize);
+                        }
+                        if let HeapObj::Variant(_, _, fields) = self.heap_get_mut(hid)? {
+                            fields[fi] = val;
+                        }
+                        if !self_assign && val != -1 {
+                            self.heap.retain(val as usize);
+                        }
+                    } else {
+                        if let HeapObj::Variant(_, _, fields) = self.heap_get_mut(hid)? {
+                            fields[fi] = val;
+                        }
                     }
                 }
 
                 // ── 装箱/拆箱 ──
                 Opcode::Box_ => {
-                                        let d = inst.dst();
-                                        let s = inst.src1();
-                    self.write_int(d, self.regs.ints[s]);
-                    self.regs.floats[d] = self.regs.floats[s];
-                } // box
+                    return Err(RuntimeError::UnsupportedInstruction(
+                        "box is not implemented".into(),
+                    ));
+                }
                 Opcode::Unbox => {
-                                        let d = inst.dst();
-                                        let s = inst.src1();
-                    self.write_int(d, self.regs.ints[s]);
-                    self.regs.floats[d] = self.regs.floats[s];
-                } // unbox
+                    return Err(RuntimeError::UnsupportedInstruction(
+                        "unbox is not implemented".into(),
+                    ));
+                }
 
                 // ── 控制流 ──
                 Opcode::Jump => {
-                    let block_id = inst.imm25();
+                    let block_id = (inst.src1() << 8) | inst.src2();
                     self.bind_params(block_id, &self.jump_args(ip - 1).to_vec());
                     ip = self.block_ip(block_id);
                 }
@@ -814,8 +844,16 @@ impl VM {
                                         let c = inst.dst();
                                         let tb = inst.src1();
                     let fb = inst.src2();
-                    let block_id = if self.regs.ints[c] != 0 { tb } else { fb };
-                    self.bind_params(block_id, &self.jump_args(ip - 1).to_vec());
+                    let take_true = self.regs.ints[c] != 0;
+                    let block_id = if take_true { tb } else { fb };
+                    // Stored as: [true_count, true_args..., false_count, false_args...]
+                    let stored = self.jump_args(ip - 1).to_vec();
+                    let true_cnt = stored[0];
+                    let true_args: Vec<usize> = stored[1..1 + true_cnt].to_vec();
+                    let false_cnt = stored[1 + true_cnt];
+                    let false_args: Vec<usize> = stored[2 + true_cnt..2 + true_cnt + false_cnt].to_vec();
+                    let args = if take_true { &true_args } else { &false_args };
+                    self.bind_params(block_id, args);
                     ip = self.block_ip(block_id);
                 }
 
@@ -823,7 +861,7 @@ impl VM {
                 Opcode::Call => {
                     // Call(func_idx, args, cont_block)
                                         let func_idx = inst.dst();
-                                        let cont_block = inst.imm17();
+                                        let cont_block = (inst.src1() << 8) | inst.src2();
                     if self.frames.len() >= MAX_CALL_DEPTH {
                         return Err(RuntimeError::StackOverflow);
                     }
@@ -850,7 +888,20 @@ impl VM {
                     ip = self.func_entries[func_idx];
                 }
                 Opcode::TailCall => {
-                    ip = self.func_entries[self.current_func];
+                    // Tail call: bind args from jump_args into first N regs, jump to entry
+                    let args = &self.jump_args(ip - 1).to_vec();
+                    // Bind args to the entry block's param registers
+                    let params = &self.func_params[self.current_func]
+                        .first()
+                        .cloned()
+                        .unwrap_or_default();
+                    for (i, &arg_reg) in args.iter().enumerate() {
+                        if i < params.len() {
+                            self.regs.ints[params[i]] = self.regs.ints[arg_reg];
+                            self.regs.floats[params[i]] = self.regs.floats[arg_reg];
+                        }
+                    }
+                    ip = self.block_ip(0); // jump to entry block 0
                 }
                 Opcode::Return => {
                     // ret
@@ -876,7 +927,7 @@ impl VM {
                 // ── native call ──
                 Opcode::CallNative => {
                                         let fi = inst.dst();
-                                        let ret_block = inst.imm17();
+                                        let ret_block = (inst.src1() << 8) | inst.src2();
                     let args: Vec<i64> = self
                         .jump_args(ip - 1)
                         .iter()
@@ -1006,12 +1057,12 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
 
 fn encode_term(term: &CpsTerminator) -> Result<u32, String> {
     Ok(match term {
-        CpsTerminator::Jump(b, _) => encode(Opcode::Jump as u8, 0, 0, *b as u32),
+        CpsTerminator::Jump(b, _) => encode(Opcode::Jump as u8, 0, (*b >> 8) as u32, (*b & 0xFF) as u32),
         CpsTerminator::Branch(c, tb, _, fb, _) => encode(Opcode::Branch as u8, *c as u32, *tb as u32, *fb as u32),
         CpsTerminator::Suspend => encode(Opcode::Suspend as u8, 0, 0, 0),
         CpsTerminator::Return(r) => encode(Opcode::Return as u8, *r as u32, 0, 0),
-        CpsTerminator::Call(fi, _, ret) => encode(Opcode::Call as u8, *fi as u32, 0, *ret as u32),
-        CpsTerminator::CallNative(fi, _, ret) => encode(Opcode::CallNative as u8, *fi as u32, 0, *ret as u32),
+        CpsTerminator::Call(fi, _, ret) => encode(Opcode::Call as u8, *fi as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
+        CpsTerminator::CallNative(fi, _, ret) => encode(Opcode::CallNative as u8, *fi as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
         CpsTerminator::TailCall(_, _) => encode(Opcode::TailCall as u8, 0, 0, 0),
     })
 }
@@ -1704,5 +1755,107 @@ mod tests {
             "print inside lambda: output={:?}",
             vm.output
         );
+    }
+
+    // ── Bug regression tests ──
+
+    #[test]
+    fn t20_loadconst_above_255() {
+        // LoadConst index encoded in src1 (9 bits), handler must read all 9 bits
+        let mut consts: Vec<Constant> = (0..256)
+            .map(|_| Constant::Int(0))
+            .collect();
+        consts.push(Constant::Int(42)); // index 256
+        let cps = CpsModule {
+            functions: vec![CpsFunction {
+                name: "main".into(),
+                blocks: vec![CpsBlock {
+                    id: 0,
+                    params: vec![],
+                    instrs: vec![CpsInstr::LoadConst(0, 256)],
+                    term: CpsTerminator::Return(0),
+                }],
+                entry: 0,
+                reg_count: 1,
+            }],
+            constants: consts,
+            structs: vec![],
+            enums: vec![],
+        };
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        assert_eq!(vm.execute(0, 1).unwrap(), 42);
+    }
+
+    #[test]
+    fn t21_overflow_neg_div_mod() {
+        // NegInt on i64::MIN, DivInt/ModInt on i64::MIN / -1 should not panic
+        let cps = CpsModule {
+            functions: vec![CpsFunction {
+                name: "main".into(),
+                blocks: vec![CpsBlock {
+                    id: 0,
+                    params: vec![],
+                    instrs: vec![
+                        CpsInstr::LoadConst(0, 0), // r0 = i64::MIN
+                        CpsInstr::LoadConst(1, 1), // r1 = -1
+                        CpsInstr::UnOp(2, CpsUnOp::NegInt, 0), // r2 = -r0
+                        CpsInstr::BinOp(3, CpsBinOp::DivInt, 0, 1), // r3 = r0 / r1
+                        CpsInstr::BinOp(4, CpsBinOp::ModInt, 0, 1), // r4 = r0 % r1
+                        CpsInstr::BinOp(5, CpsBinOp::AddInt, 2, 3),  // r5 = r2 + r3
+                        CpsInstr::BinOp(6, CpsBinOp::AddInt, 5, 4),  // r6 = r5 + r4
+                    ],
+                    term: CpsTerminator::Return(6),
+                }],
+                entry: 0,
+                reg_count: 7,
+            }],
+            constants: vec![Constant::Int(i64::MIN), Constant::Int(-1)],
+            structs: vec![],
+            enums: vec![],
+        };
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        // Must not panic — wrapping behavior
+        let _ = vm.execute(0, 7).unwrap();
+    }
+
+    #[test]
+    fn t22_setfield_self_assign_consistent_rc() {
+        // struct Foo { s: String }
+        let structs = vec![StructDef {
+            id: 0,
+            name: "Foo".into(),
+            fields: vec![("s".into(), "String".into())],
+            type_bitmap: 0b01,
+        }];
+        // Load "hi" → r0, NewStruct → r1, SetField(r0,r1,0), SetField(r0,r1,0) again.
+        // Self-assign must not corrupt ref-counts: string rc should be 2 (LoadConst + 1 retain from field)
+        let instrs = vec![
+            CpsInstr::LoadConst(0, 0),         // r0 = "hi" (slot 0, rc=1)
+            CpsInstr::NewStruct(1, 0, vec![]),  // r1 = struct (slot 1, rc=1)
+            CpsInstr::SetField(0, 1, 0, 0),     // retain: rc 1→2
+            CpsInstr::SetField(0, 1, 0, 0),     // self-assign: release-retain should cancel
+        ];
+        let cps = CpsModule {
+            functions: vec![CpsFunction {
+                name: "main".into(),
+                blocks: vec![CpsBlock { id: 0, params: vec![], instrs, term: CpsTerminator::Return(1) }],
+                entry: 0, reg_count: 2,
+            }],
+            constants: vec![Constant::String("hi".into())],
+            structs,
+            enums: vec![],
+        };
+        let mut vm = VM::new();
+        vm.load(&cps).unwrap();
+        let result = vm.execute(0, 2).unwrap();
+        // String rc: LoadConst=1, SetField retain=+1, self-assign release=-1 then retain=+1 → net +1 → rc=2
+        assert_eq!(vm.heap.ref_count(0), 2, "string rc should be 2");
+        assert_eq!(vm.heap.ref_count(1), 1, "struct rc should be 1");
+        // Field still points to the string
+        if let HeapObj::Struct(_, fields) = vm.heap_get(result).unwrap() {
+            assert_eq!(fields[0], 0);
+        } else { panic!("expected struct"); }
     }
 }
