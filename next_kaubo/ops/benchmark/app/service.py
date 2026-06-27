@@ -11,6 +11,58 @@ LANGUAGES = {
 }
 
 
+# ── Output validation ──────────────────────────────────────────
+
+def _validate_output(lang: Language, case: Case) -> None:
+    """Run the case once and compare its output to expected.txt.
+
+    Checks `expected.<lang>.txt` first, falls back to `expected.txt`.
+    For Kaubo, the ``= <result>`` trailer line is stripped before comparison.
+    Raises RuntimeError if the output differs or the run fails.
+    Skipped silently when no expected file exists.
+    """
+    expected = case.expected_for(lang.name)
+    if not expected:
+        return
+
+    if lang.name == "python":
+        r = subprocess.run(
+            ["python", str(case.path / "main.py")],
+            capture_output=True, text=True, timeout=30,
+        )
+    elif lang.name == "node":
+        r = subprocess.run(
+            ["node", str(case.path / "main.js")],
+            capture_output=True, text=True, timeout=30,
+        )
+    elif lang.name == "kaubo":
+        src = str((case.path / "main.kaubo").resolve())
+        if not lang.cmd or not Path(lang.cmd).exists():
+            raise RuntimeError(f"kaubo binary not found: {lang.cmd}")
+        r = subprocess.run(
+            [lang.cmd, "run", src],
+            capture_output=True, text=True, timeout=30,
+        )
+    else:
+        return
+
+    if r.returncode != 0:
+        raise RuntimeError(
+            f"validate {case.name}/{lang.name} failed (rc={r.returncode}): "
+            f"{r.stderr[:200]}"
+        )
+
+    actual = r.stdout.strip()
+    if actual != expected:
+        raise RuntimeError(
+            f"output mismatch for {case.name}/{lang.name}:\n"
+            f"  expected: {expected}\n"
+            f"  got:      {actual}"
+        )
+
+
+# ── Python ─────────────────────────────────────────────────────
+
 def _wrap_script(case: Case, cfg: Config) -> str:
     """Generate a timing wrapper that runs the case N times and prints avg_us."""
     src = case.path / "main.py"
@@ -38,6 +90,7 @@ print(sum(times) / len(times))
 
 def bench_python(case: Case, cfg: Config) -> float:
     """Generate wrapper, run in single Python process."""
+    _validate_output(LANGUAGES["python"], case)
     script = _wrap_script(case, cfg)
     r = subprocess.run(
         ["python", "-c", script],
@@ -48,8 +101,11 @@ def bench_python(case: Case, cfg: Config) -> float:
     return float(r.stdout.strip().split()[-1])
 
 
+# ── Node ───────────────────────────────────────────────────────
+
 def bench_node(case: Case, cfg: Config) -> float:
     """Run Node with inline timing loop — one process, N iterations."""
+    _validate_output(LANGUAGES["node"], case)
     src = case.path / "main.js"
     code = src.read_text(encoding="utf-8")
     # Wrap: call function N times, time each, print avg in μs
@@ -74,11 +130,14 @@ console.log(times.reduce((a,b) => a + b, 0) / times.length);
     return float(r.stdout.strip().split()[-1])
 
 
+# ── Kaubo ──────────────────────────────────────────────────────
+
 def bench_kaubo(case: Case, cfg: Config) -> float:
     """Kaubo: bench subcommand does internal timing."""
     lang = LANGUAGES["kaubo"]
     if not lang.cmd or not Path(lang.cmd).exists():
         raise RuntimeError(f"kaubo binary not found: {lang.cmd}")
+    _validate_output(lang, case)
     src = (case.path / "main.kaubo").resolve()
     out = tempfile.NamedTemporaryFile(delete=False, suffix=".txt", prefix=f"bench_{case.name}_")
     out.close()
@@ -101,6 +160,8 @@ def bench_kaubo(case: Case, cfg: Config) -> float:
     raise RuntimeError(f"kaubo/{case.name}: no avg in output: {output[:200]}")
 
 
+# ── Orchestration ──────────────────────────────────────────────
+
 def bench_all(cfg: Config, languages: list[str], suites: list[str] | None = None):
     langs = {k: v for k, v in LANGUAGES.items() if k in languages}
     if not langs:
@@ -119,6 +180,8 @@ def bench_all(cfg: Config, languages: list[str], suites: list[str] | None = None
         print(f" {name:>10}", end="")
     print()
 
+    errors: list[tuple[str, str, str]] = []
+
     for case in cases:
         print(f"{case.name:<12}", end="", flush=True)
         for lang_name in langs:
@@ -134,4 +197,11 @@ def bench_all(cfg: Config, languages: list[str], suites: list[str] | None = None
                 print(f" {avg:>9.1f}us", end="", flush=True)
             except Exception as e:
                 print(f" {'ERR':>10}", end="", flush=True)
+                errors.append((case.name, lang_name, str(e)))
         print()
+
+    if errors:
+        print(f"\n{'─' * 50}")
+        print(f"{len(errors)} error(s):")
+        for case_name, lang_name, msg in errors:
+            print(f"  [{case_name}/{lang_name}] {msg}")

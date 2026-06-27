@@ -66,6 +66,12 @@ cwd = "next_kaubo"
 command = "cargo"
 args = ["test", "--workspace"]
 
+[tasks.rust-build-release]
+description = "Build the CLI binary in release mode."
+cwd = "next_kaubo"
+command = "cargo"
+args = ["build", "--release", "-p", "kaubo2-cli"]
+
 [tasks.rust-clean]
 description = "Remove Rust build artifacts (cargo clean)."
 cwd = "next_kaubo"

@@ -661,7 +661,7 @@ mod tests {
 
     fn roundtrip(src: &str) -> CpsModule {
         let m = test_fixtures::module(src);
-        let mut cps = build_module(&m).unwrap();
+        let mut cps = build_module(&m, None).unwrap();
         flatten_module(&mut cps);
         ConstantFold.run(&mut cps);
         let bytes = encode_module(&cps);
@@ -729,7 +729,7 @@ mod tests {
     #[test]
     fn binary_size_reasonable() {
         let m = test_fixtures::module("const x = 42;");
-        let mut cps = build_module(&m).unwrap();
+        let mut cps = build_module(&m, None).unwrap();
         flatten_module(&mut cps);
         let bin = encode_module(&cps);
         assert!(

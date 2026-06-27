@@ -106,7 +106,7 @@ mod tests {
 
     fn optimize(src: &str) -> CpsModule {
         let m = test_fixtures::module(src);
-        let mut cps = build_module(&m).unwrap();
+        let mut cps = build_module(&m, None).unwrap();
         flatten_module(&mut cps);
         EmptyBlockElim.run(&mut cps);
         cps
@@ -125,14 +125,14 @@ mod tests {
     fn compare_bytecode_before_after() {
         let m = test_fixtures::module("var i = 0; while i < 3 { i = i + 1; };");
 
-        let mut cps_before = build_module(&m).unwrap();
+        let mut cps_before = build_module(&m, None).unwrap();
         flatten_module(&mut cps_before);
         let fb = &cps_before.functions[0];
         eprintln!("=== BEFORE (while loop) ===");
         eprintln!("regs={}", fb.reg_count);
         for b in &fb.blocks { if b.id != usize::MAX { eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term); } }
 
-        let mut cps_after = build_module(&m).unwrap();
+        let mut cps_after = build_module(&m, None).unwrap();
         flatten_module(&mut cps_after);
         EmptyBlockElim.run(&mut cps_after);
         let fa = &cps_after.functions[0];
@@ -146,14 +146,14 @@ mod tests {
     fn compare_if_else_bytecode() {
         let m = test_fixtures::module("const x = if true { 1 } else { 2 };");
 
-        let mut cps_before = build_module(&m).unwrap();
+        let mut cps_before = build_module(&m, None).unwrap();
         flatten_module(&mut cps_before);
         let fb = &cps_before.functions[0];
         eprintln!("=== BEFORE (if/else) ===");
         eprintln!("regs={}", fb.reg_count);
         for b in &fb.blocks { if b.id != usize::MAX { eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term); } }
 
-        let mut cps_after = build_module(&m).unwrap();
+        let mut cps_after = build_module(&m, None).unwrap();
         flatten_module(&mut cps_after);
         EmptyBlockElim.run(&mut cps_after);
         let fa = &cps_after.functions[0];

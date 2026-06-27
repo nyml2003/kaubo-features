@@ -9,6 +9,10 @@ use wasm_bindgen::prelude::*;
 
 static COMPILED: Lazy<Mutex<Option<kaubo_driver::CpsModule>>> = Lazy::new(|| Mutex::new(None));
 
+/// Global log-level setting for WASM.  `None` means logging is disabled.
+/// Set via `set_log_level(level)` from JavaScript.
+static LOG_LEVEL: Lazy<Mutex<Option<kaubo_log::Severity>>> = Lazy::new(|| Mutex::new(None));
+
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
@@ -41,12 +45,45 @@ pub fn diagnose(source: &str) -> String {
     kaubo_web_api::diagnose::diagnose(source)
 }
 
+/// Enable or disable structured logging from the toolchain.
+///
+/// `level` is a severity level: 0 = Trace, 1 = Debug, 2 = Info,
+/// 3 = Warn, 4 = Error.  Pass a value outside 0-4 to disable.
+///
+/// When enabled, events are written to `console.error` via the
+/// `ConsoleHandler` in `kaubo-log-handlers`.
+#[wasm_bindgen]
+pub fn set_log_level(level: u8) {
+    let severity = match level {
+        0 => Some(kaubo_log::Severity::Trace),
+        1 => Some(kaubo_log::Severity::Debug),
+        2 => Some(kaubo_log::Severity::Info),
+        3 => Some(kaubo_log::Severity::Warn),
+        4 => Some(kaubo_log::Severity::Error),
+        _ => None,
+    };
+    *LOG_LEVEL.lock().unwrap() = severity;
+}
+
+/// Build a RunConfig from the current global LOG_LEVEL setting.
+fn make_config() -> kaubo_driver::RunConfig {
+    let events: Option<Box<dyn kaubo_log::EventHandler>> = LOG_LEVEL
+        .lock()
+        .unwrap()
+        .map(|level| Box::new(kaubo_log_handlers::make_handler(level)) as Box<dyn kaubo_log::EventHandler>);
+    kaubo_driver::RunConfig {
+        events,
+        max_loop_iterations: u64::MAX,
+    }
+}
+
 /// Compile source to bytecode, return instruction count.
 /// Throws JsValue on parse/infer/build failure.
 #[wasm_bindgen]
 pub fn compile(source: &str) -> Result<usize, JsValue> {
-    let cps =
-        kaubo_driver::compile_source(source).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let config = make_config();
+    let cps = kaubo_driver::compile_source_with_config(source, &config)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     if cps.functions.is_empty() {
         return Err(JsValue::from_str("no functions in compiled module"));
@@ -68,7 +105,9 @@ pub fn run(_bytes: &[u8]) -> Result<String, JsValue> {
         .take()
         .ok_or_else(|| JsValue::from_str("no compiled module"))?;
 
-    let outcome = kaubo_driver::run_module(&cps).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let config = make_config();
+    let outcome = kaubo_driver::run_module_with_config(&cps, &config)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     let out = outcome.output.join("\n");
 
     // Re-store for potential re-use
@@ -156,5 +195,20 @@ mod tests {
         assert!(labels.contains(&"x".to_string()));
         assert!(labels.contains(&"y".to_string()));
         assert!(labels.contains(&"dis".to_string()));
+    }
+
+    #[test]
+    fn set_log_level_does_not_crash() {
+        set_log_level(0); // Trace
+        set_log_level(1); // Debug
+        set_log_level(255); // Disable
+    }
+
+    #[test]
+    fn compile_and_run_work_with_config() {
+        let cps_count = compile("const x = 42;").unwrap();
+        assert!(cps_count > 0);
+        let output = run(&[]).unwrap();
+        assert_eq!(output, ""); // no print output
     }
 }

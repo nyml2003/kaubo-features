@@ -4,6 +4,7 @@
 //! on cps_build, on flatten, or on the VM.
 
 use crate::cps::CpsModule;
+use kaubo_log::emit;
 
 pub mod binary;
 pub mod empty_block;
@@ -16,11 +17,24 @@ pub trait Pass {
     fn run(&self, module: &mut CpsModule);
 }
 
-pub fn run_passes(module: &mut CpsModule, passes: &[&dyn Pass]) {
+pub fn run_passes(
+    module: &mut CpsModule,
+    passes: &[&dyn Pass],
+    events: Option<&dyn kaubo_log::EventHandler>,
+) {
     for pass in passes {
-        if cfg!(debug_assertions) {
-            eprintln!("[PASS] {}", pass.name());
-        }
+        emit!(
+            events,
+            kaubo_log::ToolchainEvent::Pass(kaubo_log::PassEvent::Started {
+                name: pass.name(),
+            })
+        );
         pass.run(module);
+        emit!(
+            events,
+            kaubo_log::ToolchainEvent::Pass(kaubo_log::PassEvent::Finished {
+                name: pass.name(),
+            })
+        );
     }
 }

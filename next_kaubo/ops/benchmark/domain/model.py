@@ -13,6 +13,20 @@ class Case:
     name: str
     path: Path         # directory containing main.{ext} files
 
+    def expected_for(self, lang: str) -> str:
+        """Read expected output, with optional per-language override.
+
+        Checks `expected.<lang>.txt` first, then falls back to `expected.txt`.
+        Returns "" if neither exists.
+        """
+        specific = self.path / f"expected.{lang}.txt"
+        if specific.exists():
+            return specific.read_text(encoding="utf-8").strip()
+        general = self.path / "expected.txt"
+        if general.exists():
+            return general.read_text(encoding="utf-8").strip()
+        return ""
+
 @dataclass
 class Run:
     """One timed execution of a case×language."""

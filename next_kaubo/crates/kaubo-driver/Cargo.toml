@@ -11,3 +11,4 @@ kaubo-syntax = { workspace = true }
 kaubo-infer = { workspace = true }
 kaubo-ir = { workspace = true }
 kaubo-vm = { workspace = true }
+kaubo-log = { workspace = true }

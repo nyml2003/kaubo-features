@@ -17,8 +17,11 @@ fn flatten_function(func: &mut CpsFunction) {
         let mut predecessor_counts = HashMap::new();
         let mut predecessors: HashMap<usize, Vec<usize>> = HashMap::new();
 
-        // Count predecessors for each block
+        // Count predecessors for each block (skip already-inlined blocks)
         for block in &func.blocks {
+            if block.id == usize::MAX {
+                continue;
+            }
             match &block.term {
                 CpsTerminator::Jump(target, _) => {
                     *predecessor_counts.entry(*target).or_insert(0) += 1;
@@ -182,7 +185,7 @@ mod tests {
 
     fn lower_and_flatten(src: &str) -> CpsModule {
         let m = test_fixtures::module(src);
-        let mut cps = build_module(&m).unwrap();
+        let mut cps = build_module(&m, None).unwrap();
         flatten_module(&mut cps);
         cps
     }

@@ -19,3 +19,5 @@ kaubo-syntax = { workspace = true }
 kaubo-driver = { workspace = true }
 kaubo-web-api = { workspace = true }
 kaubo-language-service = { workspace = true }
+kaubo-log = { workspace = true }
+kaubo-log-handlers = { workspace = true }

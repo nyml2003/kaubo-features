@@ -8,3 +8,4 @@ description = "Kaubo v2 register VM — CPS block scheduler"
 
 [dependencies]
 kaubo-cps = { path = "../kaubo-cps" }
+kaubo-log = { path = "../kaubo-log" }

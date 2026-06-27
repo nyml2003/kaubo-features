@@ -7,21 +7,102 @@ fn render_run(outcome: &kaubo_driver::RunOutcome) {
     for line in &outcome.output {
         println!("{line}");
     }
-    println!("= {}", outcome.result);
+}
+
+/// Parse CLI arguments and build a RunConfig.
+///
+/// Recognized flags (position-independent, before or after subcommand):
+///   --log-level <LEVEL>        trace|debug|info|warn|error
+///   --max-loop-iterations <N>  override the default 1_000_000 loop limit
+///
+/// Priority: CLI --log-level > KAUBO_LOG env var > default (no logging).
+fn build_config(args: &[String]) -> kaubo_driver::RunConfig {
+    let mut config = kaubo_driver::RunConfig::default();
+
+    // Read KAUBO_LOG env var first (lower priority than CLI flag)
+    let env_handler = kaubo_log_handlers::init_from_env();
+
+    let mut cli_level: Option<kaubo_log::Severity> = None;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--log-level" => {
+                if let Some(val) = args.get(i + 1) {
+                    cli_level = kaubo_log_handlers::parse_severity(val);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--max-loop-iterations" => {
+                if let Some(val) = args.get(i + 1) {
+                    if let Ok(n) = val.parse::<u64>() {
+                        config.max_loop_iterations = n;
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    // CLI --log-level overrides env var
+    if let Some(level) = cli_level {
+        config.events = Some(Box::new(kaubo_log_handlers::make_handler(level)));
+    } else if let Some(handler) = env_handler {
+        config.events = Some(Box::new(handler));
+    }
+
+    config
+}
+
+/// Collect positional (non-flag) arguments, skipping known flags and their values.
+fn positional_args(args: &[String]) -> Vec<&str> {
+    let mut pos = Vec::new();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--log-level" | "--max-loop-iterations" => {
+                i += 2; // skip flag + value
+            }
+            other => {
+                if !other.starts_with("--") {
+                    pos.push(other);
+                }
+                i += 1;
+            }
+        }
+    }
+    pos
 }
 
 fn run_args(args: &[String]) -> Result<(), String> {
-    let sub = args.get(1).map(|s| s.as_str()).unwrap_or("run");
-    let file = match sub {
-        "compile" | "run" | "bench" => args.get(2),
-        _ => args.get(1),
-    }
-    .ok_or("Usage: kaubo2 [compile|run|bench] <file> [iterations]")?;
+    let pos = positional_args(args);
+
+    let (sub, file) = match pos.as_slice() {
+        ["compile" | "run" | "bench", f, ..] => (pos[0], *f),
+        [f, ..] if !matches!(*f, "compile" | "run" | "bench") => ("run", *f),
+        _ => {
+            return Err(
+                "Usage: kaubo2 [--log-level <LEVEL>] [--max-loop-iterations <N>] [compile|run|bench] <file> [iterations] [warmup]"
+                    .to_string(),
+            );
+        }
+    };
+
+    let config = build_config(args);
 
     match sub {
         "compile" => {
             let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-            let cps = kaubo_driver::compile_source(&source).map_err(|e| e.to_string())?;
+            let cps =
+                kaubo_driver::compile_source_with_config(&source, &config)
+                    .map_err(|e| e.to_string())?;
             let out = file.replace(".kaubo", ".kauboc");
             let bytes = kaubo_driver::encode_module(&cps);
             let len = bytes.len();
@@ -35,27 +116,41 @@ fn run_args(args: &[String]) -> Result<(), String> {
 
             // Compile once
             let t0 = Instant::now();
-            let cps = kaubo_driver::compile_source(&source).map_err(|e| e.to_string())?;
+            let cps =
+                kaubo_driver::compile_source_with_config(&source, &config)
+                    .map_err(|e| e.to_string())?;
             let compile_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
             let last_func = cps.functions.len() - 1;
             let reg_count = cps.functions[last_func].reg_count;
-            let instr_count: usize = cps.functions.iter().flat_map(|f| &f.blocks).filter(|b| b.id != usize::MAX).map(|b| b.instrs.len()).sum();
+            let instr_count: usize = cps
+                .functions
+                .iter()
+                .flat_map(|f| &f.blocks)
+                .filter(|b| b.id != usize::MAX)
+                .map(|b| b.instrs.len())
+                .sum();
+
+            let events = config.events.as_ref().map(|h| h.as_ref());
 
             // Warmup
             for _ in 0..warmup {
                 let mut vm = kaubo_vm::VM::new();
+                vm.max_loop_iterations = config.max_loop_iterations;
                 vm.load(&cps).map_err(|e| format!("load: {e}"))?;
-                let _ = vm.execute(last_func, reg_count);
+                let _ = vm.execute(last_func, reg_count, events);
             }
 
             // Measure
             let mut times = Vec::with_capacity(iterations);
             for _ in 0..iterations {
                 let mut vm = kaubo_vm::VM::new();
+                vm.max_loop_iterations = config.max_loop_iterations;
                 vm.load(&cps).map_err(|e| format!("load: {e}"))?;
                 let t0 = Instant::now();
-                let result = vm.execute(last_func, reg_count).map_err(|e| format!("{e:?}"))?;
+                let result = vm
+                    .execute(last_func, reg_count, events)
+                    .map_err(|e| format!("{e:?}"))?;
                 let run_ms = t0.elapsed().as_secs_f64() * 1000.0;
                 times.push(run_ms);
             }
@@ -68,18 +163,24 @@ fn run_args(args: &[String]) -> Result<(), String> {
             if file.ends_with(".kauboc") {
                 let bytes = fs::read(file).map_err(|e| format!("read {file}: {e}"))?;
                 let cps = kaubo_driver::decode_module(&bytes).map_err(|e| e.to_string())?;
-                let outcome = kaubo_driver::run_module(&cps).map_err(|e| e.to_string())?;
+                let outcome =
+                    kaubo_driver::run_module_with_config(&cps, &config)
+                        .map_err(|e| e.to_string())?;
                 render_run(&outcome);
             } else {
                 let source =
                     fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-                let outcome = kaubo_driver::run_source(&source).map_err(|e| e.to_string())?;
+                let outcome =
+                    kaubo_driver::run_source_with_config(&source, &config)
+                        .map_err(|e| e.to_string())?;
                 render_run(&outcome);
             }
         }
         _ => {
             let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-            let outcome = kaubo_driver::run_source(&source).map_err(|e| e.to_string())?;
+            let outcome =
+                kaubo_driver::run_source_with_config(&source, &config)
+                    .map_err(|e| e.to_string())?;
             render_run(&outcome);
         }
     }
@@ -258,26 +359,48 @@ mod tests {
         let missing = temp_stem("missing").with_extension("kaubo");
         let _ = fs::remove_file(&missing);
 
-        let err = run_args(&args(&["kaubo2", "run", missing.to_str().unwrap()])).unwrap_err();
+        let err =
+            run_args(&args(&["kaubo2", "run", missing.to_str().unwrap()])).unwrap_err();
         assert!(err.contains("read"));
         assert!(err.contains(missing.to_str().unwrap()));
     }
 
     #[test]
+    fn cli_log_level_flag_is_parsed() {
+        // --log-level with --max-loop-iterations should not crash
+        let src = temp_stem("log_level").with_extension("kaubo");
+        let _ = fs::remove_file(&src);
+        fs::write(&src, "const x = 42;").unwrap();
+
+        run_args(&args(&[
+            "kaubo2",
+            "--log-level",
+            "debug",
+            "--max-loop-iterations",
+            "5000",
+            "run",
+            src.to_str().unwrap(),
+        ]))
+        .unwrap();
+
+        let _ = fs::remove_file(&src);
+    }
+
+    #[test]
     fn debug_impl_dis() {
         let src = r#"
-struct Point { x: Int64, y: Int64 };
-impl Point {
-  dis: |self: Point, other: Point| -> Float64 {
-    const dx = (self.x - other.x);
-    const dy = (self.y - other.y);
-    return sqrt((dx*dx + dy*dy).to_float());
-  }
-};
-const p1 = Point { x: 200, y: 300 };
-const p2 = Point { x: 300, y: 400 };
-print(p1.dis(p2).to_string());
-"#;
+	struct Point { x: Int64, y: Int64 };
+	impl Point {
+	  dis: |self: Point, other: Point| -> Float64 {
+	    const dx = (self.x - other.x);
+	    const dy = (self.y - other.y);
+	    return sqrt((dx*dx + dy*dy).to_float());
+	  }
+	};
+	const p1 = Point { x: 200, y: 300 };
+	const p2 = Point { x: 300, y: 400 };
+	print(p1.dis(p2).to_string());
+	"#;
         let cps = kaubo_driver::compile_source(src).unwrap();
         eprintln!("=== CPS DUMP ===");
         for (fi, func) in cps.functions.iter().enumerate() {
@@ -299,10 +422,9 @@ print(p1.dis(p2).to_string());
             panic!("no funcs");
         }
         let mut vm = kaubo_vm::VM::new();
-        vm.debug = true;
         vm.load(&cps).unwrap();
         let e = cps.functions.len() - 1;
-        let r = vm.execute(e, cps.functions[e].reg_count);
+        let r = vm.execute(e, cps.functions[e].reg_count, None);
         eprintln!("[DEBUG] result={:?} output={:?}", r, vm.output);
     }
 }

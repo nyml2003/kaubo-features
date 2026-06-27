@@ -1,0 +1,12 @@
+[package]
+name = "kaubo-log"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Structured event types, EventHandler trait, and emit! macro for Kaubo toolchain observability"
+
+[features]
+default = []
+kaubo-debug-log = []
+
+[dependencies]

@@ -6,6 +6,9 @@ use crate::gc_heap::GcHeap;
 use crate::regfile::*;
 use crate::stdlib;
 use kaubo_cps::*;
+use kaubo_log::EventHandler;
+use kaubo_log::emit;
+use std::collections::HashMap;
 
 // ── 编码 ──
 pub fn encode(op: u8, dst: u32, src1: u32, src2: u32) -> u32 {
@@ -101,6 +104,7 @@ pub enum RuntimeError {
     NullAccess,
     TypeAssertion(String),
     StackOverflow,
+    LoopExceeded { block_id: usize, limit: u64 },
     Bug(String),
 }
 
@@ -138,7 +142,14 @@ pub struct VM {
     pub current_func: usize,
     pub instrs: Vec<u32>,
     pub output: Vec<String>,
-    pub debug: bool, // transient
+
+    /// Maximum allowed loop iterations per (func_idx, block_id) before
+    /// raising `LoopExceeded`.  Default: `u64::MAX` (no practical limit).
+    /// Set lower via `--max-loop-iterations` for playground / sandbox use.
+    pub max_loop_iterations: u64,
+    /// Per-block loop iteration counters.  Key: `(func_idx, block_id)`.
+    /// Cleared on every `load()` call for execution isolation.
+    loop_iter_counts: HashMap<(usize, usize), u64>,
 
     pub heap: super::gc_heap::GcHeap,
     pub struct_bitmaps: Vec<u64>,
@@ -182,7 +193,8 @@ impl VM {
             jump_args: vec![],
             instrs: vec![],
             output: vec![],
-            debug: false,
+            max_loop_iterations: u64::MAX,
+            loop_iter_counts: HashMap::new(),
             heap: GcHeap::new(),
             struct_bitmaps: vec![],
             struct_field_counts: vec![],
@@ -206,6 +218,7 @@ impl VM {
         self.jump_args.clear();
         self.struct_bitmaps.clear();
         self.struct_field_counts.clear();
+        self.loop_iter_counts.clear();
 
         for sd in &module.structs {
             let id = sd.id;
@@ -318,6 +331,50 @@ impl VM {
         }
     }
 
+    /// Check and update the loop iteration counter for a backward jump.
+    ///
+    /// Returns `Err(LoopExceeded)` if the per-block iteration count exceeds
+    /// `max_loop_iterations`.  Emits `LoopIteration` and `LoopNearLimit` events.
+    fn check_loop_iteration(
+        &mut self,
+        block_id: usize,
+        events: Option<&dyn EventHandler>,
+    ) -> Result<(), RuntimeError> {
+        let key = (self.current_func, block_id);
+        let count = self.loop_iter_counts.entry(key).or_insert(0);
+        *count += 1;
+
+        emit!(
+            events,
+            kaubo_log::ToolchainEvent::Vm(kaubo_log::VmEvent::LoopIteration {
+                func_idx: self.current_func,
+                block_id: block_id,
+                count: *count,
+            })
+        );
+
+        if *count > self.max_loop_iterations {
+            return Err(RuntimeError::LoopExceeded {
+                block_id,
+                limit: self.max_loop_iterations,
+            });
+        }
+
+        if *count >= self.max_loop_iterations.saturating_mul(8) / 10 {
+            emit!(
+                events,
+                kaubo_log::ToolchainEvent::Vm(kaubo_log::VmEvent::LoopNearLimit {
+                    func_idx: self.current_func,
+                    block_id: block_id,
+                    count: *count,
+                    limit: self.max_loop_iterations,
+                })
+            );
+        }
+
+        Ok(())
+    }
+
     fn write_int(&mut self, reg: usize, value: i64) {
         self.regs.regs[reg] = value as u64;
     }
@@ -355,7 +412,12 @@ impl VM {
         Ok(self.heap.get_mut(id as usize))
     }
 
-    pub fn execute(&mut self, entry_func: usize, _reg_count: usize) -> Result<i64, RuntimeError> {
+    pub fn execute(
+        &mut self,
+        entry_func: usize,
+        _reg_count: usize,
+        events: Option<&dyn kaubo_log::EventHandler>,
+    ) -> Result<i64, RuntimeError> {
         self.current_func = entry_func;
         let reg_needed = self.func_reg_counts[entry_func];
         self.regs.ensure_capacity(reg_needed);
@@ -369,16 +431,15 @@ impl VM {
             let inst = Inst(self.instrs[ip]);
             ip += 1;
 
-            if self.debug && cfg!(debug_assertions) {
-                eprintln!(
-                    "[VM fn={} ip={}] op={:#04x} inst={:#010x} ints[0..4]={:?}",
-                    self.current_func,
-                    ip - 1,
-                    inst.0 >> 25,
-                    inst.0,
-                    &self.regs.regs[..4.min(self.regs.regs.len())]
-                );
-            }
+            emit!(
+                events,
+                kaubo_log::ToolchainEvent::Vm(kaubo_log::VmEvent::Instruction {
+                    func: self.current_func,
+                    ip: ip - 1,
+                    opcode: (inst.0 >> 25) as u8,
+                    inst: inst.0,
+                })
+            );
 
             let opcode = inst.opcode();
             match opcode {
@@ -946,7 +1007,13 @@ impl VM {
                     #[allow(clippy::unnecessary_to_owned)]
                     let args = self.jump_args(ip - 1).to_vec();
                     self.bind_params(block_id, &args);
-                    ip = self.block_ip(block_id);
+                    let target_ip = self.block_ip(block_id);
+                    // Backward jump detection: target IP at or before current IP
+                    // means we're looping.
+                    if target_ip <= ip {
+                        self.check_loop_iteration(block_id, events)?;
+                    }
+                    ip = target_ip;
                 }
                 Opcode::Branch => {
                                         let c = inst.dst();
@@ -965,7 +1032,13 @@ impl VM {
                         stored[2 + true_cnt..2 + true_cnt + false_cnt].to_vec()
                     };
                     self.bind_params(block_id, &args);
-                    ip = self.block_ip(block_id);
+                    let target_ip = self.block_ip(block_id);
+                    // Backward jump detection: branch to at or before current IP
+                    // means we're looping.
+                    if target_ip <= ip {
+                        self.check_loop_iteration(block_id, events)?;
+                    }
+                    ip = target_ip;
                 }
 
                 // ── 调用 ──
@@ -1212,7 +1285,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&m).unwrap();
-        assert_eq!(vm.execute(0, 3).unwrap(), 42);
+        assert_eq!(vm.execute(0, 3, None).unwrap(), 42);
     }
 
     #[test]
@@ -1230,7 +1303,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&m).unwrap();
         assert!(matches!(
-            vm.execute(0, 3),
+            vm.execute(0, 3, None),
             Err(RuntimeError::DivisionByZero)
         ));
     }
@@ -1280,7 +1353,7 @@ mod tests {
         };
         let mut vm = VM::new();
         vm.load(&m).unwrap();
-        assert_eq!(vm.execute(0, 4).unwrap(), 10);
+        assert_eq!(vm.execute(0, 4, None).unwrap(), 10);
     }
 
     #[test]
@@ -1296,7 +1369,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&m).unwrap();
-        assert_eq!(vm.execute(0, 2).unwrap(), -42);
+        assert_eq!(vm.execute(0, 2, None).unwrap(), -42);
     }
 
     #[test]
@@ -1312,7 +1385,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&m).unwrap();
-        assert_eq!(vm.execute(0, 2).unwrap(), 1); // !0 = true = 1
+        assert_eq!(vm.execute(0, 2, None).unwrap(), 1); // !0 = true = 1
     }
 
     #[test]
@@ -1325,7 +1398,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&m).unwrap();
-        vm.execute(0, 1).unwrap();
+        vm.execute(0, 1, None).unwrap();
         assert!(vm.output.len() > 0, "output should have print result");
     }
 
@@ -1339,7 +1412,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&m).unwrap();
-        let r = vm.execute(0, 1).unwrap();
+        let r = vm.execute(0, 1, None).unwrap();
         if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "hello");
         } else {
@@ -1396,7 +1469,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        let result = vm.execute(0, 2).unwrap();
+        let result = vm.execute(0, 2, None).unwrap();
         // r0 (string) should have rc=2: one from LoadConst, one from SetField retain
         assert_eq!(vm.heap.ref_count(result as usize), 2);
         assert_eq!(vm.heap.ref_count(0), 2);
@@ -1436,7 +1509,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        let _ = vm.execute(0, 3).unwrap();
+        let _ = vm.execute(0, 3, None).unwrap();
         // "hello" (slot 0) was released by overwrite → rc should be 1 (only LoadConst reference left)
         assert_eq!(
             vm.heap.ref_count(0),
@@ -1475,7 +1548,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        vm.execute(0, 2).unwrap();
+        vm.execute(0, 2, None).unwrap();
         // No heap objects manipulated by SetField; struct at slot 0 should have rc=1
         assert_eq!(vm.heap.ref_count(0), 1);
     }
@@ -1506,7 +1579,7 @@ mod tests {
         let cps = simple_mod_with_structs(instrs, CpsTerminator::Return(39), consts, structs, 40);
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        let _ = vm.execute(0, 40).unwrap();
+        let _ = vm.execute(0, 40, None).unwrap();
     }
 
     #[test]
@@ -1523,7 +1596,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        let r = vm.execute(0, 2).unwrap();
+        let r = vm.execute(0, 2, None).unwrap();
         if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "42");
         } else {
@@ -1546,7 +1619,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        let r = vm.execute(0, 4).unwrap();
+        let r = vm.execute(0, 4, None).unwrap();
         if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "200");
         } else {
@@ -1567,7 +1640,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        let r = vm.execute(0, 2).unwrap();
+        let r = vm.execute(0, 2, None).unwrap();
         if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "3.14");
         } else {
@@ -1597,7 +1670,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        assert_eq!(vm.execute(0, 11).unwrap(), 2);
+        assert_eq!(vm.execute(0, 11, None).unwrap(), 2);
     }
 
     #[test]
@@ -1624,7 +1697,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        assert_eq!(vm.execute(0, 9).unwrap(), 6);
+        assert_eq!(vm.execute(0, 9, None).unwrap(), 6);
     }
 
     #[test]
@@ -1643,7 +1716,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        assert_eq!(vm.execute(0, 5).unwrap(), 1);
+        assert_eq!(vm.execute(0, 5, None).unwrap(), 1);
     }
 
     #[test]
@@ -1661,7 +1734,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&get).unwrap();
         assert!(matches!(
-            vm.execute(0, 3),
+            vm.execute(0, 3, None),
             Err(RuntimeError::InvalidHeapHandle(99))
         ));
 
@@ -1683,7 +1756,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&field).unwrap();
         assert!(matches!(
-            vm.execute(0, 2),
+            vm.execute(0, 2, None),
             Err(RuntimeError::FieldOutOfBounds { index: 1, len: 1 })
         ));
     }
@@ -1717,7 +1790,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&native).unwrap();
         assert!(matches!(
-            vm.execute(0, 1),
+            vm.execute(0, 1, None),
             Err(RuntimeError::NativeError(_))
         ));
     }
@@ -1738,7 +1811,7 @@ mod tests {
         vm.load(&cps).unwrap();
         vm.regs.regs[1] = 0;
         assert!(matches!(
-            vm.execute(0, 3),
+            vm.execute(0, 3, None),
             Err(RuntimeError::IndexOutOfBounds(_, _))
         ));
     }
@@ -1771,12 +1844,12 @@ mod tests {
         };
         let mut vm = VM::new();
         vm.load(&native).unwrap();
-        assert_eq!(vm.execute(0, 1).unwrap(), 7);
+        assert_eq!(vm.execute(0, 1, None).unwrap(), 7);
 
         let suspended = simple_mod(vec![], CpsTerminator::Suspend, vec![], 1);
         let mut vm = VM::new();
         vm.load(&suspended).unwrap();
-        assert_eq!(vm.execute(0, 1).unwrap(), 0);
+        assert_eq!(vm.execute(0, 1, None).unwrap(), 0);
         assert!(vm.scheduler.has_pending());
         let result = vm.scheduler.flush_all(9);
         assert_eq!(result.len(), 1);
@@ -1837,7 +1910,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        let result = vm.execute(1, 2).unwrap();
+        let result = vm.execute(1, 2, None).unwrap();
         assert_eq!(result, 42, "lambda should return 42");
     }
 
@@ -1850,7 +1923,7 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        vm.execute(1, 2).unwrap();
+        vm.execute(1, 2, None).unwrap();
         assert!(
             vm.output.iter().any(|s| s.contains("hi")),
             "print inside lambda: output={:?}",
@@ -1885,7 +1958,7 @@ mod tests {
         };
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        assert_eq!(vm.execute(0, 1).unwrap(), 42);
+        assert_eq!(vm.execute(0, 1, None).unwrap(), 42);
     }
 
     #[test]
@@ -1918,7 +1991,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
         // Must not panic — wrapping behavior
-        let _ = vm.execute(0, 7).unwrap();
+        let _ = vm.execute(0, 7, None).unwrap();
     }
 
     #[test]
@@ -1950,7 +2023,7 @@ mod tests {
         };
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
-        let result = vm.execute(0, 2).unwrap();
+        let result = vm.execute(0, 2, None).unwrap();
         // String rc: LoadConst=1, SetField retain=+1, self-assign release=-1 then retain=+1 → net +1 → rc=2
         assert_eq!(vm.heap.ref_count(0), 2, "string rc should be 2");
         assert_eq!(vm.heap.ref_count(1), 1, "struct rc should be 1");
@@ -1974,6 +2047,6 @@ mod tests {
         );
         let mut vm = VM::new();
         vm.load(&m).unwrap();
-        assert_eq!(vm.execute(0, 3).unwrap(), 42);
+        assert_eq!(vm.execute(0, 3, None).unwrap(), 42);
     }
 }

@@ -117,7 +117,7 @@ mod tests {
 
     fn optimize(src: &str) -> CpsModule {
         let m = test_fixtures::module(src);
-        let mut cps = build_module(&m).unwrap();
+        let mut cps = build_module(&m, None).unwrap();
         flatten_module(&mut cps);
         MoveFold.run(&mut cps);
         cps

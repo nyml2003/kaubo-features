@@ -1,6 +1,13 @@
 //! Direct single-file compile and run driver.
 //!
 //! This crate centralizes the current linear path used by CLI and WASM.
+//!
+//! # Configuration
+//!
+//! Use [`RunConfig`] to inject an optional [`kaubo_log::EventHandler`] and
+//! configure the maximum allowed loop iterations.  The legacy functions
+//! (`compile_source`, `run_module`, `run_source`) use [`RunConfig::default`]
+//! and remain available for backward compatibility.
 
 pub use kaubo_ir::cps::CpsModule;
 use kaubo_ir::cps_build::build_module;
@@ -41,16 +48,59 @@ pub struct RunOutcome {
     pub output: Vec<String>,
 }
 
+/// Configuration passed through the compilation and execution pipeline.
+///
+/// `events` is an optional [`kaubo_log::EventHandler`] that receives structured
+/// events from each stage.  `max_loop_iterations` controls the per-block loop
+/// iteration limit in the VM (default: 1_000_000).
+pub struct RunConfig {
+    pub events: Option<Box<dyn kaubo_log::EventHandler>>,
+    pub max_loop_iterations: u64,
+}
+
+impl Default for RunConfig {
+    fn default() -> Self {
+        Self {
+            events: None,
+            max_loop_iterations: u64::MAX,
+        }
+    }
+}
+
+impl RunConfig {
+    /// Return a borrowed `Option<&dyn EventHandler>` suitable for passing to stages.
+    fn events_ref(&self) -> Option<&dyn kaubo_log::EventHandler> {
+        self.events.as_ref().map(|h| h.as_ref())
+    }
+}
+
+// ── Legacy API (uses default RunConfig) ──
+
 pub fn compile_source(source: &str) -> Result<CpsModule, DriverError> {
-    let module = Parser::new(source).parse().map_err(DriverError::Parse)?;
-    kaubo_infer::infer_module(&module).map_err(|e| DriverError::Infer(e.msg))?;
-    let mut cps = build_module(&module).map_err(DriverError::Build)?;
-    flatten_module(&mut cps);
-    run_passes(&mut cps, &[&EmptyBlockElim, &MoveFold, &ConstantFold]);
-    Ok(cps)
+    compile_source_with_config(source, &RunConfig::default())
 }
 
 pub fn run_module(cps: &CpsModule) -> Result<RunOutcome, DriverError> {
+    run_module_with_config(cps, &RunConfig::default())
+}
+
+pub fn run_source(source: &str) -> Result<RunOutcome, DriverError> {
+    run_source_with_config(source, &RunConfig::default())
+}
+
+// ── Config-aware API ──
+
+pub fn compile_source_with_config(source: &str, config: &RunConfig) -> Result<CpsModule, DriverError> {
+    let module = Parser::new(source).parse().map_err(DriverError::Parse)?;
+    kaubo_infer::infer_module(&module).map_err(|e| DriverError::Infer(e.msg))?;
+    let events = config.events_ref();
+    let mut cps = build_module(&module, events).map_err(DriverError::Build)?;
+    flatten_module(&mut cps);
+    run_passes(&mut cps, &[&EmptyBlockElim, &MoveFold, &ConstantFold], events);
+    Ok(cps)
+}
+
+pub fn run_module_with_config(cps: &CpsModule, config: &RunConfig) -> Result<RunOutcome, DriverError> {
     if cps.functions.is_empty() {
         return Ok(RunOutcome {
             result: 0,
@@ -59,11 +109,13 @@ pub fn run_module(cps: &CpsModule) -> Result<RunOutcome, DriverError> {
     }
 
     let mut vm = kaubo_vm::VM::new();
+    vm.max_loop_iterations = config.max_loop_iterations;
     vm.load(cps).map_err(DriverError::Load)?;
     let func_idx = cps.functions.len() - 1;
     let reg_count = cps.functions[func_idx].reg_count;
+    let events = config.events_ref();
     let result = vm
-        .execute(func_idx, reg_count)
+        .execute(func_idx, reg_count, events)
         .map_err(|e| DriverError::Runtime(format!("{e:?}")))?;
 
     Ok(RunOutcome {
@@ -72,9 +124,9 @@ pub fn run_module(cps: &CpsModule) -> Result<RunOutcome, DriverError> {
     })
 }
 
-pub fn run_source(source: &str) -> Result<RunOutcome, DriverError> {
-    let cps = compile_source(source)?;
-    run_module(&cps)
+pub fn run_source_with_config(source: &str, config: &RunConfig) -> Result<RunOutcome, DriverError> {
+    let cps = compile_source_with_config(source, config)?;
+    run_module_with_config(&cps, config)
 }
 
 pub fn instruction_count(module: &CpsModule) -> usize {
@@ -121,23 +173,23 @@ mod tests {
     #[test]
     fn run_source_prints_float_method_result_as_float_string() {
         let source = r#"
-struct Point {
-    x: Int64,
-    y: Int64,
-};
+	struct Point {
+	    x: Int64,
+	    y: Int64,
+	};
 
-impl Point {
-  dis: |self: Point, other: Point| -> Float64 {
-    const dx = (self.x - other.x);
-    const dy = (self.y - other.y);
-    return sqrt((dx*dx + dy*dy).to_float()) + 1.0;
-  }
-};
+	impl Point {
+	  dis: |self: Point, other: Point| -> Float64 {
+	    const dx = (self.x - other.x);
+	    const dy = (self.y - other.y);
+	    return sqrt((dx*dx + dy*dy).to_float()) + 1.0;
+	  }
+	};
 
-const p1 = Point { x: 200, y: 300 };
-const p2 = Point { x: 300, y: 400 };
-print(p1.dis(p2).to_string());
-"#;
+	const p1 = Point { x: 200, y: 300 };
+	const p2 = Point { x: 300, y: 400 };
+	print(p1.dis(p2).to_string());
+	"#;
 
         let outcome = run_source(source).unwrap();
         let printed = outcome.output.first().expect("program should print");
@@ -152,13 +204,13 @@ print(p1.dis(p2).to_string());
     fn float_comparisons_drive_branches() {
         let outcome = run_source(
             r#"
-const a = if 1.0 < 2.0 { 10 } else { 20 };
-const b = if 2.0 <= 2.0 { 1 } else { 100 };
-const c = if 3.0 > 2.0 { 2 } else { 200 };
-const d = if 3.0 >= 3.0 { 3 } else { 300 };
-const e = if 3.0 != 4.0 { 4 } else { 400 };
-a + b + c + d + e;
-"#,
+	const a = if 1.0 < 2.0 { 10 } else { 20 };
+	const b = if 2.0 <= 2.0 { 1 } else { 100 };
+	const c = if 3.0 > 2.0 { 2 } else { 200 };
+	const d = if 3.0 >= 3.0 { 3 } else { 300 };
+	const e = if 3.0 != 4.0 { 4 } else { 400 };
+	a + b + c + d + e;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.result, 20);
@@ -168,10 +220,10 @@ a + b + c + d + e;
     fn struct_literals_use_declared_field_order() {
         let outcome = run_source(
             r#"
-struct Pair { left: Int64, right: Int64 };
-const p = Pair { right: 20, left: 10 };
-p.left + p.right;
-"#,
+	struct Pair { left: Int64, right: Int64 };
+	const p = Pair { right: 20, left: 10 };
+	p.left + p.right;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.result, 30);
@@ -188,10 +240,10 @@ p.left + p.right;
 
         let unknown_field = compile_source(
             r#"
-struct Point { x: Int64 };
-const p = Point { x: 1 };
-p.y;
-"#,
+	struct Point { x: Int64 };
+	const p = Point { x: 1 };
+	p.y;
+	"#,
         )
         .unwrap_err();
         assert!(matches!(
@@ -386,12 +438,12 @@ p.y;
     fn run_shorthand_property() {
         let outcome = run_source(
             r#"
-struct Point { x: Int64, y: Int64 };
-const x = 10;
-const y = 20;
-const p = Point { x, y };
-p.x + p.y;
-"#,
+	struct Point { x: Int64, y: Int64 };
+	const x = 10;
+	const y = 20;
+	const p = Point { x, y };
+	p.x + p.y;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.result, 30);
@@ -401,11 +453,11 @@ p.x + p.y;
     fn run_template_string() {
         let outcome = run_source(
             r#"
-const name = "kaubo";
-const msg = `hello {name}`;
-print(msg);
-0;
-"#,
+	const name = "kaubo";
+	const msg = `hello {name}`;
+	print(msg);
+	0;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.output, vec!["hello kaubo".to_string()]);
@@ -415,11 +467,11 @@ print(msg);
     fn run_template_string_with_int() {
         let outcome = run_source(
             r#"
-const n = 42;
-const msg = `answer is {n}`;
-print(msg);
-0;
-"#,
+	const n = 42;
+	const msg = `answer is {n}`;
+	print(msg);
+	0;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.output, vec!["answer is 42".to_string()]);
@@ -432,10 +484,10 @@ print(msg);
         // Use non-zero value to test the non-null path.
         let outcome = run_source(
             r#"
-const x = 10;
-const y = x ?? 42;
-y;
-"#,
+	const x = 10;
+	const y = x ?? 42;
+	y;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.result, 10); // x is non-null, so y = x = 10
@@ -445,10 +497,10 @@ y;
     fn run_null_coalesce_non_null() {
         let outcome = run_source(
             r#"
-const x = 10;
-const y = x ?? 42;
-y;
-"#,
+	const x = 10;
+	const y = x ?? 42;
+	y;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.result, 10);
@@ -461,12 +513,12 @@ y;
         // Here we test that the core CPS→VM path for SAdd is solid.
         let outcome = run_source(
             r#"
-const a = "hello";
-const b = " world";
-// direct SAdd is used when template desugars
-const msg = `test`;
-0;
-"#,
+	const a = "hello";
+	const b = " world";
+	// direct SAdd is used when template desugars
+	const msg = `test`;
+	0;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.result, 0);
@@ -476,15 +528,15 @@ const msg = `test`;
     fn run_match_expression() {
         let outcome = run_source(
             r#"
-const x = 2;
-const desc = match x {
-    0 -> "zero",
-    1 -> "one",
-    _ -> "many",
-};
-print(desc);
-0;
-"#,
+	const x = 2;
+	const desc = match x {
+	    0 -> "zero",
+	    1 -> "one",
+	    _ -> "many",
+	};
+	print(desc);
+	0;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.output, vec!["many".to_string()]);
@@ -494,15 +546,15 @@ print(desc);
     fn run_enum_unit_variant() {
         let outcome = run_source(
             r#"
-enum Color { Red, Green, Blue }
-const c = Red;
-const tag = match c {
-    Red -> 0,
-    Green -> 1,
-    _ -> 99,
-};
-tag;
-"#,
+	enum Color { Red, Green, Blue }
+	const c = Red;
+	const tag = match c {
+	    Red -> 0,
+	    Green -> 1,
+	    _ -> 99,
+	};
+	tag;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.result, 0);
@@ -512,15 +564,15 @@ tag;
     fn run_enum_match_fallback() {
         let outcome = run_source(
             r#"
-enum Color { Red, Green }
-const c = Green;
-const desc = match c {
-    Red -> "red",
-    _ -> "other",
-};
-print(desc);
-0;
-"#,
+	enum Color { Red, Green }
+	const c = Green;
+	const desc = match c {
+	    Red -> "red",
+	    _ -> "other",
+	};
+	print(desc);
+	0;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.output, vec!["other".to_string()]);
@@ -530,14 +582,14 @@ print(desc);
     fn run_enum_payload_variant() {
         let outcome = run_source(
             r#"
-enum Option { Some(value: Int64), None }
-const x = Some(42);
-const val = match x {
-    Some(v) -> v,
-    None -> 0,
-};
-val;
-"#,
+	enum Option { Some(value: Int64), None }
+	const x = Some(42);
+	const val = match x {
+	    Some(v) -> v,
+	    None -> 0,
+	};
+	val;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.result, 42);
@@ -547,14 +599,14 @@ val;
     fn run_enum_none_unit() {
         let outcome = run_source(
             r#"
-enum Option { Some(value: Int64), None }
-const x = None;
-const val = match x {
-    Some(v) -> v,
-    None -> 99,
-};
-val;
-"#,
+	enum Option { Some(value: Int64), None }
+	const x = None;
+	const val = match x {
+	    Some(v) -> v,
+	    None -> 99,
+	};
+	val;
+	"#,
         )
         .unwrap();
         assert_eq!(outcome.result, 99);
@@ -792,22 +844,43 @@ val;
         kaubo_infer::infer_module(&module).unwrap();
 
         // BEFORE
-        let mut cps1 = build_module(&module).unwrap();
+        let mut cps1 = build_module(&module, None).unwrap();
         flatten_module(&mut cps1);
-        run_passes(&mut cps1, &[&ConstantFold]);
+        run_passes(&mut cps1, &[&ConstantFold], None);
         let f1 = &cps1.functions[0];
         eprintln!("=== BEFORE (no empty-block-elim) ===");
         eprintln!("regs={}", f1.reg_count);
         for b in &f1.blocks { if b.id != usize::MAX { eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term); } }
 
         // AFTER
-        let mut cps2 = build_module(&module).unwrap();
+        let mut cps2 = build_module(&module, None).unwrap();
         flatten_module(&mut cps2);
-        run_passes(&mut cps2, &[&EmptyBlockElim, &ConstantFold]);
+        run_passes(&mut cps2, &[&EmptyBlockElim, &ConstantFold], None);
         let f2 = &cps2.functions[0];
         eprintln!("=== AFTER (with empty-block-elim) ===");
         eprintln!("regs={}", f2.reg_count);
         for b in &f2.blocks { if b.id != usize::MAX { eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term); } }
         eprintln!("=== DONE ===");
+    }
+
+    // ── Phase 1 tests: loop exceeded detection ──
+
+    #[test]
+    fn infinite_loop_is_detected() {
+        let source = "var x = 0; while x < 10 { x = x; };";
+        let config = RunConfig {
+            max_loop_iterations: 100,
+            ..RunConfig::default()
+        };
+        let err = run_source_with_config(source, &config).unwrap_err();
+        assert!(matches!(err, DriverError::Runtime(_)));
+        assert!(err.to_string().contains("LoopExceeded"));
+    }
+
+    #[test]
+    fn finite_loop_completes_under_limit() {
+        let source = "var x = 0; while x < 3 { x = x + 1; }; x;";
+        let outcome = run_source(source).unwrap();
+        assert_eq!(outcome.result, 3);
     }
 }

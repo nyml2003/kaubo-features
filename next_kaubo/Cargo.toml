@@ -11,6 +11,8 @@ members = [
     "crates/kaubo-language-service",
     "crates/kaubo-web-api",
     "crates/kaubo-wasm",
+    "crates/kaubo-log",
+    "crates/kaubo-log-handlers",
     "kaubo2-cli",
 ]
 resolver = "2"
@@ -26,6 +28,8 @@ default-members = [
     "crates/kaubo-language-service",
     "crates/kaubo-web-api",
     "crates/kaubo-wasm",
+    "crates/kaubo-log",
+    "crates/kaubo-log-handlers",
     "kaubo2-cli",
 ]
 
@@ -52,6 +56,8 @@ kaubo-vm = { path = "crates/kaubo-vm" }
 kaubo-driver = { path = "crates/kaubo-driver" }
 kaubo-language-service = { path = "crates/kaubo-language-service" }
 kaubo-web-api = { path = "crates/kaubo-web-api" }
+kaubo-log = { path = "crates/kaubo-log" }
+kaubo-log-handlers = { path = "crates/kaubo-log-handlers" }
 
 clap = { version = "4", features = ["derive"] }
 

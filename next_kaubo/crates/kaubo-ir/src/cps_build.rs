@@ -12,10 +12,14 @@
 use crate::cps::*;
 use crate::cps_emit;
 use kaubo_ast::*;
+use kaubo_log::emit;
 use std::collections::{HashMap, HashSet};
 
-pub fn build_module(module: &Module) -> Result<CpsModule, String> {
-    let mut b = CpsBuilder::new();
+pub fn build_module(
+    module: &Module,
+    events: Option<&dyn kaubo_log::EventHandler>,
+) -> Result<CpsModule, String> {
+    let mut b = CpsBuilder::new(events);
     b.collect_signatures(module);
     b.ctx.new_block(); // entry block id 0
     let mut tail: Option<usize> = None;
@@ -224,7 +228,7 @@ impl ValueHint {
     }
 }
 
-pub struct CpsBuilder {
+pub struct CpsBuilder<'a> {
     pub functions: Vec<CpsFunction>,
     pub constants: Vec<Constant>,
     pub structs: Vec<StructDef>,
@@ -238,16 +242,19 @@ pub struct CpsBuilder {
     enum_names: HashSet<String>,
     variant_to_enum: HashMap<String, String>,
     variant_field_map: HashMap<String, Vec<(String, String)>>,
+    /// Optional event handler for structured logging.
+    /// Passed through from the driver; stages only emit events, never touch output.
+    events: Option<&'a dyn kaubo_log::EventHandler>,
 }
 
-impl Default for CpsBuilder {
+impl<'a> Default for CpsBuilder<'a> {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
-impl CpsBuilder {
-    pub fn new() -> Self {
+impl<'a> CpsBuilder<'a> {
+    pub fn new(events: Option<&'a dyn kaubo_log::EventHandler>) -> Self {
         CpsBuilder {
             functions: vec![],
             constants: vec![],
@@ -262,6 +269,7 @@ impl CpsBuilder {
             enum_names: HashSet::new(),
             variant_to_enum: HashMap::new(),
             variant_field_map: HashMap::new(),
+            events,
         }
     }
 
@@ -1573,6 +1581,15 @@ impl CpsBuilder {
             },
         );
 
+        emit!(
+            self.events,
+            kaubo_log::ToolchainEvent::Cps(kaubo_log::CpsEvent::WhileLowered {
+                header: loop_header,
+                body: body_block,
+                exit: exit_block,
+            })
+        );
+
         self.ctx.chain(cond_continu, loop_header)?;
         self.ctx.chain(body_continu, cond_entry)?;
         self.ctx.loop_stack.pop();
@@ -2139,7 +2156,7 @@ mod tests {
     use super::*;
 
     fn build_src(src: &str) -> CpsModule {
-        build_module(&fixture_module(src)).unwrap()
+        build_module(&fixture_module(src), None).unwrap()
     }
 
     fn fixture_module(src: &str) -> Module {
@@ -2459,7 +2476,7 @@ mod tests {
 
     #[test]
     fn build_list_not_empty() {
-        let cps = build_module(&fixture_module("const xs = [1, 2, 3];")).unwrap();
+        let cps = build_module(&fixture_module("const xs = [1, 2, 3];"), None).unwrap();
         assert!(cps.functions.len() >= 1);
     }
 
@@ -2489,7 +2506,7 @@ mod tests {
                 call_member(Expr::LitFloat(3.14), "to_string"),
             )],
         };
-        let c = build_module(&module).unwrap();
+        let c = build_module(&module, None).unwrap();
         let main = c.functions.last().unwrap();
         let has_ftos = main.blocks.iter().any(|b| {
             b.instrs
@@ -2511,7 +2528,7 @@ mod tests {
                 },
             )],
         };
-        let c = build_module(&module).unwrap();
+        let c = build_module(&module, None).unwrap();
         let main = c.functions.last().unwrap();
         let has_fadd = main.blocks.iter().any(|b| {
             b.instrs
@@ -2650,19 +2667,19 @@ mod tests {
     #[test]
     fn build_native_call_multi_arg() {
         // Test that build_native_call handles 0, 1, 2 args without panicking
-        let mut b = CpsBuilder::new();
+        let mut b = CpsBuilder::new(None);
         b.ctx = FuncCtx::new("test".into());
         let no_args: Vec<Expr> = vec![];
         let result = b.build_native_call(0, &no_args);
         assert!(result.is_ok(), "0 args should not panic, got {:?}", result.err());
 
-        let mut b = CpsBuilder::new();
+        let mut b = CpsBuilder::new(None);
         b.ctx = FuncCtx::new("test".into());
         let one_arg = vec![Expr::LitInt(42)];
         let result = b.build_native_call(0, &one_arg);
         assert!(result.is_ok(), "1 arg should work, got {:?}", result.err());
 
-        let mut b = CpsBuilder::new();
+        let mut b = CpsBuilder::new(None);
         b.ctx = FuncCtx::new("test".into());
         let two_args = vec![Expr::LitInt(1), Expr::LitInt(2)];
         let result = b.build_native_call(0, &two_args);

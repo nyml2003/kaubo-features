@@ -209,7 +209,7 @@ mod tests {
 
     fn fold_src(src: &str) -> CpsModule {
         let m = test_fixtures::module(src);
-        let mut cps = build_module(&m).unwrap();
+        let mut cps = build_module(&m, None).unwrap();
         flatten_module(&mut cps);
         ConstantFold.run(&mut cps);
         cps
