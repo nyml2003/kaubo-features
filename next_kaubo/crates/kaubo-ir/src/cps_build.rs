@@ -1843,6 +1843,7 @@ fn get_native(name: &str) -> Option<usize> {
 
 fn native_return_hint(name: &str) -> ValueHint {
     match name {
+        "type_of" => ValueHint::Int,
         "sqrt" | "sin" | "cos" | "floor" | "ceil" => ValueHint::Float,
         _ => ValueHint::Unknown,
     }
@@ -1873,6 +1874,7 @@ fn remap_term_ids(block: &mut CpsBlock, map: &HashMap<usize, usize>) {
 }
 
 #[cfg(test)]
+#![allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 

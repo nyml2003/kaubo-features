@@ -874,14 +874,32 @@ impl VM {
 
                 // ── 装箱/拆箱 ──
                 Opcode::Box_ => {
-                    return Err(RuntimeError::UnsupportedInstruction(
-                        "box is not implemented".into(),
-                    ));
+                    // Box(dst, src) — wrap value in a single-field struct
+                                        let d = inst.dst();
+                                        let s = inst.src1();
+                    let val = self.regs.ints[s];
+                    // Use struct id 0 as a "Box" marker, single field
+                    self.write_heap(d, HeapObj::Struct(0, vec![val]));
                 }
                 Opcode::Unbox => {
-                    return Err(RuntimeError::UnsupportedInstruction(
-                        "unbox is not implemented".into(),
-                    ));
+                    // Unbox(dst, src) — extract value from boxed struct
+                                        let d = inst.dst();
+                                        let s = inst.src1();
+                    let hid = self.regs.ints[s];
+                    let val = match self.heap_get(hid)? {
+                        HeapObj::Struct(_, fields) => {
+                            *fields.first().ok_or_else(|| {
+                                RuntimeError::TypeMismatch("Unbox: empty boxed struct".into())
+                            })?
+                        }
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "Unbox: expected struct, got {:?}",
+                                other
+                            )));
+                        }
+                    };
+                    self.write_int(d, val);
                 }
 
                 // ── 控制流 ──
@@ -1118,6 +1136,7 @@ fn encode_term(term: &CpsTerminator) -> Result<u32, String> {
 // ── tests ──
 
 #[cfg(test)]
+#![allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 
@@ -1905,5 +1924,22 @@ mod tests {
         if let HeapObj::Struct(_, fields) = vm.heap_get(result).unwrap() {
             assert_eq!(fields[0], 0);
         } else { panic!("expected struct"); }
+    }
+
+    #[test]
+    fn box_unbox_roundtrip() {
+        let m = simple_mod(
+            vec![
+                CpsInstr::LoadConst(0, 0),    // r0 = 42
+                CpsInstr::Box(1, 0),          // r1 = Box(r0)
+                CpsInstr::Unbox(2, 1),        // r2 = Unbox(r1)
+            ],
+            CpsTerminator::Return(2),
+            vec![Constant::Int(42)],
+            3,
+        );
+        let mut vm = VM::new();
+        vm.load(&m).unwrap();
+        assert_eq!(vm.execute(0, 3).unwrap(), 42);
     }
 }
