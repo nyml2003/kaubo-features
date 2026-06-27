@@ -1,8 +1,0 @@
-// JSON access 10000 — JSON 读写 + hash 查找
-var obj = json { "value": 0 };
-var i = 0;
-while i < 10000 {
-    obj = json { "value": obj.value + 1 };
-    i = i + 1;
-}
-print("ok");

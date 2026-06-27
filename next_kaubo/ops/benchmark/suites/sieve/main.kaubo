@@ -1,4 +1,3 @@
-// Sieve n=100000 — v3 (with break)
 const sieve = |n| {
     var count = 0; var p = 2;
     while p <= n {

@@ -58,21 +58,11 @@ fn run_args(args: &[String]) -> Result<(), String> {
                 let result = vm.execute(last_func, reg_count).map_err(|e| format!("{e:?}"))?;
                 let run_ms = t0.elapsed().as_secs_f64() * 1000.0;
                 times.push(run_ms);
-                // Print output on first iteration
-                if times.len() == 1 {
-                    for line in &vm.output {
-                        println!("{line}");
-                    }
-                }
             }
 
             let avg_us = times.iter().sum::<f64>() / times.len() as f64 * 1000.0;
-            let med_us = times[times.len() / 2] * 1000.0;
-            let min_us = times.first().unwrap() * 1000.0;
-            let max_us = times.last().unwrap() * 1000.0;
-
-            println!("{file}");
-            println!("  compile={compile_ms:.1}ms  instrs={instr_count}  runs={iterations}  avg={avg_us:.1}us  med={med_us:.1}us  min={min_us:.1}us  max={max_us:.1}us");
+            // Single-line output: avg_us instr_count compile_ms
+            println!("{} {} {}", avg_us, instr_count, compile_ms);
         }
         "run" => {
             if file.ends_with(".kauboc") {

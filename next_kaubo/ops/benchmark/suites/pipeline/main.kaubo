@@ -1,6 +1,5 @@
-// Pipeline 100k — v2
 var total = 0; var x = 1;
-while x <= 100000 {
+while x <= 100 {
     if x % 2 != 0 { var t = x * 3; if t % 7 == 0 { total = total + t; }; };
     x = x + 1;
 };

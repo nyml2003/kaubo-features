@@ -1,67 +1,48 @@
-#!/usr/bin/env python3
-"""Kaubo benchmark entry point.
+"""Benchmark runner — entry point.
 
 Usage:
-    python ops/benchmark/runner.py bench
-    python ops/benchmark/runner.py bench --release
-    python ops/benchmark/runner.py bench --lang kaubo python rust
-    python ops/benchmark/runner.py bench --json
+  python runner.py --lang python,node --suite fact
+  python runner.py --lang python,node
+  python runner.py --suite fib,loop --iters 5
 """
 import argparse
-import os
-import sys
+from pathlib import Path
+from domain.model import Config
+from app.service import bench_all, LANGUAGES
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lib"))
+ROOT = Path(__file__).resolve().parent
+SUITES = ROOT / "suites"
+DEFAULT_KAUBO = ROOT.parent.parent / "target" / "release" / "kaubo2-cli.exe"
 
-parser = argparse.ArgumentParser(description="Kaubo unified test/benchmark tool")
-sub = parser.add_subparsers(dest="command", required=True)
 
-p_bench = sub.add_parser("bench", help="Run benchmarks")
-p_bench.add_argument("--suite", help="Run specific suite")
-p_bench.add_argument("--lang", nargs="+", help="Languages to run (kaubo python rust)")
-p_bench.add_argument("--release", action="store_true", help="Use release build for kaubo/rust")
-p_bench.add_argument("--json", action="store_true", help="Output JSON report")
-p_bench.add_argument("--output", default="results/report.json", help="JSON output path")
-p_bench.add_argument("--no-warmup", action="store_true")
-p_bench.add_argument("--iterations", type=int, default=0)
-p_bench.add_argument("--save-baseline", action="store_true",
-    help="Save current results as performance baseline")
-p_bench.add_argument("--check", action="store_true",
-    help="Check against baseline for performance regressions")
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--lang", default="python,node",
+                    help="comma-separated: python,node,kaubo")
+    ap.add_argument("--suite", default="",
+                    help="comma-separated case names, e.g. fib,loop. Default: all")
+    ap.add_argument("--iters", type=int, default=10)
+    ap.add_argument("--warmup", type=int, default=3)
+    ap.add_argument("--kaubo-bin", default=str(DEFAULT_KAUBO),
+                    help="path to kaubo2-cli binary")
+    args = ap.parse_args()
 
-args = parser.parse_args()
+    languages = [s.strip() for s in args.lang.split(",")]
+    suites = [s.strip() for s in args.suite.split(",")] if args.suite else None
+    cfg = Config(suites_dir=SUITES, iterations=args.iters, warmup=args.warmup)
 
-if args.command == "bench":
-    from lib.bench import load_suites, run_benchmarks
-    from lib.report import (print_bench_table, write_json, Summary,
-                            save_baseline, print_baseline_check, check_baseline)
+    if "kaubo" in languages:
+        kb = Path(args.kaubo_bin)
+        if not kb.exists():
+            print(f"Kaubo binary not found: {kb}")
+            print("Build it: cd .. && cargo build --release -p kaubo2-cli")
+            return
+        LANGUAGES["kaubo"] = LANGUAGES["kaubo"].__class__(
+            name="kaubo", ext="kaubo", cmd=str(kb.resolve())
+        )
 
-    suites = load_suites()
-    if args.suite:
-        suites = {args.suite: suites[args.suite]}
-    if args.iterations > 0:
-        for s in suites.values():
-            s["iterations"] = args.iterations
-    if args.no_warmup:
-        for s in suites.values():
-            s["warmup"] = 0
+    bench_all(cfg, languages, suites)
 
-    results = run_benchmarks(suites, languages=args.lang, release=args.release)
-    summary = Summary(bench_results=results)
-    print_bench_table(results)
 
-    if args.save_baseline:
-        save_baseline(results)
-
-    if args.check:
-        violations = check_baseline(results)
-        print_baseline_check(violations)
-        if violations:
-            sys.exit(1)
-
-    if args.json:
-        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-        write_json(summary, args.output)
-
-    if not summary.all_passed:
-        sys.exit(1)
+if __name__ == "__main__":
+    main()

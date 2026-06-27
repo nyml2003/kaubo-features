@@ -1,0 +1,11 @@
+const fact = |n| {
+    var total = 0; var x = 1;
+    while x <= n {
+        var r = 1; var i = 1;
+        while i <= x { r = r * i; i = i + 1; };
+        total = total + r;
+        x = x + 1;
+    };
+    return total;
+};
+print(fact(12).to_string());

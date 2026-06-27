@@ -1,7 +1,0 @@
-// String concat 1000 — 字符串拼接 + 内存分配
-var s = "a"; var i = 0;
-while i < 1000 {
-    s = s + "b";
-    i = i + 1;
-}
-print("ok");
