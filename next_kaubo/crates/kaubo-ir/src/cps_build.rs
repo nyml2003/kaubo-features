@@ -969,6 +969,23 @@ impl CpsBuilder {
                 self.set_value_hint(dst, ValueHint::Float);
                 return Ok((entry, id, dst));
             }
+            if field == "to_int" && args.is_empty() {
+                let (entry, continu, obj_reg) = self.build_expr(object)?;
+                let dst = self.ctx.alloc();
+                let id = self.ctx.new_block();
+                self.ctx.set_block(
+                    id,
+                    CpsBlock {
+                        id,
+                        params: vec![],
+                        instrs: vec![CpsInstr::BinOp(dst, CpsBinOp::SToI, obj_reg, 0)],
+                        term: cps_emit::emit_return(dst),
+                    },
+                );
+                self.ctx.chain(continu, id)?;
+                self.set_value_hint(dst, ValueHint::Int);
+                return Ok((entry, id, dst));
+            }
             // Try struct method call: obj.method(args)
             for sd in &self.structs.clone() {
                 let full_name = format!("{}.{}", sd.name, field);
@@ -1028,9 +1045,6 @@ impl CpsBuilder {
                     return Ok((entry, id, reg));
                 }
                 return Err("print expects 1 argument".into());
-            }
-            if name == "type_of" {
-                return Err("type_of is not implemented".into());
             }
             if name == "assert" {
                 let result = self.build_native_call(2, args)?;
@@ -1483,9 +1497,6 @@ impl CpsBuilder {
     }
 
     fn build_list(&mut self, items: &[Expr]) -> Result<(usize, usize, usize), String> {
-        if !items.is_empty() {
-            return Err("list literals are not implemented".into());
-        }
         let mut entry = 0;
         let mut prev_c: Option<usize> = None;
         let mut regs = Vec::new();
@@ -1501,19 +1512,21 @@ impl CpsBuilder {
             regs.push(r);
         }
         let dst = self.ctx.alloc();
-        let (instrs, _) = cps_emit::emit_new_list(dst, regs);
         let id = self.ctx.new_block();
         self.ctx.set_block(
             id,
             CpsBlock {
                 id,
-                params: vec![],
-                instrs,
+                params: regs.clone(),
+                instrs: vec![CpsInstr::NewList(dst, regs.clone())],
                 term: cps_emit::emit_return(dst),
             },
         );
         if let Some(t) = prev_c {
-            self.ctx.chain(t, id)?;
+            // Rewire to pass element regs as jump args (not chain's empty args)
+            if let Some(block) = self.ctx.blocks.get_mut(t) {
+                block.term = CpsTerminator::Jump(id, regs.clone());
+            }
         }
         Ok((if entry != 0 { entry } else { id }, id, dst))
     }
@@ -1818,6 +1831,7 @@ fn bin_op_to_cps(op: BinOp, is_float: bool) -> Result<CpsBinOp, String> {
 
 fn get_native(name: &str) -> Option<usize> {
     match name {
+        "type_of" => Some(1),
         "sqrt" => Some(3),
         "sin" => Some(4),
         "cos" => Some(5),
@@ -2175,8 +2189,8 @@ mod tests {
 
     #[test]
     fn build_list_not_empty() {
-        let err = build_module(&fixture_module("const xs = [1, 2, 3];")).unwrap_err();
-        assert!(err.contains("list literals"));
+        let cps = build_module(&fixture_module("const xs = [1, 2, 3];")).unwrap();
+        assert!(cps.functions.len() >= 1);
     }
 
     #[test]

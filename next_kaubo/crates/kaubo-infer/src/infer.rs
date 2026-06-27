@@ -173,13 +173,13 @@ fn inject_stdlib(env: &mut TypeEnv) {
         "print".into(),
         Scheme::monomorphic(Type::Arrow(Box::new(Type::String), Box::new(Type::Null))),
     );
-    // type_of: forall a. a → String
+    // type_of: forall a. a → Int64
     let tv = fresh_tvar();
     env.insert(
         "type_of".into(),
         Scheme {
             bound: vec![tv],
-            body: Box::new(Type::Arrow(Box::new(Type::Var(tv)), Box::new(Type::String))),
+            body: Box::new(Type::Arrow(Box::new(Type::Var(tv)), Box::new(Type::Int64))),
         },
     );
     // assert: Bool → Null
@@ -472,6 +472,10 @@ pub fn infer(
             // to_float() on Int64 returns Float64
             if field == "to_float" && matches!(applied, Type::Int64) {
                 return Ok((s, Type::Float64));
+            }
+            // to_int() on String returns Int64
+            if field == "to_int" && matches!(applied, Type::String) {
+                return Ok((s, Type::Int64));
             }
             match applied {
                 Type::Record(id, fields) => {

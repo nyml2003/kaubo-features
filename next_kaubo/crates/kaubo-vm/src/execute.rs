@@ -290,6 +290,19 @@ impl VM {
         self.block_starts[self.func_block_base[self.current_func] + block_id]
     }
 
+    fn block_id_from_ip(&self, ip: usize) -> usize {
+        let base = self.func_block_base[self.current_func];
+        let func_blocks = &self.func_blocks[self.current_func];
+        let starts = &self.block_starts[base..base + func_blocks.len()];
+        for id in (0..starts.len()).rev() {
+            // Skip inlined blocks (start=0) — entry block always has non-zero start
+            if starts[id] > 0 && starts[id] <= ip {
+                return id;
+            }
+        }
+        0
+    }
+
     fn jump_args(&self, abs_ip: usize) -> &[usize] {
         &self.jump_args[abs_ip]
     }
@@ -573,9 +586,30 @@ impl VM {
                     self.write_heap(d, HeapObj::String(s));
                 }
                 Opcode::SToI => {
-                    return Err(RuntimeError::UnsupportedInstruction(
-                        "string to int conversion is not implemented".into(),
-                    ));
+                    // stoi
+                                        let d = inst.dst();
+                                        let s = inst.src1();
+                    let hid = self.regs.ints[s];
+                    if hid < 0 {
+                        return Err(RuntimeError::TypeMismatch(
+                            "SToI: expected string heap handle".into(),
+                        ));
+                    }
+                    match self.heap.try_get(hid as usize) {
+                        Some(HeapObj::String(st)) => {
+                            let val: i64 = st.parse().map_err(|_| {
+                                RuntimeError::TypeMismatch(format!(
+                                    "SToI: cannot parse '{st}' as integer"
+                                ))
+                            })?;
+                            self.write_int(d, val);
+                        }
+                        _ => {
+                            return Err(RuntimeError::TypeMismatch(
+                                "SToI: expected string argument".into(),
+                            ));
+                        }
+                    }
                 }
 
                 // ── 数据移动 ──
@@ -625,9 +659,21 @@ impl VM {
                     self.write_heap(d, HeapObj::Struct(sid, fields));
                 }
                 Opcode::NewList => {
-                    return Err(RuntimeError::UnsupportedInstruction(
-                        "list literals are not implemented".into(),
-                    ));
+                    // NewList(dst, count, _) — element regs read from block params
+                                        let d = inst.dst();
+                                        let count = inst.src1() as usize;
+                    let block_id = self.block_id_from_ip(ip);
+                    let params = &self.func_params[self.current_func][block_id];
+                    let mut elements = Vec::with_capacity(count);
+                    for i in 0..count {
+                        let val = if i < params.len() {
+                            self.regs.ints[params[i]]
+                        } else {
+                            0
+                        };
+                        elements.push(val);
+                    }
+                    self.write_heap(d, HeapObj::List(elements));
                 }
 
                 // ── 字段访问 ──
@@ -940,7 +986,7 @@ impl VM {
                         .map(|&r| self.regs.ints[r])
                         .collect();
                     if fi < self.natives.len() {
-                        let result = (self.natives[fi].1)(&args).map_err(RuntimeError::NativeError)?;
+                        let result = (self.natives[fi].1)(&args, &self.heap).map_err(RuntimeError::NativeError)?;
                         self.write_int(0, result);
                         self.regs.floats[0] = f64::from_bits(result as u64);
                     } else {
@@ -1047,12 +1093,7 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
         CpsInstr::GetVariantTag(d, o) => encode(Opcode::GetVariantTag as u8, *d as u32, *o as u32, 0),
         CpsInstr::GetVariantField(d, o, fi) => encode(Opcode::GetVariantField as u8, *d as u32, *o as u32, *fi as u32),
         CpsInstr::SetVariantField(d, o, fi, _) => encode(Opcode::SetVariantField as u8, *d as u32, *o as u32, *fi as u32),
-        CpsInstr::NewList(_, elements) => {
-            return Err(format!(
-                "list literals are not implemented ({} elements)",
-                elements.len()
-            ))
-        }
+        CpsInstr::NewList(d, elements) => encode(Opcode::NewList as u8, *d as u32, elements.len() as u32, 0),
         CpsInstr::IndexGet(d, o, i) => encode(Opcode::IndexGet as u8, *d as u32, *o as u32, *i as u32),
         CpsInstr::IndexSet(_, _, _, _) => return Err("index assignment is not implemented".into()),
         CpsInstr::Box(d, s) => encode(Opcode::Box_ as u8, *d as u32, *s as u32, 0),

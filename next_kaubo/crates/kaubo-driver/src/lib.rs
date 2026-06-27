@@ -199,10 +199,6 @@ p.y;
             DriverError::Infer(_) | DriverError::Build(_)
         ));
         assert!(unknown_field.to_string().contains("field 'y'"));
-
-        let list = compile_source("const xs = [1, 2];").unwrap_err();
-        assert!(matches!(list, DriverError::Build(_)));
-        assert!(list.to_string().contains("list literals"));
     }
 
     #[test]
@@ -562,5 +558,44 @@ val;
         )
         .unwrap();
         assert_eq!(outcome.result, 99);
+    }
+
+    #[test]
+    fn string_to_int_converts() {
+        let outcome = run_source("\"42\".to_int();").unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn string_to_int_negative() {
+        let outcome = run_source("\"-7\".to_int();").unwrap();
+        assert_eq!(outcome.result, -7);
+    }
+
+    #[test]
+    fn string_to_int_rejects_invalid() {
+        let err = run_source("\"abc\".to_int();").unwrap_err();
+        assert!(matches!(err, DriverError::Runtime(_)));
+    }
+
+    #[test]
+    fn list_literal_creates_and_indexes() {
+        let outcome =
+            run_source("const xs = [10, 20, 30]; xs[0] + xs[1] + xs[2];").unwrap();
+        assert_eq!(outcome.result, 60);
+    }
+
+    #[test]
+    fn empty_list_compiles() {
+        let outcome = run_source("const xs = []; 42;").unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn type_of_compiles_and_runs() {
+        let outcome = run_source("type_of(42);").unwrap();
+        // For now, asserts that type_of runs without crashing
+        // Type codes: 0=scalar
+        assert_eq!(outcome.result, 0);
     }
 }

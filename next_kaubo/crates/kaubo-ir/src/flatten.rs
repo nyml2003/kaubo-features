@@ -48,6 +48,11 @@ fn flatten_function(func: &mut CpsFunction) {
                         let pred_id = preds[0];
                         // Only inline if predecessor has Jump (not Branch)
                         let pred = func.blocks.iter().find(|b| b.id == pred_id).unwrap();
+                        let target = func.blocks.iter().find(|b| b.id == id).unwrap();
+                        // Don't inline blocks with params — they need bind_params
+                        if !target.params.is_empty() {
+                            continue;
+                        }
                         if matches!(pred.term, CpsTerminator::Jump(_, _)) {
                             inline_block(func, pred_id, id);
                             changed = true;
@@ -135,6 +140,11 @@ fn remap_instr_regs(instr: &mut CpsInstr, reg_map: &HashMap<usize, usize>) {
             lookup(s);
             lookup(i);
             lookup(v);
+        }
+        CpsInstr::NewList(_, elements) => {
+            for r in elements {
+                lookup(r);
+            }
         }
         CpsInstr::Box(_, s) | CpsInstr::Unbox(_, s) | CpsInstr::Print(s) => {
             lookup(s);
