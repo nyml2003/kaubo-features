@@ -4,14 +4,26 @@ default_to_workspace = false
 [env]
 RUST_BACKTRACE = "1"
 
+# ── Default ──────────────────────────────────────────────────
+
 [tasks.default]
 description = "Run the standard local CI checks."
 alias = "ci"
 
+# ── Quick check (type-check only, no tests) ──────────────────
+
+[tasks.check]
+description = "Fast type-check only: cargo check + web build. No tests."
+dependencies = ["rust-check", "web-build"]
+
+# ── CI ───────────────────────────────────────────────────────
+
 [tasks.ci]
-description = "Run Rust, Web, and VSCode checks."
+description = "Run Rust, Web, and VSCode checks — the standard pre-push bar."
 dependencies = [
   "rust-check",
+  "rust-clippy",
+  "rust-fmt-check",
   "rust-test",
   "web-test",
   "web-build",
@@ -22,17 +34,51 @@ dependencies = [
 description = "Run standard CI plus browser e2e tests."
 dependencies = ["ci", "web-e2e"]
 
+# ── Rust ─────────────────────────────────────────────────────
+
 [tasks.rust-check]
-description = "Check the Rust workspace."
+description = "Check the Rust workspace (cargo check)."
 cwd = "next_kaubo"
 command = "cargo"
 args = ["check", "--workspace", "--all-targets"]
+
+[tasks.rust-clippy]
+description = "Run Clippy lints on the Rust workspace (deny warnings)."
+cwd = "next_kaubo"
+command = "cargo"
+args = ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]
+
+[tasks.rust-fmt-check]
+description = "Check Rust formatting (dry-run, no write)."
+cwd = "next_kaubo"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.rust-fmt]
+description = "Format all Rust code in place."
+cwd = "next_kaubo"
+command = "cargo"
+args = ["fmt", "--all"]
 
 [tasks.rust-test]
 description = "Test the Rust workspace."
 cwd = "next_kaubo"
 command = "cargo"
 args = ["test", "--workspace"]
+
+[tasks.rust-clean]
+description = "Remove Rust build artifacts (cargo clean)."
+cwd = "next_kaubo"
+command = "cargo"
+args = ["clean"]
+
+[tasks.rust-doc]
+description = "Build and open Rust workspace documentation."
+cwd = "next_kaubo"
+command = "cargo"
+args = ["doc", "--workspace", "--open"]
+
+# ── Web ──────────────────────────────────────────────────────
 
 [tasks.web-test]
 description = "Run Web app unit tests."
@@ -52,14 +98,42 @@ cwd = "next_kaubo/gui"
 command = "pnpm"
 args = ["test:e2e"]
 
+[tasks.web-dev]
+description = "Start the Web playground dev server."
+cwd = "next_kaubo/gui"
+command = "pnpm"
+args = ["dev"]
+
+[tasks.web-lint]
+description = "Lint the Web app."
+cwd = "next_kaubo/gui"
+command = "pnpm"
+args = ["--filter", "@kaubo/app", "lint"]
+
+[tasks.web-format]
+description = "Format the Web app."
+cwd = "next_kaubo/gui"
+command = "pnpm"
+args = ["--filter", "@kaubo/app", "format"]
+
+# ── VSCode ───────────────────────────────────────────────────
+
 [tasks.vscode-test]
 description = "Run VSCode extension tests."
 cwd = "vscode-extension"
 command = "npm"
 args = ["test"]
 
+[tasks.vscode-package]
+description = "Package the VSCode extension (.vsix)."
+cwd = "vscode-extension"
+command = "npm"
+args = ["run", "package"]
+
+# ── Ops ──────────────────────────────────────────────────────
+
 [tasks.ops]
-description = "Run safe ops smoke checks."
+description = "Run safe ops smoke checks (help output of each tool)."
 dependencies = [
   "ops-coverage-help",
   "ops-bench-help",
@@ -104,18 +178,10 @@ command = "python3"
 args = ["ops/benchmark/runner.py", "--help"]
 
 [tasks.ops-release]
-description = "Run the release publisher. Pass explicit publish.py arguments."
+description = "Run the release publisher. Pass args after --, e.g.: cargo make ops-release -- --bump minor"
 cwd = "next_kaubo"
-script_runner = "@shell"
-script = '''
-if [ "$#" -eq 0 ]; then
-  python3 ops/release/publish.py --help
-  echo
-  echo "error: pass explicit release arguments, for example: cargo make ops-release --bump patch"
-  exit 2
-fi
-python3 ops/release/publish.py "$@"
-'''
+command = "python3"
+args = ["ops/release/publish.py"]
 
 [tasks.ops-release-help]
 description = "Show release tool help."
@@ -124,18 +190,10 @@ command = "python3"
 args = ["ops/release/publish.py", "--help"]
 
 [tasks.ops-deploy]
-description = "Run the deploy script. Pass explicit deploy.py arguments."
+description = "Run the deploy script. Pass args after --, e.g.: cargo make ops-deploy -- 0.5.0 --repo owner/repo"
 cwd = "next_kaubo"
-script_runner = "@shell"
-script = '''
-if [ "$#" -eq 0 ]; then
-  python3 ops/deploy/deploy.py --help
-  echo
-  echo "error: pass explicit deploy arguments, for example: cargo make ops-deploy 0.5.0 --repo owner/repo"
-  exit 2
-fi
-python3 ops/deploy/deploy.py "$@"
-'''
+command = "python3"
+args = ["ops/deploy/deploy.py"]
 
 [tasks.ops-deploy-help]
 description = "Show deploy tool help."

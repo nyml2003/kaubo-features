@@ -287,6 +287,16 @@ pub fn infer(
                             col: 0,
                         })?
                         .compose(&s);
+                    // Restrict to numeric types
+                    let unified = s.apply(&t1);
+                    s = unify(&unified, &Type::Int64)
+                        .or_else(|_| unify(&unified, &Type::Float64))
+                        .map_err(|_| TypeError {
+                            msg: format!("arithmetic requires numeric types, got {unified}"),
+                            line: 0,
+                            col: 0,
+                        })?
+                        .compose(&s);
                     s.apply(&t1)
                 }
                 BinOp::Eq
@@ -294,12 +304,24 @@ pub fn infer(
                 | BinOp::Lt
                 | BinOp::Le
                 | BinOp::Gt
-                | BinOp::Ge
-                | BinOp::And
+                | BinOp::Ge => {
+                    // Unify operand types for comparison (unless one side is Null)
+                    let a1 = s.apply(&t1);
+                    let a2 = s.apply(&t2);
+                    if !matches!(&a1, Type::Null) && !matches!(&a2, Type::Null) {
+                        s = unify(&a1, &a2)
+                            .map_err(|e| TypeError {
+                                msg: format!("comparison operands must have same type: {e}"),
+                                line: 0,
+                                col: 0,
+                            })?
+                            .compose(&s);
+                    }
+                    Type::Bool
+                }
+                BinOp::And
                 | BinOp::Or => Type::Bool,
                 BinOp::Pipe | BinOp::GtGt => {
-                    // Pipe: a |> f means f(a)
-                    // For now just treat as pass-through
                     t1.clone()
                 }
                 BinOp::SAdd => Type::String,
@@ -308,14 +330,22 @@ pub fn infer(
         }
 
         Expr::Unary { op, right } => {
-            let (s, t) = infer(env, right, structs, struct_fields, enums, enum_variants)?;
-            Ok((
-                s,
-                match op {
-                    UnOp::Neg => t,
-                    UnOp::Not => Type::Bool,
-                },
-            ))
+            let (mut s, t) = infer(env, right, structs, struct_fields, enums, enum_variants)?;
+            match op {
+                UnOp::Neg => {
+                    let applied = s.apply(&t);
+                    s = unify(&applied, &Type::Int64)
+                        .or_else(|_| unify(&applied, &Type::Float64))
+                        .map_err(|_| TypeError {
+                            msg: format!("negation requires numeric type, got {applied}"),
+                            line: 0,
+                            col: 0,
+                        })?
+                        .compose(&s);
+                    Ok((s, applied))
+                }
+                UnOp::Not => Ok((s, Type::Bool)),
+            }
         }
 
         Expr::Block(stmts) => {
@@ -388,19 +418,34 @@ pub fn infer(
             iterable,
             body,
         } => {
-            let (s_i, ti) = infer(env, iterable, structs, struct_fields, enums, enum_variants)?;
-            // ti should be List<'a>
-            if let Type::List(_) = &ti {
-                let local_env = env.clone();
-                // Bind loop variable
-                let (s_b, _) = infer(&local_env, body, structs, struct_fields, enums, enum_variants)?;
-                Ok((s_i.compose(&s_b), Type::Null))
-            } else {
-                Err(TypeError {
-                    msg: format!("for loop requires List, got {ti}"),
+            let (mut s_i, ti) = infer(env, iterable, structs, struct_fields, enums, enum_variants)?;
+            let applied = s_i.apply(&ti);
+            // ti should be List<'a>; if it's a type var, unify it with List<?>
+            match applied {
+                Type::List(elem) => {
+                    let local_env = env.clone();
+                    let (s_b, _) = infer(&local_env, body, structs, struct_fields, enums, enum_variants)?;
+                    Ok((s_i.compose(&s_b), Type::Null))
+                }
+                Type::Var(_) => {
+                    let elem = Type::Var(fresh_tvar());
+                    let list_ty = Type::List(Box::new(elem.clone()));
+                    s_i = unify(&applied, &list_ty)
+                        .map_err(|e| TypeError {
+                            msg: format!("for loop: {e}"),
+                            line: 0,
+                            col: 0,
+                        })?
+                        .compose(&s_i);
+                    let local_env = env.clone();
+                    let (s_b, _) = infer(&local_env, body, structs, struct_fields, enums, enum_variants)?;
+                    Ok((s_i.compose(&s_b), Type::Null))
+                }
+                other => Err(TypeError {
+                    msg: format!("for loop requires List, got {other}"),
                     line: 0,
                     col: 0,
-                })
+                }),
             }
         }
 
@@ -474,7 +519,11 @@ pub fn infer(
             match s.apply(&t_obj) {
                 Type::List(elem) => Ok((s.clone(), s.apply(&elem))),
                 Type::String => Ok((s, Type::String)),
-                _ => Ok((s, Type::Var(fresh_tvar()))),
+                other => Err(TypeError {
+                    msg: format!("cannot index into type {other}"),
+                    line: 0,
+                    col: 0,
+                }),
             }
         }
 
@@ -486,8 +535,21 @@ pub fn infer(
             })?;
             let field_types = struct_fields.get(id).cloned().unwrap_or_default();
             let mut s = Subst::empty();
-            for (_fname, fval) in fields {
-                let (s_f, _) = infer(env, fval, structs, struct_fields, enums, enum_variants)?;
+            for (fname, fval) in fields {
+                let (s_f, t_val) = infer(env, fval, structs, struct_fields, enums, enum_variants)?;
+                // Unify field value type with declared field type
+                if let Some((_, declared)) = field_types.iter().find(|(n, _)| n == fname) {
+                    s = unify(
+                        &s.apply(&t_val),
+                        &s.apply(declared),
+                    )
+                    .map_err(|e| TypeError {
+                        msg: format!("field '{fname}': {e}"),
+                        line: 0,
+                        col: 0,
+                    })?
+                    .compose(&s);
+                }
                 s = s.compose(&s_f);
             }
             Ok((s, Type::Record(*id, field_types)))
@@ -513,8 +575,18 @@ pub fn infer(
                     col: 0,
                 })?;
             let mut s = Subst::empty();
-            for fval in fields {
-                let (s_f, _) = infer(env, fval, structs, struct_fields, enums, enum_variants)?;
+            for (i, fval) in fields.iter().enumerate() {
+                let (s_f, t_val) = infer(env, fval, structs, struct_fields, enums, enum_variants)?;
+                // Unify with declared variant field type
+                if let Some((_, declared)) = variant_info.1.get(i) {
+                    s = unify(&s.apply(&t_val), &s.apply(declared))
+                        .map_err(|e| TypeError {
+                            msg: format!("variant field: {e}"),
+                            line: 0,
+                            col: 0,
+                        })?
+                        .compose(&s);
+                }
                 s = s.compose(&s_f);
             }
             Ok((
@@ -579,9 +651,17 @@ pub fn infer(
         }
 
         Expr::Assign { target, value } => {
-            let (s1, _) = infer(env, target, structs, struct_fields, enums, enum_variants)?;
-            let (s2, _) = infer(env, value, structs, struct_fields, enums, enum_variants)?;
-            Ok((s1.compose(&s2), Type::Null))
+            let (s1, t_target) = infer(env, target, structs, struct_fields, enums, enum_variants)?;
+            let (s2, t_val) = infer(env, value, structs, struct_fields, enums, enum_variants)?;
+            let mut s = s1.compose(&s2);
+            s = unify(&s.apply(&t_target), &s.apply(&t_val))
+                .map_err(|e| TypeError {
+                    msg: format!("assignment type mismatch: {e}"),
+                    line: 0,
+                    col: 0,
+                })?
+                .compose(&s);
+            Ok((s, Type::Null))
         }
 
         Expr::Async(body) => infer(env, body, structs, struct_fields, enums, enum_variants),
@@ -1170,14 +1250,11 @@ mod tests {
             .unwrap(),
             Type::String
         );
-        assert!(matches!(
-            infer_expr(Expr::Index {
-                object: Box::new(Expr::LitInt(1)),
-                index: Box::new(Expr::LitInt(0)),
-            })
-            .unwrap(),
-            Type::Var(_)
-        ));
+        // Index on Int is a type error
+        assert!(infer_expr(Expr::Index {
+            object: Box::new(Expr::LitInt(1)),
+            index: Box::new(Expr::LitInt(0)),
+        }).is_err());
         assert_eq!(infer_expr(Expr::Assign { target: Box::new(Expr::LitInt(1)), value: Box::new(Expr::LitInt(42)) }).unwrap(), Type::Null);
         assert_eq!(infer_expr(Expr::Async(Box::new(Expr::LitInt(1)))).unwrap(), Type::Int64);
         assert_eq!(infer_expr(Expr::Await(Box::new(Expr::LitFloat(3.14)))).unwrap(), Type::Float64);
@@ -1780,5 +1857,84 @@ mod tests {
 
     fn infer_var(src: &str) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>)> {
         infer_src(src)
+    }
+
+    // ── Type checking regression tests ──
+
+    #[test]
+    fn t30_struct_lit_rejects_wrong_field_type() {
+        // Point { x: "hello" } when x is Int64 — must fail
+        let (structs, fields) = {
+            let mut s = HashMap::new();
+            let mut f = HashMap::new();
+            s.insert("Point".into(), 0);
+            f.insert(0, vec![("x".into(), Type::Int64)]);
+            (s, f)
+        };
+        let lit = Expr::StructLit {
+            name: "Point".into(), fields: vec![("x".into(), Expr::LitString("hi".into()))], spread: None,
+        };
+        let env = TypeEnv::new();
+        assert!(infer(&env, &lit, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_err());
+    }
+
+    #[test]
+    fn t31_cmp_rejects_cross_type() {
+        // 1 == "abc" — must fail
+        let e = Expr::Binary { left: Box::new(Expr::LitInt(1)), op: BinOp::Eq, right: Box::new(Expr::LitString("abc".into())) };
+        let (structs, fields) = empty_structs();
+        let env = TypeEnv::new();
+        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_err());
+    }
+
+    #[test]
+    fn t32_arith_rejects_bool() {
+        // true + false — must fail
+        let e = Expr::Binary { left: Box::new(Expr::LitTrue), op: BinOp::Add, right: Box::new(Expr::LitFalse) };
+        let (structs, fields) = empty_structs();
+        let env = TypeEnv::new();
+        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_err());
+    }
+
+    #[test]
+    fn t33_neg_rejects_non_numeric() {
+        // -true — must fail
+        let e = Expr::Unary { op: UnOp::Neg, right: Box::new(Expr::LitTrue) };
+        assert!(infer_expr(e).is_err());
+    }
+
+    #[test]
+    fn t34_assign_unifies_types() {
+        // x = 42 when x: String — must fail (x must be pre-bound as String)
+        let mut env = TypeEnv::new();
+        env.insert("x".into(), Scheme::monomorphic(Type::String));
+        let e = Expr::Assign { target: Box::new(Expr::VarRef("x".into())), value: Box::new(Expr::LitInt(42)) };
+        let (structs, fields) = empty_structs();
+        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_err());
+    }
+
+    #[test]
+    fn t35_index_rejects_non_list_non_string() {
+        // 42[0] — must fail
+        let e = Expr::Index { object: Box::new(Expr::LitInt(42)), index: Box::new(Expr::LitInt(0)) };
+        assert!(infer_expr(e).is_err());
+    }
+
+    #[test]
+    fn t36_for_accepts_polymorphic_list() {
+        // for x in list where list is a lambda param (unbound type var) — should succeed
+        reset_tvar();
+        let list_var = fresh_tvar();
+        let mut env = TypeEnv::new();
+        // Unbound: list is just Var, not yet unified with List
+        env.insert("list".into(), Scheme::monomorphic(Type::Var(list_var)));
+        let e = Expr::For {
+            var: Param { name: "x".into(), ty_ann: None },
+            iterable: Box::new(Expr::VarRef("list".into())),
+            body: Box::new(Expr::Block(vec![])),
+        };
+        let (structs, fields) = empty_structs();
+        // Should NOT error with "for loop requires List" — should unify list with List<?>
+        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_ok());
     }
 }

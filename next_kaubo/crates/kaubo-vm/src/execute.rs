@@ -841,7 +841,9 @@ impl VM {
                 // ── 控制流 ──
                 Opcode::Jump => {
                     let block_id = (inst.src1() << 8) | inst.src2();
-                    self.bind_params(block_id, self.jump_args(ip - 1));
+                    #[allow(clippy::unnecessary_to_owned)]
+                    let args = self.jump_args(ip - 1).to_vec();
+                    self.bind_params(block_id, &args);
                     ip = self.block_ip(block_id);
                 }
                 Opcode::Branch => {

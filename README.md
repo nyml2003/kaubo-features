@@ -66,8 +66,8 @@ cargo make ops
 cargo make ops-coverage-html
 cargo make ops-bench
 cargo make ops-bench-check
-cargo make ops-release --bump patch
-cargo make ops-deploy 0.5.0 --repo owner/repo
+cargo make ops-release -- --bump patch
+cargo make ops-deploy -- 0.5.0 --repo owner/repo
 ```
 
 ## 文档

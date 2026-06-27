@@ -1,5 +1,33 @@
 # Kaubo 仓库指南
 
+## 构建工具
+
+本仓库用 `cargo make`（即 `Makefile.toml`）统一编排所有任务。**优先用 `cargo make <task>`，不要手写 `cd xxx && cargo check ...` 这类命令。**
+
+常用任务速查：
+
+| 任务 | 用途 |
+|------|------|
+| `cargo make ci` | 标准 CI（check + clippy + fmt + test + web + vscode） |
+| `cargo make check` | 快速类型检查（无测试） |
+| `cargo make rust-check` | Rust cargo check |
+| `cargo make rust-test` | Rust 测试 |
+| `cargo make rust-clippy` | Clippy lint |
+| `cargo make rust-fmt` | Rust 格式化 |
+| `cargo make rust-fmt-check` | Rust 格式检查（dry-run） |
+| `cargo make web-test` | Web 单元测试 |
+| `cargo make web-build` | Web 构建 |
+| `cargo make web-e2e` | Web e2e 测试 |
+| `cargo make web-dev` | Web dev server |
+| `cargo make vscode-test` | VSCode 扩展测试 |
+| `cargo make ci-full` | CI + e2e |
+| `cargo make ops-release -- --bump patch` | 发布 |
+| `cargo make ops-deploy -- 0.5.0` | 部署 |
+
+不带参数运行 `cargo make` 会执行默认任务（等同于 `cargo make ci`）。
+
+查看所有可用任务：`cargo make --list-all-steps`
+
 ## 范围
 - 这是一个 monorepo。
 - 主要 Rust workspace 在 `next_kaubo/`。
@@ -25,11 +53,16 @@
 - 旧代码、实验代码不要变成新工作的默认路径。
 
 ## 测试
-- Rust 核心：`cd next_kaubo && cargo check --workspace --all-targets`
-- Rust 测试：`cd next_kaubo && cargo test --workspace`
-- Web 应用测试：`cd next_kaubo/gui && pnpm --filter @kaubo/app test`
-- Web 应用构建：`cd next_kaubo/gui && pnpm --filter @kaubo/app build`
-- VSCode 扩展测试：`cd vscode-extension && npm test`
+- 优先用 `cargo make` 任务（见上方构建工具表格），裸命令仅作参考：
+  - Rust 核心：`cargo make rust-check`
+  - Rust 测试：`cargo make rust-test`
+  - Rust lint：`cargo make rust-clippy`
+  - Rust 格式化：`cargo make rust-fmt`
+  - Web 应用测试：`cargo make web-test`
+  - Web 应用构建：`cargo make web-build`
+  - Web e2e：`cargo make web-e2e`
+  - VSCode 扩展测试：`cargo make vscode-test`
+  - 标准 CI：`cargo make ci`
 - 能拆开测就拆开测：
   - 词法 / 语法 / span / diagnostics 测 syntax
   - lowering 和 optimization 测 IR / CPS
