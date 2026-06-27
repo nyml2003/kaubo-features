@@ -12,6 +12,81 @@ pub fn encode(op: u8, dst: u32, src1: u32, src2: u32) -> u32 {
     ((op as u32) << 25) | ((dst & 0xFF) << 17) | ((src1 & 0x1FF) << 8) | (src2 & 0xFF)
 }
 
+// ── Opcode 枚举 ──
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Opcode {
+    // 整数算术
+    AddInt = 0x00, SubInt = 0x01, MulInt = 0x02, DivInt = 0x03, ModInt = 0x04,
+    NegInt = 0x05,
+    // 浮点
+    FAdd = 0x08, FSub = 0x09, FMul = 0x0A, FDiv = 0x0B, FNeg = 0x0C,
+    // 比较
+    EqInt = 0x10, LtInt = 0x11, LeInt = 0x12, FEq = 0x13, FLt = 0x14,
+    Not = 0x15, NeInt = 0x16, GtInt = 0x17,
+    SAdd = 0x18, GeInt = 0x19, FNe = 0x1A, FLe = 0x1B, FGt = 0x1C, FGe = 0x1D,
+    // 转换
+    IToF = 0x20, FToI = 0x21, IToS = 0x22, FToS = 0x23, SToI = 0x24,
+    // 数据移动
+    Move = 0x30, LoadImm = 0x31, LoadConst = 0x32,
+    // 堆分配
+    NewStruct = 0x34, NewList = 0x35,
+    // 字段/索引
+    GetField = 0x36, SetField = 0x37,
+    IndexGet = 0x38, IndexSet = 0x39,
+    // 装箱
+    Box_ = 0x3A, Unbox = 0x3B,
+    // Enum/Variant
+    NewVariant = 0x3C, GetVariantTag = 0x3D,
+    GetVariantField = 0x3E, SetVariantField = 0x3F,
+    // 控制流
+    Jump = 0x40, Branch = 0x41,
+    // 调用
+    Call = 0x50, TailCall = 0x51, Return = 0x52,
+    CallNative = 0x5F,
+    // Async
+    AsyncPoll = 0x60, Suspend = 0x61,
+    // I/O
+    Print = 0x7F,
+}
+
+impl Opcode {
+    #[inline(always)]
+    pub fn from_inst(inst: u32) -> Self {
+        unsafe { std::mem::transmute(((inst >> 25) & 0x7F) as u8) }
+    }
+}
+
+// ── 指令解码 ──
+
+#[derive(Debug, Clone, Copy)]
+pub struct Inst(pub u32);
+
+impl Inst {
+    #[inline(always)]
+    pub fn opcode(self) -> Opcode { Opcode::from_inst(self.0) }
+
+    #[inline(always)]
+    pub fn dst(self) -> usize { ((self.0 >> 17) & 0xFF) as usize }
+
+    #[inline(always)]
+    pub fn src1(self) -> usize { ((self.0 >> 8) & 0x1FF) as usize }
+
+    #[inline(always)]
+    pub fn src2(self) -> usize { (self.0 & 0xFF) as usize }
+
+    #[inline(always)]
+    pub fn imm25(self) -> usize { (self.0 & 0x1FF_FFFF) as usize }
+
+    /// 17-bit 立即数 (bits 0–16), 用于 Call/CallNative cont_block
+    #[inline(always)]
+    pub fn imm17(self) -> usize { (self.0 & 0x1FFFF) as usize }
+
+    #[inline(always)]
+    pub fn abc(self) -> (usize, usize, usize) { (self.dst(), self.src1(), self.src2()) }
+}
+
 // ── 运行时错误 ──
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -273,153 +348,153 @@ impl VM {
         let mut ip = self.func_entries[entry_func];
 
         loop {
-            let inst = self.instrs[ip];
+            let inst = Inst(self.instrs[ip]);
             ip += 1;
-            let op = (inst >> 25) as u8;
 
             if self.debug && cfg!(debug_assertions) {
                 eprintln!(
                     "[VM fn={} ip={}] op={:#04x} inst={:#010x} ints[0..4]={:?}",
                     self.current_func,
                     ip - 1,
-                    op,
-                    inst,
+                    inst.0 >> 25,
+                    inst.0,
                     &self.regs.ints[..4.min(self.regs.ints.len())]
                 );
             }
 
-            match op {
+            let opcode = inst.opcode();
+            match opcode {
                 // ── 整数算术 ──
-                0x00 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::AddInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_int(a, self.regs.ints[b].wrapping_add(self.regs.ints[c]));
                 }
-                0x01 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::SubInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_int(a, self.regs.ints[b].wrapping_sub(self.regs.ints[c]));
                 }
-                0x02 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::MulInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_int(a, self.regs.ints[b].wrapping_mul(self.regs.ints[c]));
                 }
-                0x03 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::DivInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     if self.regs.ints[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
                     self.write_int(a, self.regs.ints[b] / self.regs.ints[c]);
                 }
-                0x04 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::ModInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     if self.regs.ints[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
                     self.write_int(a, self.regs.ints[b] % self.regs.ints[c]);
                 }
-                0x05 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
+                Opcode::NegInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
                     self.write_int(a, -self.regs.ints[b]);
                 }
 
                 // ── 浮点 ──
-                0x08 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FAdd => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_float(a, self.regs.floats[b] + self.regs.floats[c]);
                 }
-                0x09 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FSub => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_float(a, self.regs.floats[b] - self.regs.floats[c]);
                 }
-                0x0A => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FMul => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_float(a, self.regs.floats[b] * self.regs.floats[c]);
                 }
-                0x0B => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FDiv => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_float(a, self.regs.floats[b] / self.regs.floats[c]);
                 }
-                0x0C => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
+                Opcode::FNeg => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
                     self.write_float(a, -self.regs.floats[b]);
                 }
 
                 // ── 比较 ──
-                0x10 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::EqInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.ints[b] == self.regs.ints[c]);
                 }
-                0x11 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::LtInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.ints[b] < self.regs.ints[c]);
                 }
-                0x12 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::LeInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.ints[b] <= self.regs.ints[c]);
                 }
-                0x13 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FEq => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.floats[b] == self.regs.floats[c]);
                 }
-                0x14 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FLt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.floats[b] < self.regs.floats[c]);
                 }
 
                 // ── Not ──
-                0x15 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
+                Opcode::Not => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
                     self.write_bool(a, self.regs.ints[b] == 0);
                 }
-                0x16 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::NeInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.ints[b] != self.regs.ints[c]);
                 }
 
-                0x17 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::GtInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.ints[b] > self.regs.ints[c]);
                 }
 
                 // ── 字符串拼接 ──
-                0x18 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::SAdd => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     let lhs = self.heap_get(self.regs.ints[b])?.clone();
                     let rhs = self.heap_get(self.regs.ints[c])?.clone();
                     let result = match (lhs, rhs) {
@@ -430,84 +505,84 @@ impl VM {
                     };
                     self.write_heap(a, result);
                 }
-                0x19 => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::GeInt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.ints[b] >= self.regs.ints[c]);
                 }
-                0x1A => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FNe => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.floats[b] != self.regs.floats[c]);
                 }
-                0x1B => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FLe => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.floats[b] <= self.regs.floats[c]);
                 }
-                0x1C => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FGt => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.floats[b] > self.regs.floats[c]);
                 }
-                0x1D => {
-                    let a = ((inst >> 17) & 0xFF) as usize;
-                    let b = ((inst >> 8) & 0x1FF) as usize;
-                    let c = (inst & 0xFF) as usize;
+                Opcode::FGe => {
+                                        let a = inst.dst();
+                    let b = inst.src1();
+                    let c = inst.src2();
                     self.write_bool(a, self.regs.floats[b] >= self.regs.floats[c]);
                 }
 
                 // ── 转换 ──
-                0x20 => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
+                Opcode::IToF => {
+                                        let d = inst.dst();
+                                        let s = inst.src1();
                     self.write_float(d, self.regs.ints[s] as f64);
                 }
-                0x21 => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
+                Opcode::FToI => {
+                                        let d = inst.dst();
+                                        let s = inst.src1();
                     let f = self.regs.floats[s];
                     self.write_int(d, f as i64);
                     self.regs.floats[d] = f;
                 }
-                0x22 => {
+                Opcode::IToS => {
                     // itos
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
+                                        let d = inst.dst();
+                                        let s = inst.src1();
                     let st = format!("{}", self.regs.ints[s]);
                     self.write_heap(d, HeapObj::String(st));
                 }
-                0x23 => {
+                Opcode::FToS => {
                     // ftos
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
+                                        let d = inst.dst();
+                                        let s = inst.src1();
                     let s = format!("{}", self.regs.floats[s]);
                     self.write_heap(d, HeapObj::String(s));
                 }
-                0x24 => {
+                Opcode::SToI => {
                     return Err(RuntimeError::UnsupportedInstruction(
                         "string to int conversion is not implemented".into(),
                     ));
                 }
 
                 // ── 数据移动 ──
-                0x30 => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
+                Opcode::Move => {
+                                        let d = inst.dst();
+                                        let s = inst.src1();
                     self.regs.ints[d] = self.regs.ints[s];
                     self.regs.floats[d] = self.regs.floats[s];
                 }
-                0x31 => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    self.write_int(d, (inst & 0x1FFFF) as i64);
+                Opcode::LoadImm => {
+                                        let d = inst.dst();
+                    self.write_int(d, inst.imm17() as i64);
                 }
-                0x32 => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let idx = ((inst >> 8) & 0xFF) as usize;
+                Opcode::LoadConst => {
+                                        let d = inst.dst();
+                                        let idx = (inst.0 >> 8) as u8 as usize;
                     let constant = self
                         .consts
                         .get(idx)
@@ -523,9 +598,9 @@ impl VM {
                 }
 
                 // ── 堆分配 ──
-                0x34 => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let sid = ((inst >> 8) & 0xFF) as usize;
+                Opcode::NewStruct => {
+                                        let d = inst.dst();
+                                        let sid = inst.src1();
                     let nf = self
                         .struct_field_counts
                         .get(sid)
@@ -540,18 +615,18 @@ impl VM {
                     }
                     self.write_heap(d, HeapObj::Struct(sid, fields));
                 }
-                0x35 => {
+                Opcode::NewList => {
                     return Err(RuntimeError::UnsupportedInstruction(
                         "list literals are not implemented".into(),
                     ));
                 }
 
                 // ── 字段访问 ──
-                0x36 => {
+                Opcode::GetField => {
                     // GetField(dst, src, idx)
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
-                    let idx = (inst & 0xFF) as usize;
+                                        let d = inst.dst();
+                                        let s = inst.src1();
+                    let idx = inst.src2();
                     let hid = self.regs.ints[s];
                     let val = match self.heap_get(hid)? {
                         HeapObj::Struct(_, fields) => fields.get(idx).copied().ok_or(
@@ -570,11 +645,11 @@ impl VM {
                     self.write_int(d, val);
                     self.regs.floats[d] = f64::from_bits(val as u64);
                 }
-                0x37 => {
+                Opcode::SetField => {
                     // SetField(dst, src, idx, val)
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
-                    let idx = (inst & 0xFF) as usize;
+                                        let d = inst.dst();
+                                        let s = inst.src1();
+                    let idx = inst.src2();
                     let hid = self.regs.ints[s];
                     let val = self.regs.ints[d];
 
@@ -619,11 +694,11 @@ impl VM {
                 }
 
                 // ── 索引 ──
-                0x38 => {
+                Opcode::IndexGet => {
                     // IndexGet(dst, obj, idx)
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let o = ((inst >> 8) & 0x1FF) as usize;
-                    let i = (inst & 0xFF) as usize;
+                                        let d = inst.dst();
+                                        let o = inst.src1();
+                                        let i = inst.src2();
                     let hid = self.regs.ints[o];
                     let index = self.regs.ints[i] as usize;
                     match self.heap_get(hid)? {
@@ -641,17 +716,17 @@ impl VM {
                         }
                     }
                 }
-                0x39 => {
+                Opcode::IndexSet => {
                     return Err(RuntimeError::UnsupportedInstruction(
                         "index assignment is not implemented".into(),
                     ));
                 }
 
                 // ── Enum/Variant ──
-                0x3C => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let enum_id = ((inst >> 8) & 0xFF) as usize;
-                    let tag = (inst & 0xFF) as u16;
+                Opcode::NewVariant => {
+                                        let d = inst.dst();
+                                        let enum_id = inst.src1();
+                                        let tag = inst.src2() as u16;
                     let nf = self.enum_variant_counts[enum_id][tag as usize];
                     let bitmap = self.enum_variant_bitmaps[enum_id][tag as usize];
                     let mut fields = vec![0i64; nf];
@@ -662,9 +737,9 @@ impl VM {
                     }
                     self.write_heap(d, HeapObj::Variant(enum_id, tag, fields));
                 }
-                0x3D => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
+                Opcode::GetVariantTag => {
+                                        let d = inst.dst();
+                                        let s = inst.src1();
                     let hid = self.regs.ints[s];
                     let tag = match self.heap_get(hid)? {
                         HeapObj::Variant(_, tag, _) => *tag as i64,
@@ -674,10 +749,10 @@ impl VM {
                     };
                     self.write_int(d, tag);
                 }
-                0x3E => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
-                    let fi = (inst & 0xFF) as usize;
+                Opcode::GetVariantField => {
+                                        let d = inst.dst();
+                                        let s = inst.src1();
+                    let fi = inst.src2();
                     let hid = self.regs.ints[s];
                     let val = match self.heap_get(hid)? {
                         HeapObj::Variant(_, _, fields) => fields.get(fi).copied().ok_or(
@@ -690,11 +765,11 @@ impl VM {
                     self.write_int(d, val);
                     self.regs.floats[d] = f64::from_bits(val as u64);
                 }
-                0x3F => {
+                Opcode::SetVariantField => {
                     // SetVariantField(val_reg, obj_reg, field_idx)
-                    let d = ((inst >> 17) & 0xFF) as usize; // val reg
-                    let s = ((inst >> 8) & 0x1FF) as usize; // obj reg
-                    let fi = (inst & 0xFF) as usize; // field idx
+                                        let d = inst.dst(); // val reg
+                                        let s = inst.src1(); // obj reg
+                    let fi = inst.src2(); // field idx
                     let hid = self.regs.ints[s];
                     let val = self.regs.ints[d];
                     match self.heap_get_mut(hid)? {
@@ -716,39 +791,39 @@ impl VM {
                 }
 
                 // ── 装箱/拆箱 ──
-                0x3A => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
+                Opcode::Box_ => {
+                                        let d = inst.dst();
+                                        let s = inst.src1();
                     self.write_int(d, self.regs.ints[s]);
                     self.regs.floats[d] = self.regs.floats[s];
                 } // box
-                0x3B => {
-                    let d = ((inst >> 17) & 0xFF) as usize;
-                    let s = ((inst >> 8) & 0x1FF) as usize;
+                Opcode::Unbox => {
+                                        let d = inst.dst();
+                                        let s = inst.src1();
                     self.write_int(d, self.regs.ints[s]);
                     self.regs.floats[d] = self.regs.floats[s];
                 } // unbox
 
                 // ── 控制流 ──
-                0x40 => {
-                    let block_id = (inst & 0x1FFFFFF) as usize;
+                Opcode::Jump => {
+                    let block_id = inst.imm25();
                     self.bind_params(block_id, &self.jump_args(ip - 1).to_vec());
                     ip = self.block_ip(block_id);
                 }
-                0x41 => {
-                    let c = ((inst >> 17) & 0xFF) as usize;
-                    let tb = ((inst >> 8) & 0x1FF) as usize;
-                    let fb = (inst & 0xFF) as usize;
+                Opcode::Branch => {
+                                        let c = inst.dst();
+                                        let tb = inst.src1();
+                    let fb = inst.src2();
                     let block_id = if self.regs.ints[c] != 0 { tb } else { fb };
                     self.bind_params(block_id, &self.jump_args(ip - 1).to_vec());
                     ip = self.block_ip(block_id);
                 }
 
                 // ── 调用 ──
-                0x50 => {
+                Opcode::Call => {
                     // Call(func_idx, args, cont_block)
-                    let func_idx = ((inst >> 17) & 0xFF) as usize;
-                    let cont_block = (inst & 0x1FFFF) as usize;
+                                        let func_idx = inst.dst();
+                                        let cont_block = inst.imm17();
                     if self.frames.len() >= MAX_CALL_DEPTH {
                         return Err(RuntimeError::StackOverflow);
                     }
@@ -774,12 +849,12 @@ impl VM {
                     self.current_func = func_idx;
                     ip = self.func_entries[func_idx];
                 }
-                0x51 => {
+                Opcode::TailCall => {
                     ip = self.func_entries[self.current_func];
                 }
-                0x52 => {
+                Opcode::Return => {
                     // ret
-                    let r = ((inst >> 17) & 0xFF) as usize;
+                                        let r = inst.dst();
                     if let Some(frame) = self.frames.pop() {
                         let result_i = self.regs.ints[r];
                         let result_f = self.regs.floats[r];
@@ -799,9 +874,9 @@ impl VM {
                 }
 
                 // ── native call ──
-                0x5F => {
-                    let fi = ((inst >> 17) & 0xFF) as usize;
-                    let ret_block = (inst & 0x1FFFF) as usize;
+                Opcode::CallNative => {
+                                        let fi = inst.dst();
+                                        let ret_block = inst.imm17();
                     let args: Vec<i64> = self
                         .jump_args(ip - 1)
                         .iter()
@@ -818,12 +893,12 @@ impl VM {
                 }
 
                 // ── async ──
-                0x60 => {
+                Opcode::AsyncPoll => {
                     if let Some((_, result)) = self.scheduler.poll() {
                         self.write_int(0, result);
                     }
                 }
-                0x61 => {
+                Opcode::Suspend => {
                     // suspend
                     let cf = CallFrame {
                         func_idx: self.current_func,
@@ -837,8 +912,8 @@ impl VM {
                 }
 
                 // ── print ──
-                0x7F => {
-                    let r = ((inst >> 17) & 0xFF) as usize;
+                Opcode::Print => {
+                                        let r = inst.dst();
                     let val = self.regs.ints[r];
                     if val >= 0 {
                         if let Some(HeapObj::String(s)) = self.heap.try_get(val as usize) {
@@ -851,7 +926,7 @@ impl VM {
                     }
                 }
 
-                _ => return Err(RuntimeError::InvalidOpcode(op)),
+                _ => return Err(RuntimeError::InvalidOpcode(opcode as u8)),
             }
         }
     }
@@ -863,33 +938,33 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
     Ok(match instr {
         CpsInstr::BinOp(d, op, s1, s2) => encode(
             match op {
-                CpsBinOp::AddInt => 0x00,
-                CpsBinOp::SubInt => 0x01,
-                CpsBinOp::MulInt => 0x02,
-                CpsBinOp::DivInt => 0x03,
-                CpsBinOp::ModInt => 0x04,
-                CpsBinOp::FAdd => 0x08,
-                CpsBinOp::FSub => 0x09,
-                CpsBinOp::FMul => 0x0A,
-                CpsBinOp::FDiv => 0x0B,
-                CpsBinOp::FEq => 0x13,
-                CpsBinOp::FNe => 0x1A,
-                CpsBinOp::FLt => 0x14,
-                CpsBinOp::FLe => 0x1B,
-                CpsBinOp::FGt => 0x1C,
-                CpsBinOp::FGe => 0x1D,
-                CpsBinOp::EqInt => 0x10,
-                CpsBinOp::NeInt => 0x16,
-                CpsBinOp::LtInt => 0x11,
-                CpsBinOp::LeInt => 0x12,
-                CpsBinOp::GtInt => 0x17,
-                CpsBinOp::GeInt => 0x19,
-                CpsBinOp::IToF => 0x20,
-                CpsBinOp::FToI => 0x21,
-                CpsBinOp::IToS => 0x22,
-                CpsBinOp::FToS => 0x23,
-                CpsBinOp::SToI => 0x24,
-                CpsBinOp::SAdd => 0x18,
+                CpsBinOp::AddInt => Opcode::AddInt as u8,
+                CpsBinOp::SubInt => Opcode::SubInt as u8,
+                CpsBinOp::MulInt => Opcode::MulInt as u8,
+                CpsBinOp::DivInt => Opcode::DivInt as u8,
+                CpsBinOp::ModInt => Opcode::ModInt as u8,
+                CpsBinOp::FAdd => Opcode::FAdd as u8,
+                CpsBinOp::FSub => Opcode::FSub as u8,
+                CpsBinOp::FMul => Opcode::FMul as u8,
+                CpsBinOp::FDiv => Opcode::FDiv as u8,
+                CpsBinOp::FEq => Opcode::FEq as u8,
+                CpsBinOp::FNe => Opcode::FNe as u8,
+                CpsBinOp::FLt => Opcode::FLt as u8,
+                CpsBinOp::FLe => Opcode::FLe as u8,
+                CpsBinOp::FGt => Opcode::FGt as u8,
+                CpsBinOp::FGe => Opcode::FGe as u8,
+                CpsBinOp::EqInt => Opcode::EqInt as u8,
+                CpsBinOp::NeInt => Opcode::NeInt as u8,
+                CpsBinOp::LtInt => Opcode::LtInt as u8,
+                CpsBinOp::LeInt => Opcode::LeInt as u8,
+                CpsBinOp::GtInt => Opcode::GtInt as u8,
+                CpsBinOp::GeInt => Opcode::GeInt as u8,
+                CpsBinOp::IToF => Opcode::IToF as u8,
+                CpsBinOp::FToI => Opcode::FToI as u8,
+                CpsBinOp::IToS => Opcode::IToS as u8,
+                CpsBinOp::FToS => Opcode::FToS as u8,
+                CpsBinOp::SToI => Opcode::SToI as u8,
+                CpsBinOp::SAdd => Opcode::SAdd as u8,
             },
             *d as u32,
             *s1 as u32,
@@ -897,47 +972,47 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
         ),
         CpsInstr::UnOp(d, op, s) => encode(
             match op {
-                CpsUnOp::NegInt => 0x05,
-                CpsUnOp::FNeg => 0x0C,
-                CpsUnOp::Not => 0x15,
+                CpsUnOp::NegInt => Opcode::NegInt as u8,
+                CpsUnOp::FNeg => Opcode::FNeg as u8,
+                CpsUnOp::Not => Opcode::Not as u8,
             },
             *d as u32,
             *s as u32,
             0,
         ),
-        CpsInstr::LoadConst(d, idx) => encode(0x32, *d as u32, *idx as u32, 0),
-        CpsInstr::Move(d, s) => encode(0x30, *d as u32, *s as u32, 0),
-        CpsInstr::NewStruct(d, sid, _) => encode(0x34, *d as u32, *sid as u32, 0),
-        CpsInstr::GetField(d, o, idx) => encode(0x36, *d as u32, *o as u32, *idx as u32),
-        CpsInstr::SetField(d, o, idx, _) => encode(0x37, *d as u32, *o as u32, *idx as u32),
-        CpsInstr::NewVariant(d, eid, tag, _) => encode(0x3C, *d as u32, *eid as u32, *tag as u32),
-        CpsInstr::GetVariantTag(d, o) => encode(0x3D, *d as u32, *o as u32, 0),
-        CpsInstr::GetVariantField(d, o, fi) => encode(0x3E, *d as u32, *o as u32, *fi as u32),
-        CpsInstr::SetVariantField(d, o, fi, _) => encode(0x3F, *d as u32, *o as u32, *fi as u32),
+        CpsInstr::LoadConst(d, idx) => encode(Opcode::LoadConst as u8, *d as u32, *idx as u32, 0),
+        CpsInstr::Move(d, s) => encode(Opcode::Move as u8, *d as u32, *s as u32, 0),
+        CpsInstr::NewStruct(d, sid, _) => encode(Opcode::NewStruct as u8, *d as u32, *sid as u32, 0),
+        CpsInstr::GetField(d, o, idx) => encode(Opcode::GetField as u8, *d as u32, *o as u32, *idx as u32),
+        CpsInstr::SetField(d, o, idx, _) => encode(Opcode::SetField as u8, *d as u32, *o as u32, *idx as u32),
+        CpsInstr::NewVariant(d, eid, tag, _) => encode(Opcode::NewVariant as u8, *d as u32, *eid as u32, *tag as u32),
+        CpsInstr::GetVariantTag(d, o) => encode(Opcode::GetVariantTag as u8, *d as u32, *o as u32, 0),
+        CpsInstr::GetVariantField(d, o, fi) => encode(Opcode::GetVariantField as u8, *d as u32, *o as u32, *fi as u32),
+        CpsInstr::SetVariantField(d, o, fi, _) => encode(Opcode::SetVariantField as u8, *d as u32, *o as u32, *fi as u32),
         CpsInstr::NewList(_, elements) => {
             return Err(format!(
                 "list literals are not implemented ({} elements)",
                 elements.len()
             ))
         }
-        CpsInstr::IndexGet(d, o, i) => encode(0x38, *d as u32, *o as u32, *i as u32),
+        CpsInstr::IndexGet(d, o, i) => encode(Opcode::IndexGet as u8, *d as u32, *o as u32, *i as u32),
         CpsInstr::IndexSet(_, _, _, _) => return Err("index assignment is not implemented".into()),
-        CpsInstr::Box(d, s) => encode(0x3A, *d as u32, *s as u32, 0),
-        CpsInstr::Unbox(d, s) => encode(0x3B, *d as u32, *s as u32, 0),
-        CpsInstr::Print(r) => encode(0x7F, *r as u32, 0, 0),
+        CpsInstr::Box(d, s) => encode(Opcode::Box_ as u8, *d as u32, *s as u32, 0),
+        CpsInstr::Unbox(d, s) => encode(Opcode::Unbox as u8, *d as u32, *s as u32, 0),
+        CpsInstr::Print(r) => encode(Opcode::Print as u8, *r as u32, 0, 0),
         CpsInstr::Nop => return Err("nop is not executable".into()),
     })
 }
 
 fn encode_term(term: &CpsTerminator) -> Result<u32, String> {
     Ok(match term {
-        CpsTerminator::Jump(b, _) => encode(0x40, 0, 0, *b as u32),
-        CpsTerminator::Branch(c, tb, _, fb, _) => encode(0x41, *c as u32, *tb as u32, *fb as u32),
-        CpsTerminator::Suspend => encode(0x61, 0, 0, 0),
-        CpsTerminator::Return(r) => encode(0x52, *r as u32, 0, 0),
-        CpsTerminator::Call(fi, _, ret) => encode(0x50, *fi as u32, 0, *ret as u32),
-        CpsTerminator::CallNative(fi, _, ret) => encode(0x5F, *fi as u32, 0, *ret as u32),
-        CpsTerminator::TailCall(_, _) => encode(0x51, 0, 0, 0),
+        CpsTerminator::Jump(b, _) => encode(Opcode::Jump as u8, 0, 0, *b as u32),
+        CpsTerminator::Branch(c, tb, _, fb, _) => encode(Opcode::Branch as u8, *c as u32, *tb as u32, *fb as u32),
+        CpsTerminator::Suspend => encode(Opcode::Suspend as u8, 0, 0, 0),
+        CpsTerminator::Return(r) => encode(Opcode::Return as u8, *r as u32, 0, 0),
+        CpsTerminator::Call(fi, _, ret) => encode(Opcode::Call as u8, *fi as u32, 0, *ret as u32),
+        CpsTerminator::CallNative(fi, _, ret) => encode(Opcode::CallNative as u8, *fi as u32, 0, *ret as u32),
+        CpsTerminator::TailCall(_, _) => encode(Opcode::TailCall as u8, 0, 0, 0),
     })
 }
 

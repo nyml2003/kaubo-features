@@ -32,7 +32,7 @@ _tmp
 
 ```text
 const var if else for in while break continue return
-struct impl match export import from as async await self
+struct impl enum match export import from as async await self
 true false null not and or
 ```
 
