@@ -9,6 +9,7 @@ pub mod binary;
 pub mod empty_block;
 pub mod fold;
 pub mod loop_inline;
+pub mod move_fold;
 
 pub trait Pass {
     fn name(&self) -> &'static str;

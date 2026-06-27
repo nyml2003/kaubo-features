@@ -6,7 +6,7 @@ pub use kaubo_ir::cps::CpsModule;
 use kaubo_ir::cps_build::build_module;
 use kaubo_ir::flatten::flatten_module;
 use kaubo_ir::pass::binary;
-use kaubo_ir::pass::{empty_block::EmptyBlockElim, fold::ConstantFold, run_passes};
+use kaubo_ir::pass::{empty_block::EmptyBlockElim, fold::ConstantFold, move_fold::MoveFold, run_passes};
 use kaubo_syntax::parser::Parser;
 use std::fmt;
 
@@ -46,7 +46,7 @@ pub fn compile_source(source: &str) -> Result<CpsModule, DriverError> {
     kaubo_infer::infer_module(&module).map_err(|e| DriverError::Infer(e.msg))?;
     let mut cps = build_module(&module).map_err(DriverError::Build)?;
     flatten_module(&mut cps);
-    run_passes(&mut cps, &[&EmptyBlockElim, &ConstantFold]);
+    run_passes(&mut cps, &[&EmptyBlockElim, &MoveFold, &ConstantFold]);
     Ok(cps)
 }
 
