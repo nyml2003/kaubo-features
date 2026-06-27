@@ -34,18 +34,30 @@ export function run(_bytes: Uint8Array): string;
 
 export function semantic_tokens(source: string): string;
 
+/**
+ * Enable or disable structured logging from the toolchain.
+ *
+ * `level` is a severity level: 0 = Trace, 1 = Debug, 2 = Info,
+ * 3 = Warn, 4 = Error.  Pass a value outside 0-4 to disable.
+ *
+ * When enabled, events are written to `console.error` via the
+ * `ConsoleHandler` in `kaubo-log-handlers`.
+ */
+export function set_log_level(level: number): void;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly compile: (a: number, b: number) => [number, number, number];
-    readonly complete: (a: number, b: number, c: number) => [number, number];
-    readonly diagnose: (a: number, b: number) => [number, number];
-    readonly hover: (a: number, b: number, c: number) => [number, number];
     readonly init: () => void;
     readonly lex: (a: number, b: number) => [number, number];
+    readonly diagnose: (a: number, b: number) => [number, number];
+    readonly set_log_level: (a: number) => void;
+    readonly compile: (a: number, b: number) => [number, number, number];
     readonly run: (a: number, b: number) => [number, number, number, number];
+    readonly hover: (a: number, b: number, c: number) => [number, number];
     readonly semantic_tokens: (a: number, b: number) => [number, number];
+    readonly complete: (a: number, b: number, c: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

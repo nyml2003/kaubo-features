@@ -142,7 +142,38 @@ export const examples: KauboExample[] = [
       "print(p1.dis(p2).to_string());\n",
     tags: ["structs"],
   },
+  {
+    id: "interface-operator",
+    name: "Interface & Operator",
+    description: "Operator overloading and Display interface (Add/Display are auto-injected)",
+    code:
+      "struct Vec2 {\n" +
+      "    x: Int64,\n" +
+      "    y: Int64,\n" +
+      "};\n" +
+      "\n" +
+      "impl Add for Vec2 {\n" +
+      "  operator add: |self: Vec2, other: Vec2| -> Vec2 {\n" +
+      "    return Vec2 {\n" +
+      "      x: self.x + other.x,\n" +
+      "      y: self.y + other.y,\n" +
+      "    };\n" +
+      "  }\n" +
+      "};\n" +
+      "\n" +
+      "impl Display for Vec2 {\n" +
+      "  to_string: |self: Vec2| -> String {\n" +
+      "    return `Vec2 {{ x:{self.x}, y:{self.y} }}`;\n" +
+      "  }\n" +
+      "};\n" +
+      "\n" +
+      "const v1 = Vec2 { x: 10, y: 20 };\n" +
+      "const v2 = Vec2 { x: 5, y: 8 };\n" +
+      "const sum = v1 + v2;\n" +
+      "print(sum.to_string());\n",
+    tags: ["structs", "advanced"],
+  },
 ];
 
 // Keep original count for tests
-Object.defineProperty(examples, 'length', { value: 9, writable: false });
+Object.defineProperty(examples, 'length', { value: 10, writable: false });

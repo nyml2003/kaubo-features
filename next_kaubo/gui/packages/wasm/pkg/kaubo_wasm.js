@@ -147,9 +147,26 @@ export function semantic_tokens(source) {
     }
 }
 
+/**
+ * Enable or disable structured logging from the toolchain.
+ *
+ * `level` is a severity level: 0 = Trace, 1 = Debug, 2 = Info,
+ * 3 = Warn, 4 = Error.  Pass a value outside 0-4 to disable.
+ *
+ * When enabled, events are written to `console.error` via the
+ * `ConsoleHandler` in `kaubo-log-handlers`.
+ * @param {number} level
+ */
+export function set_log_level(level) {
+    wasm.set_log_level(level);
+}
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg___wbindgen_throw_be289d5034ed271b: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
         __wbg_error_7534b8e9a36f1ab4: function(arg0, arg1) {
             let deferred0_0;
             let deferred0_1;
@@ -160,6 +177,9 @@ function __wbg_get_imports() {
             } finally {
                 wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
             }
+        },
+        __wbg_error_9a7fe3f932034cde: function(arg0) {
+            console.error(arg0);
         },
         __wbg_new_8a6f238a6ece86ea: function() {
             const ret = new Error();

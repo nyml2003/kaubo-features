@@ -887,32 +887,56 @@ impl Parser {
 
     fn parse_template(&mut self) -> ParseResult<Expr> {
         let template = self.consume_lexeme();
-        // template: "hello {name}, age {age + 1}"
+        // template: `hello {name}, age {age + 1}`
         // Build: "hello " + name.to_string() + ", age " + (age + 1).to_string()
+        //
+        // Braces: {{ → literal {, }} → literal }
         let mut parts: Vec<Expr> = Vec::new();
         let mut current = String::new();
         let chars: Vec<char> = template.chars().collect();
         let mut i = 0;
 
         while i < chars.len() {
+            // {{ → literal {
+            if chars[i] == '{' && i + 1 < chars.len() && chars[i + 1] == '{' {
+                current.push('{');
+                i += 2;
+                continue;
+            }
+            // }} → literal }
+            if chars[i] == '}' && i + 1 < chars.len() && chars[i + 1] == '}' {
+                current.push('}');
+                i += 2;
+                continue;
+            }
             if chars[i] == '{' {
                 if !current.is_empty() {
                     parts.push(Expr::LitString(std::mem::take(&mut current)));
                 }
-                // find matching }
+                // Find matching }, skipping nested {{ and handles }}
                 let mut depth = 1;
                 let mut expr_str = String::new();
+                let mut trailing_brace = false;
                 i += 1;
                 while i < chars.len() && depth > 0 {
-                    match chars[i] {
-                        '{' => depth += 1,
-                        '}' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
+                    // {{ → literal { inside expression
+                    if chars[i] == '{' && i + 1 < chars.len() && chars[i + 1] == '{' {
+                        expr_str.push('{');
+                        i += 2;
+                        continue;
+                    }
+                    if chars[i] == '}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            // }} → close interpolation + literal }
+                            if i + 1 < chars.len() && chars[i + 1] == '}' {
+                                trailing_brace = true;
+                                i += 1; // skip second }
                             }
+                            break;
                         }
-                        _ => {}
+                    } else if chars[i] == '{' {
+                        depth += 1;
                     }
                     expr_str.push(chars[i]);
                     i += 1;
@@ -927,6 +951,10 @@ impl Parser {
                     }),
                     args: vec![],
                 });
+                // }} → append literal "}"
+                if trailing_brace {
+                    parts.push(Expr::LitString("}".to_string()));
+                }
             } else {
                 current.push(chars[i]);
             }

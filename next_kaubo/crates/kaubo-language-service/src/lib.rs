@@ -9,7 +9,22 @@ use kaubo_web_api::token::{classify_token, utf16_range};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-const BUILTIN_TYPES: &[&str] = &["Int64", "Float64", "String", "Bool", "Null", "List"];
+const BUILTIN_TYPES: &[&str] = &[
+    "Int64", "Float64", "String", "Bool", "Null", "List",
+    // Builtin interfaces
+    "Add", "Subtract", "Multiply", "Divide", "Modulo",
+    "Compare", "Display", "IntoFloat", "IntoInt",
+    // Self type
+    "Self",
+];
+
+/// Builtin methods for builtin types (used for dot-completions).
+const BUILTIN_METHODS: &[(&str, &[&str])] = &[
+    ("Int64", &["add", "subtract", "multiply", "divide", "modulo", "less", "less_equal", "greater", "greater_equal", "equal", "not_equal", "to_string", "to_float"]),
+    ("Float64", &["add", "subtract", "multiply", "divide", "less", "less_equal", "greater", "greater_equal", "equal", "not_equal", "to_string", "to_int"]),
+    ("String", &["add", "less", "less_equal", "greater", "greater_equal", "equal", "not_equal", "to_string", "to_int"]),
+    ("Bool", &["equal", "not_equal", "to_string"]),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SemanticToken {
@@ -61,25 +76,40 @@ pub fn completions(source: &str, offset: usize) -> Vec<CompletionItem> {
     let Some(type_name) = model.vars.get(&object_name) else {
         return Vec::new();
     };
-    let Some(info) = model.structs.get(type_name) else {
-        return Vec::new();
-    };
 
     let mut result = Vec::new();
-    for field in &info.fields {
-        result.push(CompletionItem {
-            label: field.clone(),
-            kind: "field".to_string(),
-            detail: Some(type_name.clone()),
-        });
+
+    // Try struct fields + methods
+    if let Some(info) = model.structs.get(type_name) {
+        for field in &info.fields {
+            result.push(CompletionItem {
+                label: field.clone(),
+                kind: "field".to_string(),
+                detail: Some(type_name.clone()),
+            });
+        }
+        for method in &info.methods {
+            result.push(CompletionItem {
+                label: method.clone(),
+                kind: "method".to_string(),
+                detail: Some(format!("{type_name} method")),
+            });
+        }
     }
-    for method in &info.methods {
-        result.push(CompletionItem {
-            label: method.clone(),
-            kind: "method".to_string(),
-            detail: Some(format!("{type_name} method")),
-        });
+
+    // Try builtin type methods
+    for (bt_name, methods) in BUILTIN_METHODS {
+        if type_name == *bt_name {
+            for method in *methods {
+                result.push(CompletionItem {
+                    label: method.to_string(),
+                    kind: "method".to_string(),
+                    detail: Some(format!("{bt_name} method")),
+                });
+            }
+        }
     }
+
     result
 }
 
@@ -101,8 +131,9 @@ fn semantic_kind(tokens: &[Token], idx: usize, model: &SemanticModel) -> String 
     let next = tokens.get(idx + 1);
     let after_next = tokens.get(idx + 2);
 
-    if previous.is_some_and(|t| t.kind == TokenKind::Struct || t.kind == TokenKind::Impl)
-        || is_type_reference(tokens, idx, model)
+    if previous.is_some_and(|t| {
+        t.kind == TokenKind::Struct || t.kind == TokenKind::Impl || t.kind == TokenKind::Interface
+    }) || is_type_reference(tokens, idx, model)
     {
         return "type".to_string();
     }
@@ -313,7 +344,17 @@ fn collect_impls(tokens: &[Token], model: &mut SemanticModel) {
     let mut idx = 0;
     while idx + 4 < tokens.len() {
         if tokens[idx].kind == TokenKind::Impl && tokens[idx + 1].kind == TokenKind::Identifier {
-            let struct_name = tokens[idx + 1].lexeme.clone();
+            let first_name = tokens[idx + 1].lexeme.clone();
+            // Check for `impl Interface for Struct { ... }` vs `impl Struct { ... }`
+            let (struct_name, skip_extra) =
+                if tokens[idx + 2].kind == TokenKind::For && tokens[idx + 3].kind == TokenKind::Identifier
+                {
+                    // `impl Interface for Struct`
+                    (tokens[idx + 3].lexeme.clone(), 4)
+                } else {
+                    // `impl Struct`
+                    (first_name, 2)
+                };
             let info = model
                 .structs
                 .entry(struct_name)
@@ -321,9 +362,14 @@ fn collect_impls(tokens: &[Token], model: &mut SemanticModel) {
                     fields: Vec::new(),
                     methods: Vec::new(),
                 });
-            idx += 2;
+            idx += skip_extra;
             while idx + 1 < tokens.len() && tokens[idx].kind != TokenKind::RBrace {
-                if tokens[idx].kind == TokenKind::Identifier
+                if tokens[idx].kind == TokenKind::Operator {
+                    // `operator method:` — skip operator keyword
+                    idx += 1;
+                }
+                if idx + 1 < tokens.len()
+                    && tokens[idx].kind == TokenKind::Identifier
                     && tokens[idx + 1].kind == TokenKind::Colon
                 {
                     info.methods.push(tokens[idx].lexeme.clone());

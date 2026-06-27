@@ -1063,9 +1063,6 @@ mod tests {
     #[test]
     fn user_struct_operator_add_via_interface() {
         let source = r#"
-            interface Add {
-                operator add: |self: Self, other: Self| -> Self;
-            };
             struct Vec2 { x: Int64, y: Int64 };
             impl Add for Vec2 {
                 operator add: |self: Vec2, other: Vec2| -> Vec2 {
@@ -1079,5 +1076,32 @@ mod tests {
         let outcome = run_source(source).unwrap();
         // operator dispatch works — returns a heap handle
         assert!(outcome.result > 0, "should return heap handle for Vec2 result");
+    }
+
+    #[test]
+    fn user_struct_display_interface_to_string() {
+        let source = r#"
+            struct Vec2 { x: Int64, y: Int64 };
+            impl Add for Vec2 {
+                operator add: |self: Vec2, other: Vec2| -> Vec2 {
+                    return Vec2 { x: self.x + other.x, y: self.y + other.y };
+                };
+            };
+            impl Display for Vec2 {
+                to_string: |self: Vec2| -> String {
+                    return `Vec2 {{ x:{self.x}, y:{self.y} }}`;
+                };
+            };
+            const v1 = Vec2 { x: 10, y: 20 };
+            const v2 = Vec2 { x: 5, y: 8 };
+            const sum = v1 + v2;
+            print(sum.to_string());
+        "#;
+        let outcome = run_source(source).unwrap();
+        assert!(
+            outcome.output.iter().any(|s| s.contains("Vec2")),
+            "should print Vec2 via Display interface, got: {:?}",
+            outcome.output
+        );
     }
 }

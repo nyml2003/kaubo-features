@@ -5,7 +5,8 @@ const KEYWORDS = [
   "var", "if", "else", "elif", "while", "for", "return",
   "in", "yield", "break", "continue", "pass",
   "struct", "impl", "import", "as", "from",
-  "pub", "json", "module", "operator",
+  "pub", "json", "module",
+  "interface", "operator",
   "and", "or", "not",
 ];
 

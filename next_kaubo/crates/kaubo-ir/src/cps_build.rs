@@ -283,6 +283,20 @@ impl<'a> CpsBuilder<'a> {
     }
 
     fn collect_signatures(&mut self, module: &Module) {
+        // Inject builtin interface definitions so `impl Add for ...` works without
+        // needing explicit `interface Add { ... }` in source.
+        for iface_name in &[
+            "Add", "Subtract", "Multiply", "Divide", "Modulo",
+            "Compare", "Display", "IntoFloat", "IntoInt",
+        ] {
+            self.interface_vtables.entry(iface_name.to_string()).or_insert_with(|| {
+                VtableDef {
+                    interface_name: iface_name.to_string(),
+                    methods: vec![],
+                }
+            });
+        }
+
         for stmt in &module.stmts {
             match stmt {
                 Stmt::StructDef { name, .. } => {
@@ -1157,65 +1171,83 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
                     return self.build_unary_for_method(field, object);
                 }
             }
-            // to_string() — compile-time rewrite to IToS / FToS / Move
+            // to_string() — compile-time rewrite for builtin types only
+            // Struct types go through normal method/interface dispatch
             if field == "to_string" && args.is_empty() {
-                let (entry, continu, obj_reg) = self.build_expr(object)?;
-                let dst = self.ctx.alloc();
-                let id = self.ctx.new_block();
                 let hint = self.value_hint(object);
-                let instrs = if hint == ValueHint::String {
-                    vec![CpsInstr::Move(dst, obj_reg)]
-                } else if hint.is_float() {
-                    vec![CpsInstr::BinOp(dst, CpsBinOp::FToS, obj_reg, 0)]
-                } else {
-                    vec![CpsInstr::BinOp(dst, CpsBinOp::IToS, obj_reg, 0)]
-                };
-                self.ctx.set_block(
-                    id,
-                    CpsBlock {
-                        id,
-                        params: vec![],
-                        instrs,
-                        term: cps_emit::emit_return(dst),
-                    },
+                let is_builtin = matches!(
+                    hint,
+                    ValueHint::Int | ValueHint::Float | ValueHint::String | ValueHint::Bool | ValueHint::Unknown
                 );
-                self.ctx.chain(continu, id)?;
-                self.set_value_hint(dst, ValueHint::String);
-                return Ok((entry, id, dst));
+                if is_builtin {
+                    let (entry, continu, obj_reg) = self.build_expr(object)?;
+                    let dst = self.ctx.alloc();
+                    let id = self.ctx.new_block();
+                    let instrs = if hint == ValueHint::String {
+                        vec![CpsInstr::Move(dst, obj_reg)]
+                    } else if hint.is_float() {
+                        vec![CpsInstr::BinOp(dst, CpsBinOp::FToS, obj_reg, 0)]
+                    } else {
+                        vec![CpsInstr::BinOp(dst, CpsBinOp::IToS, obj_reg, 0)]
+                    };
+                    self.ctx.set_block(
+                        id,
+                        CpsBlock {
+                            id,
+                            params: vec![],
+                            instrs,
+                            term: cps_emit::emit_return(dst),
+                        },
+                    );
+                    self.ctx.chain(continu, id)?;
+                    self.set_value_hint(dst, ValueHint::String);
+                    return Ok((entry, id, dst));
+                }
+                // Struct: fall through to interface dispatch below
             }
+            // to_float() — builtin rewrite for Int64/Float64 only
             if field == "to_float" && args.is_empty() {
-                let (entry, continu, obj_reg) = self.build_expr(object)?;
-                let dst = self.ctx.alloc();
-                let id = self.ctx.new_block();
-                self.ctx.set_block(
-                    id,
-                    CpsBlock {
+                let hint = self.value_hint(object);
+                if matches!(hint, ValueHint::Int | ValueHint::Float | ValueHint::String) {
+                    let (entry, continu, obj_reg) = self.build_expr(object)?;
+                    let dst = self.ctx.alloc();
+                    let id = self.ctx.new_block();
+                    self.ctx.set_block(
                         id,
-                        params: vec![],
-                        instrs: vec![CpsInstr::BinOp(dst, CpsBinOp::IToF, obj_reg, 0)],
-                        term: cps_emit::emit_return(dst),
-                    },
-                );
-                self.ctx.chain(continu, id)?;
-                self.set_value_hint(dst, ValueHint::Float);
-                return Ok((entry, id, dst));
+                        CpsBlock {
+                            id,
+                            params: vec![],
+                            instrs: vec![CpsInstr::BinOp(dst, CpsBinOp::IToF, obj_reg, 0)],
+                            term: cps_emit::emit_return(dst),
+                        },
+                    );
+                    self.ctx.chain(continu, id)?;
+                    self.set_value_hint(dst, ValueHint::Float);
+                    return Ok((entry, id, dst));
+                }
+                // Struct: fall through to method dispatch
             }
+            // to_int() — builtin rewrite for String/Float64 only
             if field == "to_int" && args.is_empty() {
-                let (entry, continu, obj_reg) = self.build_expr(object)?;
-                let dst = self.ctx.alloc();
-                let id = self.ctx.new_block();
-                self.ctx.set_block(
-                    id,
-                    CpsBlock {
+                let hint = self.value_hint(object);
+                if matches!(hint, ValueHint::Int | ValueHint::Float | ValueHint::String) {
+                    let (entry, continu, obj_reg) = self.build_expr(object)?;
+                    let dst = self.ctx.alloc();
+                    let id = self.ctx.new_block();
+                    self.ctx.set_block(
                         id,
-                        params: vec![],
-                        instrs: vec![CpsInstr::BinOp(dst, CpsBinOp::SToI, obj_reg, 0)],
-                        term: cps_emit::emit_return(dst),
-                    },
-                );
-                self.ctx.chain(continu, id)?;
-                self.set_value_hint(dst, ValueHint::Int);
-                return Ok((entry, id, dst));
+                        CpsBlock {
+                            id,
+                            params: vec![],
+                            instrs: vec![CpsInstr::BinOp(dst, CpsBinOp::SToI, obj_reg, 0)],
+                            term: cps_emit::emit_return(dst),
+                        },
+                    );
+                    self.ctx.chain(continu, id)?;
+                    self.set_value_hint(dst, ValueHint::Int);
+                    return Ok((entry, id, dst));
+                }
+                // Struct: fall through to method dispatch
             }
             // Try struct method call: obj.method(args)
             for sd in &self.structs.clone() {
@@ -1552,7 +1584,9 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         }
 
         let is_float = lhs_hint.is_float() || rhs_hint.is_float();
+        let is_string = lhs_hint == ValueHint::String || rhs_hint == ValueHint::String;
         let (binop, sl, sr) = match op {
+            BinOp::Add if is_string => (CpsBinOp::SAdd, rl, rr),
             BinOp::Gt if !is_float => (CpsBinOp::GtInt, rl, rr),
             BinOp::Ge if !is_float => (CpsBinOp::GeInt, rl, rr),
             _ => (bin_op_to_cps(op, is_float)?, rl, rr),
