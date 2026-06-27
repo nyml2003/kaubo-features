@@ -153,8 +153,7 @@ pub struct VM {
 pub struct CallFrame {
     pub func_idx: usize,
     pub ret_block: usize,
-    pub saved_ints: Vec<i64>,
-    pub saved_floats: Vec<f64>,
+    pub saved_regs: Vec<u64>,
     pub result_reg: usize,
 }
 
@@ -169,7 +168,7 @@ impl Default for VM {
 impl VM {
     pub fn new() -> Self {
         VM {
-            regs: RegFile::new(512, 256),
+            regs: RegFile::new(512),
             frames: vec![],
             consts: vec![],
             func_blocks: vec![],
@@ -314,24 +313,25 @@ impl VM {
         }
         for (i, &arg_reg) in args.iter().enumerate() {
             if i < params.len() {
-                self.regs.ints[params[i]] = self.regs.ints[arg_reg];
-                self.regs.floats[params[i]] = self.regs.floats[arg_reg];
+                self.regs.regs[params[i]] = self.regs.regs[arg_reg];
             }
         }
     }
 
+    fn write_reg(&mut self, reg: usize, value: u64) {
+        self.regs.regs[reg] = value;
+    }
+
     fn write_int(&mut self, reg: usize, value: i64) {
-        self.regs.ints[reg] = value;
+        self.regs.regs[reg] = value as u64;
     }
 
     fn write_bool(&mut self, reg: usize, value: bool) {
-        self.write_int(reg, value as i64);
-        self.regs.floats[reg] = value as u8 as f64;
+        self.regs.regs[reg] = if value { 1 } else { 0 };
     }
 
     fn write_float(&mut self, reg: usize, value: f64) {
-        self.regs.floats[reg] = value;
-        self.regs.ints[reg] = value.to_bits() as i64;
+        self.regs.regs[reg] = value.to_bits();
     }
 
     fn write_heap(&mut self, reg: usize, obj: HeapObj) {
@@ -362,9 +362,9 @@ impl VM {
     pub fn execute(&mut self, entry_func: usize, _reg_count: usize) -> Result<i64, RuntimeError> {
         self.current_func = entry_func;
         let reg_needed = self.func_reg_counts[entry_func];
-        self.regs.ensure_capacity(reg_needed, reg_needed);
-        if self.regs.ints.len() < reg_needed {
-            self.regs.ints.resize(reg_needed, 0);
+        self.regs.ensure_capacity(reg_needed);
+        if self.regs.regs.len() < reg_needed {
+            self.regs.regs.resize(reg_needed, 0);
         }
 
         let mut ip = self.func_entries[entry_func];
@@ -380,7 +380,7 @@ impl VM {
                     ip - 1,
                     inst.0 >> 25,
                     inst.0,
-                    &self.regs.ints[..4.min(self.regs.ints.len())]
+                    &self.regs.regs[..4.min(self.regs.regs.len())]
                 );
             }
 
@@ -391,42 +391,42 @@ impl VM {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_int(a, self.regs.ints[b].wrapping_add(self.regs.ints[c]));
+                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_add(self.regs.regs[c] as i64));
                 }
                 Opcode::SubInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_int(a, self.regs.ints[b].wrapping_sub(self.regs.ints[c]));
+                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_sub(self.regs.regs[c] as i64));
                 }
                 Opcode::MulInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_int(a, self.regs.ints[b].wrapping_mul(self.regs.ints[c]));
+                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_mul(self.regs.regs[c] as i64));
                 }
                 Opcode::DivInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    if self.regs.ints[c] == 0 {
+                    if self.regs.regs[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
-                    self.write_int(a, self.regs.ints[b].wrapping_div(self.regs.ints[c]));
+                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_div(self.regs.regs[c] as i64));
                 }
                 Opcode::ModInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    if self.regs.ints[c] == 0 {
+                    if self.regs.regs[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
-                    self.write_int(a, self.regs.ints[b].wrapping_rem(self.regs.ints[c]));
+                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_rem(self.regs.regs[c] as i64));
                 }
                 Opcode::NegInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
-                    self.write_int(a, self.regs.ints[b].wrapping_neg());
+                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_neg());
                 }
 
                 // ── 浮点 ──
@@ -434,30 +434,39 @@ impl VM {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_float(a, self.regs.floats[b] + self.regs.floats[c]);
+                    let fb = f64::from_bits(self.regs.regs[b]);
+                    let fc = f64::from_bits(self.regs.regs[c]);
+                    self.write_float(a, fb + fc);
                 }
                 Opcode::FSub => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_float(a, self.regs.floats[b] - self.regs.floats[c]);
+                    let fb = f64::from_bits(self.regs.regs[b]);
+                    let fc = f64::from_bits(self.regs.regs[c]);
+                    self.write_float(a, fb - fc);
                 }
                 Opcode::FMul => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_float(a, self.regs.floats[b] * self.regs.floats[c]);
+                    let fb = f64::from_bits(self.regs.regs[b]);
+                    let fc = f64::from_bits(self.regs.regs[c]);
+                    self.write_float(a, fb * fc);
                 }
                 Opcode::FDiv => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_float(a, self.regs.floats[b] / self.regs.floats[c]);
+                    let fb = f64::from_bits(self.regs.regs[b]);
+                    let fc = f64::from_bits(self.regs.regs[c]);
+                    self.write_float(a, fb / fc);
                 }
                 Opcode::FNeg => {
                                         let a = inst.dst();
                     let b = inst.src1();
-                    self.write_float(a, -self.regs.floats[b]);
+                    let fb = f64::from_bits(self.regs.regs[b]);
+                    self.write_float(a, -fb);
                 }
 
                 // ── 比较 ──
@@ -465,51 +474,51 @@ impl VM {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.ints[b] == self.regs.ints[c]);
+                    self.write_bool(a, (self.regs.regs[b] as i64) == self.regs.regs[c] as i64);
                 }
                 Opcode::LtInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.ints[b] < self.regs.ints[c]);
+                    self.write_bool(a, (self.regs.regs[b] as i64) < self.regs.regs[c] as i64);
                 }
                 Opcode::LeInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.ints[b] <= self.regs.ints[c]);
+                    self.write_bool(a, (self.regs.regs[b] as i64) <= self.regs.regs[c] as i64);
                 }
                 Opcode::FEq => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.floats[b] == self.regs.floats[c]);
+                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) == f64::from_bits(self.regs.regs[c]));
                 }
                 Opcode::FLt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.floats[b] < self.regs.floats[c]);
+                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) < f64::from_bits(self.regs.regs[c]));
                 }
 
                 // ── Not ──
                 Opcode::Not => {
                                         let a = inst.dst();
                     let b = inst.src1();
-                    self.write_bool(a, self.regs.ints[b] == 0);
+                    self.write_bool(a, self.regs.regs[b] == 0);
                 }
                 Opcode::NeInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.ints[b] != self.regs.ints[c]);
+                    self.write_bool(a, self.regs.regs[b] as i64 != self.regs.regs[c] as i64);
                 }
 
                 Opcode::GtInt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.ints[b] > self.regs.ints[c]);
+                    self.write_bool(a, (self.regs.regs[b] as i64) > self.regs.regs[c] as i64);
                 }
 
                 // ── 字符串拼接 ──
@@ -517,8 +526,8 @@ impl VM {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    let lhs = self.heap_get(self.regs.ints[b])?.clone();
-                    let rhs = self.heap_get(self.regs.ints[c])?.clone();
+                    let lhs = self.heap_get(self.regs.regs[b] as i64)?.clone();
+                    let rhs = self.heap_get(self.regs.regs[c] as i64)?.clone();
                     let result = match (lhs, rhs) {
                         (HeapObj::String(l), HeapObj::String(r)) => HeapObj::String(l + &r),
                         _ => return Err(RuntimeError::TypeMismatch(
@@ -531,65 +540,64 @@ impl VM {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.ints[b] >= self.regs.ints[c]);
+                    self.write_bool(a, self.regs.regs[b] as i64 >= self.regs.regs[c] as i64);
                 }
                 Opcode::FNe => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.floats[b] != self.regs.floats[c]);
+                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) != f64::from_bits(self.regs.regs[c]));
                 }
                 Opcode::FLe => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.floats[b] <= self.regs.floats[c]);
+                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) <= f64::from_bits(self.regs.regs[c]));
                 }
                 Opcode::FGt => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.floats[b] > self.regs.floats[c]);
+                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) > f64::from_bits(self.regs.regs[c]));
                 }
                 Opcode::FGe => {
                                         let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, self.regs.floats[b] >= self.regs.floats[c]);
+                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) >= f64::from_bits(self.regs.regs[c]));
                 }
 
                 // ── 转换 ──
                 Opcode::IToF => {
                                         let d = inst.dst();
                                         let s = inst.src1();
-                    self.write_float(d, self.regs.ints[s] as f64);
+                    self.write_float(d, self.regs.regs[s] as i64 as f64);
                 }
                 Opcode::FToI => {
                                         let d = inst.dst();
                                         let s = inst.src1();
-                    let f = self.regs.floats[s];
+                    let f = f64::from_bits(self.regs.regs[s]);
                     self.write_int(d, f as i64);
-                    self.regs.floats[d] = f;
                 }
                 Opcode::IToS => {
                     // itos
                                         let d = inst.dst();
                                         let s = inst.src1();
-                    let st = format!("{}", self.regs.ints[s]);
+                    let st = format!("{}", self.regs.regs[s] as i64);
                     self.write_heap(d, HeapObj::String(st));
                 }
                 Opcode::FToS => {
                     // ftos
                                         let d = inst.dst();
                                         let s = inst.src1();
-                    let s = format!("{}", self.regs.floats[s]);
-                    self.write_heap(d, HeapObj::String(s));
+                    let st = format!("{}", f64::from_bits(self.regs.regs[s]));
+                    self.write_heap(d, HeapObj::String(st));
                 }
                 Opcode::SToI => {
                     // stoi
                                         let d = inst.dst();
                                         let s = inst.src1();
-                    let hid = self.regs.ints[s];
+                    let hid = self.regs.regs[s] as i64;
                     if hid < 0 {
                         return Err(RuntimeError::TypeMismatch(
                             "SToI: expected string heap handle".into(),
@@ -616,8 +624,7 @@ impl VM {
                 Opcode::Move => {
                                         let d = inst.dst();
                                         let s = inst.src1();
-                    self.regs.ints[d] = self.regs.ints[s];
-                    self.regs.floats[d] = self.regs.floats[s];
+                    self.regs.regs[d] = self.regs.regs[s];
                 }
                 Opcode::LoadImm => {
                                         let d = inst.dst();
@@ -664,10 +671,10 @@ impl VM {
                                         let count = inst.src1() as usize;
                     let block_id = self.block_id_from_ip(ip);
                     let params = &self.func_params[self.current_func][block_id];
-                    let mut elements = Vec::with_capacity(count);
+                    let mut elements: Vec<i64> = Vec::with_capacity(count);
                     for i in 0..count {
-                        let val = if i < params.len() {
-                            self.regs.ints[params[i]]
+                        let val: i64 = if i < params.len() {
+                            self.regs.regs[params[i]] as i64
                         } else {
                             0
                         };
@@ -679,7 +686,7 @@ impl VM {
                     // ListLen(dst, obj) — return list length
                                         let d = inst.dst();
                                         let obj = inst.src1();
-                    let hid = self.regs.ints[obj];
+                    let hid = self.regs.regs[obj] as i64;
                     let len = match self.heap_get(hid)? {
                         HeapObj::List(v) => v.len() as i64,
                         other => {
@@ -697,7 +704,7 @@ impl VM {
                                         let d = inst.dst();
                                         let s = inst.src1();
                     let idx = inst.src2();
-                    let hid = self.regs.ints[s];
+                    let hid = self.regs.regs[s] as i64;
                     let val = match self.heap_get(hid)? {
                         HeapObj::Struct(_, fields) => fields.get(idx).copied().ok_or(
                             RuntimeError::FieldOutOfBounds {
@@ -713,15 +720,14 @@ impl VM {
                         }
                     };
                     self.write_int(d, val);
-                    self.regs.floats[d] = f64::from_bits(val as u64);
                 }
                 Opcode::SetField => {
                     // SetField(dst, src, idx, val)
                                         let d = inst.dst();
                                         let s = inst.src1();
                     let idx = inst.src2();
-                    let hid = self.regs.ints[s];
-                    let val = self.regs.ints[d];
+                    let hid = self.regs.regs[s] as i64;
+                    let val = self.regs.regs[d] as i64;
 
                     // Read struct_id and old field value
                     let (sid, old_val, len) = match self.heap_get(hid)? {
@@ -778,8 +784,8 @@ impl VM {
                                         let d = inst.dst();
                                         let o = inst.src1();
                                         let i = inst.src2();
-                    let hid = self.regs.ints[o];
-                    let index = self.regs.ints[i] as usize;
+                    let hid = self.regs.regs[o] as i64;
+                    let index = self.regs.regs[i] as i64 as usize;
                     match self.heap_get(hid)? {
                         HeapObj::List(v) => {
                             let val = *v
@@ -800,9 +806,9 @@ impl VM {
                                         let val = inst.dst();
                                         let obj = inst.src1();
                                         let idx = inst.src2();
-                    let hid = self.regs.ints[obj];
-                    let index = self.regs.ints[idx] as usize;
-                    let value = self.regs.ints[val];
+                    let hid = self.regs.regs[obj] as i64;
+                    let index = self.regs.regs[idx] as i64 as usize;
+                    let value = self.regs.regs[val] as i64;
                     match self.heap_get_mut(hid)? {
                         HeapObj::List(v) => {
                             if index >= v.len() {
@@ -841,7 +847,7 @@ impl VM {
                 Opcode::GetVariantTag => {
                                         let d = inst.dst();
                                         let s = inst.src1();
-                    let hid = self.regs.ints[s];
+                    let hid = self.regs.regs[s] as i64;
                     let tag = match self.heap_get(hid)? {
                         HeapObj::Variant(_, tag, _) => *tag as i64,
                         other => return Err(RuntimeError::TypeMismatch(format!(
@@ -854,7 +860,7 @@ impl VM {
                                         let d = inst.dst();
                                         let s = inst.src1();
                     let fi = inst.src2();
-                    let hid = self.regs.ints[s];
+                    let hid = self.regs.regs[s] as i64;
                     let val = match self.heap_get(hid)? {
                         HeapObj::Variant(_, _, fields) => fields.get(fi).copied().ok_or(
                             RuntimeError::FieldOutOfBounds { index: fi, len: fields.len() },
@@ -864,15 +870,14 @@ impl VM {
                         ))),
                     };
                     self.write_int(d, val);
-                    self.regs.floats[d] = f64::from_bits(val as u64);
                 }
                 Opcode::SetVariantField => {
                     // SetVariantField(val_reg, obj_reg, field_idx)
                                         let d = inst.dst(); // val reg
                                         let s = inst.src1(); // obj reg
                     let fi = inst.src2(); // field idx
-                    let hid = self.regs.ints[s];
-                    let val = self.regs.ints[d];
+                    let hid = self.regs.regs[s] as i64;
+                    let val = self.regs.regs[d] as i64;
                     let (old_val, is_heap) = match self.heap_get(hid)? {
                         HeapObj::Variant(eid, t, fields) => {
                             let old = fields.get(fi).copied().ok_or(
@@ -914,7 +919,7 @@ impl VM {
                     // Box(dst, src) — wrap value in a single-field struct
                                         let d = inst.dst();
                                         let s = inst.src1();
-                    let val = self.regs.ints[s];
+                    let val = self.regs.regs[s] as i64;
                     // Use struct id 0 as a "Box" marker, single field
                     self.write_heap(d, HeapObj::Struct(0, vec![val]));
                 }
@@ -922,7 +927,7 @@ impl VM {
                     // Unbox(dst, src) — extract value from boxed struct
                                         let d = inst.dst();
                                         let s = inst.src1();
-                    let hid = self.regs.ints[s];
+                    let hid = self.regs.regs[s] as i64;
                     let val = match self.heap_get(hid)? {
                         HeapObj::Struct(_, fields) => {
                             *fields.first().ok_or_else(|| {
@@ -951,16 +956,19 @@ impl VM {
                                         let c = inst.dst();
                                         let tb = inst.src1();
                     let fb = inst.src2();
-                    let take_true = self.regs.ints[c] != 0;
+                    let take_true = self.regs.regs[c] as i64 != 0;
                     let block_id = if take_true { tb } else { fb };
                     // Stored as: [true_count, true_args..., false_count, false_args...]
-                    let stored = self.jump_args(ip - 1).to_vec();
+                    // Clone only the needed args (typically 0-4 elements) to drop jump_args borrow
+                    let stored = self.jump_args(ip - 1);
                     let true_cnt = stored[0];
-                    let true_args: Vec<usize> = stored[1..1 + true_cnt].to_vec();
                     let false_cnt = stored[1 + true_cnt];
-                    let false_args: Vec<usize> = stored[2 + true_cnt..2 + true_cnt + false_cnt].to_vec();
-                    let args = if take_true { &true_args } else { &false_args };
-                    self.bind_params(block_id, args);
+                    let args: Vec<usize> = if take_true {
+                        stored[1..1 + true_cnt].to_vec()
+                    } else {
+                        stored[2 + true_cnt..2 + true_cnt + false_cnt].to_vec()
+                    };
+                    self.bind_params(block_id, &args);
                     ip = self.block_ip(block_id);
                 }
 
@@ -973,22 +981,21 @@ impl VM {
                         return Err(RuntimeError::StackOverflow);
                     }
                     let callee_regs = self.func_reg_counts[func_idx];
-                    let mut callee_ints = vec![0; callee_regs];
-                    let mut callee_floats = vec![0.0; callee_regs];
-                    let args = &self.jump_args(ip - 1).to_vec();
+                    // Take the caller's register vec (O(1) pointer swap)
+                    let saved_regs = std::mem::take(&mut self.regs.regs);
+                    // Prepare callee registers by reusing the just-emptied vec
+                    self.regs.regs.resize(callee_regs, 0);
+                    // Copy args from saved caller registers into callee positions
+                    let args = self.jump_args(ip - 1).to_vec();
                     for (i, &arg_reg) in args.iter().enumerate() {
                         if i < callee_regs {
-                            callee_ints[i] = self.regs.ints[arg_reg];
-                            callee_floats[i] = self.regs.floats[arg_reg];
+                            self.regs.regs[i] = saved_regs[arg_reg];
                         }
                     }
-                    let saved_ints = std::mem::replace(&mut self.regs.ints, callee_ints);
-                    let saved_floats = std::mem::replace(&mut self.regs.floats, callee_floats);
                     self.frames.push(CallFrame {
                         func_idx: self.current_func,
                         ret_block: cont_block,
-                        saved_ints,
-                        saved_floats,
+                        saved_regs,
                         result_reg: 0,
                     });
                     self.current_func = func_idx;
@@ -996,7 +1003,7 @@ impl VM {
                 }
                 Opcode::TailCall => {
                     // Tail call: bind args from jump_args into first N regs, jump to entry
-                    let args = &self.jump_args(ip - 1).to_vec();
+                    let args = self.jump_args(ip - 1).to_vec();
                     // Bind args to the entry block's param registers
                     let params = &self.func_params[self.current_func]
                         .first()
@@ -1004,8 +1011,7 @@ impl VM {
                         .unwrap_or_default();
                     for (i, &arg_reg) in args.iter().enumerate() {
                         if i < params.len() {
-                            self.regs.ints[params[i]] = self.regs.ints[arg_reg];
-                            self.regs.floats[params[i]] = self.regs.floats[arg_reg];
+                            self.regs.regs[params[i]] = self.regs.regs[arg_reg];
                         }
                     }
                     ip = self.block_ip(0); // jump to entry block 0
@@ -1014,20 +1020,16 @@ impl VM {
                     // ret
                                         let r = inst.dst();
                     if let Some(frame) = self.frames.pop() {
-                        let result_i = self.regs.ints[r];
-                        let result_f = self.regs.floats[r];
-                        self.regs.ints = frame.saved_ints;
-                        self.regs.floats = frame.saved_floats;
+                        let result = self.regs.regs[r];
+                        self.regs.regs = frame.saved_regs;
                         self.current_func = frame.func_idx;
-                        if self.regs.ints.len() <= frame.result_reg {
-                            self.regs.ints.resize(frame.result_reg + 1, 0);
-                            self.regs.floats.resize(frame.result_reg + 1, 0.0);
+                        if self.regs.regs.len() <= frame.result_reg {
+                            self.regs.regs.resize(frame.result_reg + 1, 0);
                         }
-                        self.regs.ints[frame.result_reg] = result_i;
-                        self.regs.floats[frame.result_reg] = result_f;
+                        self.regs.regs[frame.result_reg] = result;
                         ip = self.block_ip(frame.ret_block);
                     } else {
-                        return Ok(self.regs.ints[r]);
+                        return Ok(self.regs.regs[r] as i64);
                     }
                 }
 
@@ -1038,12 +1040,11 @@ impl VM {
                     let args: Vec<i64> = self
                         .jump_args(ip - 1)
                         .iter()
-                        .map(|&r| self.regs.ints[r])
+                        .map(|&r| self.regs.regs[r] as i64)
                         .collect();
                     if fi < self.natives.len() {
                         let result = (self.natives[fi].1)(&args, &self.heap).map_err(RuntimeError::NativeError)?;
                         self.write_int(0, result);
-                        self.regs.floats[0] = f64::from_bits(result as u64);
                     } else {
                         return Err(RuntimeError::Bug(format!("unknown native index {fi}")));
                     }
@@ -1061,8 +1062,7 @@ impl VM {
                     let cf = CallFrame {
                         func_idx: self.current_func,
                         ret_block: 0,
-                        saved_ints: self.regs.ints.clone(),
-                        saved_floats: self.regs.floats.clone(),
+                        saved_regs: self.regs.regs.clone(),
                         result_reg: 0,
                     };
                     self.scheduler.suspend(cf, ip);
@@ -1072,7 +1072,7 @@ impl VM {
                 // ── print ──
                 Opcode::Print => {
                                         let r = inst.dst();
-                    let val = self.regs.ints[r];
+                    let val = self.regs.regs[r] as i64;
                     if val >= 0 {
                         if let Some(HeapObj::String(s)) = self.heap.try_get(val as usize) {
                             self.output.push(s.clone());
@@ -1738,9 +1738,9 @@ mod tests {
             3,
         );
         let mut vm = VM::new();
-        vm.regs.ints[1] = vm.heap.alloc(HeapObj::List(vec![])) as i64;
+        vm.regs.regs[1] = vm.heap.alloc(HeapObj::List(vec![])) as u64;
         vm.load(&cps).unwrap();
-        vm.regs.ints[1] = 0;
+        vm.regs.regs[1] = 0;
         assert!(matches!(
             vm.execute(0, 3),
             Err(RuntimeError::IndexOutOfBounds(_, _))

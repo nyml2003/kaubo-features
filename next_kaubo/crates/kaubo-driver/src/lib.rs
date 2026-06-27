@@ -774,6 +774,23 @@ val;
     }
 
     #[test]
+    #[test]
+    fn dump_loop_bench_cps() {
+        let src = "var total = 0; var i = 0; while i < 10 { var j = 0; while j < 10 { total = total + i * j; j = j + 1; }; i = i + 1; };";
+        let cps = compile_source(src).unwrap();
+        let f = &cps.functions[0];
+        let blk_count = f.blocks.iter().filter(|b| b.id != usize::MAX).count();
+        let instr_count = f.blocks.iter().filter(|b| b.id != usize::MAX)
+            .map(|b| b.instrs.len()).sum::<usize>();
+        eprintln!("=== LOOP BENCH CPS ===");
+        eprintln!("regs={} blocks={} instrs={}", f.reg_count, blk_count, instr_count);
+        for b in &f.blocks {
+            if b.id == usize::MAX { continue; }
+            eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term);
+        }
+        eprintln!("=== END ===");
+    }
+
     fn builtin_vs_user_function_shadowing() {
         // User-defined function with same name as builtin should be prioritized
         let outcome = run_source(r#"

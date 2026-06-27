@@ -99,8 +99,7 @@ mod tests {
         CallFrame {
             func_idx: 1,
             ret_block: 2,
-            saved_ints: vec![1],
-            saved_floats: vec![2.0],
+            saved_regs: vec![1],
             result_reg: 3,
         }
     }
@@ -111,8 +110,7 @@ mod tests {
         let cf = CallFrame {
             func_idx: 0,
             ret_block: 0,
-            saved_ints: vec![],
-            saved_floats: vec![],
+            saved_regs: vec![],
             result_reg: 0,
         };
         let id = sched.suspend(cf, 42);
@@ -127,8 +125,7 @@ mod tests {
         let cf = CallFrame {
             func_idx: 0,
             ret_block: 0,
-            saved_ints: vec![],
-            saved_floats: vec![],
+            saved_regs: vec![],
             result_reg: 0,
         };
         let id = sched.suspend(cf, 0);
