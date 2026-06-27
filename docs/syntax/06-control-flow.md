@@ -57,17 +57,8 @@ const desc = match x {
 - 每个 arm 使用 `->` 分隔模式和体
 - `_` 是通配符，必须作为最后一个 arm
 - 脱糖为 `if/else` 链：`{ var t = x; if t == 0 { "zero" } else if t == 1 { "one" } else { "many" } }`
-- 对 enum 变体的匹配走 tag 比较（`GetVariantTag` 指令），而非值比较
-- 模式解构暂未实现，当前仅支持常量匹配和通配符
-
-```kaubo
-enum Color { Red, Green };
-const result = match c {
-    Red -> 100,
-    Green -> 200,
-    _ -> 0,
-};
-```
+- 模式解构暂未实现，当前仅支持常量值匹配和通配符
+- enum 变体匹配需等 Enum/ADT 实现后支持
 
 ## for
 

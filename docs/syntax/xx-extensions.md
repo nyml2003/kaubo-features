@@ -26,11 +26,34 @@
 | Struct spread `{ ...p, y: 3 }` | [07-structs-and-impls](07-structs-and-impls.md) |
 | 字符串拼接 `SAdd` | [04-expressions](04-expressions.md) |
 | Match 表达式 | [06-control-flow](06-control-flow.md) |
-| Enum/ADT | [03-types](03-types.md) |
 
 ---
 
 # 待实现：核心能力
+
+## 0. Enum/ADT（L3 · 设计阶段）
+
+`enum` 声明代数数据类型，变体可以是单元变体或带字段变体。当前 parser/infer/CPS/VM 均未实现，
+`03-types.md` 中的语法为设计目标。
+
+```kaubo
+enum Color { Red, Green };
+enum Option { Some(value: Int64), None };
+```
+
+| 层 | 改动 |
+|----|------|
+| Token | 新增 `Enum` 关键字 |
+| AST | 新增 `Stmt::EnumDef`、`Expr::VariantLit` |
+| Type | 新增 `Type::Variant` sum type |
+| Parser | 解析 enum 声明和变体构造子 |
+| Infer | Unification 处理 sum types，match 臂类型检查 |
+| CPS | 新增 `GetVariantTag`、`NewVariant` 指令 |
+| VM | 对应 opcode 实现 |
+
+依赖此特性：`Option<T>`、`Result<T, E>` 标准库类型。
+
+---
 
 ## 1. 显式泛型（L3 · 依赖 enum · 设计阶段）
 
@@ -72,12 +95,13 @@ const contains = |xs: List<Eq>, target: Eq| -> Bool { ... };
 
 最小可行：1 新指令 + 1 opcode + vtable 表，~300 行核心改动。
 
-## 3. Option / Result（已可用 · 标准库级）
+## 3. Option / Result（依赖 Enum/ADT · 设计阶段）
 
-`Option` 和 `Result` 是普通 enum，当前 enum/ADT 已完整支持。
-不需要特殊的错误处理运行时（无 panic/catch/栈展开），错误通过返回值传播。
+`Option` 和 `Result` 设计为普通 enum，依赖 Enum/ADT 实现。错误通过返回值传播，
+不需要特殊的错误处理运行时（无 panic/catch/栈展开）。
 
 ```kaubo
+// 设计语法，等 Enum/ADT 实现后方可运行：
 enum Option { Some(value: Int64), None };
 enum Result { Ok(value: Int64), Err(msg: String) };
 
@@ -164,9 +188,11 @@ handle fetch(url) with { io => http_handler() };
 # 推荐路线
 
 ```
-已完成 ── 语法糖（9项） + enum/ADT + match
+已完成 ── 语法糖（9项） + match
   ▼
-下一步 ── interface  （动态分派，开启 Display/Eq/Add）
+下一步 ── Enum/ADT   （代数数据类型，Option/Result 基础）
+  ▼
+之后 ── interface  （动态分派，开启 Display/Eq/Add）
   ▼
 之后 ── 内置模块化 （prelude.kb，编译器去硬编码）
   ▼

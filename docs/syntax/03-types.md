@@ -36,15 +36,20 @@ const p: Point = Point { x: 1, y: 2 };
 
 struct 名当前由普通标识符承载，大小写不是 parser 的硬性要求。
 
-## Enum 类型
+## Enum 类型（规划中，未实现）
 
-`enum` 声明代数数据类型，变体可以是单元变体或带字段变体：
+`enum` 声明的设计目标为代数数据类型，变体可以是单元变体或带字段变体：
 
 ```kaubo
+// 以下为设计语法，当前不可运行：
 enum Color { Red, Green };
 enum Option { Some(value: Int64), None };
 ```
 
+当前状态：lexer 未识别 `enum` 关键字，parser/infer/CPS/VM 均无对应实现。
+详见 [扩展规划](xx-extensions.md) 中的 Enum/ADT 条目。
+
+旧设计说明（保留供参考）：
 - 单元变体（无字段）作为常量使用：`const c = Red;`
 - 带字段变体作为构造器调用：`const x = Some(42);`
 - 变体在运行时表示为带 tag 的堆对象，不同变体可区分
