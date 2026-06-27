@@ -1596,7 +1596,8 @@ impl CpsBuilder {
                 term: CpsTerminator::Jump(brk, vec![]),
             },
         );
-        Ok((id, id, 0))
+        // Return MAX as continu — break terminates the chain, caller must not chain it
+        Ok((id, usize::MAX, 0))
     }
 
     fn build_continue(&mut self) -> Result<(usize, usize, usize), String> {

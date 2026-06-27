@@ -6,7 +6,7 @@ pub use kaubo_ir::cps::CpsModule;
 use kaubo_ir::cps_build::build_module;
 use kaubo_ir::flatten::flatten_module;
 use kaubo_ir::pass::binary;
-use kaubo_ir::pass::{fold::ConstantFold, run_passes};
+use kaubo_ir::pass::{empty_block::EmptyBlockElim, fold::ConstantFold, run_passes};
 use kaubo_syntax::parser::Parser;
 use std::fmt;
 
@@ -46,7 +46,7 @@ pub fn compile_source(source: &str) -> Result<CpsModule, DriverError> {
     kaubo_infer::infer_module(&module).map_err(|e| DriverError::Infer(e.msg))?;
     let mut cps = build_module(&module).map_err(DriverError::Build)?;
     flatten_module(&mut cps);
-    run_passes(&mut cps, &[&ConstantFold]);
+    run_passes(&mut cps, &[&EmptyBlockElim, &ConstantFold]);
     Ok(cps)
 }
 
@@ -774,23 +774,6 @@ val;
     }
 
     #[test]
-    #[test]
-    fn dump_loop_bench_cps() {
-        let src = "var total = 0; var i = 0; while i < 10 { var j = 0; while j < 10 { total = total + i * j; j = j + 1; }; i = i + 1; };";
-        let cps = compile_source(src).unwrap();
-        let f = &cps.functions[0];
-        let blk_count = f.blocks.iter().filter(|b| b.id != usize::MAX).count();
-        let instr_count = f.blocks.iter().filter(|b| b.id != usize::MAX)
-            .map(|b| b.instrs.len()).sum::<usize>();
-        eprintln!("=== LOOP BENCH CPS ===");
-        eprintln!("regs={} blocks={} instrs={}", f.reg_count, blk_count, instr_count);
-        for b in &f.blocks {
-            if b.id == usize::MAX { continue; }
-            eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term);
-        }
-        eprintln!("=== END ===");
-    }
-
     fn builtin_vs_user_function_shadowing() {
         // User-defined function with same name as builtin should be prioritized
         let outcome = run_source(r#"
@@ -799,5 +782,32 @@ val;
             r;
         "#).unwrap();
         assert_eq!(outcome.result, 100.0f64.to_bits() as i64);
+    }
+
+    #[test]
+    fn dump_pipeline_diff() {
+        // Pipeline pattern: nested if without else — the case that caused timeout
+        let src = "var total = 0; var x = 1; while x <= 5 { if x % 2 != 0 { var t = x * 3; if t % 7 == 0 { total = total + t; }; }; x = x + 1; };";
+        let module = Parser::new(src).parse().unwrap();
+        kaubo_infer::infer_module(&module).unwrap();
+
+        // BEFORE
+        let mut cps1 = build_module(&module).unwrap();
+        flatten_module(&mut cps1);
+        run_passes(&mut cps1, &[&ConstantFold]);
+        let f1 = &cps1.functions[0];
+        eprintln!("=== BEFORE (no empty-block-elim) ===");
+        eprintln!("regs={}", f1.reg_count);
+        for b in &f1.blocks { if b.id != usize::MAX { eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term); } }
+
+        // AFTER
+        let mut cps2 = build_module(&module).unwrap();
+        flatten_module(&mut cps2);
+        run_passes(&mut cps2, &[&EmptyBlockElim, &ConstantFold]);
+        let f2 = &cps2.functions[0];
+        eprintln!("=== AFTER (with empty-block-elim) ===");
+        eprintln!("regs={}", f2.reg_count);
+        for b in &f2.blocks { if b.id != usize::MAX { eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term); } }
+        eprintln!("=== DONE ===");
     }
 }

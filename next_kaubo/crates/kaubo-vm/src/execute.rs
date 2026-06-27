@@ -318,10 +318,6 @@ impl VM {
         }
     }
 
-    fn write_reg(&mut self, reg: usize, value: u64) {
-        self.regs.regs[reg] = value;
-    }
-
     fn write_int(&mut self, reg: usize, value: i64) {
         self.regs.regs[reg] = value as u64;
     }

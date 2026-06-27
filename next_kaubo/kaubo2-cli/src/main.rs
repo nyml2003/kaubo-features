@@ -1,6 +1,7 @@
 //! kaubo2 — v2 direct driver: parse → infer → build → flatten → execute
 use std::env;
 use std::fs;
+use std::time::Instant;
 
 fn render_run(outcome: &kaubo_driver::RunOutcome) {
     for line in &outcome.output {
@@ -12,11 +13,10 @@ fn render_run(outcome: &kaubo_driver::RunOutcome) {
 fn run_args(args: &[String]) -> Result<(), String> {
     let sub = args.get(1).map(|s| s.as_str()).unwrap_or("run");
     let file = match sub {
-        "compile" => args.get(2),
-        "run" => args.get(2),
+        "compile" | "run" | "bench" => args.get(2),
         _ => args.get(1),
     }
-    .ok_or("Usage: kaubo2 [compile|run] <file>")?;
+    .ok_or("Usage: kaubo2 [compile|run|bench] <file> [iterations]")?;
 
     match sub {
         "compile" => {
@@ -27,6 +27,52 @@ fn run_args(args: &[String]) -> Result<(), String> {
             let len = bytes.len();
             fs::write(&out, bytes).map_err(|e| format!("write {out}: {e}"))?;
             println!("Compiled: ({:.1}KB)", len as f64 / 1024.0);
+        }
+        "bench" => {
+            let iterations: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10);
+            let warmup: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(2);
+            let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
+
+            // Compile once
+            let t0 = Instant::now();
+            let cps = kaubo_driver::compile_source(&source).map_err(|e| e.to_string())?;
+            let compile_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+            let last_func = cps.functions.len() - 1;
+            let reg_count = cps.functions[last_func].reg_count;
+            let instr_count: usize = cps.functions.iter().flat_map(|f| &f.blocks).filter(|b| b.id != usize::MAX).map(|b| b.instrs.len()).sum();
+
+            // Warmup
+            for _ in 0..warmup {
+                let mut vm = kaubo_vm::VM::new();
+                vm.load(&cps).map_err(|e| format!("load: {e}"))?;
+                let _ = vm.execute(last_func, reg_count);
+            }
+
+            // Measure
+            let mut times = Vec::with_capacity(iterations);
+            for _ in 0..iterations {
+                let mut vm = kaubo_vm::VM::new();
+                vm.load(&cps).map_err(|e| format!("load: {e}"))?;
+                let t0 = Instant::now();
+                let result = vm.execute(last_func, reg_count).map_err(|e| format!("{e:?}"))?;
+                let run_ms = t0.elapsed().as_secs_f64() * 1000.0;
+                times.push(run_ms);
+                // Print output on first iteration
+                if times.len() == 1 {
+                    for line in &vm.output {
+                        println!("{line}");
+                    }
+                }
+            }
+
+            let avg_us = times.iter().sum::<f64>() / times.len() as f64 * 1000.0;
+            let med_us = times[times.len() / 2] * 1000.0;
+            let min_us = times.first().unwrap() * 1000.0;
+            let max_us = times.last().unwrap() * 1000.0;
+
+            println!("{file}");
+            println!("  compile={compile_ms:.1}ms  instrs={instr_count}  runs={iterations}  avg={avg_us:.1}us  med={med_us:.1}us  min={min_us:.1}us  max={max_us:.1}us");
         }
         "run" => {
             if file.ends_with(".kauboc") {
@@ -160,7 +206,7 @@ mod tests {
     #[test]
     fn cli_reports_usage_without_file() {
         let err = run_args(&args(&["kaubo2"])).unwrap_err();
-        assert_eq!(err, "Usage: kaubo2 [compile|run] <file>");
+        assert!(err.contains("Usage:"));
     }
 
     #[test]

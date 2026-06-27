@@ -6,6 +6,7 @@
 use crate::cps::CpsModule;
 
 pub mod binary;
+pub mod empty_block;
 pub mod fold;
 pub mod loop_inline;
 

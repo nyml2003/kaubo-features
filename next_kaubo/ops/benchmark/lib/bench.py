@@ -4,6 +4,12 @@ import subprocess
 import time
 from pathlib import Path
 
+# Force UTF-8 for subprocess I/O on all platforms
+def _run(args, **kwargs):
+    kwargs.setdefault("encoding", "utf-8")
+    kwargs.setdefault("errors", "replace")
+    return subprocess.run(args, **kwargs)
+
 try:
     import tomllib
 except ImportError:
@@ -26,15 +32,14 @@ def _ensure_kaubo_built(release=False):
         return KAUBO_CLI
 
     profile = "release" if release else "debug"
-    target = ROOT / "target" / profile / "kaubo2-cli"
+    target = ROOT / "target" / profile / ("kaubo2-cli.exe" if os.name == "nt" else "kaubo2-cli")
     if not target.exists():
         print(f"  Building kaubo2 ({profile}) ...")
-        r = subprocess.run(
+        r = _run(
             ["cargo", "build", "-p", "kaubo2-cli"] + (["--release"] if release else []),
-            cwd=str(ROOT), capture_output=True, text=True, timeout=300, env=_env()
-        )
+            cwd=str(ROOT), capture_output=True, text=True, timeout=300        )
         if r.returncode != 0:
-            raise RuntimeError(f"Cannot build kaubo2:\n{r.stderr[-500:]}")
+            raise RuntimeError(f"Cannot build kaubo2:\n{(r.stderr or '')[-500:]}")
         KAUBO_BUILT = True
     KAUBO_CLI = str(target)
     return KAUBO_CLI
@@ -49,12 +54,12 @@ def _compile_once(binary, src):
         return out, 0.0
 
     t0 = time.perf_counter()
-    r = subprocess.run([binary, "compile", str(src)],
-        capture_output=True, text=True, timeout=120, cwd=str(ROOT), env=_env())
+    r = _run([binary, "compile", str(src)],
+        capture_output=True, text=True, timeout=30, )
     compile_ms = (time.perf_counter() - t0) * 1000
 
     if r.returncode != 0:
-        raise RuntimeError(f"Compilation failed for {src.name}:\n{r.stderr[:500]}")
+        raise RuntimeError(f"Compilation failed for {src.name}:\n{(r.stderr or '')[:500]}")
     # Touch the output so mtime comparison works
     Path(out).touch()
     return out, compile_ms
@@ -116,13 +121,13 @@ def _run_kaubo(name, cfg, iterations, warmup, expected, release):
 
     for i in range(warmup + iterations):
         t0 = time.perf_counter()
-        r = subprocess.run([binary, str(src)],
-            capture_output=True, text=True, timeout=120, cwd=str(ROOT), env=_env())
+        r = _run([binary, str(src)],
+            capture_output=True, text=True, timeout=30, )
         elapsed = (time.perf_counter() - t0) * 1000
 
         if r.returncode != 0:
             passed = False
-            error = r.stderr[:500]
+            error = (r.stderr or '')[:500]
             break
 
         output = r.stdout.strip()
@@ -173,10 +178,9 @@ def _run_python(name, cfg, iterations, warmup, expected):
 def _run_rust(name, cfg, iterations, warmup, expected):
     rust_dir = BENCH_DIR / "rust"
     manifest = rust_dir / "Cargo.toml"
-    build = subprocess.run(
+    build = _run(
         ["cargo", "build", "--manifest-path", str(manifest), "--release"],
-        cwd=str(ROOT), capture_output=True, text=True, timeout=300, env=_env()
-    )
+        cwd=str(ROOT), capture_output=True, text=True, timeout=300    )
     if build.returncode != 0:
         return BenchResult(suite=name, lang="rust", times_ms=[], passed=False,
                           error=f"Rust build failed:\n{build.stderr[-300:]}")
@@ -194,12 +198,11 @@ def _run_rust(name, cfg, iterations, warmup, expected):
 
     for i in range(warmup + iterations):
         t0 = time.perf_counter()
-        r = subprocess.run(
+        r = _run(
             [str(binary), suite_arg, str(internal_loops)],
-            capture_output=True, text=True, timeout=300, env=_env()
-        )
+            capture_output=True, text=True, timeout=300        )
         if r.returncode != 0:
-            passed = False; error = r.stderr[:500]; break
+            passed = False; error = (r.stderr or '')[:500]; break
 
         # Last line = avg_ns from internal timing
         lines = r.stdout.strip().split('\n')
