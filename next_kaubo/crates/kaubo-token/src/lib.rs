@@ -16,6 +16,7 @@ pub enum TokenKind {
     Continue, // continue
     Return,   // return
     Struct,   // struct
+    Enum,     // enum
     Impl,     // impl
     Export,   // export
     Import,   // import
@@ -97,6 +98,7 @@ impl TokenKind {
             "continue" => Self::Continue,
             "return" => Self::Return,
             "struct" => Self::Struct,
+            "enum" => Self::Enum,
             "impl" => Self::Impl,
             "export" => Self::Export,
             "import" => Self::Import,
@@ -189,6 +191,7 @@ mod tests {
         assert_eq!(TokenKind::from_ident("continue"), TokenKind::Continue);
         assert_eq!(TokenKind::from_ident("return"), TokenKind::Return);
         assert_eq!(TokenKind::from_ident("struct"), TokenKind::Struct);
+        assert_eq!(TokenKind::from_ident("enum"), TokenKind::Enum);
         assert_eq!(TokenKind::from_ident("impl"), TokenKind::Impl);
         assert_eq!(TokenKind::from_ident("export"), TokenKind::Export);
         assert_eq!(TokenKind::from_ident("import"), TokenKind::Import);
@@ -266,7 +269,7 @@ mod tests {
         use TokenKind::*;
         let kinds = [
             Const, Var, If, Else, For, In, While, Break, Continue, Return,
-            Struct, Impl, Export, Import, From, As, Async_, Await, Self_, Match,
+            Struct, Enum, Impl, Export, Import, From, As, Async_, Await, Self_, Match,
             Identifier, IntLiteral, FloatLiteral, StringLiteral, True, False, Null,
             Plus, Minus, Asterisk, Slash, Percent,
             Eq, EqEq, NotEq, Lt, Le, Gt, Ge, Not, And, Or,
@@ -275,6 +278,6 @@ mod tests {
             Pipe, Bar, FatArrow, GtGt, QuestionQuestion, QuestionDot, QuestionLBracket, TemplateString, DotDotDot,
             Eof, Comment, Whitespace, Error,
         ];
-        assert_eq!(kinds.len(), 65);
+        assert_eq!(kinds.len(), 66);
     }
 }

@@ -117,6 +117,7 @@ pub fn describe_token(kind: TokenKind) -> &'static str {
         TokenKind::Continue => "continue statement",
         TokenKind::Return => "return statement",
         TokenKind::Struct => "struct definition",
+        TokenKind::Enum => "enum definition",
         TokenKind::Impl => "impl block",
         TokenKind::Export => "export declaration",
         TokenKind::Import => "import statement",

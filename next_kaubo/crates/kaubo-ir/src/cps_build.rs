@@ -39,6 +39,7 @@ pub fn build_module(module: &Module) -> Result<CpsModule, String> {
         functions: b.functions,
         constants: b.constants,
         structs: b.structs,
+        enums: b.enums,
     })
 }
 
@@ -228,12 +229,17 @@ pub struct CpsBuilder {
     pub functions: Vec<CpsFunction>,
     pub constants: Vec<Constant>,
     pub structs: Vec<StructDef>,
+    pub enums: Vec<EnumDef>,
     const_map: HashMap<String, usize>,
     pub ctx: FuncCtx,
     struct_names: HashSet<String>,
     struct_field_types: HashMap<String, HashMap<String, ValueHint>>,
     function_returns: HashMap<String, ValueHint>,
     method_returns: HashMap<String, ValueHint>,
+    enum_names: HashSet<String>,
+    variant_to_enum: HashMap<String, String>,
+    variant_tag_map: HashMap<String, u16>,
+    variant_field_map: HashMap<String, Vec<(String, String)>>,
 }
 
 impl CpsBuilder {
@@ -242,12 +248,17 @@ impl CpsBuilder {
             functions: vec![],
             constants: vec![],
             structs: vec![],
+            enums: vec![],
             const_map: HashMap::new(),
             ctx: FuncCtx::new("main".into()),
             struct_names: HashSet::new(),
             struct_field_types: HashMap::new(),
             function_returns: HashMap::new(),
             method_returns: HashMap::new(),
+            enum_names: HashSet::new(),
+            variant_to_enum: HashMap::new(),
+            variant_tag_map: HashMap::new(),
+            variant_field_map: HashMap::new(),
         }
     }
 
@@ -284,6 +295,20 @@ impl CpsBuilder {
                         .map(|field| (field.name.clone(), self.type_expr_hint(&field.ty)))
                         .collect();
                     self.struct_field_types.insert(name.clone(), fields);
+                }
+                Stmt::EnumDef { name, variants } => {
+                    self.enum_names.insert(name.clone());
+                    for v in variants {
+                        self.variant_to_enum
+                            .insert(v.name.clone(), name.clone());
+                        let fields: Vec<(String, String)> = v
+                            .fields
+                            .iter()
+                            .map(|f| (f.name.clone(), f.ty.to_string()))
+                            .collect();
+                        self.variant_field_map
+                            .insert(v.name.clone(), fields);
+                    }
                 }
                 Stmt::ImplBlock {
                     struct_name,
@@ -370,6 +395,13 @@ impl CpsBuilder {
                 .cloned()
                 .unwrap_or(ValueHint::Unknown),
             Expr::StructLit { name, .. } => ValueHint::Struct(name.clone()),
+            Expr::VariantLit {
+                enum_name,
+                variant_name,
+                ..
+            } => ValueHint::Struct(format!("{enum_name}::{variant_name}")),
+            Expr::GetVariantTag(_) => ValueHint::Int,
+            Expr::GetVariantField { .. } => ValueHint::Unknown,
             Expr::ListLit(_) => ValueHint::List,
             Expr::Binary { left, op, right } => match op {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
@@ -565,6 +597,41 @@ impl CpsBuilder {
                 });
                 Ok((usize::MAX, usize::MAX, 0))
             }
+            Stmt::EnumDef { name, variants } => {
+                let id = self.enums.len();
+                let mut variant_type_bitmaps = Vec::new();
+                for v in variants {
+                    let mut bitmap: u64 = 0;
+                    for (i, f) in v.fields.iter().enumerate() {
+                        if self.is_heap_type(&f.ty) {
+                            bitmap |= 1 << i;
+                        }
+                    }
+                    variant_type_bitmaps.push(bitmap);
+                }
+                self.enums.push(EnumDef {
+                    id,
+                    name: name.clone(),
+                    variants: variants
+                        .iter()
+                        .enumerate()
+                        .map(|(tag, v)| {
+                            (
+                                v.name.clone(),
+                                tag as u16,
+                                v.fields
+                                    .iter()
+                                    .map(|f| {
+                                        (f.name.clone(), f.ty.to_string())
+                                    })
+                                    .collect(),
+                            )
+                        })
+                        .collect(),
+                    variant_type_bitmaps,
+                });
+                Ok((usize::MAX, usize::MAX, 0))
+            }
             Stmt::ImplBlock {
                 struct_name,
                 methods,
@@ -654,6 +721,48 @@ impl CpsBuilder {
                 } else {
                     self.build_struct_lit(name, fields)
                 }
+            }
+            Expr::VariantLit {
+                enum_name,
+                variant_name,
+                fields,
+                ..
+            } => self.build_variant_lit(enum_name, variant_name, fields),
+            Expr::GetVariantTag(inner) => {
+                let (entry, continu, obj_reg) = self.build_expr(inner)?;
+                let dst = self.ctx.alloc();
+                let id = self.ctx.new_block();
+                let (instrs, _) =
+                    cps_emit::emit_get_variant_tag(dst, obj_reg);
+                self.ctx.set_block(
+                    id,
+                    CpsBlock {
+                        id,
+                        params: vec![],
+                        instrs,
+                        term: cps_emit::emit_return(dst),
+                    },
+                );
+                self.ctx.chain(continu, id)?;
+                Ok((entry, id, dst))
+            }
+            Expr::GetVariantField { object, field_idx } => {
+                let (entry, continu, obj_reg) = self.build_expr(object)?;
+                let dst = self.ctx.alloc();
+                let id = self.ctx.new_block();
+                let (instrs, _) =
+                    cps_emit::emit_get_variant_field(dst, obj_reg, *field_idx);
+                self.ctx.set_block(
+                    id,
+                    CpsBlock {
+                        id,
+                        params: vec![],
+                        instrs,
+                        term: cps_emit::emit_return(dst),
+                    },
+                );
+                self.ctx.chain(continu, id)?;
+                Ok((entry, id, dst))
             }
             Expr::Index { object, index } => self.build_index(object, index),
             Expr::Assign { target, value } => self.build_assign(target, value),
@@ -878,6 +987,10 @@ impl CpsBuilder {
         }
 
         if let Expr::VarRef(name) = func {
+            // Check if this is a variant constructor call: Some(42) → NewVariant
+            if let Some(enum_name) = self.variant_to_enum.get(name).cloned() {
+                return self.build_variant_construct(&enum_name, name, args);
+            }
             if name == "print" {
                 if let Some(arg) = args.first() {
                     // print("str") — inline
@@ -1546,6 +1659,74 @@ impl CpsBuilder {
             self.ctx.chain(t, id)?;
         }
         Ok((if entry != 0 { entry } else { id }, id, dst))
+    }
+
+    fn build_variant_lit(
+        &mut self,
+        enum_name: &str,
+        variant_name: &str,
+        fields: &[Expr],
+    ) -> Result<(usize, usize, usize), String> {
+        let ed = self
+            .enums
+            .iter()
+            .find(|e| e.name == enum_name)
+            .cloned()
+            .ok_or_else(|| format!("unknown enum '{}'", enum_name))?;
+        let (tag, _expected_fields): (u16, &Vec<(String, String)>) = ed
+            .variants
+            .iter()
+            .find(|(name, _, _)| name == variant_name)
+            .map(|(_, t, flds)| (*t, flds))
+            .ok_or_else(|| format!("unknown variant '{variant_name}'"))?;
+
+        let mut entry = 0;
+        let mut prev_c: Option<usize> = None;
+        let mut field_regs = Vec::new();
+        for val in fields {
+            let (e, c, r) = self.build_expr(val)?;
+            if entry == 0 {
+                entry = e;
+            }
+            if let Some(t) = prev_c {
+                self.ctx.chain(t, e)?;
+            }
+            prev_c = Some(c);
+            field_regs.push(r);
+        }
+        let dst = self.ctx.alloc();
+        let id = self.ctx.new_block();
+        let mut instrs =
+            vec![CpsInstr::NewVariant(dst, ed.id, tag, vec![])];
+        // Set each field value
+        for (i, &reg) in field_regs.iter().enumerate() {
+            instrs.push(CpsInstr::SetVariantField(
+                reg, dst, i as u16, 0,
+            ));
+        }
+        self.ctx.set_block(
+            id,
+            CpsBlock {
+                id,
+                params: vec![],
+                instrs,
+                term: cps_emit::emit_return(dst),
+            },
+        );
+        if let Some(t) = prev_c {
+            self.ctx.chain(t, id)?;
+        }
+        Ok((if entry != 0 { entry } else { id }, id, dst))
+    }
+
+    fn build_variant_construct(
+        &mut self,
+        enum_name: &str,
+        variant_name: &str,
+        args: &[Expr],
+    ) -> Result<(usize, usize, usize), String> {
+        // payload variant: Some(42) — parsed as Call, redirected here
+        self.build_variant_lit(enum_name, variant_name, args)
     }
 
     fn build_index(

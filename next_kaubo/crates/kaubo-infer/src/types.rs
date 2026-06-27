@@ -21,6 +21,7 @@ pub enum Type {
     Null,
     Arrow(Box<Type>, Box<Type>),
     Record(usize, Vec<(String, Type)>), // struct_id, fields
+    Variant(usize, String, Vec<(String, Type)>), // enum_id, variant_name, field_types
     List(Box<Type>),
 }
 
@@ -56,6 +57,7 @@ impl fmt::Display for Type {
                     .collect();
                 write!(f, "{{{}}}", fs.join(", "))
             }
+            Type::Variant(id, name, _) => write!(f, "{}#{}", name, id),
             Type::List(t) => write!(f, "List<{}>", t),
         }
     }
@@ -78,6 +80,14 @@ impl Subst {
             Type::Arrow(a, b) => Type::Arrow(Box::new(self.apply(a)), Box::new(self.apply(b))),
             Type::Record(id, fields) => Type::Record(
                 *id,
+                fields
+                    .iter()
+                    .map(|(n, t)| (n.clone(), self.apply(t)))
+                    .collect(),
+            ),
+            Type::Variant(id, name, fields) => Type::Variant(
+                *id,
+                name.clone(),
                 fields
                     .iter()
                     .map(|(n, t)| (n.clone(), self.apply(t)))

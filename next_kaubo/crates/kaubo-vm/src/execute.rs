@@ -35,6 +35,7 @@ pub enum HeapObj {
     String(String),
     List(Vec<i64>),
     Struct(usize, Vec<i64>), // (struct_id, field_values)
+    Variant(usize, u16, Vec<i64>), // (enum_id, tag, field_values)
     Closure(Box<ClosureObj>),
 }
 
@@ -67,6 +68,8 @@ pub struct VM {
     pub heap: super::gc_heap::GcHeap,
     pub struct_bitmaps: Vec<u64>,
     pub struct_field_counts: Vec<usize>,
+    pub enum_variant_bitmaps: Vec<Vec<u64>>,
+    pub enum_variant_counts: Vec<Vec<usize>>,
     pub natives: Vec<(&'static str, stdlib::NativeFn)>,
     pub scheduler: AsyncScheduler,
 }
@@ -103,6 +106,8 @@ impl VM {
             heap: GcHeap::new(),
             struct_bitmaps: vec![],
             struct_field_counts: vec![],
+            enum_variant_bitmaps: vec![],
+            enum_variant_counts: vec![],
             natives: stdlib::register_all(),
             scheduler: AsyncScheduler::new(),
         }
@@ -130,6 +135,18 @@ impl VM {
             }
             self.struct_bitmaps[id] = sd.type_bitmap;
             self.struct_field_counts[id] = sd.fields.len();
+        }
+
+        for ed in &module.enums {
+            let id = ed.id;
+            if id >= self.enum_variant_counts.len() {
+                self.enum_variant_counts.resize(id + 1, vec![]);
+                self.enum_variant_bitmaps.resize(id + 1, vec![]);
+            }
+            let counts: Vec<usize> = ed.variants.iter().map(|(_, _, f)| f.len()).collect();
+            let bitmaps: Vec<u64> = ed.variant_type_bitmaps.clone();
+            self.enum_variant_counts[id] = counts;
+            self.enum_variant_bitmaps[id] = bitmaps;
         }
 
         for func in &module.functions {
@@ -630,6 +647,74 @@ impl VM {
                     ));
                 }
 
+                // ── Enum/Variant ──
+                0x3C => {
+                    let d = ((inst >> 17) & 0xFF) as usize;
+                    let enum_id = ((inst >> 8) & 0xFF) as usize;
+                    let tag = (inst & 0xFF) as u16;
+                    let nf = self.enum_variant_counts[enum_id][tag as usize];
+                    let bitmap = self.enum_variant_bitmaps[enum_id][tag as usize];
+                    let mut fields = vec![0i64; nf];
+                    for i in 0..nf {
+                        if (bitmap >> i) & 1 != 0 {
+                            fields[i] = -1;
+                        }
+                    }
+                    self.write_heap(d, HeapObj::Variant(enum_id, tag, fields));
+                }
+                0x3D => {
+                    let d = ((inst >> 17) & 0xFF) as usize;
+                    let s = ((inst >> 8) & 0x1FF) as usize;
+                    let hid = self.regs.ints[s];
+                    let tag = match self.heap_get(hid)? {
+                        HeapObj::Variant(_, tag, _) => *tag as i64,
+                        other => return Err(RuntimeError::TypeMismatch(format!(
+                            "GetVariantTag expected variant, got {other:?}"
+                        ))),
+                    };
+                    self.write_int(d, tag);
+                }
+                0x3E => {
+                    let d = ((inst >> 17) & 0xFF) as usize;
+                    let s = ((inst >> 8) & 0x1FF) as usize;
+                    let fi = (inst & 0xFF) as usize;
+                    let hid = self.regs.ints[s];
+                    let val = match self.heap_get(hid)? {
+                        HeapObj::Variant(_, _, fields) => fields.get(fi).copied().ok_or(
+                            RuntimeError::FieldOutOfBounds { index: fi, len: fields.len() },
+                        )?,
+                        other => return Err(RuntimeError::TypeMismatch(format!(
+                            "GetVariantField expected variant, got {other:?}"
+                        ))),
+                    };
+                    self.write_int(d, val);
+                    self.regs.floats[d] = f64::from_bits(val as u64);
+                }
+                0x3F => {
+                    // SetVariantField(val_reg, obj_reg, field_idx)
+                    let d = ((inst >> 17) & 0xFF) as usize; // val reg
+                    let s = ((inst >> 8) & 0x1FF) as usize; // obj reg
+                    let fi = (inst & 0xFF) as usize; // field idx
+                    let hid = self.regs.ints[s];
+                    let val = self.regs.ints[d];
+                    match self.heap_get_mut(hid)? {
+                        HeapObj::Variant(_, _, fields) => {
+                            if fi >= fields.len() {
+                                return Err(RuntimeError::FieldOutOfBounds {
+                                    index: fi,
+                                    len: fields.len(),
+                                });
+                            }
+                            fields[fi] = val;
+                        }
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "SetVariantField expected variant, got {other:?}"
+                            )))
+                        }
+                    }
+                }
+
                 // ── 装箱/拆箱 ──
                 0x3A => {
                     let d = ((inst >> 17) & 0xFF) as usize;
@@ -825,6 +910,10 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
         CpsInstr::NewStruct(d, sid, _) => encode(0x34, *d as u32, *sid as u32, 0),
         CpsInstr::GetField(d, o, idx) => encode(0x36, *d as u32, *o as u32, *idx as u32),
         CpsInstr::SetField(d, o, idx, _) => encode(0x37, *d as u32, *o as u32, *idx as u32),
+        CpsInstr::NewVariant(d, eid, tag, _) => encode(0x3C, *d as u32, *eid as u32, *tag as u32),
+        CpsInstr::GetVariantTag(d, o) => encode(0x3D, *d as u32, *o as u32, 0),
+        CpsInstr::GetVariantField(d, o, fi) => encode(0x3E, *d as u32, *o as u32, *fi as u32),
+        CpsInstr::SetVariantField(d, o, fi, _) => encode(0x3F, *d as u32, *o as u32, *fi as u32),
         CpsInstr::NewList(_, elements) => {
             return Err(format!(
                 "list literals are not implemented ({} elements)",
@@ -878,6 +967,7 @@ mod tests {
             }],
             constants: consts,
             structs: vec![],
+            enums: vec![],
         }
     }
 
@@ -959,6 +1049,7 @@ mod tests {
                 Constant::Int(20),
             ],
             structs: vec![],
+            enums: vec![],
         };
         let mut vm = VM::new();
         vm.load(&m).unwrap();
@@ -1050,6 +1141,7 @@ mod tests {
             }],
             constants: consts,
             structs,
+            enums: vec![],
         }
     }
 
@@ -1393,6 +1485,7 @@ mod tests {
             }],
             constants: vec![Constant::Int(0)],
             structs: vec![],
+            enums: vec![],
         };
         let mut vm = VM::new();
         vm.load(&native).unwrap();
@@ -1447,6 +1540,7 @@ mod tests {
             }],
             constants: vec![Constant::Int(7)],
             structs: vec![],
+            enums: vec![],
         };
         let mut vm = VM::new();
         vm.load(&native).unwrap();
@@ -1503,6 +1597,7 @@ mod tests {
             functions: vec![lambda, main], // lambda first (func_idx=0), main last (entry)
             constants: vec![Constant::Int(42), Constant::String("hi".into())],
             structs: vec![],
+            enums: vec![],
         }
     }
 

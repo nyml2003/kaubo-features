@@ -126,6 +126,7 @@ pub fn decode_module(bytes: &[u8]) -> Result<CpsModule, String> {
         functions,
         constants,
         structs,
+        enums: vec![],
     })
 }
 
@@ -368,6 +369,29 @@ fn encode_instr(w: &mut Vec<u8>, i: &CpsInstr) {
             w_u8(w, 0x0C);
             w_u16(w, *r as u16);
         }
+        CpsInstr::NewVariant(d, eid, tag, _) => {
+            w_u8(w, 0x0E);
+            w_u16(w, *d as u16);
+            w_u16(w, *eid as u16);
+            w_u16(w, *tag as u16);
+        }
+        CpsInstr::GetVariantTag(d, o) => {
+            w_u8(w, 0x0F);
+            w_u16(w, *d as u16);
+            w_u16(w, *o as u16);
+        }
+        CpsInstr::SetVariantField(d, o, fi, _) => {
+            w_u8(w, 0x11);
+            w_u16(w, *d as u16);
+            w_u16(w, *o as u16);
+            w_u16(w, *fi as u16);
+        }
+        CpsInstr::GetVariantField(d, o, fi) => {
+            w_u8(w, 0x10);
+            w_u16(w, *d as u16);
+            w_u16(w, *o as u16);
+            w_u16(w, *fi as u16);
+        }
         CpsInstr::Nop => {
             w_u8(w, 0x0D);
         }
@@ -403,6 +427,27 @@ fn decode_instr(r: &mut Cursor<&[u8]>) -> Result<CpsInstr, String> {
         ),
         0x0A => CpsInstr::Box(r_u16(r)? as usize, r_u16(r)? as usize),
         0x0B => CpsInstr::Unbox(r_u16(r)? as usize, r_u16(r)? as usize),
+        0x0E => CpsInstr::NewVariant(
+            r_u16(r)? as usize,
+            r_u32(r)? as usize,
+            r_u16(r)?,
+            vec![],
+        ),
+        0x0F => CpsInstr::GetVariantTag(
+            r_u16(r)? as usize,
+            r_u16(r)? as usize,
+        ),
+        0x11 => CpsInstr::SetVariantField(
+            r_u16(r)? as usize,
+            r_u16(r)? as usize,
+            r_u16(r)?,
+            0,
+        ),
+        0x10 => CpsInstr::GetVariantField(
+            r_u16(r)? as usize,
+            r_u16(r)? as usize,
+            r_u16(r)?,
+        ),
         0x0C => CpsInstr::Print(r_u16(r)? as usize),
         0x0D => CpsInstr::Nop,
         _ => return Err(format!("bad instr tag {:02x}", tag)),
@@ -760,6 +805,7 @@ mod tests {
                 ],
                 type_bitmap: 0b10,
             }],
+            enums: vec![],
             functions: vec![
                 CpsFunction {
                     name: "main".to_string(),
@@ -884,6 +930,7 @@ mod tests {
         let module = CpsModule {
             constants: vec![Constant::Null],
             structs: vec![],
+            enums: vec![],
             functions: vec![],
         };
         let mut bytes = encode_module(&module);

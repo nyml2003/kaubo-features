@@ -24,6 +24,10 @@ pub enum Stmt {
         name: String,
         fields: Vec<FieldDef>,
     },
+    EnumDef {
+        name: String,
+        variants: Vec<VariantDef>,
+    },
     ImplBlock {
         struct_name: String,
         methods: Vec<MethodDef>,
@@ -99,7 +103,18 @@ pub enum Expr {
         fields: Vec<(String, Expr)>,
         spread: Option<Box<Expr>>,
     },
+    VariantLit {
+        enum_name: String,
+        variant_name: String,
+        tag: u16,
+        fields: Vec<Expr>,
+    },
     ListLit(Vec<Expr>),
+    GetVariantTag(Box<Expr>),
+    GetVariantField {
+        object: Box<Expr>,
+        field_idx: u16,
+    },
 
     Assign {
         target: Box<Expr>,
@@ -145,6 +160,12 @@ pub struct Param {
 pub struct FieldDef {
     pub name: String,
     pub ty: TypeExpr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariantDef {
+    pub name: String,
+    pub fields: Vec<FieldDef>, // empty = unit variant
 }
 
 #[derive(Debug, Clone, PartialEq)]

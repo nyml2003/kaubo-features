@@ -61,6 +61,43 @@ pub fn emit_new_struct(dst: usize, struct_id: usize, field_regs: Vec<usize>) -> 
     )
 }
 
+pub fn emit_new_variant(
+    dst: usize,
+    enum_id: usize,
+    tag: u16,
+    field_regs: Vec<usize>,
+) -> EmitResult {
+    (
+        vec![CpsInstr::NewVariant(dst, enum_id, tag, field_regs)],
+        CpsTerminator::Return(dst),
+    )
+}
+
+pub fn emit_get_variant_tag(dst: usize, obj: usize) -> EmitResult {
+    (
+        vec![CpsInstr::GetVariantTag(dst, obj)],
+        CpsTerminator::Return(dst),
+    )
+}
+
+pub fn emit_set_variant_field(
+    val: usize,
+    obj: usize,
+    field_idx: u16,
+) -> EmitResult {
+    (
+        vec![CpsInstr::SetVariantField(val, obj, field_idx, 0)],
+        CpsTerminator::Return(val),
+    )
+}
+
+pub fn emit_get_variant_field(dst: usize, obj: usize, field_idx: u16) -> EmitResult {
+    (
+        vec![CpsInstr::GetVariantField(dst, obj, field_idx)],
+        CpsTerminator::Return(dst),
+    )
+}
+
 pub fn emit_new_list(dst: usize, elements: Vec<usize>) -> EmitResult {
     (
         vec![CpsInstr::NewList(dst, elements)],

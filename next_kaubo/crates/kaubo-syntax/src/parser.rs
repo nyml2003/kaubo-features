@@ -14,6 +14,10 @@ pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     struct_names: BTreeSet<String>,
+    enum_names: BTreeSet<String>,
+    variant_names: BTreeSet<String>,
+    variant_to_enum: std::collections::HashMap<String, String>,
+    variant_tag: std::collections::HashMap<String, u16>,
     opt_chain_counter: usize,
 }
 
@@ -26,10 +30,16 @@ impl Parser {
 
     pub fn from_tokens(tokens: Vec<Token>) -> Self {
         let struct_names = collect_struct_names(&tokens);
+        let (enum_names, variant_names, variant_to_enum, variant_tag) =
+            collect_enum_metadata(&tokens);
         Self {
             tokens,
             pos: 0,
             struct_names,
+            enum_names,
+            variant_names,
+            variant_to_enum,
+            variant_tag,
             opt_chain_counter: 0,
         }
     }
@@ -50,6 +60,7 @@ impl Parser {
             TokenKind::Const => self.parse_const(),
             TokenKind::Var => self.parse_var(),
             TokenKind::Struct => self.parse_struct(),
+            TokenKind::Enum => self.parse_enum(),
             TokenKind::Impl => self.parse_impl(),
             TokenKind::Export => {
                 self.bump();
@@ -122,6 +133,46 @@ impl Parser {
         self.bump(); // }
         self.skip_semis();
         Ok(Stmt::StructDef { name, fields })
+    }
+
+    fn parse_enum(&mut self) -> ParseResult<Stmt> {
+        self.bump(); // enum
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::LBrace)?;
+        let mut variants = Vec::new();
+        while self.current_kind() != TokenKind::RBrace {
+            let vname = self.expect_ident()?;
+            let fields = if self.current_kind() == TokenKind::LParen {
+                self.bump(); // (
+                let mut fs = Vec::new();
+                while self.current_kind() != TokenKind::RParen {
+                    let fname = self.expect_ident()?;
+                    self.expect(TokenKind::Colon)?;
+                    let fty = self.parse_type()?;
+                    fs.push(FieldDef {
+                        name: fname,
+                        ty: fty,
+                    });
+                    if self.current_kind() == TokenKind::Comma {
+                        self.bump();
+                    }
+                }
+                self.bump(); // )
+                fs
+            } else {
+                vec![]
+            };
+            variants.push(VariantDef {
+                name: vname,
+                fields,
+            });
+            if self.current_kind() == TokenKind::Comma {
+                self.bump();
+            }
+        }
+        self.bump(); // }
+        self.skip_semis();
+        Ok(Stmt::EnumDef { name, variants })
     }
 
     fn parse_impl(&mut self) -> ParseResult<Stmt> {
@@ -335,7 +386,32 @@ impl Parser {
             }
 
             TokenKind::TemplateString => self.parse_template(),
-            TokenKind::Identifier | TokenKind::Self_ => Ok(Expr::VarRef(self.consume_lexeme())),
+            TokenKind::Identifier | TokenKind::Self_ => {
+                let name = self.current().lexeme.clone();
+                if self.variant_names.contains(&name) {
+                    self.bump();
+                    let enum_name =
+                        self.variant_to_enum.get(&name).cloned().unwrap_or_default();
+                    let tag = self.variant_tag.get(&name).copied().unwrap_or(0);
+                    if self.current_kind() == TokenKind::LParen {
+                        // Payload variant: Some(args) → parse as Call for CPS build to handle
+                        self.bump(); // (
+                        let args = self.parse_call_args()?;
+                        return Ok(Expr::Call {
+                            func: Box::new(Expr::VarRef(name.clone())),
+                            args,
+                        });
+                    }
+                    // Unit variant: Red → VariantLit
+                    return Ok(Expr::VariantLit {
+                        enum_name,
+                        variant_name: name,
+                        tag,
+                        fields: vec![],
+                    });
+                }
+                Ok(Expr::VarRef(self.consume_lexeme()))
+            }
 
             _ => Err(format!(
                 "unexpected token {:?} at {}:{}",
@@ -599,15 +675,125 @@ impl Parser {
         let mut result: Option<Expr> = None;
         for (pattern, body) in arms.into_iter().rev() {
             result = Some(match pattern {
-                Some(pat) => Expr::If {
-                    cond: Box::new(Expr::Binary {
-                        left: Box::new(Expr::VarRef(tmp.clone())),
-                        op: BinOp::Eq,
-                        right: Box::new(pat),
-                    }),
-                    then_branch: Box::new(body),
-                    else_branch: result.map(Box::new),
-                },
+                Some(pat) => {
+                    // Check for unit variant pattern: VariantLit
+                    if let Expr::VariantLit {
+                        variant_name,
+                        tag,
+                        ..
+                    } = &pat
+                    {
+                        Expr::If {
+                            cond: Box::new(Expr::Binary {
+                                left: Box::new(Expr::GetVariantTag(Box::new(
+                                    Expr::VarRef(tmp.clone()),
+                                ))),
+                                op: BinOp::Eq,
+                                right: Box::new(Expr::LitInt(*tag as i64)),
+                            }),
+                            then_branch: Box::new(body),
+                            else_branch: result.map(Box::new),
+                        }
+                    } else if let Expr::VarRef(ref vname) = &pat {
+                        if self.variant_names.contains(vname) {
+                            let tag = self.variant_tag.get(vname).copied().unwrap_or(0);
+                            Expr::If {
+                                cond: Box::new(Expr::Binary {
+                                    left: Box::new(Expr::GetVariantTag(Box::new(
+                                        Expr::VarRef(tmp.clone()),
+                                    ))),
+                                    op: BinOp::Eq,
+                                    right: Box::new(Expr::LitInt(tag as i64)),
+                                }),
+                                then_branch: Box::new(body),
+                                else_branch: result.map(Box::new),
+                            }
+                        } else {
+                            // Regular value comparison
+                            Expr::If {
+                                cond: Box::new(Expr::Binary {
+                                    left: Box::new(Expr::VarRef(tmp.clone())),
+                                    op: BinOp::Eq,
+                                    right: Box::new(pat),
+                                }),
+                                then_branch: Box::new(body),
+                                else_branch: result.map(Box::new),
+                            }
+                        }
+                    } else if let Expr::Call {
+                        func,
+                        args: bindings,
+                    } = &pat
+                    {
+                        // Check for payload variant pattern: Some(v1, v2) -> ...
+                        if let Expr::VarRef(ref vname) = func.as_ref() {
+                            if self.variant_names.contains(vname) {
+                                let tag =
+                                    self.variant_tag.get(vname).copied().unwrap_or(0);
+                                // Build block: bind variables + body
+                                let mut stmts: Vec<Stmt> = Vec::new();
+                                for (i, binding) in bindings.iter().enumerate() {
+                                    if let Expr::VarRef(bname) = binding {
+                                        stmts.push(Stmt::VarDecl {
+                                            name: bname.clone(),
+                                            ty_ann: None,
+                                            value: Some(Expr::GetVariantField {
+                                                object: Box::new(Expr::VarRef(
+                                                    tmp.clone(),
+                                                )),
+                                                field_idx: i as u16,
+                                            }),
+                                        });
+                                    }
+                                }
+                                stmts.push(Stmt::ExprStmt(body));
+                                Expr::If {
+                                    cond: Box::new(Expr::Binary {
+                                        left: Box::new(Expr::GetVariantTag(Box::new(
+                                            Expr::VarRef(tmp.clone()),
+                                        ))),
+                                        op: BinOp::Eq,
+                                        right: Box::new(Expr::LitInt(tag as i64)),
+                                    }),
+                                    then_branch: Box::new(Expr::Block(stmts)),
+                                    else_branch: result.map(Box::new),
+                                }
+                            } else {
+                                // Regular function call pattern (fallback)
+                                Expr::If {
+                                    cond: Box::new(Expr::Binary {
+                                        left: Box::new(Expr::VarRef(tmp.clone())),
+                                        op: BinOp::Eq,
+                                        right: Box::new(pat),
+                                    }),
+                                    then_branch: Box::new(body),
+                                    else_branch: result.map(Box::new),
+                                }
+                            }
+                        } else {
+                            Expr::If {
+                                cond: Box::new(Expr::Binary {
+                                    left: Box::new(Expr::VarRef(tmp.clone())),
+                                    op: BinOp::Eq,
+                                    right: Box::new(pat),
+                                }),
+                                then_branch: Box::new(body),
+                                else_branch: result.map(Box::new),
+                            }
+                        }
+                    } else {
+                        // Default: literal value comparison
+                        Expr::If {
+                            cond: Box::new(Expr::Binary {
+                                left: Box::new(Expr::VarRef(tmp.clone())),
+                                op: BinOp::Eq,
+                                right: Box::new(pat),
+                            }),
+                            then_branch: Box::new(body),
+                            else_branch: result.map(Box::new),
+                        }
+                    }
+                }
                 None => {
                     // wildcard: the else branch
                     body
@@ -858,6 +1044,91 @@ impl Parser {
             self.bump();
         }
     }
+}
+
+fn collect_enum_metadata(
+    tokens: &[Token],
+) -> (
+    BTreeSet<String>,
+    BTreeSet<String>,
+    std::collections::HashMap<String, String>,
+    std::collections::HashMap<String, u16>,
+) {
+    let mut enum_names = BTreeSet::new();
+    let mut variant_names = BTreeSet::new();
+    let mut variant_to_enum: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut variant_tag: std::collections::HashMap<String, u16> =
+        std::collections::HashMap::new();
+
+    let mut i = 0;
+    while i < tokens.len() {
+        // Look for: Enum Identifier LBrace
+        if tokens[i].kind == TokenKind::Enum
+            && i + 1 < tokens.len()
+            && tokens[i + 1].kind == TokenKind::Identifier
+        {
+            let enum_name = tokens[i + 1].lexeme.clone();
+            enum_names.insert(enum_name.clone());
+
+            // Skip past Enum, Identifier
+            i += 2;
+            // Scan forward to find the opening brace
+            while i < tokens.len() && tokens[i].kind != TokenKind::LBrace {
+                i += 1;
+            }
+            if i >= tokens.len() {
+                continue;
+            }
+            i += 1; // skip past LBrace
+            let mut depth = 1;
+            let mut tag: u16 = 0;
+
+            while i < tokens.len() {
+                match tokens[i].kind {
+                    TokenKind::LBrace => {
+                        depth += 1;
+                    }
+                    TokenKind::RBrace => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    TokenKind::Identifier if depth == 1 => {
+                        let vname = tokens[i].lexeme.clone();
+                        variant_names.insert(vname.clone());
+                        variant_to_enum.insert(vname.clone(), enum_name.clone());
+                        variant_tag.insert(vname.clone(), tag);
+                        tag += 1;
+                        // Skip variant payload: Identifier ( Type , ... )
+                        if i + 1 < tokens.len()
+                            && tokens[i + 1].kind == TokenKind::LParen
+                        {
+                            let mut p_depth = 1;
+                            i += 2; // skip past Identifier and LParen
+                            while i < tokens.len() && p_depth > 0 {
+                                match tokens[i].kind {
+                                    TokenKind::LParen => p_depth += 1,
+                                    TokenKind::RParen => {
+                                        p_depth -= 1;
+                                    }
+                                    _ => {}
+                                }
+                                i += 1;
+                            }
+                            continue; // i is already past RParen
+                        }
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+        }
+        i += 1;
+    }
+
+    (enum_names, variant_names, variant_to_enum, variant_tag)
 }
 
 fn collect_struct_names(tokens: &[Token]) -> BTreeSet<String> {

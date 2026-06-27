@@ -10,6 +10,7 @@ pub struct CpsModule {
     pub functions: Vec<CpsFunction>,
     pub constants: Vec<Constant>,
     pub structs: Vec<StructDef>,
+    pub enums: Vec<EnumDef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +38,10 @@ pub enum CpsInstr {
     NewStruct(usize, usize, Vec<usize>),
     GetField(usize, usize, u16),
     SetField(usize, usize, u16, usize),
+    NewVariant(usize, usize, u16, Vec<usize>),
+    GetVariantTag(usize, usize),
+    GetVariantField(usize, usize, u16),
+    SetVariantField(usize, usize, u16, usize),
     NewList(usize, Vec<usize>),
     IndexGet(usize, usize, usize),
     IndexSet(usize, usize, usize, usize),
@@ -112,6 +117,14 @@ pub struct StructDef {
     pub type_bitmap: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnumDef {
+    pub id: usize,
+    pub name: String,
+    pub variants: Vec<(String, u16, Vec<(String, String)>)>,
+    pub variant_type_bitmaps: Vec<u64>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +154,7 @@ mod tests {
                 fields: vec![("x".to_string(), "Int64".to_string())],
                 type_bitmap: 0b101,
             }],
+            enums: vec![],
         };
 
         let json = serde_json::to_string(&module).unwrap();

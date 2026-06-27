@@ -493,4 +493,74 @@ print(desc);
         .unwrap();
         assert_eq!(outcome.output, vec!["many".to_string()]);
     }
+
+    #[test]
+    fn run_enum_unit_variant() {
+        let outcome = run_source(
+            r#"
+enum Color { Red, Green, Blue }
+const c = Red;
+const tag = match c {
+    Red -> 0,
+    Green -> 1,
+    _ -> 99,
+};
+tag;
+"#,
+        )
+        .unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn run_enum_match_fallback() {
+        let outcome = run_source(
+            r#"
+enum Color { Red, Green }
+const c = Green;
+const desc = match c {
+    Red -> "red",
+    _ -> "other",
+};
+print(desc);
+0;
+"#,
+        )
+        .unwrap();
+        assert_eq!(outcome.output, vec!["other".to_string()]);
+    }
+
+    #[test]
+    fn run_enum_payload_variant() {
+        let outcome = run_source(
+            r#"
+enum Option { Some(value: Int64), None }
+const x = Some(42);
+const val = match x {
+    Some(v) -> v,
+    None -> 0,
+};
+val;
+"#,
+        )
+        .unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn run_enum_none_unit() {
+        let outcome = run_source(
+            r#"
+enum Option { Some(value: Int64), None }
+const x = None;
+const val = match x {
+    Some(v) -> v,
+    None -> 99,
+};
+val;
+"#,
+        )
+        .unwrap();
+        assert_eq!(outcome.result, 99);
+    }
 }
