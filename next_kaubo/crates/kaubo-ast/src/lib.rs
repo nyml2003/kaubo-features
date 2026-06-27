@@ -177,6 +177,7 @@ pub struct VariantDef {
 pub struct MethodDef {
     pub name: String,
     pub body: Expr,
+    pub operator: bool,
 }
 
 /// Interface method signature (name + type, no body)
@@ -185,6 +186,7 @@ pub struct MethodSig {
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
+    pub operator: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

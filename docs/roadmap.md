@@ -49,22 +49,32 @@ Phase 1: 可观测性 + 死循环防护
                  行多态, Suspend 语义化
 ```
 
-## Phase 1：可观测性 + 死循环防护（当前）
+## Phase 1：可观测性 + 死循环防护 ✅ 已完成
 
 解决痛点 #5 + while 死循环。
 
-| 交付 | 说明 |
-|------|------|
-| `kaubo-log` | `EventHandler` trait + 事件类型 + `emit!` 宏。纯抽象，零平台代码 |
-| `kaubo-log-handlers` | `ConsoleHandler` + `CompositeHandler` + `KAUBO_LOG` 解析 |
-| VM 死循环检测 | `LoopExceeded` 错误，backward jump IP 比较，`(func_idx, block_id)` 独立计数 |
-| Driver 透传 | `RunConfig` 携带 `EventHandler`，沿调用链透传到各 Stage |
-| CLI 接入 | `--log-level` / `--max-loop-iterations` 参数 |
-| WASM 接入 | `set_log_level()` 暴露给 JS |
+| 交付 | 说明 | 状态 |
+|------|------|------|
+| `kaubo-log` | `EventHandler` trait + 事件类型 + `emit!` 宏。纯抽象，零平台代码 | ✅ |
+| `kaubo-log-handlers` | `ConsoleHandler` + `CompositeHandler` + `KAUBO_LOG` 解析 | ✅ |
+| VM 死循环检测 | `LoopExceeded` 错误，backward jump IP 比较，`(func_idx, block_id)` 独立计数 | ✅ |
+| Driver 透传 | `RunConfig` 携带 `EventHandler`，沿调用链透传到各 Stage | ✅ |
+| CLI 接入 | `--log-level` / `--max-loop-iterations` 参数 | ✅ |
+| WASM 接入 | `set_log_level()` 暴露给 JS | ✅ |
 
 **不改**：Driver 架构、VM 执行核心、parser、type inference。
 
 **对终态的兼容**：`RunConfig` → 未来 `BuildContext` 的构造参数。`&dyn EventHandler` 透传模式在 DAG 下不变。详见 [架构](architecture.md)。
+
+### Phase 1 附带修复
+
+| 修复 | 说明 |
+|------|------|
+| flatten 幽灵前驱 | 已内联 block 残留 terminator 计入 predecessor count，导致后续 block 无法内联 → 物理 IP 乱序 → forward jump 误判为 backward |
+| 默认循环上限 | CLI 默认 `u64::MAX`（不限制），Web playground 可设较低值。`* 8 / 10` 改用 `saturating_mul` 防溢出 |
+| CLI 输出 | `render_run` 去掉冗余的 `= <result>` 尾行 |
+| Benchmark 校验 | 每个 suite 新增 `expected.txt`，runner 在 warmup 前校验输出一致性 |
+| Node.js benchmark | 修复 `_fn()` 漏传参 + V8 常量折叠导致 benchmark 数字虚低
 
 ## Phase 2a：VM 运行时性能
 
@@ -177,7 +187,7 @@ Phase 1: 可观测性 + 死循环防护
 ## 并行度
 
 ```
-Phase 1 ──────────────────（当前，必须最先完成）
+Phase 1 ────────────────── ✅ 已完成
   │
   ├── Phase 2a ──────────（VM 性能，可与 2b 并行）
   │
@@ -198,7 +208,7 @@ Phase 1 ──────────────────（当前，必须
 
 | Phase | 改动规模 | 风险 | 对用户可见 |
 |-------|---------|------|-----------|
-| **1** 可观测性 + 死循环 | 新建 2 crate，修改 5 crate | 低（不改核心逻辑） | CLI flags, WASM API |
+| **1** 可观测性 + 死循环 | ✅ 已完成：新建 2 crate，修改 5 crate | 低（不改核心逻辑） | CLI flags, WASM API |
 | **2a** VM 性能 | 仅 VM 内部 | 低（不改语义） | 程序跑得更快 |
 | **2b** DAG + Semantic | Driver 重构 + Infer 扩展 | 中（编排层改架构） | LSP 变快 |
 | **3a** LSP 完善 | 仅 language-service | 低（不改编译器） | IDE 体验提升 |

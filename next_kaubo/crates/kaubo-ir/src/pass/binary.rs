@@ -81,6 +81,12 @@ pub fn encode_module(module: &CpsModule) -> Vec<u8> {
         encode_struct_def(&mut w, s);
     }
 
+    // Vtables
+    w_u16(&mut w, module.vtables.len() as u16);
+    for v in &module.vtables {
+        encode_vtable_def(&mut w, v);
+    }
+
     // Functions
     w_u16(&mut w, module.functions.len() as u16);
     for f in &module.functions {
@@ -116,6 +122,12 @@ pub fn decode_module(bytes: &[u8]) -> Result<CpsModule, String> {
         structs.push(decode_struct_def(&mut r)?);
     }
 
+    let vtable_count = r_u16(&mut r)? as usize;
+    let mut vtables = Vec::with_capacity(vtable_count);
+    for _ in 0..vtable_count {
+        vtables.push(decode_vtable_def(&mut r)?);
+    }
+
     let func_count = r_u16(&mut r)? as usize;
     let mut functions = Vec::with_capacity(func_count);
     for _ in 0..func_count {
@@ -127,6 +139,7 @@ pub fn decode_module(bytes: &[u8]) -> Result<CpsModule, String> {
         constants,
         structs,
         enums: vec![],
+        vtables,
     })
 }
 
@@ -217,6 +230,40 @@ fn decode_struct_def(r: &mut Cursor<&[u8]>) -> Result<StructDef, String> {
         name,
         fields,
         type_bitmap,
+    })
+}
+
+// ── VtableDef encode/decode ──
+
+fn encode_vtable_def(w: &mut Vec<u8>, v: &VtableDef) {
+    w_u16(w, v.interface_name.len() as u16);
+    w.extend_from_slice(v.interface_name.as_bytes());
+    w_u16(w, v.methods.len() as u16);
+    for (mname, func_idx) in &v.methods {
+        w_u16(w, mname.len() as u16);
+        w.extend_from_slice(mname.as_bytes());
+        w_u32(w, *func_idx as u32);
+    }
+}
+
+fn decode_vtable_def(r: &mut Cursor<&[u8]>) -> Result<VtableDef, String> {
+    let nlen = r_u16(r)? as usize;
+    let mut nb = vec![0u8; nlen];
+    r.read_exact(&mut nb).map_err(|e| format!("vname: {e}"))?;
+    let interface_name = String::from_utf8(nb).map_err(|e| format!("vname utf8: {e}"))?;
+    let mcount = r_u16(r)? as usize;
+    let mut methods = Vec::with_capacity(mcount);
+    for _ in 0..mcount {
+        let mlen = r_u16(r)? as usize;
+        let mut mb = vec![0u8; mlen];
+        r.read_exact(&mut mb).map_err(|e| format!("mname: {e}"))?;
+        let mname = String::from_utf8(mb).map_err(|e| format!("mname utf8: {e}"))?;
+        let func_idx = r_u32(r)? as usize;
+        methods.push((mname, func_idx));
+    }
+    Ok(VtableDef {
+        interface_name,
+        methods,
     })
 }
 
@@ -397,6 +444,17 @@ fn encode_instr(w: &mut Vec<u8>, i: &CpsInstr) {
             w_u16(w, *o as u16);
             w_u16(w, *fi);
         }
+        CpsInstr::LoadVtable(d, vi) => {
+            w_u8(w, 0x12);
+            w_u16(w, *d as u16);
+            w_u32(w, *vi as u32);
+        }
+        CpsInstr::NewInterfaceObj(d, vr, sr) => {
+            w_u8(w, 0x13);
+            w_u16(w, *d as u16);
+            w_u16(w, *vr as u16);
+            w_u16(w, *sr as u16);
+        }
         CpsInstr::Nop => {
             w_u8(w, 0x0D);
         }
@@ -456,6 +514,12 @@ fn decode_instr(r: &mut Cursor<&[u8]>) -> Result<CpsInstr, String> {
         ),
         0x0C => CpsInstr::Print(r_u16(r)? as usize),
         0x0D => CpsInstr::Nop,
+        0x12 => CpsInstr::LoadVtable(r_u16(r)? as usize, r_u32(r)? as usize),
+        0x13 => CpsInstr::NewInterfaceObj(
+            r_u16(r)? as usize,
+            r_u16(r)? as usize,
+            r_u16(r)? as usize,
+        ),
         _ => return Err(format!("bad instr tag {tag:02x}")),
     })
 }
@@ -500,6 +564,15 @@ fn encode_term(w: &mut Vec<u8>, t: &CpsTerminator) {
         CpsTerminator::CallNative(fi, args, ret) => {
             w_u8(w, 0x16);
             w_u16(w, *fi as u16);
+            w_u32(w, *ret as u32);
+            w_u16(w, args.len() as u16);
+            for a in args {
+                w_u16(w, *a as u16);
+            }
+        }
+        CpsTerminator::CallIndirect(slot, args, ret) => {
+            w_u8(w, 0x17);
+            w_u16(w, *slot as u16);
             w_u32(w, *ret as u32);
             w_u16(w, args.len() as u16);
             for a in args {
@@ -560,6 +633,16 @@ fn decode_term(r: &mut Cursor<&[u8]>) -> Result<CpsTerminator, String> {
                 args.push(r_u16(r)? as usize);
             }
             CpsTerminator::CallNative(fi, args, ret)
+        }
+        0x17 => {
+            let slot = r_u16(r)? as usize;
+            let ret = r_u32(r)? as usize;
+            let n = r_u16(r)? as usize;
+            let mut args = vec![];
+            for _ in 0..n {
+                args.push(r_u16(r)? as usize);
+            }
+            CpsTerminator::CallIndirect(slot, args, ret)
         }
         _ => return Err(format!("bad term tag {tag:02x}")),
     })
@@ -811,6 +894,7 @@ mod tests {
                 type_bitmap: 0b10,
             }],
             enums: vec![],
+            vtables: vec![],
             functions: vec![
                 CpsFunction {
                     name: "main".to_string(),
@@ -936,6 +1020,7 @@ mod tests {
             constants: vec![Constant::Null],
             structs: vec![],
             enums: vec![],
+            vtables: vec![],
             functions: vec![],
         };
         let mut bytes = encode_module(&module);

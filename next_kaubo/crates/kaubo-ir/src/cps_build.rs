@@ -44,6 +44,7 @@ pub fn build_module(
         constants: b.constants,
         structs: b.structs,
         enums: b.enums,
+        vtables: b.vtables,
     })
 }
 
@@ -233,6 +234,7 @@ pub struct CpsBuilder<'a> {
     pub constants: Vec<Constant>,
     pub structs: Vec<StructDef>,
     pub enums: Vec<EnumDef>,
+    pub vtables: Vec<VtableDef>,
     const_map: HashMap<String, usize>,
     pub ctx: FuncCtx,
     struct_names: HashSet<String>,
@@ -242,6 +244,10 @@ pub struct CpsBuilder<'a> {
     enum_names: HashSet<String>,
     variant_to_enum: HashMap<String, String>,
     variant_field_map: HashMap<String, Vec<(String, String)>>,
+    /// interface_name → VtableDef (built during build_top_stmt)
+    interface_vtables: HashMap<String, VtableDef>,
+    /// struct_name → [interface_names] that this struct implements
+    struct_impl_for: HashMap<String, Vec<String>>,
     /// Optional event handler for structured logging.
     /// Passed through from the driver; stages only emit events, never touch output.
     events: Option<&'a dyn kaubo_log::EventHandler>,
@@ -260,6 +266,7 @@ impl<'a> CpsBuilder<'a> {
             constants: vec![],
             structs: vec![],
             enums: vec![],
+            vtables: vec![],
             const_map: HashMap::new(),
             ctx: FuncCtx::new("main".into()),
             struct_names: HashSet::new(),
@@ -269,6 +276,8 @@ impl<'a> CpsBuilder<'a> {
             enum_names: HashSet::new(),
             variant_to_enum: HashMap::new(),
             variant_field_map: HashMap::new(),
+            interface_vtables: HashMap::new(),
+            struct_impl_for: HashMap::new(),
             events,
         }
     }
@@ -323,7 +332,8 @@ impl<'a> CpsBuilder<'a> {
                 }
                 Stmt::ImplBlock {
                     struct_name,
-                    methods, ..
+                    interface_name,
+                    methods,
                 } => {
                     for method in methods {
                         if let Expr::Lambda {
@@ -337,6 +347,20 @@ impl<'a> CpsBuilder<'a> {
                             );
                         }
                     }
+                    if let Some(ref iface_name) = interface_name {
+                        self.struct_impl_for
+                            .entry(struct_name.clone())
+                            .or_default()
+                            .push(iface_name.clone());
+                    }
+                }
+                Stmt::InterfaceDef { name, .. } => {
+                    self.interface_vtables.entry(name.clone()).or_insert_with(|| {
+                        VtableDef {
+                            interface_name: name.clone(),
+                            methods: vec![],
+                        }
+                    });
                 }
                 _ => {}
             }
@@ -416,8 +440,12 @@ impl<'a> CpsBuilder<'a> {
             Expr::ListLit(_) => ValueHint::List,
             Expr::Binary { left, op, right } => match op {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
-                    if self.expr_hint(left).is_float() || self.expr_hint(right).is_float() {
+                    let lh = self.expr_hint(left);
+                    let rh = self.expr_hint(right);
+                    if lh.is_float() || rh.is_float() {
                         ValueHint::Float
+                    } else if let ValueHint::Struct(name) = &lh {
+                        ValueHint::Struct(name.clone())
                     } else {
                         ValueHint::Int
                     }
@@ -645,12 +673,34 @@ impl<'a> CpsBuilder<'a> {
             }
             Stmt::ImplBlock {
                 struct_name,
-                methods, ..
+                interface_name,
+                methods,
             } => {
+                // Build lambda functions for all methods
+                let mut method_funcs: Vec<(String, usize)> = Vec::new();
                 for m in methods {
                     let func_idx = self.build_lambda_as_function(&m.body)?;
                     let full_name = format!("{}.{}", struct_name, m.name);
-                    self.ctx.func_map.insert(full_name, func_idx);
+                    method_funcs.push((m.name.clone(), func_idx));
+                    // Only register in func_map for non-interface impls (static dispatch)
+                    if interface_name.is_none() {
+                        self.ctx.func_map.insert(full_name, func_idx);
+                    }
+                }
+                // If implementing an interface, build a vtable for this (struct, interface) pair
+                if let Some(ref iface_name) = interface_name {
+                    let vdef = VtableDef {
+                        interface_name: iface_name.clone(),
+                        methods: method_funcs,
+                    };
+                    let _vtable_idx = self.vtables.len();
+                    self.vtables.push(vdef.clone());
+                    self.interface_vtables.insert(iface_name.clone(), vdef);
+                    // Update struct_impl_for to map struct → interface
+                    self.struct_impl_for
+                        .entry(struct_name.clone())
+                        .or_default()
+                        .push(iface_name.clone());
                 }
                 Ok((usize::MAX, usize::MAX, 0))
             }
@@ -934,11 +984,180 @@ impl<'a> CpsBuilder<'a> {
         Ok((e, l, r))
     }
 
+    // ── Operator method dispatch helpers ──
+
+/// Map a built-in method name to the corresponding BinOp for rewrite.
+/// Returns `None` if the method is not a recognized builtin operator.
+fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<BinOp> {
+        match method {
+            "add" => Some(BinOp::Add),
+            "subtract" => Some(BinOp::Sub),
+            "multiply" => Some(BinOp::Mul),
+            "divide" => Some(BinOp::Div),
+            "modulo" => Some(BinOp::Mod),
+            "less" => Some(BinOp::Lt),
+            "less_equal" => Some(BinOp::Le),
+            "greater" => Some(BinOp::Gt),
+            "greater_equal" => Some(BinOp::Ge),
+            "equal" => Some(BinOp::Eq),
+            "not_equal" => Some(BinOp::Ne),
+            _ => None,
+        }
+    }
+
+    /// Handle unary-like builtin method calls (neg, not) on builtin types.
+    fn build_unary_for_method(
+        &mut self,
+        method: &str,
+        object: &Expr,
+    ) -> Result<(usize, usize, usize), String> {
+        let (entry, continu, obj_reg) = self.build_expr(object)?;
+        let dst = self.ctx.alloc();
+        let id = self.ctx.new_block();
+        let hint = self.value_hint(object);
+        let instrs = match method {
+            "neg" if hint.is_float() => {
+                vec![CpsInstr::UnOp(dst, CpsUnOp::FNeg, obj_reg)]
+            }
+            "neg" => {
+                vec![CpsInstr::UnOp(dst, CpsUnOp::NegInt, obj_reg)]
+            }
+            "not" => {
+                vec![CpsInstr::UnOp(dst, CpsUnOp::Not, obj_reg)]
+            }
+            _ => return Err(format!("unknown unary method '{method}'")),
+        };
+        self.ctx.set_block(
+            id,
+            CpsBlock {
+                id,
+                params: vec![],
+                instrs,
+                term: cps_emit::emit_return(dst),
+            },
+        );
+        self.ctx.chain(continu, id)?;
+        Ok((entry, id, dst))
+    }
+
+    /// Build operator dispatch for user struct types: a + b → CallIndirect
+    #[allow(clippy::too_many_arguments)]
+    fn build_operator_dispatch(
+        &mut self,
+        struct_name: &str,
+        method: &str,
+        _op: BinOp,
+        left_continu: usize,
+        left_reg: usize,
+        _right_entry: usize,
+        right_continu: usize,
+        right_reg: usize,
+        bl: usize,
+        r: usize,
+    ) -> Result<(usize, usize, usize), String> {
+        // Find vtable for this struct that contains the operator method
+        let mut vtable_idx: Option<usize> = None;
+        let mut slot: Option<usize> = None;
+        for (vi, vdef) in self.vtables.iter().enumerate() {
+            if let Some((s, _)) = vdef.methods.iter().enumerate().find(|(_, (mname, _))| mname == method) {
+                vtable_idx = Some(vi);
+                slot = Some(s);
+                break;
+            }
+        }
+        let (vtable_idx, slot) = match (vtable_idx, slot) {
+            (Some(vi), Some(s)) => (vi, s),
+            _ => {
+                // Fallback: try static dispatch via func_map
+                let full_name = format!("{}.{}", struct_name, method);
+                let func_idx = self.ctx.func_map.get(&full_name).copied()
+                    .ok_or_else(|| format!("operator '{method}' not found for '{struct_name}'"))?;
+                // Use the existing build_call_with_idx but with right_reg already built
+                // Simpler: chain right_continu then do call
+                let result_reg = self.ctx.alloc();
+                let cont_block = self.ctx.new_block();
+                let move_block0 = self.ctx.new_block();
+                self.ctx.set_block(cont_block, CpsBlock {
+                    id: cont_block, params: vec![], instrs: vec![],
+                    term: CpsTerminator::Jump(move_block0, vec![]),
+                });
+                self.ctx.set_block(move_block0, CpsBlock {
+                    id: move_block0, params: vec![], instrs: vec![CpsInstr::Move(result_reg, 0)],
+                    term: cps_emit::emit_return(result_reg),
+                });
+                let call_block = self.ctx.new_block();
+                self.ctx.set_block(call_block, CpsBlock {
+                    id: call_block, params: vec![], instrs: vec![],
+                    term: cps_emit::emit_call(func_idx, vec![left_reg, right_reg], cont_block),
+                });
+                self.ctx.chain(left_continu, right_continu)?;
+                self.ctx.chain(right_continu, call_block)?;
+                return Ok((bl, move_block0, result_reg));
+            }
+        };
+
+        // LoadVtable
+        let vt_r = self.ctx.alloc();
+        let (vt_instrs, _) = cps_emit::emit_load_vtable(vt_r, vtable_idx);
+        let vt_id = self.ctx.new_block();
+        self.ctx.set_block(vt_id, CpsBlock {
+            id: vt_id, params: vec![], instrs: vt_instrs,
+            term: cps_emit::emit_return(vt_r),
+        });
+        self.ctx.chain(left_continu, vt_id)?;
+
+        // NewInterfaceObj
+        let iface_r = self.ctx.alloc();
+        let (iface_instrs, _) = cps_emit::emit_new_interface_obj(iface_r, vt_r, left_reg);
+        let iface_id = self.ctx.new_block();
+        self.ctx.set_block(iface_id, CpsBlock {
+            id: iface_id, params: vec![], instrs: iface_instrs,
+            term: cps_emit::emit_return(iface_r),
+        });
+        self.ctx.chain(vt_id, iface_id)?;
+
+        // Chain right operand after iface block
+        self.ctx.chain(iface_id, right_continu)?;
+
+        // Continuation block
+        let cont_block = self.ctx.new_block();
+        let move_block = self.ctx.new_block();
+        self.ctx.set_block(cont_block, CpsBlock {
+            id: cont_block, params: vec![], instrs: vec![],
+            term: CpsTerminator::Jump(move_block, vec![]),
+        });
+        self.ctx.set_block(move_block, CpsBlock {
+            id: move_block, params: vec![], instrs: vec![CpsInstr::Move(r, 0)],
+            term: cps_emit::emit_return(r),
+        });
+
+        // CallIndirect
+        let call_block = self.ctx.new_block();
+        self.ctx.set_block(call_block, CpsBlock {
+            id: call_block, params: vec![], instrs: vec![],
+            term: cps_emit::emit_call_indirect(slot, vec![iface_r, right_reg], cont_block),
+        });
+        self.ctx.chain(right_continu, call_block)?;
+
+        self.set_value_hint(r, ValueHint::Struct(struct_name.to_string()));
+        Ok((bl, move_block, r))
+    }
+
     // ── build_call — uses func_map to find function index ──
 
     fn build_call(&mut self, func: &Expr, args: &[Expr]) -> Result<(usize, usize, usize), String> {
-        // to_string() — compile-time rewrite to IToS / FToS / Move
+        // Builtin operator method rewrite: x.add(y) → x + y → build_binary
         if let Expr::Member { object, field } = func {
+            if let Some(binop) = self.builtin_method_to_binop(field, args.len()) {
+                if args.len() == 1 {
+                    return self.build_binary(object, binop, &args[0]);
+                }
+                // For unary-like operators (neg, not) or zero-arg
+                if args.is_empty() {
+                    return self.build_unary_for_method(field, object);
+                }
+            }
+            // to_string() — compile-time rewrite to IToS / FToS / Move
             if field == "to_string" && args.is_empty() {
                 let (entry, continu, obj_reg) = self.build_expr(object)?;
                 let dst = self.ctx.alloc();
@@ -1014,6 +1233,102 @@ impl<'a> CpsBuilder<'a> {
                             .unwrap_or(ValueHint::Unknown),
                     );
                     return Ok(result);
+                }
+            }
+            // Interface method dispatch: try each vtable for matching method
+            {
+                let vtables = self.vtables.clone();
+                for (vi, vdef) in vtables.iter().enumerate() {
+                    if let Some((slot, _)) = vdef
+                        .methods
+                        .iter()
+                        .enumerate()
+                        .find(|(_, (mname, _))| mname == field)
+                    {
+                        // Build object expression
+                        let (obj_entry, obj_continu, obj_reg) = self.build_expr(object)?;
+                        // LoadVtable
+                        let vt_r = self.ctx.alloc();
+                        let (vt_instrs, _) = cps_emit::emit_load_vtable(vt_r, vi);
+                        let vt_id = self.ctx.new_block();
+                        self.ctx.set_block(
+                            vt_id,
+                            CpsBlock {
+                                id: vt_id,
+                                params: vec![],
+                                instrs: vt_instrs,
+                                term: cps_emit::emit_return(vt_r),
+                            },
+                        );
+                        self.ctx.chain(obj_continu, vt_id)?;
+                        // NewInterfaceObj
+                        let iface_r = self.ctx.alloc();
+                        let (iface_instrs, _) =
+                            cps_emit::emit_new_interface_obj(iface_r, vt_r, obj_reg);
+                        let iface_id = self.ctx.new_block();
+                        self.ctx.set_block(
+                            iface_id,
+                            CpsBlock {
+                                id: iface_id,
+                                params: vec![],
+                                instrs: iface_instrs,
+                                term: cps_emit::emit_return(iface_r),
+                            },
+                        );
+                        self.ctx.chain(vt_id, iface_id)?;
+                        // Build args chaining from iface_id
+                        let mut prev_c = Some(iface_id);
+                        let mut arg_regs = vec![iface_r]; // first arg = InterfaceObj handle
+                        for arg in args {
+                            let (e, c, r) = self.build_expr(arg)?;
+                            if let Some(t) = prev_c {
+                                self.ctx.chain(t, e)?;
+                            }
+                            prev_c = Some(c);
+                            arg_regs.push(r);
+                        }
+                        // Continuation: cont_block → move_block → Return
+                        let result_reg = self.ctx.alloc();
+                        let cont_block = self.ctx.new_block();
+                        let move_block2 = self.ctx.new_block();
+                        self.ctx.set_block(
+                            cont_block,
+                            CpsBlock {
+                                id: cont_block,
+                                params: vec![],
+                                instrs: vec![],
+                                term: CpsTerminator::Jump(move_block2, vec![]),
+                            },
+                        );
+                        self.ctx.set_block(
+                            move_block2,
+                            CpsBlock {
+                                id: move_block2,
+                                params: vec![],
+                                instrs: vec![CpsInstr::Move(result_reg, 0)],
+                                term: cps_emit::emit_return(result_reg),
+                            },
+                        );
+                        // CallIndirect
+                        let call_block = self.ctx.new_block();
+                        self.ctx.set_block(
+                            call_block,
+                            CpsBlock {
+                                id: call_block,
+                                params: vec![],
+                                instrs: vec![],
+                                term: cps_emit::emit_call_indirect(
+                                    slot,
+                                    arg_regs,
+                                    cont_block,
+                                ),
+                            },
+                        );
+                        if let Some(t) = prev_c {
+                            self.ctx.chain(t, call_block)?;
+                        }
+                        return Ok((obj_entry, move_block2, result_reg));
+                    }
                 }
             }
         }
@@ -1201,6 +1516,41 @@ impl<'a> CpsBuilder<'a> {
         let r = self.ctx.alloc();
         let lhs_hint = self.reg_hint(rl);
         let rhs_hint = self.reg_hint(rr);
+
+        // Check if operands are user struct types → try operator dispatch
+        let lhs_struct = match &lhs_hint {
+            ValueHint::Struct(name) => Some(name.clone()),
+            _ => None,
+        };
+        if let Some(struct_name) = lhs_struct {
+            // Try to find an operator method for this struct
+            let op_method = match op {
+                BinOp::Add => Some("add"),
+                BinOp::Sub => Some("subtract"),
+                BinOp::Mul => Some("multiply"),
+                BinOp::Div => Some("divide"),
+                BinOp::Mod => Some("modulo"),
+                BinOp::Eq => Some("equal"),
+                BinOp::Ne => Some("not_equal"),
+                BinOp::Lt => Some("less"),
+                BinOp::Le => Some("less_equal"),
+                BinOp::Gt => Some("greater"),
+                BinOp::Ge => Some("greater_equal"),
+                _ => None,
+            };
+            if let Some(method) = op_method {
+                let full_name = format!("{}.{}", struct_name, method);
+                if self.interface_vtables.values().any(|v| {
+                    v.methods.iter().any(|(mname, _)| mname == method)
+                }) || self.ctx.func_map.contains_key(&full_name)
+                {
+                    // Found operator method — use interface dispatch path
+                    // Build the left operand (self) then the right operand, then CallIndirect
+                    return self.build_operator_dispatch(&struct_name, method, op, cl, rl, br, cr, rr, bl, r);
+                }
+            }
+        }
+
         let is_float = lhs_hint.is_float() || rhs_hint.is_float();
         let (binop, sl, sr) = match op {
             BinOp::Gt if !is_float => (CpsBinOp::GtInt, rl, rr),
@@ -2141,7 +2491,9 @@ fn remap_term_ids(block: &mut CpsBlock, map: &HashMap<usize, usize>) {
                 *fb = n;
             }
         }
-        CpsTerminator::Call(_, _, ret) | CpsTerminator::CallNative(_, _, ret) => {
+        CpsTerminator::Call(_, _, ret)
+        | CpsTerminator::CallNative(_, _, ret)
+        | CpsTerminator::CallIndirect(_, _, ret) => {
             if let Some(&n) = map.get(ret) {
                 *ret = n;
             }

@@ -155,6 +155,13 @@ fn remap_instr_regs(instr: &mut CpsInstr, reg_map: &HashMap<usize, usize>) {
         CpsInstr::Box(_, s) | CpsInstr::Unbox(_, s) | CpsInstr::Print(s) => {
             lookup(s);
         }
+        CpsInstr::LoadVtable(_, _) => {
+            // vtable_idx is not a register, no remapping needed
+        }
+        CpsInstr::NewInterfaceObj(_, vr, sr) => {
+            lookup(vr);
+            lookup(sr);
+        }
         _ => {}
     }
 }
@@ -169,6 +176,13 @@ fn remap_term_regs(term: &mut CpsTerminator, reg_map: &HashMap<usize, usize>) {
         CpsTerminator::Branch(r, _, _, _, _) => {
             if let Some(&new_r) = reg_map.get(r) {
                 *r = new_r;
+            }
+        }
+        CpsTerminator::CallIndirect(_, args, _) => {
+            for r in args {
+                if let Some(&new_r) = reg_map.get(r) {
+                    *r = new_r;
+                }
             }
         }
         _ => {}

@@ -180,6 +180,12 @@ impl Parser {
         self.expect(TokenKind::LBrace)?;
         let mut methods = Vec::new();
         while self.current_kind() != TokenKind::RBrace {
+            let is_operator = if self.current_kind() == TokenKind::Operator {
+                self.bump();
+                true
+            } else {
+                false
+            };
             let mname = self.expect_ident()?;
             self.expect(TokenKind::Colon)?;
             // Parse method signature: |params| -> ReturnType
@@ -201,7 +207,7 @@ impl Parser {
             } else {
                 None
             };
-            methods.push(MethodSig { name: mname, params, return_type });
+            methods.push(MethodSig { name: mname, params, return_type, operator: is_operator });
             self.expect(TokenKind::Semicolon)?;
         }
         self.bump(); // }
@@ -223,10 +229,16 @@ impl Parser {
         self.expect(TokenKind::LBrace)?;
         let mut methods = Vec::new();
         while self.current_kind() != TokenKind::RBrace {
+            let is_operator = if self.current_kind() == TokenKind::Operator {
+                self.bump();
+                true
+            } else {
+                false
+            };
             let mname = self.expect_ident()?;
             self.expect(TokenKind::Colon)?;
             let body = self.parse_expr()?;
-            methods.push(MethodDef { name: mname, body });
+            methods.push(MethodDef { name: mname, body, operator: is_operator });
             if self.current_kind() == TokenKind::Semicolon {
                 self.bump();
             } else if self.current_kind() == TokenKind::Comma {

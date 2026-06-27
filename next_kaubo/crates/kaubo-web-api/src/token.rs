@@ -116,6 +116,7 @@ pub fn describe_token(kind: TokenKind) -> &'static str {
         TokenKind::Enum => "enum definition",
         TokenKind::Impl => "impl block",
         TokenKind::Interface => "interface definition",
+        TokenKind::Operator => "operator method",
         TokenKind::Export => "export declaration",
         TokenKind::Import => "import statement",
         TokenKind::From => "from keyword (import)",

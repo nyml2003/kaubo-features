@@ -146,6 +146,32 @@ pub fn emit_nop() -> EmitResult {
     (vec![], CpsTerminator::Return(0))
 }
 
+pub fn emit_load_vtable(dst: usize, vtable_idx: usize) -> EmitResult {
+    (
+        vec![CpsInstr::LoadVtable(dst, vtable_idx)],
+        CpsTerminator::Return(dst),
+    )
+}
+
+pub fn emit_new_interface_obj(
+    dst: usize,
+    vtable_reg: usize,
+    struct_reg: usize,
+) -> EmitResult {
+    (
+        vec![CpsInstr::NewInterfaceObj(dst, vtable_reg, struct_reg)],
+        CpsTerminator::Return(dst),
+    )
+}
+
+pub fn emit_call_indirect(
+    slot: usize,
+    args: Vec<usize>,
+    cont_block: usize,
+) -> CpsTerminator {
+    CpsTerminator::CallIndirect(slot, args, cont_block)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::approx_constant)]

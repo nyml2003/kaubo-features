@@ -108,8 +108,15 @@ pub fn infer_module(
         }
     }
 
-    // Pass 2: inject stdlib builtins
+    // Pass 2: inject stdlib builtins, builtin interfaces, and builtin impls
     inject_stdlib(&mut env);
+    inject_builtin_interfaces(&mut interface_registry);
+    inject_builtin_impls(
+        &mut env,
+        &mut struct_registry,
+        &mut struct_fields,
+        &mut interface_registry,
+    );
 
     // Pass 3: infer all statements
     for stmt in &module.stmts {
@@ -195,17 +202,50 @@ pub fn infer_module(
                         }
                     }
                 }
-                // Register methods on struct
+                // Register methods on struct — with interface signature checking
                 for m in methods {
                     let (s, ty) = infer(&env, &m.body, &struct_registry, &struct_fields, &enum_registry, &enum_variants)?;
-                    let scheme = generalize(&env, &s.apply(&ty));
+                    let inferred = s.apply(&ty);
+                    // If implementing an interface, check method type against declared signature
+                    if let Some(ref iface_name) = interface_name {
+                        if let Some(required) = interface_registry.get(iface_name) {
+                            if let Some((_, param_types, ret_ty)) =
+                                required.iter().find(|(mn, _, _)| mn == &m.name)
+                            {
+                                // Build expected type: params... -> ret
+                                let mut expected = ret_ty.clone().unwrap_or(Type::Null);
+                                for (_, pt) in param_types.iter().rev() {
+                                    expected = Type::Arrow(
+                                        Box::new(pt.clone()),
+                                        Box::new(expected),
+                                    );
+                                }
+                                // Unify inferred method type with expected signature
+                                if let Err(e) = unify(&inferred, &expected) {
+                                    return Err(TypeError {
+                                        msg: format!(
+                                            "method '{}' of impl '{iface_name}' for '{struct_name}': {}",
+                                            m.name, e
+                                        ),
+                                        line: 0,
+                                        col: 0,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    let scheme = generalize(&env, &inferred);
                     env.insert(format!("{}.{}", struct_name, m.name), scheme);
                 }
             }
             Stmt::ExprStmt(expr) => {
                 infer(&env, expr, &struct_registry, &struct_fields, &enum_registry, &enum_variants)?;
             }
-            Stmt::ExportStmt(_) | Stmt::Import { .. } | Stmt::InterfaceDef { .. } => {}
+            Stmt::InterfaceDef { name, .. } => {
+                // Register interface name as a type-level entity (no runtime value)
+                env.insert(name.clone(), Scheme::monomorphic(Type::Null));
+            }
+            Stmt::ExportStmt(_) | Stmt::Import { .. } => {}
         }
     }
 
@@ -243,6 +283,262 @@ fn inject_stdlib(env: &mut TypeEnv) {
                 Box::new(Type::Float64),
             )),
         );
+    }
+}
+
+/// Inject built-in interface definitions (Add, Subtract, Multiply, Divide, Modulo,
+/// Compare, Display, IntoFloat, IntoInt).
+fn inject_builtin_interfaces(
+    interface_registry: &mut HashMap<String, Vec<(String, Vec<(String, Type)>, Option<Type>)>>,
+) {
+    // Helper: create a fresh Self type variable (used as placeholder for the implementor type)
+    let self_tv = || Type::Var(fresh_tvar());
+    let bool_ty = Type::Bool;
+    let string_ty = Type::String;
+    let float_ty = Type::Float64;
+
+    // interface Add { operator add: |self, other: Self| -> Self; }
+    let sv = self_tv();
+    interface_registry.entry("Add".into()).or_insert_with(|| {
+        vec![(
+            "add".into(),
+            vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+            Some(sv.clone()),
+        )]
+    });
+    // interface Subtract { operator subtract: |self, other: Self| -> Self; }
+    let sv = self_tv();
+    interface_registry.entry("Subtract".into()).or_insert_with(|| {
+        vec![(
+            "subtract".into(),
+            vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+            Some(sv.clone()),
+        )]
+    });
+    // interface Multiply { operator multiply: |self, other: Self| -> Self; }
+    let sv = self_tv();
+    interface_registry.entry("Multiply".into()).or_insert_with(|| {
+        vec![(
+            "multiply".into(),
+            vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+            Some(sv.clone()),
+        )]
+    });
+    // interface Divide { operator divide: |self, other: Self| -> Self; }
+    let sv = self_tv();
+    interface_registry.entry("Divide".into()).or_insert_with(|| {
+        vec![(
+            "divide".into(),
+            vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+            Some(sv.clone()),
+        )]
+    });
+    // interface Modulo { operator modulo: |self, other: Self| -> Self; }
+    let sv = self_tv();
+    interface_registry.entry("Modulo".into()).or_insert_with(|| {
+        vec![(
+            "modulo".into(),
+            vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+            Some(sv.clone()),
+        )]
+    });
+    // interface Compare {
+    //     operator less: |self, other: Self| -> Bool;
+    //     operator less_equal: |self, other: Self| -> Bool;
+    //     operator greater: |self, other: Self| -> Bool;
+    //     operator greater_equal: |self, other: Self| -> Bool;
+    //     operator equal: |self, other: Self| -> Bool;
+    //     operator not_equal: |self, other: Self| -> Bool;
+    // }
+    let sv = self_tv();
+    interface_registry.entry("Compare".into()).or_insert_with(|| {
+        vec![
+            (
+                "less".into(),
+                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                Some(bool_ty.clone()),
+            ),
+            (
+                "less_equal".into(),
+                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                Some(bool_ty.clone()),
+            ),
+            (
+                "greater".into(),
+                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                Some(bool_ty.clone()),
+            ),
+            (
+                "greater_equal".into(),
+                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                Some(bool_ty.clone()),
+            ),
+            (
+                "equal".into(),
+                vec![("self".into(), sv.clone()), ("other".into(), sv)],
+                Some(bool_ty.clone()),
+            ),
+            ("not_equal".into(), vec![], Some(bool_ty.clone())),
+        ]
+    });
+    // interface Display { to_string: |self| -> String; }
+    interface_registry.entry("Display".into()).or_insert_with(|| {
+        vec![("to_string".into(), vec![("self".into(), self_tv())], Some(string_ty.clone()))]
+    });
+    // interface IntoFloat { to_float: |self| -> Float64; }
+    interface_registry.entry("IntoFloat".into()).or_insert_with(|| {
+        vec![("to_float".into(), vec![("self".into(), self_tv())], Some(float_ty.clone()))]
+    });
+    // interface IntoInt { to_int: |self| -> Int64; }
+    interface_registry
+        .entry("IntoInt".into())
+        .or_insert_with(|| {
+            vec![(
+                "to_int".into(),
+                vec![("self".into(), self_tv())],
+                Some(Type::Int64),
+            )]
+        });
+}
+
+/// Inject built-in impl blocks for Int64, Float64, String, Bool.
+/// These method signatures go into the type environment so `x.to_string()` and
+/// `x.add(y)` type-check.  CPS build recognizes builtin method names and rewrites
+/// them to the corresponding CPS instructions — the impl bodies are never executed.
+fn inject_builtin_impls(
+    env: &mut TypeEnv,
+    struct_registry: &mut HashMap<String, usize>,
+    struct_fields: &mut HashMap<usize, Vec<(String, Type)>>,
+    interface_registry: &mut HashMap<String, Vec<(String, Vec<(String, Type)>, Option<Type>)>>,
+) {
+    // Register builtin types as "struct-like" so method lookup works
+    let builtin_int_id = usize::MAX;
+    let builtin_float_id = usize::MAX - 1;
+    let builtin_string_id = usize::MAX - 2;
+    let builtin_bool_id = usize::MAX - 3;
+    struct_registry.insert("Int64".into(), builtin_int_id);
+    struct_registry.insert("Float64".into(), builtin_float_id);
+    struct_registry.insert("String".into(), builtin_string_id);
+    struct_registry.insert("Bool".into(), builtin_bool_id);
+    struct_fields.insert(builtin_int_id, vec![]);
+    struct_fields.insert(builtin_float_id, vec![]);
+    struct_fields.insert(builtin_string_id, vec![]);
+    struct_fields.insert(builtin_bool_id, vec![]);
+
+    // Helper: register a monomorphic method in env as "{struct}.{method}".
+    // For methods with one extra arg (operator methods), the type is curried:
+    //   self_type → (other_type → return_type)
+    // For zero-arg methods (to_string, to_float, etc.), it's just:
+    //   self_type → return_type
+    // Member handler strips the first Arrow (self), leaving either `ret` or `other → ret`.
+    let mut reg = |struct_name: &str, method: &str, self_ty: Type, other_ty: Option<Type>, ret_ty: Type| {
+        let full = format!("{struct_name}.{method}");
+        let ty = if let Some(other) = other_ty {
+            Type::Arrow(
+                Box::new(self_ty),
+                Box::new(Type::Arrow(Box::new(other), Box::new(ret_ty))),
+            )
+        } else {
+            Type::Arrow(Box::new(self_ty), Box::new(ret_ty))
+        };
+        env.insert(full, Scheme::monomorphic(ty));
+    };
+
+    // ── Int64 ── (operator methods: self + other → return)
+    reg("Int64", "add", Type::Int64, Some(Type::Int64), Type::Int64);
+    reg("Int64", "subtract", Type::Int64, Some(Type::Int64), Type::Int64);
+    reg("Int64", "multiply", Type::Int64, Some(Type::Int64), Type::Int64);
+    reg("Int64", "divide", Type::Int64, Some(Type::Int64), Type::Int64);
+    reg("Int64", "modulo", Type::Int64, Some(Type::Int64), Type::Int64);
+    reg("Int64", "less", Type::Int64, Some(Type::Int64), Type::Bool);
+    reg("Int64", "less_equal", Type::Int64, Some(Type::Int64), Type::Bool);
+    reg("Int64", "greater", Type::Int64, Some(Type::Int64), Type::Bool);
+    reg("Int64", "greater_equal", Type::Int64, Some(Type::Int64), Type::Bool);
+    reg("Int64", "equal", Type::Int64, Some(Type::Int64), Type::Bool);
+    reg("Int64", "not_equal", Type::Int64, Some(Type::Int64), Type::Bool);
+    // zero-arg methods: no other type
+    reg("Int64", "to_string", Type::Int64, None, Type::String);
+    reg("Int64", "to_float", Type::Int64, None, Type::Float64);
+
+    // ── Float64 ──
+    reg("Float64", "add", Type::Float64, Some(Type::Float64), Type::Float64);
+    reg("Float64", "subtract", Type::Float64, Some(Type::Float64), Type::Float64);
+    reg("Float64", "multiply", Type::Float64, Some(Type::Float64), Type::Float64);
+    reg("Float64", "divide", Type::Float64, Some(Type::Float64), Type::Float64);
+    reg("Float64", "less", Type::Float64, Some(Type::Float64), Type::Bool);
+    reg("Float64", "less_equal", Type::Float64, Some(Type::Float64), Type::Bool);
+    reg("Float64", "greater", Type::Float64, Some(Type::Float64), Type::Bool);
+    reg("Float64", "greater_equal", Type::Float64, Some(Type::Float64), Type::Bool);
+    reg("Float64", "equal", Type::Float64, Some(Type::Float64), Type::Bool);
+    reg("Float64", "not_equal", Type::Float64, Some(Type::Float64), Type::Bool);
+    reg("Float64", "to_string", Type::Float64, None, Type::String);
+    reg("Float64", "to_int", Type::Float64, None, Type::Int64);
+
+    // ── String ──
+    reg("String", "add", Type::String, Some(Type::String), Type::String);
+    reg("String", "less", Type::String, Some(Type::String), Type::Bool);
+    reg("String", "less_equal", Type::String, Some(Type::String), Type::Bool);
+    reg("String", "greater", Type::String, Some(Type::String), Type::Bool);
+    reg("String", "greater_equal", Type::String, Some(Type::String), Type::Bool);
+    reg("String", "equal", Type::String, Some(Type::String), Type::Bool);
+    reg("String", "not_equal", Type::String, Some(Type::String), Type::Bool);
+    reg("String", "to_string", Type::String, None, Type::String);
+    reg("String", "to_int", Type::String, None, Type::Int64);
+
+    // ── Bool ──
+    reg("Bool", "equal", Type::Bool, Some(Type::Bool), Type::Bool);
+    reg("Bool", "not_equal", Type::Bool, Some(Type::Bool), Type::Bool);
+    reg("Bool", "to_string", Type::Bool, None, Type::String);
+
+    // Register builtin interface impls in interface_registry so completeness checks pass
+    for (iface_name, builtin_types) in &[
+        ("Add", &["Int64", "Float64", "String"][..]),
+        ("Subtract", &["Int64", "Float64"][..]),
+        ("Multiply", &["Int64", "Float64"][..]),
+        ("Divide", &["Int64", "Float64"][..]),
+        ("Modulo", &["Int64"][..]),
+        ("Compare", &["Int64", "Float64", "String", "Bool"][..]),
+        ("Display", &["Int64", "Float64", "String", "Bool"][..]),
+        ("IntoFloat", &["Int64", "String"][..]),
+        ("IntoInt", &["String", "Float64"][..]),
+    ] {
+        for bt in *builtin_types {
+            let key = format!("{bt}::{iface_name}");
+            interface_registry.entry(key).or_insert_with(Vec::new);
+        }
+    }
+}
+
+/// Map a BinOp to the corresponding operator method name.
+fn binop_to_method(op: &BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "add",
+        BinOp::Sub => "subtract",
+        BinOp::Mul => "multiply",
+        BinOp::Div => "divide",
+        BinOp::Mod => "modulo",
+        BinOp::Eq => "equal",
+        BinOp::Ne => "not_equal",
+        BinOp::Lt => "less",
+        BinOp::Le => "less_equal",
+        BinOp::Gt => "greater",
+        BinOp::Ge => "greater_equal",
+        BinOp::SAdd => "add", // String concatenation uses the same Add interface
+        _ => "add",
+    }
+}
+
+/// Get the struct name for a Type (reverse lookup from struct_registry).
+fn type_to_name(ty: &Type, structs: &HashMap<String, usize>) -> Option<String> {
+    match ty {
+        Type::Int64 => Some("Int64".into()),
+        Type::Float64 => Some("Float64".into()),
+        Type::String => Some("String".into()),
+        Type::Bool => Some("Bool".into()),
+        Type::List(_) => Some("List".into()),
+        Type::Record(id, _) => structs.iter().find(|(_, &sid)| sid == *id).map(|(n, _)| n.clone()),
+        Type::Variant(_, name, _) => Some(name.clone()),
+        _ => None,
     }
 }
 
@@ -334,17 +630,54 @@ pub fn infer(
                             col: 0,
                         })?
                         .compose(&s);
-                    // Restrict to numeric types
                     let unified = s.apply(&t1);
-                    s = unify(&unified, &Type::Int64)
+                    // Try builtin numeric types first
+                    match unify(&unified, &Type::Int64)
                         .or_else(|_| unify(&unified, &Type::Float64))
-                        .map_err(|_| TypeError {
-                            msg: format!("arithmetic requires numeric types, got {unified}"),
-                            line: 0,
-                            col: 0,
-                        })?
-                        .compose(&s);
-                    s.apply(&t1)
+                    {
+                        Ok(subst) => {
+                            s = subst.compose(&s);
+                            s.apply(&t1)
+                        }
+                        Err(_) => {
+                            // Fallback: operator dispatch for user types
+                            // Map BinOp to operator method name
+                            let op_method = binop_to_method(op);
+                            // Find the type name of the unified type
+                            let type_name = type_to_name(&unified, structs);
+                            if let Some(tn) = type_name {
+                                let method_name = format!("{tn}.{op_method}");
+                                if let Some(scheme) = env.get(&method_name) {
+                                    let method_ty = instantiate(scheme);
+                                    // Operator methods are curried: self → (other → return)
+                                    // Strip both arrows to get the return type
+                                    match method_ty {
+                                        Type::Arrow(_, body) => match *body {
+                                            Type::Arrow(_, ret) => *ret,
+                                            other => other,
+                                        },
+                                        other => other,
+                                    }
+                                } else {
+                                    return Err(TypeError {
+                                        msg: format!(
+                                            "arithmetic requires numeric types, got {unified}"
+                                        ),
+                                        line: 0,
+                                        col: 0,
+                                    });
+                                }
+                            } else {
+                                return Err(TypeError {
+                                    msg: format!(
+                                        "arithmetic requires numeric types, got {unified}"
+                                    ),
+                                    line: 0,
+                                    col: 0,
+                                });
+                            }
+                        }
+                    }
                 }
                 BinOp::Eq
                 | BinOp::Ne
@@ -523,59 +856,50 @@ pub fn infer(
         Expr::Member { object, field } => {
             let (s, ty) = infer(env, object, structs, struct_fields, enums, enum_variants)?;
             let applied = s.apply(&ty);
-            // to_string() on Int64 / Float64 returns String; on String is identity
-            if field == "to_string" {
-                match &applied {
-                    Type::Int64 | Type::Float64 => return Ok((s, Type::String)),
-                    Type::String => return Ok((s, Type::String)),
-                    _ => {}
+
+            // Determine the "struct name" of the applied type (for method lookup)
+            let struct_name: Option<String> = match &applied {
+                Type::Int64 => Some("Int64".into()),
+                Type::Float64 => Some("Float64".into()),
+                Type::String => Some("String".into()),
+                Type::Bool => Some("Bool".into()),
+                Type::List(_) => Some("List".into()),
+                Type::Record(id, _) => {
+                    structs.iter().find(|(_, &sid)| sid == *id).map(|(n, _)| n.clone())
+                }
+                Type::Variant(_, name, _) => Some(name.clone()),
+                _ => None,
+            };
+
+            // Try method lookup: "{struct_name}.{field}" in env
+            if let Some(ref sn) = struct_name {
+                let method_name = format!("{sn}.{field}");
+                if let Some(scheme) = env.get(&method_name) {
+                    let method_ty = instantiate(scheme);
+                    let result_ty = match method_ty {
+                        Type::Arrow(_, body) => *body,
+                        other => other,
+                    };
+                    return Ok((s, result_ty));
                 }
             }
-            // to_float() on Int64 returns Float64
-            if field == "to_float" && matches!(applied, Type::Int64) {
-                return Ok((s, Type::Float64));
-            }
-            // to_int() on String returns Int64
-            if field == "to_int" && matches!(applied, Type::String) {
-                return Ok((s, Type::Int64));
-            }
-            match applied {
-                Type::Record(id, fields) => {
-                    // Try struct field first
-                    if let Some(t) = fields
-                        .iter()
-                        .find(|(n, _)| n == field)
-                        .map(|(_, t)| t.clone())
-                    {
-                        return Ok((s, t));
-                    }
-                    // Try impl method: look up "{struct_name}.{field}" in env
-                    for (name, &sid) in structs {
-                        if sid == id {
-                            let method_name = format!("{name}.{field}");
-                            if let Some(scheme) = env.get(&method_name) {
-                                let ty = instantiate(scheme);
-                                // Drop self parameter — caller already knows self
-                                let ty = match ty {
-                                    Type::Arrow(_, body) => *body,
-                                    other => other,
-                                };
-                                return Ok((s, ty));
-                            }
-                        }
-                    }
-                    Err(TypeError {
-                        msg: format!("field '{field}' not found"),
-                        line: 0,
-                        col: 0,
-                    })
+
+            // Try struct field access (Record only)
+            if let Type::Record(_, ref fields) = applied {
+                if let Some(t) = fields
+                    .iter()
+                    .find(|(n, _)| n == field)
+                    .map(|(_, t)| t.clone())
+                {
+                    return Ok((s, t));
                 }
-                _ => Err(TypeError {
-                    msg: format!("cannot access field '{field}' on {ty}"),
-                    line: 0,
-                    col: 0,
-                }),
             }
+
+            Err(TypeError {
+                msg: format!("field or method '{field}' not found on {applied}"),
+                line: 0,
+                col: 0,
+            })
         }
 
         Expr::Index { object, index } => {
@@ -913,8 +1237,22 @@ mod tests {
     }
 
     fn infer_expr(expr: Expr) -> InferResult<Type> {
-        let (structs, fields) = empty_structs();
-        let env = TypeEnv::new();
+        let (mut structs, mut fields) = empty_structs();
+        let mut interface_registry = HashMap::new();
+        inject_builtin_interfaces(&mut interface_registry);
+        inject_builtin_impls(
+            &mut TypeEnv::new(),
+            &mut structs,
+            &mut fields,
+            &mut interface_registry,
+        );
+        let mut env = TypeEnv::new();
+        inject_builtin_impls(
+            &mut env,
+            &mut structs,
+            &mut fields,
+            &mut interface_registry,
+        );
         let (subst, ty) = infer(&env, &expr, &structs, &fields, &empty_enums(), &empty_enum_variants())?;
         Ok(subst.apply(&ty))
     }
@@ -1242,6 +1580,7 @@ mod tests {
                         ret_ty: None,
                         body: Box::new(Expr::LitInt(7)),
                     },
+                    operator: false,
                 }],
             },
             const_decl(
@@ -1287,7 +1626,11 @@ mod tests {
             field: "x".to_string(),
         })
         .unwrap_err();
-        assert!(err.msg.contains("cannot access field"));
+        assert!(
+            err.msg.contains("not found"),
+            "expected 'not found' error, got: {}",
+            err.msg
+        );
     }
 
     #[test]
@@ -1760,7 +2103,11 @@ mod tests {
             field: "unknown".into(),
         })
         .unwrap_err();
-        assert!(err.msg.contains("cannot access field"));
+        assert!(
+            err.msg.contains("not found"),
+            "expected 'not found' error, got: {}",
+            err.msg
+        );
     }
 
     // ── List inference ──

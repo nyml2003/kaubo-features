@@ -47,6 +47,7 @@ pub enum Opcode {
     Jump = 0x40, Branch = 0x41,
     // 调用
     Call = 0x50, TailCall = 0x51, Return = 0x52,
+    CallIndirect = 0x53, LoadVtable = 0x54, NewInterfaceObj = 0x55,
     CallNative = 0x5F,
     // Async
     AsyncPoll = 0x60, Suspend = 0x61,
@@ -115,6 +116,10 @@ pub enum HeapObj {
     List(Vec<i64>),
     Struct(usize, Vec<i64>), // (struct_id, field_values)
     Variant(usize, u16, Vec<i64>), // (enum_id, tag, field_values)
+    InterfaceObj {
+        vtable_idx: usize,
+        data: i64,
+    },
     Closure(Box<ClosureObj>),
 }
 
@@ -156,6 +161,7 @@ pub struct VM {
     pub struct_field_counts: Vec<usize>,
     pub enum_variant_bitmaps: Vec<Vec<u64>>,
     pub enum_variant_counts: Vec<Vec<usize>>,
+    pub vtables: Vec<VtableDef>,
     pub natives: Vec<(&'static str, stdlib::NativeFn)>,
     pub scheduler: AsyncScheduler,
 }
@@ -200,6 +206,7 @@ impl VM {
             struct_field_counts: vec![],
             enum_variant_bitmaps: vec![],
             enum_variant_counts: vec![],
+            vtables: vec![],
             natives: stdlib::register_all(),
             scheduler: AsyncScheduler::new(),
         }
@@ -242,6 +249,8 @@ impl VM {
             self.enum_variant_bitmaps[id] = bitmaps;
         }
 
+        self.vtables = module.vtables.clone();
+
         for func in &module.functions {
             let base_ip = self.instrs.len();
             let max_id = func
@@ -276,6 +285,7 @@ impl VM {
                     }
                     CpsTerminator::Call(_, a, _) => a.clone(),
                     CpsTerminator::CallNative(_, a, _) => a.clone(),
+                    CpsTerminator::CallIndirect(_, a, _) => a.clone(),
                     _ => vec![],
                 };
                 self.jump_args.push(args); // args for terminator
@@ -1138,6 +1148,84 @@ impl VM {
                     return Ok(0);
                 }
 
+                // ── interface dispatch ──
+                Opcode::LoadVtable => {
+                    // LoadVtable(dst, vtable_idx) — store vtable_idx in register
+                    let d = inst.dst();
+                    let vi = inst.src1();
+                    // Store vtable index as a special tagged value (negative to distinguish from heap handles)
+                    // We use a negative sentinel: -(vtable_idx + 1) so it's never 0
+                    self.write_int(d, -((vi as i64) + 1));
+                }
+                Opcode::NewInterfaceObj => {
+                    // NewInterfaceObj(dst, vtable_reg, struct_reg)
+                    let d = inst.dst();
+                    let vr = inst.src1();
+                    let sr = inst.src2();
+                    // Decode vtable_idx from the tagged register value
+                    let raw = self.regs.regs[vr] as i64;
+                    let vtable_idx = ((-raw) - 1) as usize;
+                    let data = self.regs.regs[sr] as i64;
+                    // Retain the data handle since InterfaceObj now holds a reference
+                    if data >= 0 {
+                        self.heap.retain(data as usize);
+                    }
+                    self.write_heap(d, HeapObj::InterfaceObj { vtable_idx, data });
+                }
+                Opcode::CallIndirect => {
+                    // CallIndirect(slot, args..., cont_block)
+                    let slot = inst.dst();
+                    let cont_block = (inst.src1() << 8) | inst.src2();
+                    if self.frames.len() >= MAX_CALL_DEPTH {
+                        return Err(RuntimeError::StackOverflow);
+                    }
+                    let args = self.jump_args(ip - 1).to_vec();
+                    if args.is_empty() {
+                        return Err(RuntimeError::Bug("CallIndirect: no args (need at least self)".into()));
+                    }
+                    // First arg is the InterfaceObj handle
+                    let iface_handle = self.regs.regs[args[0]] as i64;
+                    let (vtable_idx, data_handle) = match self.heap_get(iface_handle)? {
+                        HeapObj::InterfaceObj { vtable_idx, data } => (*vtable_idx, *data),
+                        other => return Err(RuntimeError::TypeMismatch(format!(
+                            "CallIndirect: expected InterfaceObj, got {:?}", other
+                        ))),
+                    };
+                    // Look up the method func_idx from the vtable
+                    let vtable = self.vtables.get(vtable_idx)
+                        .ok_or_else(|| RuntimeError::Bug(format!("vtable index {vtable_idx} out of bounds")))?;
+                    let (_, func_idx) = vtable.methods.get(slot)
+                        .ok_or_else(|| RuntimeError::Bug(format!(
+                            "vtable slot {slot} out of bounds (vtable '{}' has {} methods)",
+                            vtable.interface_name, vtable.methods.len()
+                        )))?;
+                    let func_idx = *func_idx;
+                    let callee_regs = self.func_reg_counts[func_idx];
+                    // Save caller regs
+                    let saved_regs = std::mem::take(&mut self.regs.regs);
+                    // Prepare callee registers
+                    self.regs.regs.resize(callee_regs, 0);
+                    // Copy args from saved caller registers into callee positions
+                    // Replace first arg (InterfaceObj handle) with the actual data handle
+                    for (i, &arg_reg) in args.iter().enumerate() {
+                        if i < callee_regs {
+                            if i == 0 {
+                                self.regs.regs[i] = data_handle as u64;
+                            } else {
+                                self.regs.regs[i] = saved_regs[arg_reg];
+                            }
+                        }
+                    }
+                    self.frames.push(CallFrame {
+                        func_idx: self.current_func,
+                        ret_block: cont_block,
+                        saved_regs,
+                        result_reg: 0,
+                    });
+                    self.current_func = func_idx;
+                    ip = self.func_entries[func_idx];
+                }
+
                 // ── print ──
                 Opcode::Print => {
                                         let r = inst.dst();
@@ -1224,6 +1312,8 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
         CpsInstr::Box(d, s) => encode(Opcode::Box_ as u8, *d as u32, *s as u32, 0),
         CpsInstr::Unbox(d, s) => encode(Opcode::Unbox as u8, *d as u32, *s as u32, 0),
         CpsInstr::Print(r) => encode(Opcode::Print as u8, *r as u32, 0, 0),
+        CpsInstr::LoadVtable(d, vi) => encode(Opcode::LoadVtable as u8, *d as u32, *vi as u32, 0),
+        CpsInstr::NewInterfaceObj(d, vr, sr) => encode(Opcode::NewInterfaceObj as u8, *d as u32, *vr as u32, *sr as u32),
         CpsInstr::Nop => return Err("nop is not executable".into()),
     })
 }
@@ -1236,6 +1326,7 @@ fn encode_term(term: &CpsTerminator) -> Result<u32, String> {
         CpsTerminator::Return(r) => encode(Opcode::Return as u8, *r as u32, 0, 0),
         CpsTerminator::Call(fi, _, ret) => encode(Opcode::Call as u8, *fi as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
         CpsTerminator::CallNative(fi, _, ret) => encode(Opcode::CallNative as u8, *fi as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
+        CpsTerminator::CallIndirect(slot, _, ret) => encode(Opcode::CallIndirect as u8, *slot as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
         CpsTerminator::TailCall(_, _) => encode(Opcode::TailCall as u8, 0, 0, 0),
     })
 }
@@ -1268,6 +1359,7 @@ mod tests {
             constants: consts,
             structs: vec![],
             enums: vec![],
+            vtables: vec![],
         }
     }
 
@@ -1350,6 +1442,7 @@ mod tests {
             ],
             structs: vec![],
             enums: vec![],
+            vtables: vec![],
         };
         let mut vm = VM::new();
         vm.load(&m).unwrap();
@@ -1442,6 +1535,7 @@ mod tests {
             constants: consts,
             structs,
             enums: vec![],
+            vtables: vec![],
         }
     }
 
@@ -1786,6 +1880,7 @@ mod tests {
             constants: vec![Constant::Int(0)],
             structs: vec![],
             enums: vec![],
+            vtables: vec![],
         };
         let mut vm = VM::new();
         vm.load(&native).unwrap();
@@ -1841,6 +1936,7 @@ mod tests {
             constants: vec![Constant::Int(7)],
             structs: vec![],
             enums: vec![],
+            vtables: vec![],
         };
         let mut vm = VM::new();
         vm.load(&native).unwrap();
@@ -1898,6 +1994,7 @@ mod tests {
             constants: vec![Constant::Int(42), Constant::String("hi".into())],
             structs: vec![],
             enums: vec![],
+            vtables: vec![],
         }
     }
 
@@ -1955,6 +2052,7 @@ mod tests {
             constants: consts,
             structs: vec![],
             enums: vec![],
+            vtables: vec![],
         };
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
@@ -1987,6 +2085,7 @@ mod tests {
             constants: vec![Constant::Int(i64::MIN), Constant::Int(-1)],
             structs: vec![],
             enums: vec![],
+            vtables: vec![],
         };
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
@@ -2020,6 +2119,7 @@ mod tests {
             constants: vec![Constant::String("hi".into())],
             structs,
             enums: vec![],
+            vtables: vec![],
         };
         let mut vm = VM::new();
         vm.load(&cps).unwrap();

@@ -27,6 +27,7 @@ pub enum TokenKind {
     Await,    // await
     Self_,    // self
     Match,    // match
+    Operator, // operator
 
     // ── 字面量 ──
     Identifier,    // 标识符
@@ -110,6 +111,7 @@ impl TokenKind {
             "await" => Self::Await,
             "self" => Self::Self_,
             "match" => Self::Match,
+            "operator" => Self::Operator,
             "true" => Self::True,
             "false" => Self::False,
             "null" => Self::Null,

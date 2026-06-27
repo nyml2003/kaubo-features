@@ -59,6 +59,7 @@ fn type_of_fn(args: &[i64], heap: &GcHeap) -> Result<i64, String> {
             HeapObj::List(_) => 3,
             HeapObj::Variant(_, _, _) => 4,
             HeapObj::Closure(_) => 5,
+            HeapObj::InterfaceObj { .. } => 6,
         }),
         None => Ok(0), // not a heap object → scalar
     }

@@ -11,6 +11,13 @@ pub struct CpsModule {
     pub constants: Vec<Constant>,
     pub structs: Vec<StructDef>,
     pub enums: Vec<EnumDef>,
+    pub vtables: Vec<VtableDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VtableDef {
+    pub interface_name: String,
+    pub methods: Vec<(String, usize)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +56,8 @@ pub enum CpsInstr {
     Box(usize, usize),
     Unbox(usize, usize),
     Print(usize),
+    LoadVtable(usize, usize),
+    NewInterfaceObj(usize, usize, usize),
     Nop,
 }
 
@@ -60,6 +69,7 @@ pub enum CpsTerminator {
     Call(usize, Vec<usize>, usize),
     TailCall(usize, Vec<usize>),
     CallNative(usize, Vec<usize>, usize),
+    CallIndirect(usize, Vec<usize>, usize),
     Suspend,
 }
 
@@ -156,6 +166,7 @@ mod tests {
                 type_bitmap: 0b101,
             }],
             enums: vec![],
+            vtables: vec![],
         };
 
         let json = serde_json::to_string(&module).unwrap();
