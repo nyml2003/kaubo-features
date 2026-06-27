@@ -310,7 +310,7 @@ impl<'a> Lexer<'a> {
         }
         Token::new(
             TokenKind::Error,
-            format!("unterminated string: {}", s),
+            format!("unterminated string: {s}"),
             line,
             col,
         )
@@ -333,7 +333,7 @@ impl<'a> Lexer<'a> {
             let mut iter = self.chars.clone();
             iter.next(); // skip the dot
             let after_dot = iter.next();
-            if after_dot.map_or(false, |c| c.is_ascii_digit()) {
+            if after_dot.is_some_and(|c| c.is_ascii_digit()) {
                 // it's a float
                 s.push('.');
                 self.advance();
@@ -1101,8 +1101,7 @@ mod tests {
             assert_eq!(
                 toks[0].kind,
                 TokenKind::Error,
-                "expected Error for '{}'",
-                ch
+                "expected Error for '{ch}'"
             );
         }
     }

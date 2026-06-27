@@ -49,16 +49,16 @@ impl fmt::Display for Type {
             Type::String => write!(f, "String"),
             Type::Bool => write!(f, "Bool"),
             Type::Null => write!(f, "Null"),
-            Type::Arrow(a, b) => write!(f, "({} → {})", a, b),
+            Type::Arrow(a, b) => write!(f, "({a} → {b})"),
             Type::Record(_, fields) => {
                 let fs: Vec<_> = fields
                     .iter()
-                    .map(|(n, t)| format!("{}: {}", n, t))
+                    .map(|(n, t)| format!("{n}: {t}"))
                     .collect();
                 write!(f, "{{{}}}", fs.join(", "))
             }
-            Type::Variant(id, name, _) => write!(f, "{}#{}", name, id),
-            Type::List(t) => write!(f, "List<{}>", t),
+            Type::Variant(id, name, _) => write!(f, "{name}#{id}"),
+            Type::List(t) => write!(f, "List<{t}>"),
         }
     }
 }

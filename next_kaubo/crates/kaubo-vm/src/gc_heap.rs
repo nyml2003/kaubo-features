@@ -8,6 +8,12 @@ struct GcSlot {
     obj: Option<crate::execute::HeapObj>,
 }
 
+impl Default for GcHeap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GcHeap {
     pub fn new() -> Self {
         GcHeap {
@@ -33,10 +39,8 @@ impl GcHeap {
     }
 
     pub fn retain(&mut self, idx: usize) {
-        if idx < self.slots.len() {
-            if self.slots[idx].obj.is_some() {
-                self.slots[idx].rc += 1;
-            }
+        if idx < self.slots.len() && self.slots[idx].obj.is_some() {
+            self.slots[idx].rc += 1;
         }
     }
 

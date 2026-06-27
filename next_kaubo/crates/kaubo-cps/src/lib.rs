@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn instruction_variants_are_constructible() {
-        let instrs = vec![CpsInstr::Move(0, 1), CpsInstr::NewList(2, vec![0, 1])];
+        let instrs = [CpsInstr::Move(0, 1), CpsInstr::NewList(2, vec![0, 1])];
         let term = CpsTerminator::Suspend;
 
         assert!(matches!(instrs[0], CpsInstr::Move(0, 1)));

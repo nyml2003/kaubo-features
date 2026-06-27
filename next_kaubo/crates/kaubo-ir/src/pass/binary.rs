@@ -33,32 +33,32 @@ fn w_u8(w: &mut Vec<u8>, v: u8) {
 
 fn r_u16(r: &mut Cursor<&[u8]>) -> Result<u16, String> {
     let mut b = [0u8; 2];
-    r.read_exact(&mut b).map_err(|e| format!("read: {}", e))?;
+    r.read_exact(&mut b).map_err(|e| format!("read: {e}"))?;
     Ok(u16::from_le_bytes(b))
 }
 fn r_u32(r: &mut Cursor<&[u8]>) -> Result<u32, String> {
     let mut b = [0u8; 4];
-    r.read_exact(&mut b).map_err(|e| format!("read: {}", e))?;
+    r.read_exact(&mut b).map_err(|e| format!("read: {e}"))?;
     Ok(u32::from_le_bytes(b))
 }
 fn r_u64(r: &mut Cursor<&[u8]>) -> Result<u64, String> {
     let mut b = [0u8; 8];
-    r.read_exact(&mut b).map_err(|e| format!("read: {}", e))?;
+    r.read_exact(&mut b).map_err(|e| format!("read: {e}"))?;
     Ok(u64::from_le_bytes(b))
 }
 fn r_i64(r: &mut Cursor<&[u8]>) -> Result<i64, String> {
     let mut b = [0u8; 8];
-    r.read_exact(&mut b).map_err(|e| format!("read: {}", e))?;
+    r.read_exact(&mut b).map_err(|e| format!("read: {e}"))?;
     Ok(i64::from_le_bytes(b))
 }
 fn r_f64(r: &mut Cursor<&[u8]>) -> Result<f64, String> {
     let mut b = [0u8; 8];
-    r.read_exact(&mut b).map_err(|e| format!("read: {}", e))?;
+    r.read_exact(&mut b).map_err(|e| format!("read: {e}"))?;
     Ok(f64::from_le_bytes(b))
 }
 fn r_u8(r: &mut Cursor<&[u8]>) -> Result<u8, String> {
     let mut b = [0u8; 1];
-    r.read_exact(&mut b).map_err(|e| format!("read: {}", e))?;
+    r.read_exact(&mut b).map_err(|e| format!("read: {e}"))?;
     Ok(b[0])
 }
 
@@ -94,14 +94,14 @@ pub fn decode_module(bytes: &[u8]) -> Result<CpsModule, String> {
 
     let mut magic = [0u8; 4];
     r.read_exact(&mut magic)
-        .map_err(|e| format!("magic: {}", e))?;
+        .map_err(|e| format!("magic: {e}"))?;
     if &magic != MAGIC {
         return Err("bad magic".into());
     }
 
     let version = r_u32(&mut r)?;
     if version != VERSION {
-        return Err(format!("unsupported version {}", version));
+        return Err(format!("unsupported version {version}"));
     }
 
     let const_count = r_u16(&mut r)? as usize;
@@ -166,12 +166,12 @@ fn decode_constant(r: &mut Cursor<&[u8]>) -> Result<Constant, String> {
         2 => {
             let len = r_u16(r)? as usize;
             let mut b = vec![0u8; len];
-            r.read_exact(&mut b).map_err(|e| format!("str: {}", e))?;
-            Constant::String(String::from_utf8(b).map_err(|e| format!("utf8: {}", e))?)
+            r.read_exact(&mut b).map_err(|e| format!("str: {e}"))?;
+            Constant::String(String::from_utf8(b).map_err(|e| format!("utf8: {e}"))?)
         }
         3 => Constant::Bool(r_u8(r)? != 0),
         4 => Constant::Null,
-        _ => return Err(format!("bad const tag {}", tag)),
+        _ => return Err(format!("bad const tag {tag}")),
     })
 }
 
@@ -195,20 +195,20 @@ fn decode_struct_def(r: &mut Cursor<&[u8]>) -> Result<StructDef, String> {
     let id = r_u32(r)? as usize;
     let nlen = r_u16(r)? as usize;
     let mut nb = vec![0u8; nlen];
-    r.read_exact(&mut nb).map_err(|e| format!("sname: {}", e))?;
-    let name = String::from_utf8(nb).map_err(|e| format!("sname utf8: {}", e))?;
+    r.read_exact(&mut nb).map_err(|e| format!("sname: {e}"))?;
+    let name = String::from_utf8(nb).map_err(|e| format!("sname utf8: {e}"))?;
 
     let fcount = r_u16(r)? as usize;
     let mut fields = Vec::with_capacity(fcount);
     for _ in 0..fcount {
         let flen = r_u16(r)? as usize;
         let mut fb = vec![0u8; flen];
-        r.read_exact(&mut fb).map_err(|e| format!("fname: {}", e))?;
-        let fn2 = String::from_utf8(fb).map_err(|e| format!("fname utf8: {}", e))?;
+        r.read_exact(&mut fb).map_err(|e| format!("fname: {e}"))?;
+        let fn2 = String::from_utf8(fb).map_err(|e| format!("fname utf8: {e}"))?;
         let tlen = r_u16(r)? as usize;
         let mut tb = vec![0u8; tlen];
-        r.read_exact(&mut tb).map_err(|e| format!("ftype: {}", e))?;
-        let ft = String::from_utf8(tb).map_err(|e| format!("ftype utf8: {}", e))?;
+        r.read_exact(&mut tb).map_err(|e| format!("ftype: {e}"))?;
+        let ft = String::from_utf8(tb).map_err(|e| format!("ftype utf8: {e}"))?;
         fields.push((fn2, ft));
     }
     let type_bitmap = r_u64(r)?;
@@ -241,8 +241,8 @@ fn encode_function(w: &mut Vec<u8>, f: &CpsFunction) {
 fn decode_function(r: &mut Cursor<&[u8]>) -> Result<CpsFunction, String> {
     let nlen = r_u16(r)? as usize;
     let mut nb = vec![0u8; nlen];
-    r.read_exact(&mut nb).map_err(|e| format!("fname: {}", e))?;
-    let name = String::from_utf8(nb).map_err(|e| format!("fname utf8: {}", e))?;
+    r.read_exact(&mut nb).map_err(|e| format!("fname: {e}"))?;
+    let name = String::from_utf8(nb).map_err(|e| format!("fname utf8: {e}"))?;
     let entry = r_u32(r)? as usize;
     let reg_count = r_u32(r)? as usize;
     let bcount = r_u16(r)? as usize;
@@ -373,7 +373,7 @@ fn encode_instr(w: &mut Vec<u8>, i: &CpsInstr) {
             w_u8(w, 0x0E);
             w_u16(w, *d as u16);
             w_u16(w, *eid as u16);
-            w_u16(w, *tag as u16);
+            w_u16(w, *tag);
         }
         CpsInstr::GetVariantTag(d, o) => {
             w_u8(w, 0x0F);
@@ -384,13 +384,13 @@ fn encode_instr(w: &mut Vec<u8>, i: &CpsInstr) {
             w_u8(w, 0x11);
             w_u16(w, *d as u16);
             w_u16(w, *o as u16);
-            w_u16(w, *fi as u16);
+            w_u16(w, *fi);
         }
         CpsInstr::GetVariantField(d, o, fi) => {
             w_u8(w, 0x10);
             w_u16(w, *d as u16);
             w_u16(w, *o as u16);
-            w_u16(w, *fi as u16);
+            w_u16(w, *fi);
         }
         CpsInstr::Nop => {
             w_u8(w, 0x0D);
@@ -450,7 +450,7 @@ fn decode_instr(r: &mut Cursor<&[u8]>) -> Result<CpsInstr, String> {
         ),
         0x0C => CpsInstr::Print(r_u16(r)? as usize),
         0x0D => CpsInstr::Nop,
-        _ => return Err(format!("bad instr tag {:02x}", tag)),
+        _ => return Err(format!("bad instr tag {tag:02x}")),
     })
 }
 
@@ -555,7 +555,7 @@ fn decode_term(r: &mut Cursor<&[u8]>) -> Result<CpsTerminator, String> {
             }
             CpsTerminator::CallNative(fi, args, ret)
         }
-        _ => return Err(format!("bad term tag {:02x}", tag)),
+        _ => return Err(format!("bad term tag {tag:02x}")),
     })
 }
 
@@ -622,7 +622,7 @@ fn u8_to_binop(v: u8) -> Result<CpsBinOp, String> {
         24 => CpsBinOp::FLe,
         25 => CpsBinOp::FGt,
         26 => CpsBinOp::FGe,
-        _ => return Err(format!("bad binop tag {}", v)),
+        _ => return Err(format!("bad binop tag {v}")),
     })
 }
 
@@ -638,7 +638,7 @@ fn u8_to_unop(v: u8) -> Result<CpsUnOp, String> {
         0 => CpsUnOp::NegInt,
         1 => CpsUnOp::FNeg,
         2 => CpsUnOp::Not,
-        _ => return Err(format!("bad unop tag {}", v)),
+        _ => return Err(format!("bad unop tag {v}")),
     })
 }
 
@@ -687,8 +687,7 @@ mod tests {
                 for i in &b.instrs {
                     assert!(
                         !matches!(i, CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)),
-                        "binop should be folded: {:?}",
-                        i
+                        "binop should be folded: {i:?}"
                     );
                 }
                 match &b.term {

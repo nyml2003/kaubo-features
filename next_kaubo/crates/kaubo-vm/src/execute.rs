@@ -160,6 +160,12 @@ pub struct CallFrame {
 
 const MAX_CALL_DEPTH: usize = 1024;
 
+impl Default for VM {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VM {
     pub fn new() -> Self {
         VM {
@@ -611,9 +617,9 @@ impl VM {
                         .ok_or_else(|| RuntimeError::Bug(format!("unknown struct id {sid}")))?;
                     let bitmap = self.struct_bitmaps[sid];
                     let mut fields = vec![0i64; nf];
-                    for i in 0..nf {
+                    for (i, f) in fields.iter_mut().enumerate() {
                         if (bitmap >> i) & 1 != 0 {
-                            fields[i] = -1; // null sentinel for heap-type fields
+                            *f = -1; // null sentinel for heap-type fields
                         }
                     }
                     self.write_heap(d, HeapObj::Struct(sid, fields));
@@ -742,9 +748,9 @@ impl VM {
                     let nf = self.enum_variant_counts[enum_id][tag as usize];
                     let bitmap = self.enum_variant_bitmaps[enum_id][tag as usize];
                     let mut fields = vec![0i64; nf];
-                    for i in 0..nf {
+                    for (i, f) in fields.iter_mut().enumerate() {
                         if (bitmap >> i) & 1 != 0 {
-                            fields[i] = -1;
+                            *f = -1;
                         }
                     }
                     self.write_heap(d, HeapObj::Variant(enum_id, tag, fields));
@@ -784,7 +790,7 @@ impl VM {
                     let fi = inst.src2(); // field idx
                     let hid = self.regs.ints[s];
                     let val = self.regs.ints[d];
-                    let (enum_id, tag, old_val, len, is_heap) = match self.heap_get(hid)? {
+                    let (old_val, is_heap) = match self.heap_get(hid)? {
                         HeapObj::Variant(eid, t, fields) => {
                             let old = fields.get(fi).copied().ok_or(
                                 RuntimeError::FieldOutOfBounds { index: fi, len: fields.len() },
@@ -795,7 +801,7 @@ impl VM {
                                 .copied()
                                 .unwrap_or(0);
                             let heap = (bitmap >> fi) & 1 != 0;
-                            (*eid, *t, old, fields.len(), heap)
+                            (old, heap)
                         }
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
@@ -815,10 +821,8 @@ impl VM {
                         if !self_assign && val != -1 {
                             self.heap.retain(val as usize);
                         }
-                    } else {
-                        if let HeapObj::Variant(_, _, fields) = self.heap_get_mut(hid)? {
-                            fields[fi] = val;
-                        }
+                    } else if let HeapObj::Variant(_, _, fields) = self.heap_get_mut(hid)? {
+                        fields[fi] = val;
                     }
                 }
 
@@ -837,7 +841,7 @@ impl VM {
                 // ── 控制流 ──
                 Opcode::Jump => {
                     let block_id = (inst.src1() << 8) | inst.src2();
-                    self.bind_params(block_id, &self.jump_args(ip - 1).to_vec());
+                    self.bind_params(block_id, self.jump_args(ip - 1));
                     ip = self.block_ip(block_id);
                 }
                 Opcode::Branch => {
@@ -977,6 +981,7 @@ impl VM {
                     }
                 }
 
+                #[allow(unreachable_patterns)]
                 _ => return Err(RuntimeError::InvalidOpcode(opcode as u8)),
             }
         }

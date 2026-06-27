@@ -201,7 +201,7 @@ mod tests {
         // Params are preserved for VM bind_params — flatten doesn't clear them anymore
         let cps = lower_and_flatten("const x = 1 + 2;");
         let f = &cps.functions[0];
-        assert!(f.blocks.len() >= 1, "should have at least 1 block");
+        assert!(!f.blocks.is_empty(), "should have at least 1 block");
     }
 
     #[test]

@@ -64,7 +64,7 @@ pub fn run_module(cps: &CpsModule) -> Result<RunOutcome, DriverError> {
     let reg_count = cps.functions[func_idx].reg_count;
     let result = vm
         .execute(func_idx, reg_count)
-        .map_err(|e| DriverError::Runtime(format!("{:?}", e)))?;
+        .map_err(|e| DriverError::Runtime(format!("{e:?}")))?;
 
     Ok(RunOutcome {
         result,

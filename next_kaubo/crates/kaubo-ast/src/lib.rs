@@ -184,25 +184,27 @@ pub enum TypeExpr {
     },
 }
 
-impl TypeExpr {
-    pub fn named(name: &str) -> Self {
-        Self::Named(name.to_string())
-    }
-
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for TypeExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Named(n) => n.clone(),
-            Self::List(t) => format!("List<{}>", t.to_string()),
-            Self::Arrow { params, ret } => format!(
-                "|{}| -> {}",
+            Self::Named(n) => write!(f, "{n}"),
+            Self::List(t) => write!(f, "List<{t}>"),
+            Self::Arrow { params, ret } => write!(
+                f,
+                "|{}| -> {ret}",
                 params
                     .iter()
                     .map(|p| p.to_string())
                     .collect::<Vec<_>>()
-                    .join(", "),
-                ret.to_string()
+                    .join(", ")
             ),
         }
+    }
+}
+
+impl TypeExpr {
+    pub fn named(name: &str) -> Self {
+        Self::Named(name.to_string())
     }
 }
 

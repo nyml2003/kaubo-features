@@ -23,6 +23,12 @@ pub struct AsyncScheduler {
     completed: Vec<(TaskId, i64)>, // 已完成任务的结果
 }
 
+impl Default for AsyncScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AsyncScheduler {
     pub fn new() -> Self {
         AsyncScheduler {

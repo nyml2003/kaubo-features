@@ -218,7 +218,7 @@ pub fn infer(
 
         Expr::VarRef(name) => {
             let scheme = env.get(name).ok_or_else(|| TypeError {
-                msg: format!("unbound variable '{}'", name),
+                msg: format!("unbound variable '{name}'"),
                 line: 0,
                 col: 0,
             })?;
@@ -282,7 +282,7 @@ pub fn infer(
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                     s = unify(&s.apply(&t1), &s.apply(&t2))
                         .map_err(|e| TypeError {
-                            msg: format!("binary operator: {}", e),
+                            msg: format!("binary operator: {e}"),
                             line: 0,
                             col: 0,
                         })?
@@ -365,7 +365,7 @@ pub fn infer(
                 let mut s = s_c.compose(&s_t).compose(&s_e);
                 s = unify(&s.apply(&tt), &s.apply(&te))
                     .map_err(|e| TypeError {
-                        msg: format!("if branches: {}", e),
+                        msg: format!("if branches: {e}"),
                         line: 0,
                         col: 0,
                     })?
@@ -397,7 +397,7 @@ pub fn infer(
                 Ok((s_i.compose(&s_b), Type::Null))
             } else {
                 Err(TypeError {
-                    msg: format!("for loop requires List, got {}", ti),
+                    msg: format!("for loop requires List, got {ti}"),
                     line: 0,
                     col: 0,
                 })
@@ -441,7 +441,7 @@ pub fn infer(
                     // Try impl method: look up "{struct_name}.{field}" in env
                     for (name, &sid) in structs {
                         if sid == id {
-                            let method_name = format!("{}.{}", name, field);
+                            let method_name = format!("{name}.{field}");
                             if let Some(scheme) = env.get(&method_name) {
                                 let ty = instantiate(scheme);
                                 // Drop self parameter — caller already knows self
@@ -454,13 +454,13 @@ pub fn infer(
                         }
                     }
                     Err(TypeError {
-                        msg: format!("field '{}' not found", field),
+                        msg: format!("field '{field}' not found"),
                         line: 0,
                         col: 0,
                     })
                 }
                 _ => Err(TypeError {
-                    msg: format!("cannot access field '{}' on {}", field, ty),
+                    msg: format!("cannot access field '{field}' on {ty}"),
                     line: 0,
                     col: 0,
                 }),
@@ -480,7 +480,7 @@ pub fn infer(
 
         Expr::StructLit { name, fields, .. } => {
             let id = structs.get(name).ok_or_else(|| TypeError {
-                msg: format!("unknown struct '{}'", name),
+                msg: format!("unknown struct '{name}'"),
                 line: 0,
                 col: 0,
             })?;
@@ -500,7 +500,7 @@ pub fn infer(
             ..
         } => {
             let id = enums.get(enum_name).ok_or_else(|| TypeError {
-                msg: format!("unknown enum '{}'", enum_name),
+                msg: format!("unknown enum '{enum_name}'"),
                 line: 0,
                 col: 0,
             })?;
@@ -508,7 +508,7 @@ pub fn infer(
                 .get(id)
                 .and_then(|vs| vs.iter().find(|(n, _)| n == variant_name))
                 .ok_or_else(|| TypeError {
-                    msg: format!("unknown variant '{}'", variant_name),
+                    msg: format!("unknown variant '{variant_name}'"),
                     line: 0,
                     col: 0,
                 })?;
@@ -530,7 +530,7 @@ pub fn infer(
                 Type::Variant(..) => {}
                 _ => {
                     return Err(TypeError {
-                        msg: format!("GetVariantTag expected variant type, got {}", ty),
+                        msg: format!("GetVariantTag expected variant type, got {ty}"),
                         line: 0,
                         col: 0,
                     })
@@ -553,8 +553,7 @@ pub fn infer(
                 }
                 _ => Err(TypeError {
                     msg: format!(
-                        "GetVariantField expected variant type, got {}",
-                        ty
+                        "GetVariantField expected variant type, got {ty}"
                     ),
                     line: 0,
                     col: 0,
@@ -570,7 +569,7 @@ pub fn infer(
                 s = s.compose(&s_i);
                 s = unify(&s.apply(&elem_ty), &s.apply(&ti))
                     .map_err(|e| TypeError {
-                        msg: format!("list element: {}", e),
+                        msg: format!("list element: {e}"),
                         line: 0,
                         col: 0,
                     })?
@@ -605,7 +604,7 @@ pub fn unify(t1: &Type, t2: &Type) -> Result<Subst, String> {
         (Type::List(t1), Type::List(t2)) => unify(t1, t2),
         (Type::Record(id1, _), Type::Record(id2, _)) if id1 == id2 => Ok(Subst::empty()),
         (Type::Variant(id1, _, _), Type::Variant(id2, _, _)) if id1 == id2 => Ok(Subst::empty()),
-        _ => Err(format!("cannot unify {} and {}", t1, t2)),
+        _ => Err(format!("cannot unify {t1} and {t2}")),
     }
 }
 
@@ -695,7 +694,7 @@ fn type_expr_to_type(
                     Ok(Type::Record(id, fields))
                 } else {
                     Err(TypeError {
-                        msg: format!("unknown type '{}'", n),
+                        msg: format!("unknown type '{n}'"),
                         line: 0,
                         col: 0,
                     })
@@ -940,7 +939,7 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(format!("{}", ty), "(Int64 → Int64)");
+        assert_eq!(format!("{ty}"), "(Int64 → Int64)");
     }
 
     #[test]

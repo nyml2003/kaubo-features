@@ -83,14 +83,9 @@ pub fn utf16_range(source: &str, line: usize, col: usize, lexeme: &str) -> (usiz
     } else {
         // For accurate length, walk through what's actually there
         let mut count = 0;
-        let mut check = chars;
+        let _ = chars;
         for ch in lexeme.chars() {
-            // If we're matching the source, use actual char width
-            if check.next() == Some(ch) || true {
-                count += ch.len_utf16();
-            } else {
-                count += ch.len_utf16();
-            }
+            count += ch.len_utf16();
         }
         count
     };
@@ -185,7 +180,7 @@ mod tests {
     // ── classify_token ──
 
     fn assert_class(kind: TokenKind, expected: &str) {
-        assert_eq!(classify_token(kind), expected, "classify_token({:?})", kind);
+        assert_eq!(classify_token(kind), expected, "classify_token({kind:?})");
     }
 
     #[test]
@@ -356,7 +351,7 @@ mod tests {
             ]
         );
         for pair in ranges.windows(2) {
-            assert!(pair[0].1 <= pair[1].0, "overlapping ranges: {:?}", pair);
+            assert!(pair[0].1 <= pair[1].0, "overlapping ranges: {pair:?}");
         }
     }
 

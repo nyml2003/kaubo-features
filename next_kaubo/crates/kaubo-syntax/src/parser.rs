@@ -14,7 +14,6 @@ pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     struct_names: BTreeSet<String>,
-    enum_names: BTreeSet<String>,
     variant_names: BTreeSet<String>,
     variant_to_enum: std::collections::HashMap<String, String>,
     variant_tag: std::collections::HashMap<String, u16>,
@@ -30,13 +29,12 @@ impl Parser {
 
     pub fn from_tokens(tokens: Vec<Token>) -> Self {
         let struct_names = collect_struct_names(&tokens);
-        let (enum_names, variant_names, variant_to_enum, variant_tag) =
+        let (variant_names, variant_to_enum, variant_tag) =
             collect_enum_metadata(&tokens);
         Self {
             tokens,
             pos: 0,
             struct_names,
-            enum_names,
             variant_names,
             variant_to_enum,
             variant_tag,
@@ -296,7 +294,7 @@ impl Parser {
             };
             let right = self.parse_pratt(right_bp)?;
 
-            if let None = op {
+            if op.is_none() {
                 left = Expr::Assign {
                     target: Box::new(left),
                     value: Box::new(right),
@@ -538,14 +536,14 @@ impl Parser {
         let s = self.consume_lexeme();
         s.parse::<i64>()
             .map(Expr::LitInt)
-            .map_err(|_| format!("invalid int: {}", s))
+            .map_err(|_| format!("invalid int: {s}"))
     }
 
     fn parse_float(&mut self) -> ParseResult<Expr> {
         let s = self.consume_lexeme();
         s.parse::<f64>()
             .map(Expr::LitFloat)
-            .map_err(|_| format!("invalid float: {}", s))
+            .map_err(|_| format!("invalid float: {s}"))
     }
 
     fn parse_string(&mut self) -> ParseResult<Expr> {
@@ -678,7 +676,7 @@ impl Parser {
                 Some(pat) => {
                     // Check for unit variant pattern: VariantLit
                     if let Expr::VariantLit {
-                        variant_name,
+                        
                         tag,
                         ..
                     } = &pat
@@ -1050,11 +1048,9 @@ fn collect_enum_metadata(
     tokens: &[Token],
 ) -> (
     BTreeSet<String>,
-    BTreeSet<String>,
     std::collections::HashMap<String, String>,
     std::collections::HashMap<String, u16>,
 ) {
-    let mut enum_names = BTreeSet::new();
     let mut variant_names = BTreeSet::new();
     let mut variant_to_enum: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
@@ -1069,7 +1065,6 @@ fn collect_enum_metadata(
             && tokens[i + 1].kind == TokenKind::Identifier
         {
             let enum_name = tokens[i + 1].lexeme.clone();
-            enum_names.insert(enum_name.clone());
 
             // Skip past Enum, Identifier
             i += 2;
@@ -1128,16 +1123,13 @@ fn collect_enum_metadata(
         i += 1;
     }
 
-    (enum_names, variant_names, variant_to_enum, variant_tag)
+    (variant_names, variant_to_enum, variant_tag)
 }
 
 fn collect_struct_names(tokens: &[Token]) -> BTreeSet<String> {
     tokens
         .windows(2)
-        .filter_map(|window| {
-            (window[0].kind == TokenKind::Struct && window[1].kind == TokenKind::Identifier)
-                .then(|| window[1].lexeme.clone())
-        })
+        .filter(|&window| (window[0].kind == TokenKind::Struct && window[1].kind == TokenKind::Identifier)).map(|window| window[1].lexeme.clone())
         .collect()
 }
 

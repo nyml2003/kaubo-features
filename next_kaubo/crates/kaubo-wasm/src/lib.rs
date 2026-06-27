@@ -29,7 +29,7 @@ pub fn lex(source: &str) -> String {
         .map(|t| {
             let kind = classify_token(t.kind);
             let (from, to) = utf16_range(source, t.line, t.col, &t.lexeme);
-            format!(r#"{{"kind":"{}","from":{},"to":{}}}"#, kind, from, to)
+            format!(r#"{{"kind":"{kind}","from":{from},"to":{to}}}"#)
         })
         .collect();
     format!("[{}]", items.join(","))

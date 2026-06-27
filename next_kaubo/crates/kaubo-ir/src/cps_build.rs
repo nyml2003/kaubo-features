@@ -121,8 +121,7 @@ impl FuncCtx {
         }
         if !matches!(self.blocks[from].term, CpsTerminator::Return(_)) {
             return Err(format!(
-                "chain: block {} not Return (already chained?)",
-                from
+                "chain: block {from} not Return (already chained?)"
             ));
         }
         self.blocks[from].term = CpsTerminator::Jump(to, vec![]);
@@ -140,7 +139,7 @@ impl FuncCtx {
             return Ok(());
         }
         if !matches!(self.blocks[from].term, CpsTerminator::Return(_)) {
-            return Err(format!("rewire: block {} not Return", from));
+            return Err(format!("rewire: block {from} not Return"));
         }
         self.blocks[from].term = CpsTerminator::Jump(target, args.to_vec());
         Ok(())
@@ -238,8 +237,13 @@ pub struct CpsBuilder {
     method_returns: HashMap<String, ValueHint>,
     enum_names: HashSet<String>,
     variant_to_enum: HashMap<String, String>,
-    variant_tag_map: HashMap<String, u16>,
     variant_field_map: HashMap<String, Vec<(String, String)>>,
+}
+
+impl Default for CpsBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CpsBuilder {
@@ -257,7 +261,6 @@ impl CpsBuilder {
             method_returns: HashMap::new(),
             enum_names: HashSet::new(),
             variant_to_enum: HashMap::new(),
-            variant_tag_map: HashMap::new(),
             variant_field_map: HashMap::new(),
         }
     }
@@ -516,7 +519,7 @@ impl CpsBuilder {
     }
 
     pub fn add_const(&mut self, c: Constant) -> usize {
-        let key = format!("{:?}", c);
+        let key = format!("{c:?}");
         *self.const_map.entry(key).or_insert_with(|| {
             let i = self.constants.len();
             self.constants.push(c);
@@ -862,7 +865,7 @@ impl CpsBuilder {
 
             let func = callee.finalize(entry);
             let func_idx = self.functions.len();
-            dump_blocks(&format!("lambda_{}", func_idx), &callee);
+            dump_blocks(&format!("lambda_{func_idx}"), &callee);
             self.functions.push(func);
             Ok(func_idx)
         } else {
@@ -908,13 +911,13 @@ impl CpsBuilder {
 
         let func = callee.finalize(entry);
         let func_idx = self.functions.len();
-        dump_blocks(&format!("lambda_expr_{}", func_idx), &callee);
+        dump_blocks(&format!("lambda_expr_{func_idx}"), &callee);
         self.functions.push(func);
         let r = self.ctx.alloc();
         let cidx = self.add_const(Constant::Int(func_idx as i64));
         self.ctx
             .func_map
-            .insert(format!("lambda_{}", func_idx), func_idx);
+            .insert(format!("lambda_{func_idx}"), func_idx);
         let (e, l) = self.ctx.leaf_block(r, cidx);
         Ok((e, l, r))
     }
@@ -1052,9 +1055,9 @@ impl CpsBuilder {
                 self.set_value_hint(result.2, native_return_hint(name));
                 return Ok(result);
             }
-            return Err(format!("undefined function '{}'", name));
+            return Err(format!("undefined function '{name}'"));
         }
-        Err(format!("call target is not a simple name"))
+        Err("call target is not a simple name".to_string())
     }
 
     fn build_call_with_idx(
@@ -1672,7 +1675,7 @@ impl CpsBuilder {
             .iter()
             .find(|e| e.name == enum_name)
             .cloned()
-            .ok_or_else(|| format!("unknown enum '{}'", enum_name))?;
+            .ok_or_else(|| format!("unknown enum '{enum_name}'"))?;
         let (tag, _expected_fields): (u16, &Vec<(String, String)>) = ed
             .variants
             .iter()

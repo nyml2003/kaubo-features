@@ -4,7 +4,7 @@ use std::fs;
 
 fn render_run(outcome: &kaubo_driver::RunOutcome) {
     for line in &outcome.output {
-        println!("{}", line);
+        println!("{line}");
     }
     println!("= {}", outcome.result);
 }
@@ -20,29 +20,29 @@ fn run_args(args: &[String]) -> Result<(), String> {
 
     match sub {
         "compile" => {
-            let source = fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
+            let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
             let cps = kaubo_driver::compile_source(&source).map_err(|e| e.to_string())?;
             let out = file.replace(".kaubo", ".kauboc");
             let bytes = kaubo_driver::encode_module(&cps);
             let len = bytes.len();
-            fs::write(&out, bytes).map_err(|e| format!("write {}: {}", out, e))?;
+            fs::write(&out, bytes).map_err(|e| format!("write {out}: {e}"))?;
             println!("Compiled: ({:.1}KB)", len as f64 / 1024.0);
         }
         "run" => {
             if file.ends_with(".kauboc") {
-                let bytes = fs::read(file).map_err(|e| format!("read {}: {}", file, e))?;
+                let bytes = fs::read(file).map_err(|e| format!("read {file}: {e}"))?;
                 let cps = kaubo_driver::decode_module(&bytes).map_err(|e| e.to_string())?;
                 let outcome = kaubo_driver::run_module(&cps).map_err(|e| e.to_string())?;
                 render_run(&outcome);
             } else {
                 let source =
-                    fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
+                    fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
                 let outcome = kaubo_driver::run_source(&source).map_err(|e| e.to_string())?;
                 render_run(&outcome);
             }
         }
         _ => {
-            let source = fs::read_to_string(file).map_err(|e| format!("read {}: {}", file, e))?;
+            let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
             let outcome = kaubo_driver::run_source(&source).map_err(|e| e.to_string())?;
             render_run(&outcome);
         }

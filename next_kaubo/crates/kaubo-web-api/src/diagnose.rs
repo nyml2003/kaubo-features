@@ -53,6 +53,6 @@ mod tests {
     fn diagnose_type_error() {
         // "hello" + 1 fails type unification (String vs Int64)
         let r = diagnose("const x = \"hello\" + 1;");
-        assert!(r.contains("error"), "should contain error: {}", r);
+        assert!(r.contains("error"), "should contain error: {r}");
     }
 }
