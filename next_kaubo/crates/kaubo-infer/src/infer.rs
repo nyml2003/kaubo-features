@@ -357,9 +357,13 @@ pub fn infer(
         Expr::Member { object, field } => {
             let (s, ty) = infer(env, object, structs, struct_fields)?;
             let applied = s.apply(&ty);
-            // to_string() on Int64 / Float64 returns String
-            if field == "to_string" && matches!(applied, Type::Int64 | Type::Float64) {
-                return Ok((s, Type::String));
+            // to_string() on Int64 / Float64 returns String; on String is identity
+            if field == "to_string" {
+                match &applied {
+                    Type::Int64 | Type::Float64 => return Ok((s, Type::String)),
+                    Type::String => return Ok((s, Type::String)),
+                    _ => {}
+                }
             }
             // to_float() on Int64 returns Float64
             if field == "to_float" && matches!(applied, Type::Int64) {
@@ -415,7 +419,7 @@ pub fn infer(
             }
         }
 
-        Expr::StructLit { name, fields } => {
+        Expr::StructLit { name, fields, .. } => {
             let id = structs.get(name).ok_or_else(|| TypeError {
                 msg: format!("unknown struct '{}'", name),
                 line: 0,
@@ -689,6 +693,7 @@ mod tests {
                                 ("x".to_string(), Expr::LitFloat(1.0)),
                                 ("y".to_string(), Expr::LitFloat(2.0)),
                             ],
+                            spread: None,
                         },
                     ),
                 ]))
@@ -950,6 +955,7 @@ mod tests {
                 Expr::StructLit {
                     name: "Point".to_string(),
                     fields: vec![("x".to_string(), Expr::LitInt(1))],
+                    spread: None,
                 },
             ),
             const_decl(
@@ -976,6 +982,7 @@ mod tests {
             Expr::StructLit {
                 name: "Missing".to_string(),
                 fields: vec![],
+                spread: None,
             },
         )]))
         .unwrap_err();
@@ -1416,6 +1423,7 @@ mod tests {
         let err = infer_expr(Expr::StructLit {
             name: "Missing".into(),
             fields: vec![],
+            spread: None,
         })
         .unwrap_err();
         assert!(err.msg.contains("unknown struct"));
@@ -1435,6 +1443,7 @@ mod tests {
         let lit = Expr::StructLit {
             name: "X".into(),
             fields: vec![("val".into(), Expr::LitInt(42))],
+            spread: None,
         };
         let (sub, ty) = infer(&env, &lit, &structs, &fields).unwrap();
         assert_eq!(sub.apply(&ty), Type::Record(1, vec![("val".into(), Type::Int64)]));

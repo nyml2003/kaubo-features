@@ -1952,9 +1952,6 @@ mod tests {
         }
     }
 
-    // ── Template strings ──
-
-    #[test]
     // ── Match expressions ──
 
     #[test]
@@ -1970,6 +1967,9 @@ mod tests {
         }
     }
 
+    // ── Template strings ──
+
+    #[test]
     fn test_template_string_basic() {
         let e = parse_expr_only("`hello {name}`");
         // Should desugar to: "hello " + name.to_string()

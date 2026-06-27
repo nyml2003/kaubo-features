@@ -96,6 +96,7 @@ mod test_fixtures {
                                     ("x".to_string(), Expr::LitInt(1)),
                                     ("y".to_string(), Expr::LitInt(2)),
                                 ],
+                                spread: None,
                             },
                         ),
                     ]
