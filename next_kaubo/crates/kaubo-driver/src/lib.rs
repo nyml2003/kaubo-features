@@ -598,4 +598,100 @@ val;
         // Type codes: 0=scalar
         assert_eq!(outcome.result, 0);
     }
+
+    #[test]
+    fn and_short_circuits_true() {
+        let outcome = run_source("true and true;").unwrap();
+        assert_eq!(outcome.result, 1);
+    }
+
+    #[test]
+    fn and_short_circuits_false() {
+        let outcome = run_source("false and true;").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn or_short_circuits_true() {
+        let outcome = run_source("true or false;").unwrap();
+        assert_eq!(outcome.result, 1);
+    }
+
+    #[test]
+    fn or_short_circuits_false() {
+        let outcome = run_source("false or false;").unwrap();
+        assert_eq!(outcome.result, 0);
+    }
+
+    #[test]
+    fn pipe_applies_function() {
+        let outcome = run_source(r#"
+            const add1 = |x| { x + 1 };
+            const r = 41 |> add1;
+            r;
+        "#).unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn pipe_chains() {
+        let outcome = run_source(r#"
+            const add1 = |x| { x + 1 };
+            const double = |x| { x * 2 };
+            const r = 20 |> add1 |> double;
+            r;
+        "#).unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn for_loop_iterates_list() {
+        let outcome = run_source(r#"
+            var sum = 0;
+            for x in [1, 2, 3, 4] {
+                sum = sum + x;
+            };
+            sum;
+        "#).unwrap();
+        assert_eq!(outcome.result, 10);
+    }
+
+    #[test]
+    fn index_set_modifies_list() {
+        let outcome = run_source(r#"
+            var xs = [1, 2, 3];
+            xs[0] = 99;
+            xs[0] + xs[1] + xs[2];
+        "#).unwrap();
+        assert_eq!(outcome.result, 104);
+    }
+
+    #[test]
+    fn interface_method_is_callable() {
+        let outcome = run_source(r#"
+            interface Display { to_string: |self: Self| -> String; };
+
+            struct Point { x: Int64, y: Int64 };
+            impl Display for Point {
+                to_string: |self: Point| -> String {
+                    return "ok";
+                };
+            };
+
+            const p = Point { x: 1, y: 2 };
+            print(p.to_string());
+        "#).unwrap();
+        assert!(!outcome.output.is_empty());
+    }
+
+    #[test]
+    fn incomplete_impl_reports_error() {
+        let err = compile_source(r#"
+            interface Eq { eq: |self: Self, other: Self| -> Bool; };
+            struct Point { x: Int64 };
+            impl Eq for Point {
+            };
+        "#).unwrap_err();
+        assert!(err.to_string().contains("missing"));
+    }
 }

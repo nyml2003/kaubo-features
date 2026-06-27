@@ -98,9 +98,23 @@ pub fn emit_get_variant_field(dst: usize, obj: usize, field_idx: u16) -> EmitRes
     )
 }
 
+pub fn emit_list_len(dst: usize, obj: usize) -> EmitResult {
+    (
+        vec![CpsInstr::ListLen(dst, obj)],
+        CpsTerminator::Return(dst),
+    )
+}
+
 pub fn emit_new_list(dst: usize, elements: Vec<usize>) -> EmitResult {
     (
         vec![CpsInstr::NewList(dst, elements)],
+        CpsTerminator::Return(dst),
+    )
+}
+
+pub fn emit_index_set(dst: usize, obj: usize, idx: usize, val: usize) -> EmitResult {
+    (
+        vec![CpsInstr::IndexSet(dst, obj, idx, val)],
         CpsTerminator::Return(dst),
     )
 }
@@ -133,8 +147,8 @@ pub fn emit_nop() -> EmitResult {
 }
 
 #[cfg(test)]
-#![allow(clippy::approx_constant)]
 mod tests {
+    #![allow(clippy::approx_constant)]
     use super::*;
 
     // ── emit_literal ──

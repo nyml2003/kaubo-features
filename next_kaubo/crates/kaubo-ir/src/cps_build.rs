@@ -711,7 +711,11 @@ impl CpsBuilder {
                 else_branch,
             } => self.build_if(cond, then_branch, else_branch.as_deref()),
             Expr::While { cond, body } => self.build_while(cond, body),
-            Expr::For { .. } => Err("for loops are not implemented in lowering".into()),
+            Expr::For {
+                var,
+                iterable,
+                body,
+            } => self.build_for(var, iterable, body),
             Expr::Break => self.build_break(),
             Expr::Continue => self.build_continue(),
             Expr::Return(val) => self.build_return(val.as_deref()),
@@ -1176,6 +1180,14 @@ impl CpsBuilder {
         op: BinOp,
         right: &Expr,
     ) -> Result<(usize, usize, usize), String> {
+        // and / or: short-circuit branching
+        if op == BinOp::And || op == BinOp::Or {
+            return self.build_logical(left, op, right);
+        }
+        // pipe: desugar a |> f → f(a)
+        if op == BinOp::Pipe {
+            return self.build_call(right, &[left.clone()]);
+        }
         let (bl, cl, rl) = self.build_expr(left)?;
         let (br, cr, rr) = self.build_expr(right)?;
         let r = self.ctx.alloc();
@@ -1257,6 +1269,66 @@ impl CpsBuilder {
         Ok((first.unwrap_or(0), last_continu.unwrap_or(0), last_reg))
     }
 
+    fn build_logical(
+        &mut self,
+        left: &Expr,
+        op: BinOp,
+        right: &Expr,
+    ) -> Result<(usize, usize, usize), String> {
+        let (cond_entry, cond_continu, cond_reg) = self.build_expr(left)?;
+        let (right_entry, right_continu, right_reg) = self.build_expr(right)?;
+
+        let short_val = if op == BinOp::And { 0 } else { 1 };
+        let short_const = self.add_const(Constant::Int(short_val));
+        let short_reg = self.ctx.alloc();
+        let short_block = self.ctx.new_block();
+        self.ctx.set_block(
+            short_block,
+            CpsBlock {
+                id: short_block,
+                params: vec![],
+                instrs: vec![CpsInstr::LoadConst(short_reg, short_const)],
+                term: CpsTerminator::Return(short_reg),
+            },
+        );
+
+        let branch = self.ctx.new_block();
+        let (true_target, false_target) = if op == BinOp::And {
+            (right_entry, short_block)
+        } else {
+            (short_block, right_entry)
+        };
+        self.ctx.set_block(
+            branch,
+            CpsBlock {
+                id: branch,
+                params: vec![],
+                instrs: vec![],
+                term: cps_emit::emit_branch(cond_reg, true_target, false_target),
+            },
+        );
+
+        let merge_reg = self.ctx.alloc();
+        let merge = self.ctx.new_block();
+        self.ctx.set_block(
+            merge,
+            CpsBlock {
+                id: merge,
+                params: vec![merge_reg],
+                instrs: vec![],
+                term: CpsTerminator::Return(merge_reg),
+            },
+        );
+
+        self.ctx.chain(cond_continu, branch)?;
+        self.ctx.rewire_return_args(right_continu, merge, &[right_reg])?;
+        self.ctx.rewire_return_args(short_block, merge, &[short_reg])?;
+
+        let entry = if cond_entry != 0 { cond_entry } else { branch };
+        self.set_value_hint(merge_reg, ValueHint::Bool);
+        Ok((entry, merge, merge_reg))
+    }
+
     fn build_if(
         &mut self,
         cond: &Expr,
@@ -1325,6 +1397,143 @@ impl CpsBuilder {
             let entry = if cond_entry != 0 { cond_entry } else { branch };
             Ok((entry, skip_block, then_reg))
         }
+    }
+
+    fn build_for(
+        &mut self,
+        var: &Param,
+        iterable: &Expr,
+        body: &Expr,
+    ) -> Result<(usize, usize, usize), String> {
+        // Build the iterable (list)
+        let (list_entry, list_continu, list_reg) = self.build_expr(iterable)?;
+
+        // Get list length
+        let len_reg = self.ctx.alloc();
+        let len_block = self.ctx.new_block();
+        self.ctx.set_block(
+            len_block,
+            CpsBlock {
+                id: len_block,
+                params: vec![],
+                instrs: vec![CpsInstr::ListLen(len_reg, list_reg)],
+                term: CpsTerminator::Return(0),
+            },
+        );
+        self.ctx.chain(list_continu, len_block)?;
+
+        // Initialize index counter to 0
+        let idx_reg = self.ctx.alloc();
+        let idx_const = self.add_const(Constant::Int(0));
+        let init_idx_block = self.ctx.new_block();
+        self.ctx.set_block(
+            init_idx_block,
+            CpsBlock {
+                id: init_idx_block,
+                params: vec![],
+                instrs: vec![CpsInstr::LoadConst(idx_reg, idx_const)],
+                term: CpsTerminator::Return(0),
+            },
+        );
+        // Chain: len_block → init_idx_block
+        self.ctx.chain(len_block, init_idx_block)?;
+
+        // Emit condition: idx < len
+        let cmp_reg = self.ctx.alloc();
+        let header_block = self.ctx.new_block();
+        let body_entry_block = self.ctx.new_block();
+        let exit_block = self.ctx.new_block();
+        self.ctx
+            .loop_stack
+            .push((header_block, exit_block));
+
+        self.ctx.set_block(
+            header_block,
+            CpsBlock {
+                id: header_block,
+                params: vec![],
+                instrs: vec![CpsInstr::BinOp(cmp_reg, CpsBinOp::LtInt, idx_reg, len_reg)],
+                term: cps_emit::emit_branch(cmp_reg, body_entry_block, exit_block),
+            },
+        );
+
+        // Get element: elem = list[idx]
+        let elem_reg = self.ctx.alloc();
+        let get_elem_block = self.ctx.new_block();
+        self.ctx.set_block(
+            get_elem_block,
+            CpsBlock {
+                id: get_elem_block,
+                params: vec![],
+                instrs: vec![CpsInstr::IndexGet(elem_reg, list_reg, idx_reg)],
+                term: CpsTerminator::Return(elem_reg),
+            },
+        );
+
+        // Bind loop variable to element
+        let old_var = self.ctx.var_map.insert(var.name.clone(), elem_reg);
+
+        // Build body
+        let (body_entry, body_continu, _) = self.build_expr(body)?;
+
+        // Restore variable shadowing
+        if let Some(old) = old_var {
+            self.ctx.var_map.insert(var.name.clone(), old);
+        } else {
+            self.ctx.var_map.remove(&var.name);
+        }
+
+        // Increment index: idx = idx + 1
+        let one_reg = self.ctx.alloc();
+        let one_const = self.add_const(Constant::Int(1));
+        let inc_block = self.ctx.new_block();
+        self.ctx.set_block(
+            inc_block,
+            CpsBlock {
+                id: inc_block,
+                params: vec![],
+                instrs: vec![
+                    CpsInstr::LoadConst(one_reg, one_const),
+                    CpsInstr::BinOp(idx_reg, CpsBinOp::AddInt, idx_reg, one_reg),
+                ],
+                term: CpsTerminator::Return(0),
+            },
+        );
+
+        // Chain: init_idx → header
+        self.ctx.chain(init_idx_block, header_block)?;
+        // Chain body: body_entry → get_elem
+        self.ctx.set_block(
+            body_entry_block,
+            CpsBlock {
+                id: body_entry_block,
+                params: vec![],
+                instrs: vec![],
+                term: CpsTerminator::Jump(get_elem_block, vec![]),
+            },
+        );
+        // Chain: get_elem → body entry
+        self.ctx.chain(get_elem_block, body_entry)?;
+        // Chain: body_continu → inc
+        self.ctx.chain(body_continu, inc_block)?;
+        // Chain: inc → header (loop back)
+        self.ctx.chain(inc_block, header_block)?;
+
+        self.ctx.set_block(
+            exit_block,
+            CpsBlock {
+                id: exit_block,
+                params: vec![],
+                instrs: vec![],
+                term: CpsTerminator::Return(0),
+            },
+        );
+
+        self.ctx.loop_stack.pop();
+
+        // Entry path: list_entry → len → init_idx → header
+        let entry = if list_entry != 0 { list_entry } else { len_block };
+        Ok((entry, exit_block, 0))
     }
 
     fn build_while(&mut self, cond: &Expr, body: &Expr) -> Result<(usize, usize, usize), String> {
@@ -1774,6 +1983,38 @@ impl CpsBuilder {
         target: &Expr,
         value: &Expr,
     ) -> Result<(usize, usize, usize), String> {
+        if let Expr::Index { object, index } = target {
+            // xs[i] = val
+            let (val_entry, val_continu, val_reg) = self.build_expr(value)?;
+            let (idx_entry, idx_continu, idx_reg) = self.build_expr(index)?;
+            // Look up the list variable
+            let obj_reg = if let Expr::VarRef(name) = object.as_ref() {
+                *self.ctx.var_map.get(name).ok_or_else(|| {
+                    format!("undefined variable '{name}'")
+                })?
+            } else {
+                return Err("index assignment target must be a variable".into());
+            };
+            // Chain: val → idx (if idx has its own entry)
+            if idx_entry != 0 {
+                self.ctx.chain(val_continu, idx_entry)?;
+            }
+            let id = self.ctx.new_block();
+            self.ctx.set_block(
+                id,
+                CpsBlock {
+                    id,
+                    params: vec![],
+                    instrs: vec![CpsInstr::IndexSet(val_reg, obj_reg, idx_reg, val_reg)],
+                    term: cps_emit::emit_return(val_reg),
+                },
+            );
+            // Chain: idx_continu (or val_continu) → id
+            let chain_from = if idx_entry != 0 { idx_continu } else { val_continu };
+            self.ctx.chain(chain_from, id)?;
+            return Ok((val_entry, id, val_reg));
+        }
+
         let (val_entry, val_continu, val_reg) = self.build_expr(value)?;
         let target_reg = if let Expr::VarRef(name) = target {
             if let Some(&reg) = self.ctx.var_map.get(name) {
@@ -1874,7 +2115,7 @@ fn remap_term_ids(block: &mut CpsBlock, map: &HashMap<usize, usize>) {
 }
 
 #[cfg(test)]
-#![allow(clippy::approx_constant)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 

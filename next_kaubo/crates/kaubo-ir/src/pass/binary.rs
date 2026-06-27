@@ -342,6 +342,11 @@ fn encode_instr(w: &mut Vec<u8>, i: &CpsInstr) {
             w_u8(w, 0x07);
             w_u16(w, *d as u16);
         }
+        CpsInstr::ListLen(d, obj) => {
+            w_u8(w, 0x1A);
+            w_u16(w, *d as u16);
+            w_u16(w, *obj as u16);
+        }
         CpsInstr::IndexGet(d, o, i) => {
             w_u8(w, 0x08);
             w_u16(w, *d as u16);
@@ -418,6 +423,7 @@ fn decode_instr(r: &mut Cursor<&[u8]>) -> Result<CpsInstr, String> {
         0x05 => CpsInstr::GetField(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)?),
         0x06 => CpsInstr::SetField(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)?, 0),
         0x07 => CpsInstr::NewList(r_u16(r)? as usize, vec![]),
+        0x1A => CpsInstr::ListLen(r_u16(r)? as usize, r_u16(r)? as usize),
         0x08 => CpsInstr::IndexGet(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)? as usize),
         0x09 => CpsInstr::IndexSet(
             r_u16(r)? as usize,

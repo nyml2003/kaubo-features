@@ -369,10 +369,9 @@ impl<'a> Lexer<'a> {
 }
 
 #[cfg(test)]
-#![allow(clippy::approx_constant)]
-#![allow(non_snake_case)]
-#![allow(clippy::approx_constant)]
 mod tests {
+    #![allow(clippy::approx_constant)]
+    #![allow(non_snake_case)]
     use super::*;
 
     fn kinds(src: &str) -> Vec<TokenKind> {
@@ -931,7 +930,7 @@ mod tests {
     #[allow(non_snake_case)]
     fn test_identifier_camelCase() {
         #[allow(non_snake_case)]
-        fn inner() {} {
+        fn inner() {}
         assert_eq!(kinds("myFunction"), vec![TokenKind::Identifier]);
     }
 

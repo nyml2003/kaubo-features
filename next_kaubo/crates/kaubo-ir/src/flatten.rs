@@ -146,6 +146,9 @@ fn remap_instr_regs(instr: &mut CpsInstr, reg_map: &HashMap<usize, usize>) {
                 lookup(r);
             }
         }
+        CpsInstr::ListLen(_, obj) => {
+            lookup(obj);
+        }
         CpsInstr::Box(_, s) | CpsInstr::Unbox(_, s) | CpsInstr::Print(s) => {
             lookup(s);
         }

@@ -43,6 +43,7 @@ pub enum CpsInstr {
     GetVariantField(usize, usize, u16),
     SetVariantField(usize, usize, u16, usize),
     NewList(usize, Vec<usize>),
+    ListLen(usize, usize),
     IndexGet(usize, usize, usize),
     IndexSet(usize, usize, usize, usize),
     Box(usize, usize),

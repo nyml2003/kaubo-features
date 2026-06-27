@@ -30,7 +30,12 @@ pub enum Stmt {
     },
     ImplBlock {
         struct_name: String,
+        interface_name: Option<String>,
         methods: Vec<MethodDef>,
+    },
+    InterfaceDef {
+        name: String,
+        methods: Vec<MethodSig>,
     },
     ExportStmt(Box<Stmt>),
     Import {
@@ -172,6 +177,14 @@ pub struct VariantDef {
 pub struct MethodDef {
     pub name: String,
     pub body: Expr,
+}
+
+/// Interface method signature (name + type, no body)
+#[derive(Debug, Clone, PartialEq)]
+pub struct MethodSig {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: Option<TypeExpr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

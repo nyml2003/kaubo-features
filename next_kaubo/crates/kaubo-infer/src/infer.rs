@@ -321,8 +321,21 @@ pub fn infer(
                 }
                 BinOp::And
                 | BinOp::Or => Type::Bool,
-                BinOp::Pipe | BinOp::GtGt => {
-                    t1.clone()
+                BinOp::Pipe => {
+                    // a |> f : if f has type T -> U, unify T with type of a, result is U
+                    let ret = Type::Var(fresh_tvar());
+                    let f_ty = Type::Arrow(Box::new(t1.clone()), Box::new(ret.clone()));
+                    s = unify(&t2, &f_ty)
+                        .map_err(|e| TypeError {
+                            msg: format!("pipe operator: {e}"),
+                            line: 0,
+                            col: 0,
+                        })?
+                        .compose(&s);
+                    s.apply(&ret)
+                }
+                BinOp::GtGt => {
+                    t1.clone() // TODO: proper function composition typing
                 }
                 BinOp::SAdd => Type::String,
             };
@@ -414,7 +427,7 @@ pub fn infer(
         }
 
         Expr::For {
-            var: _,
+            var,
             iterable,
             body,
         } => {
@@ -423,7 +436,8 @@ pub fn infer(
             // ti should be List<'a>; if it's a type var, unify it with List<?>
             match applied {
                 Type::List(elem) => {
-                    let local_env = env.clone();
+                    let mut local_env = env.clone();
+                    local_env.insert(var.name.clone(), Scheme::monomorphic((*elem).clone()));
                     let (s_b, _) = infer(&local_env, body, structs, struct_fields, enums, enum_variants)?;
                     Ok((s_i.compose(&s_b), Type::Null))
                 }
@@ -437,7 +451,8 @@ pub fn infer(
                             col: 0,
                         })?
                         .compose(&s_i);
-                    let local_env = env.clone();
+                    let mut local_env = env.clone();
+                    local_env.insert(var.name.clone(), Scheme::monomorphic(elem));
                     let (s_b, _) = infer(&local_env, body, structs, struct_fields, enums, enum_variants)?;
                     Ok((s_i.compose(&s_b), Type::Null))
                 }
@@ -806,7 +821,7 @@ fn type_expr_to_type(
 // ── tests ──
 
 #[cfg(test)]
-#![allow(clippy::approx_constant)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 
@@ -1071,15 +1086,13 @@ mod tests {
             .unwrap(),
             Type::String
         );
-        assert_eq!(
-            infer_expr(Expr::Binary {
-                left: Box::new(Expr::LitInt(1)),
-                op: BinOp::Pipe,
-                right: Box::new(Expr::LitInt(2)),
-            })
-            .unwrap(),
-            Type::Int64
-        );
+        // pipe of non-function RHS should error
+        assert!(infer_expr(Expr::Binary {
+            left: Box::new(Expr::LitInt(1)),
+            op: BinOp::Pipe,
+            right: Box::new(Expr::LitInt(2)),
+        })
+        .is_err());
         assert_eq!(
             infer_expr(Expr::Unary {
                 op: UnOp::Not,
@@ -1550,11 +1563,24 @@ mod tests {
 
     #[test]
     fn infer_binop_pipe() {
+        // 42 |> |x| { x + 1 }  :  pipe Int64 through (Int64 -> Int64) should give Int64
+        let func = Expr::Lambda {
+            params: vec![Param {
+                name: "x".to_string(),
+                ty: Some(TypeExpr::Named("Int64".to_string())),
+            }],
+            body: Box::new(Expr::Binary {
+                left: Box::new(Expr::VarRef("x".to_string())),
+                op: BinOp::Add,
+                right: Box::new(Expr::LitInt(1)),
+            }),
+            ret_ty: Some(TypeExpr::Named("Int64".to_string())),
+        };
         assert_eq!(
             infer_expr(Expr::Binary {
-                left: Box::new(Expr::LitInt(1)),
+                left: Box::new(Expr::LitInt(42)),
                 op: BinOp::Pipe,
-                right: Box::new(Expr::LitInt(2)),
+                right: Box::new(func),
             })
             .unwrap(),
             Type::Int64

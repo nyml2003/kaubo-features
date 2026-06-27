@@ -31,7 +31,7 @@ pub enum Opcode {
     // 数据移动
     Move = 0x30, LoadImm = 0x31, LoadConst = 0x32,
     // 堆分配
-    NewStruct = 0x34, NewList = 0x35,
+    ListLen = 0x33, NewStruct = 0x34, NewList = 0x35,
     // 字段/索引
     GetField = 0x36, SetField = 0x37,
     IndexGet = 0x38, IndexSet = 0x39,
@@ -675,6 +675,21 @@ impl VM {
                     }
                     self.write_heap(d, HeapObj::List(elements));
                 }
+                Opcode::ListLen => {
+                    // ListLen(dst, obj) — return list length
+                                        let d = inst.dst();
+                                        let obj = inst.src1();
+                    let hid = self.regs.ints[obj];
+                    let len = match self.heap_get(hid)? {
+                        HeapObj::List(v) => v.len() as i64,
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "ListLen: expected list, got {:?}", other
+                            )));
+                        }
+                    };
+                    self.write_int(d, len);
+                }
 
                 // ── 字段访问 ──
                 Opcode::GetField => {
@@ -781,9 +796,31 @@ impl VM {
                     }
                 }
                 Opcode::IndexSet => {
-                    return Err(RuntimeError::UnsupportedInstruction(
-                        "index assignment is not implemented".into(),
-                    ));
+                    // IndexSet(val, obj, idx) — list[idx] = val
+                                        let val = inst.dst();
+                                        let obj = inst.src1();
+                                        let idx = inst.src2();
+                    let hid = self.regs.ints[obj];
+                    let index = self.regs.ints[idx] as usize;
+                    let value = self.regs.ints[val];
+                    match self.heap_get_mut(hid)? {
+                        HeapObj::List(v) => {
+                            if index >= v.len() {
+                                return Err(RuntimeError::IndexOutOfBounds(
+                                    index as i64,
+                                    v.len(),
+                                ));
+                            }
+                            v[index] = value;
+                        }
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "IndexSet: expected list, got {:?}",
+                                other
+                            )));
+                        }
+                    }
+                    self.write_int(val, value);
                 }
 
                 // ── Enum/Variant ──
@@ -1112,8 +1149,9 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
         CpsInstr::GetVariantField(d, o, fi) => encode(Opcode::GetVariantField as u8, *d as u32, *o as u32, *fi as u32),
         CpsInstr::SetVariantField(d, o, fi, _) => encode(Opcode::SetVariantField as u8, *d as u32, *o as u32, *fi as u32),
         CpsInstr::NewList(d, elements) => encode(Opcode::NewList as u8, *d as u32, elements.len() as u32, 0),
+        CpsInstr::ListLen(d, obj) => encode(Opcode::ListLen as u8, *d as u32, *obj as u32, 0),
         CpsInstr::IndexGet(d, o, i) => encode(Opcode::IndexGet as u8, *d as u32, *o as u32, *i as u32),
-        CpsInstr::IndexSet(_, _, _, _) => return Err("index assignment is not implemented".into()),
+        CpsInstr::IndexSet(d, o, i, _) => encode(Opcode::IndexSet as u8, *d as u32, *o as u32, *i as u32),
         CpsInstr::Box(d, s) => encode(Opcode::Box_ as u8, *d as u32, *s as u32, 0),
         CpsInstr::Unbox(d, s) => encode(Opcode::Unbox as u8, *d as u32, *s as u32, 0),
         CpsInstr::Print(r) => encode(Opcode::Print as u8, *r as u32, 0, 0),
@@ -1136,7 +1174,7 @@ fn encode_term(term: &CpsTerminator) -> Result<u32, String> {
 // ── tests ──
 
 #[cfg(test)]
-#![allow(clippy::approx_constant)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 
