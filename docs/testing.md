@@ -4,46 +4,33 @@
 
 ## 当前标准命令
 
-仓库根目录的 `Makefile.toml` 是测试和运维的统一入口。确认本机已安装 `cargo-make` 后运行：
-
-```bash
-cargo make ci
-```
-
-如果只想确认入口工具：
-
-```bash
-cargo make --version
-```
+所有测试入口统一收口到 `python kaubo-ops`。在 `packages/kaubo-features/` 目录下运行。
 
 标准验证：
 
 ```bash
-cargo make ci       # Rust check/test + Web test/build + VSCode test
-cargo make ci-full  # ci + Web e2e
+python kaubo-ops ci        # 标准 CI：check + lint + fmt-check + test + build
+python kaubo-ops ci-full   # ci + Web e2e
 ```
 
 分层任务：
 
 ```bash
-cargo make rust-check
-cargo make rust-test
-cargo make web-test
-cargo make web-build
-cargo make web-e2e
-cargo make vscode-test
+python kaubo-ops check          # 快速类型检查（Rust + Web，无测试）
+python kaubo-ops test           # 全部测试（Rust + Web + VSCode）
+python kaubo-ops test-rust      # Rust 测试
+python kaubo-ops test-web       # Web 单元测试
+python kaubo-ops test-web-e2e   # Web e2e 测试
+python kaubo-ops test-vscode    # VSCode 扩展测试
+python kaubo-ops lint           # 全部 lint（clippy + eslint）
+python kaubo-ops lint-rust      # Rust clippy
+python kaubo-ops lint-web       # Web eslint
+python kaubo-ops fmt            # 全部格式化（写入模式）
+python kaubo-ops fmt-check      # 全部格式检查（dry-run）
+python kaubo-ops build          # 构建所有产物
+python kaubo-ops build-wasm     # 仅构建 WASM
+python kaubo-ops build-cli      # 仅构建 CLI
 ```
-
-Ops 任务：
-
-```bash
-cargo make ops
-cargo make ops-coverage-html
-cargo make ops-bench
-cargo make ops-bench-check
-```
-
-底层脚本仍在 `next_kaubo/ops/`；需要调试脚本本身时，可以直接进入 `next_kaubo` 调用对应 Python 文件。
 
 ## 分层测试归属
 

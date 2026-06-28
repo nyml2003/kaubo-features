@@ -128,6 +128,6 @@ edition.workspace = true
 - ❌ 不缓存（缓存是 Coordinator 的职责）
 - ❌ 不引入异步
 
-## 实施时机
+## 实施状态
 
-**Phase 3b 同期创建**。ModuleLoader 的 FileLoader/MemLoader 直接依赖 `kaubo-vfs`，避免后续迁移。
+✅ **已实现**（Phase 3b 同期创建）。`kaubo-vfs` crate 已存在，`ModuleLoader` 的 `FileLoader`/`MemLoader` 内部各持有一个 `Box<dyn VirtualFileSystem>`。

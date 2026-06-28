@@ -1,5 +1,8 @@
 # Phase 2b：编排解耦 + 语义事实层 — 设计文档
 
+> **实现状态**：✅ 已完成。本设计文档保留为架构参考。最终实现约 320 行，与设计一致。
+> 代码位于 `kaubo-driver/src/`（protocol.rs, event.rs, coordinator.rs, stages.rs）。
+
 ## 1. 分层架构
 
 ```

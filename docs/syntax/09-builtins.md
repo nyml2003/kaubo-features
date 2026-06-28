@@ -2,7 +2,25 @@
 
 ## 当前状态
 
-标准库函数由 VM native registry 提供，同时 infer 会注入一组内建签名。不是所有有类型签名的名字都已经可运行。
+标准库函数由 VM native registry 提供，同时 infer 会注入一组内建签名（虚拟 prelude）。Phase 4a 之后新增了 9 个内置 interface 和 40+ 内置方法 impl。
+
+不是所有有类型签名的名字都已经可运行。
+
+## 内建 Interface（Phase 4a）
+
+以下 interface 在编译期自动注入，用户可直接使用，无需显式声明：
+
+`Add`、`Subtract`、`Multiply`、`Divide`、`Modulo`、`Compare`、`Display`、`IntoFloat`、`IntoInt`
+
+这意味着 `a + b` 会自动查找 `Add` interface 对应的 impl，用户的 `impl Add for Vec2` 直接可用。
+
+## 内建方法
+
+以下方法在 `Int64`、`Float64`、`String`、`Bool` 上自动可用：
+
+- **算术**：`add`、`subtract`、`multiply`、`divide`、`modulo`
+- **比较**：`less`、`less_equal`、`greater`、`greater_equal`、`equal`、`not_equal`
+- **转换**：`to_string`、`to_float`、`to_int`
 
 ## print
 
@@ -57,15 +75,14 @@ sqrt(25.to_float());
 
 lowering 会分别生成整数到字符串、浮点到字符串的转换。
 
-## to_float
+## to_float / to_int
 
 内建 member 方法：
 
 ```kaubo
 42.to_float()
+1.5.to_int()
 ```
-
-当前用于 `Int64 -> Float64`。
 
 ## type_of
 

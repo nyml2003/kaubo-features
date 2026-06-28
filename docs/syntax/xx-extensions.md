@@ -1,8 +1,30 @@
-# Kaubo 未实现特性设计（设计阶段）
+# Kaubo 扩展特性状态
 
-代价层级：L2（~500行涉类型/CPS）L3（~1000行涉VM）L4（结构性改动）
+记录已完成的语法扩展和待实现特性的最新状态。
 
-## v2.4 已修问题
+---
+
+## 已完成的特性
+
+以下特性已实现并写入正式文档：
+
+| 特性 | 正式文档 | 实现 Phase |
+|------|---------|-----------|
+| 简写属性 `Point { x, y }` | [07-structs-and-impls](07-structs-and-impls.md) | — |
+| Lambda 单表达式体 `\|x\| x+1` | [05-functions](05-functions.md) | — |
+| 尾逗号容错 | [04-expressions](04-expressions.md) | — |
+| 模板字符串 `` `hello {name}` `` | [01-lexical](01-lexical.md) [04-expressions](04-expressions.md) | Phase 4a |
+| Null 合并 `??` | [04-expressions](04-expressions.md) | — |
+| 可选链 `?.` `?[` | [04-expressions](04-expressions.md) | — |
+| Struct spread `{ ...p, y: 3 }` | [07-structs-and-impls](07-structs-and-impls.md) | — |
+| 字符串拼接 `SAdd` | [04-expressions](04-expressions.md) | — |
+| Match 表达式 | [06-control-flow](06-control-flow.md) | — |
+| Enum/ADT | [03-types](03-types.md) [06-control-flow](06-control-flow.md) | — |
+| Interface + operator 重载 | [03-types](03-types.md) [07-structs-and-impls](07-structs-and-impls.md) | Phase 4a ✅ |
+| dyn Trait (`\|x: Speakable\|`) | [05-functions](05-functions.md) | Phase 4a ✅ |
+| 模块系统 (import/export) | [08-modules](08-modules.md) | Phase 3b ✅ |
+
+### v2.x 已修问题
 
 - 比较运算类型检查：`1 == 2.0` 现在报错
 - VM 统一寄存器组：`ints[]/floats[]` → `regs: Vec<u64>`
@@ -11,28 +33,9 @@
 
 ---
 
-# 已完成的语法
+## 待实现：核心能力
 
-以下特性已实现并写入正式文档：
-
-| 特性 | 正式文档 |
-|------|---------|
-| 简写属性 `Point { x, y }` | [07-structs-and-impls](07-structs-and-impls.md) |
-| Lambda 单表达式体 `\|x\| x+1` | [05-functions](05-functions.md) |
-| 尾逗号容错 | [04-expressions](04-expressions.md) |
-| 模板字符串 `` `hello {name}` `` | [01-lexical](01-lexical.md) [04-expressions](04-expressions.md) |
-| Null 合并 `??` | [04-expressions](04-expressions.md) |
-| 可选链 `?.` `?[` | [04-expressions](04-expressions.md) |
-| Struct spread `{ ...p, y: 3 }` | [07-structs-and-impls](07-structs-and-impls.md) |
-| 字符串拼接 `SAdd` | [04-expressions](04-expressions.md) |
-| Match 表达式 | [06-control-flow](06-control-flow.md) |
-| Enum/ADT | [03-types](03-types.md) [06-control-flow](06-control-flow.md) |
-
----
-
-# 待实现：核心能力
-
-## 1. 显式泛型（L3 · 依赖 enum · 设计阶段）
+### 1. 显式泛型（L3 · 设计阶段）
 
 ```kaubo
 struct Container<T> { value: T };
@@ -47,80 +50,15 @@ const id = |x: T| -> T { x };
 | CPS | Monomorphization——函数体复制+类型替换 |
 | VM | 无（单态化后全是具体类型） |
 
-## 2. Interface（L4 · 已完成 ✅）
+代价：~1200 行。
 
-动态分派 + 显式声明。接口值 = 胖指针 `(vtable, data)`。
+### 2. 内置模块化 / prelude.kb（L3 · 部分完成）
 
-```kaubo
-interface Eq { eq: |self: Self, other: Self| -> Bool; };
+编译器只给 ~25 个 `@builtins` 原子操作，其余全走 interface。
 
-impl Eq for Point {
-    eq: |self: Point, other: Point| -> Bool {
-        return self.x == other.x and self.y == other.y;
-    };
-};
+当前状态：9 个虚拟 interface + 40+ 内置方法已通过 `inject_builtin_interfaces`/`inject_builtin_impls` 硬编码注入。**待做**：真实 `prelude.kb` 文件 + 编译器去硬编码（移除 CPS 层 `to_string`/`IToS` 等重写）。
 
-const contains = |xs: List<Eq>, target: Eq| -> Bool { ... };
-```
-
-| 层 | 改动 |
-|----|------|
-| AST | `Stmt::InterfaceDef`、`ImplBlock` 扩展 |
-| Infer | 接口匹配检查，vtable 生成 |
-| CPS | `LoadVtable` 指令 |
-| VM | `CallIndirect` opcode |
-
-最小可行：1 新指令 + 1 opcode + vtable 表，~300 行核心改动。
-
-## 3. Option / Result（已可用 · 标准库级）
-
-`Option` 和 `Result` 是普通 enum，enum/ADT 已完整支持。
-错误通过返回值传播，不需要特殊的错误处理运行时（无 panic/catch/栈展开）。
-
-```kaubo
-enum Option { Some(value: Int64), None };
-enum Result { Ok(value: Int64), Err(msg: String) };
-
-const divide = |a: Float64, b: Float64| -> Result {
-    if b == 0.0 { return Err("division by zero"); };
-    return Ok(a / b);
-};
-```
-
-泛型 `Option<T>` / `Result<T, E>` 需等显式泛型落地。
-
-## 4. 模块系统（L3 · 设计阶段）
-
-```kaubo
-import { fetch } from "./http/client";
-import * as http from "./http/client";
-export const answer = 42;
-```
-
-| 层 | 改动 |
-|----|------|
-| AST | import/export 已 parse-only，补语义 |
-| Driver | 模块图构建、路径解析、拓扑排序 |
-| Infer | 跨模块名称解析 |
-| CPS | 多模块链接 |
-
----
-
-# 待实现：架构改造
-
-## 5. 内置类型/函数模块化（L3 · 依赖 interface · 设计阶段）
-
-编译器只给 ~25 个 `@builtins` 原子操作，其余全走接口。
-
-```
-编译器魔法: @addInt @subInt @eqInt @intToString ...
-接口层:    interface Add { add() } interface Display { to_string() }
-标准库:    const print = |x: Display| { @print(x.to_string()) }
-```
-
-收益：加新内置类型一行编译器代码都不用改。
-
-## 6. 效应系统（L4 · 设计阶段）
+### 3. 效应系统（L4 · 设计阶段）
 
 效应 = 行多态。CPS 的 `Suspend` 是效应触发点。
 
@@ -138,6 +76,8 @@ handle fetch(url) with { io => http_handler() };
 | CPS | Suspend 语义化 + handler 注册表 |
 | VM | Suspend→查 handler→调度 continuation |
 
+代价：~2000 行。
+
 ---
 
 ## 暂缓的语法糖
@@ -151,24 +91,24 @@ handle fetch(url) with { io => http_handler() };
 
 ---
 
-# 成本总表
+## 成本总表
 
 | # | 特性 | 层级 | 行数 | 状态 |
 |----|------|------|------|------|
-| 1 | 显式泛型 | L3 | ~1200 | 设计阶段 |
-| 2 | Interface | L4 | ~500 | 设计阶段 |
-| 3 | 模块系统 | L3 | ~1500 | 设计阶段 |
-| 4 | 内置模块化 | L3 | ~600 | 依赖 interface |
+| 1 | Interface + operator | L4 | ~500 | ✅ 已完成 |
+| 2 | 模块系统 | L3 | ~720 | ✅ 已完成 |
+| 3 | 显式泛型 | L3 | ~1200 | 设计阶段 |
+| 4 | 内置模块化 (prelude.kb) | L3 | ~600 | 🔶 部分完成 |
 | 5 | 效应系统 | L4 | ~2000 | 设计阶段 |
 
-# 推荐路线
+## 推荐路线
 
 ```
-已完成 ── 语法糖（9项） + enum/ADT + match
+已完成 ── 语法糖 + enum/ADT + match + interface/operator + 模块系统
   ▼
-下一步 ── interface  （动态分派，开启 Display/Eq/Add）
+下一步 ── Phase 3a LSP（LspCoordinator 基于 SemanticArtifact）
   ▼
-之后 ── 内置模块化 （prelude.kb，编译器去硬编码）
+之后 ── Phase 4b 内置模块化收尾（prelude.kb + 去硬编码）
   ▼
-之后 ── 模块系统 + 泛型 + 效应系统（按需推进）
+之后 ── 泛型 + 效应系统（按需推进）
 ```

@@ -2,49 +2,54 @@
 
 ## 当前状态
 
-模块语法目前主要是 parser/AST 表面。driver 主路径仍处理单文件源码，不做模块路径解析、文件加载、链接、命名空间隔离或导出表。
+模块系统已完整实现（Phase 3b ✅）。`import`/`export` 语义完整，支持跨文件类型推断、CPS 链接和缓存失效。
 
-也就是说，下面语法可以被 parser 接受，但不代表已经有完整模块系统。
-
-## import path
+## import
 
 ```kaubo
-import "std/prelude";
+import { sqrt, sin } from "./math.kb";
 ```
 
-AST 会记录 path，`names` 为空，`alias` 为空。
-
-## import alias
-
-```kaubo
-import "math" as math;
-```
-
-AST 会记录 path 和 alias。
-
-## named import
-
-当前 parser 支持的是：
-
-```kaubo
-import { sqrt, sin } from "std/math";
-```
-
-注意：VSCode snippet 中可能出现 `from "module" import { names };` 形态，但核心 parser 当前接受的是 `import { names } from "path";`。
+从其他 Kaubo 模块导入具名导出。路径相对于当前文件解析。
 
 ## export
 
 ```kaubo
 export const answer = 42;
+export const add = |a: Int64, b: Int64| -> Int64 { return a + b; };
+export struct Point { x: Int64, y: Int64 };
 ```
 
-`export` 会包住后续顶层语句形成 AST 节点。
+`export` 标记顶层声明为公开，可被其他模块导入。
+
+## 实现架构
+
+```
+Entry File
+  → ModuleGraph::build (DFS + 拓扑排序 + 循环依赖检测)
+  → ModuleCompiler::compile_all (按拓扑序编译 + 缓存失效)
+  → LinkStage::link (多模块 CPS 链接：函数表合并、func_remap、struct_remap、CallExternal 重映射)
+  → VM Execute
+```
+
+### 关键组件
+
+| 组件 | 文件 | 职责 |
+|------|------|------|
+| ModuleGraph | `kaubo-driver/src/module_graph.rs` | DFS + 拓扑排序 + 循环检测 |
+| ModuleCompiler | `kaubo-driver/src/module_compiler.rs` | 按序编译 + 传递哈希缓存失效 |
+| ModuleLoader | `kaubo-driver/src/module_loader.rs` | 路径解析 + 文件加载（FileLoader/MemLoader） |
+| LinkStage | `kaubo-driver/src/link_stage.rs` | 多模块 CPS 链接 |
+| ExportTable/ImportTable | `kaubo-driver/src/export_table.rs` | 导出/导入表数据结构 |
+| kaubo-vfs | `kaubo-vfs/` | VirtualFileSystem trait + FsVfs + MemVfs |
 
 ## 当前限制
 
-- `import` 在 infer 中跳过，在 lowering 中也不会加载外部文件。
-- `export` 不会生成导出表。
-- 没有 `module` 声明语法。
-- 没有包解析、相对路径规则、循环依赖处理或可见性规则。
+- 不支持通配符 import（`import * from "..."`）
+- 不支持 re-export（`export { x } from "..."`）
+- 没有包管理器
+- 没有动态 import（运行时解析路径）
 
-在实现完整模块系统前，模块语法应文档化为 parse-only。
+## 设计文档
+
+详见 [module-system-design.md](../module-system-design.md) 和 [kaubo-vfs-design.md](../kaubo-vfs-design.md)。

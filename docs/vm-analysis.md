@@ -1,30 +1,32 @@
 # Kaubo VM 分析报告
 
+> **注意**：本文档的部分问题已在 v2.x 修复。已修复项标注 ✅。
+
 ## 一、当前问题汇总
 
 ### 编译期类型漏洞（P0）
 
-| # | 问题 | 位置 |
-|---|------|------|
-| 1 | 比较运算符 (`==` `!=` `<` `>` `<=` `>=`) 不做类型 unify——`1 == 2.0` 编译期不报错 | infer.rs |
-| 2 | `and`/`or` 同理不做 unify，且 CPS lowering 未实现 | infer.rs |
-| 3 | CPS Build 靠 `ValueHint::is_float()` 猜类型选 opcode，猜错读错寄存器组 | cps_build.rs |
+| # | 问题 | 位置 | 状态 |
+|---|------|------|------|
+| 1 | 比较运算符 (`==` `!=` `<` `>` `<=` `>=`) 不做类型 unify——`1 == 2.0` 编译期不报错 | infer.rs | ✅ 已修复 |
+| 2 | `and`/`or` 同理不做 unify，且 CPS lowering 未实现 | infer.rs | 待修 |
+| 3 | CPS Build 靠 `ValueHint::is_float()` 猜类型选 opcode，猜错读错寄存器组 | cps_build.rs | ✅ 已修复（类型导向分派） |
 
 ### VM 运行时 bug（P0）
 
-| # | 问题 | 位置 |
-|---|------|------|
-| 4 | 0x3A 双重用途——`GetVariantTag` 和 `Box` 共享 opcode | execute.rs |
-| 5 | execute 入口只 resize ints 忘 resize floats | execute.rs |
-| 6 | bind_params / block_ip 无边界检查 | execute.rs |
+| # | 问题 | 位置 | 状态 |
+|---|------|------|------|
+| 4 | 0x3A 双重用途——`GetVariantTag` 和 `Box` 共享 opcode | execute.rs | ✅ 已修复 |
+| 5 | execute 入口只 resize ints 忘 resize floats | execute.rs | ✅ 已修复（统一寄存器组） |
+| 6 | bind_params / block_ip 无边界检查 | execute.rs | 待修 |
 
-### 值表示缺陷 —— ints[] + floats[] 双数组（P1）
+### 值表示缺陷 —— ints[] + floats[] 双数组（P1）✅ 已修复
 
-**现状**：`RegFile { ints: Vec<i64>, floats: Vec<f64> }`。每次 `write_int` 只写 ints，
+**旧方案**：`RegFile { ints: Vec<i64>, floats: Vec<f64> }`。每次 `write_int` 只写 ints，
 `write_float` 写 floats 同时覆盖 ints 为 bitcast，`write_bool` 写 ints=0/1 并写 floats=0.0/1.0。
 三个函数互相覆盖，语义混乱。
 
-**根因**：模仿了物理 CPU 的分离寄存器组，但软件 VM 不需要这样。
+**新方案**：统一寄存器组 `regs: Vec<u64>`（JVM 风格）。操作码决定值的解释方式。详见第三节设计决策。
 
 ### 类型信息断层（P1）
 
@@ -139,9 +141,7 @@ CPS Build 根据类型选正确的转换指令
 
 ## 四、实施计划
 
-### 第一阶段（当前）
-
-统一做五件事：
+### 第一阶段 ✅ 已完成
 
 | 改动 | 位置 | 效果 |
 |------|------|------|
@@ -151,7 +151,7 @@ CPS Build 根据类型选正确的转换指令
 | ints/floats → regs: Vec<u64> | execute.rs | 消解同步 bug |
 | 0x3A 冲突 + CallFrame 统一 | execute.rs | opcode 冲突修复 |
 
-### 第二阶段（之后）
+### 第二阶段（待做）
 
 - opcode 枚举化
 - 变长编码
@@ -159,5 +159,5 @@ CPS Build 根据类型选正确的转换指令
 
 ### 第三阶段（远期）
 
-- @builtins 前置到 parser + interface 承载运算符
+- @builtins 前置到 parser + interface 承载运算符（部分已通过 Phase 4a interface/operator 实现）
 - 效应系统 Suspend/Resume

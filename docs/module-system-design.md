@@ -1,5 +1,8 @@
 # Phase 3b：模块系统 — 设计文档
 
+> **实现状态**：✅ 已完成。本设计文档保留为架构参考。最终实现与设计一致。
+> 代码位于 `kaubo-driver/src/`（module_graph.rs, module_compiler.rs, module_loader.rs, link_stage.rs, export_table.rs）和 `kaubo-vfs/`。
+
 ## 1. 目标与范围
 
 ```kaubo

@@ -35,11 +35,10 @@ source
 
 VM 当前包含：
 
-- integer registers：用于 `Int64`、布尔值、堆 handle 和编码后的 float payload；
-- float registers：用于 `Float64` 运算；
-- heap slots：用于字符串、列表、结构体和闭包。
+- 统一寄存器组（`regs: Vec<u64>`，JVM 风格）：操作码决定值的解释方式（整数、浮点 bit pattern、堆 handle、布尔值）。
+- heap slots：用于字符串、列表、结构体、闭包和 interface obj。
 
-这个模型可以支撑当前已覆盖的路径，但比较脆弱。lowering 和执行阶段必须在跨表示边界的操作中保持 integer 和 float register 状态一致。
+这个模型已替代了早期的 `ints[]/floats[]` 双数组方案。
 
 ## 已知风险区域
 

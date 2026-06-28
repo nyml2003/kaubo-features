@@ -4,27 +4,25 @@
 
 ## 当前状态
 
-仓库没有 GitHub Actions workflow。当前本地 CI/CD 入口统一收口到根目录 `Makefile.toml`：
+所有 CI/CD 入口统一收口到 `kaubo-ops`（Ops2），不再使用 `cargo-make` / `Makefile.toml`（已移除）。
 
-- release publish：`cargo make ops-release ...`
-- server deploy：`cargo make ops-deploy ...`
-- coverage report：`cargo make ops-coverage` / `cargo make ops-coverage-html`
-- benchmark：`cargo make ops-bench` / `cargo make ops-bench-check`
-
-这些 cargo-make 任务仍调用 `next_kaubo/ops/` 下的 Python 脚本。脚本可以后续接入 GitHub Actions 或其他 CI/CD 系统。
+```bash
+python kaubo-ops release --bump patch    # 发布到 GitHub Release
+python kaubo-ops deploy 0.5.0            # 部署到 nginx
+```
 
 ## 发布 Release
 
 发布脚本会读取或更新 `.version`，构建 Web app，把 `dist/` 打成 `kaubo-vX.Y.Z.tar.gz`，然后通过 `gh release create` 上传到 GitHub Release。
 
 ```bash
-cargo make ops-release --bump patch
-cargo make ops-release 0.5.0 -y
+python kaubo-ops release --bump patch
+python kaubo-ops release --bump minor
+python kaubo-ops release --bump major
 ```
 
 前提：
 
-- 已安装 `cargo-make`。
 - 已安装 `pnpm` 和 GitHub CLI `gh`。
 - 已执行 `gh auth login`。
 
@@ -33,14 +31,14 @@ cargo make ops-release 0.5.0 -y
 部署脚本从 GitHub Release 下载 tar.gz，解压到部署目录，并安装/reload nginx 配置。
 
 ```bash
-cargo make ops-deploy 0.5.0 --repo owner/repo --root /var/www/kaubo
+python kaubo-ops deploy 0.5.0 --repo owner/repo --root /var/www/kaubo
 ```
 
 默认配置：
 
 - 部署根目录：`/var/www/kaubo`
 - nginx 配置目标：`/etc/nginx/conf.d/kaubo.conf`
-- nginx 配置源：`ops/deploy/nginx/kaubo.conf`
+- nginx 配置源：`kaubo-ops/infra/` 下的 nginx 模板
 
 本地开发不要直接运行真实部署命令，除非当前机器就是目标服务器并且有 nginx 权限。
 
@@ -49,18 +47,21 @@ cargo make ops-deploy 0.5.0 --repo owner/repo --root /var/www/kaubo
 Benchmark 入口：
 
 ```bash
-cargo make ops-bench
-cd next_kaubo
-python3 ops/benchmark/runner.py bench --lang kaubo python rust
-python3 ops/benchmark/runner.py bench --json --output results/report.json
+python kaubo-ops bench --lang kaubo python node
+python kaubo-ops bench --json --output results/report.json
 ```
 
 性能基线：
 
 ```bash
-cd next_kaubo
-python3 ops/benchmark/runner.py bench --release --save-baseline
-cargo make ops-bench-check
+python kaubo-ops bench --release --save-baseline
 ```
 
 如果某个 benchmark 样例暂时不兼容当前解释器，应修样例或解释器，不要删除 benchmark 框架。
+
+## 覆盖率
+
+```bash
+python kaubo-ops coverage
+python kaubo-ops coverage --html
+```
