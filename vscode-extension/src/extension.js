@@ -267,6 +267,31 @@ async function activate(context) {
             })
           );
         }
+
+        // ── Document Formatting Provider ──
+
+        if (wasm.format) {
+          context.subscriptions.push(
+            vscode.languages.registerDocumentFormattingEditProvider("kaubo", {
+              provideDocumentFormattingEdits(document, options, token) {
+                try {
+                  const source = document.getText();
+                  const formatted = wasm.format(source);
+                  if (formatted.startsWith("// format error:")) {
+                    return null;
+                  }
+                  const fullRange = new vscode.Range(
+                    document.positionAt(0),
+                    document.positionAt(source.length)
+                  );
+                  return [vscode.TextEdit.replace(fullRange, formatted)];
+                } catch (e) {
+                  return null;
+                }
+              },
+            })
+          );
+        }
     }
   }
 }

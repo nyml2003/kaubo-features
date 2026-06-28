@@ -84,12 +84,16 @@ fn positional_args(args: &[String]) -> Vec<&str> {
 fn run_args(args: &[String]) -> Result<(), String> {
     let pos = positional_args(args);
 
+    // Collect fmt flags (--check, --write)
+    let fmt_check = args.iter().any(|a| a == "--check");
+    let fmt_write = args.iter().any(|a| a == "--write");
+
     let (sub, file) = match pos.as_slice() {
-        ["compile" | "run" | "bench" | "mod", f, ..] => (pos[0], *f),
-        [f, ..] if !matches!(*f, "compile" | "run" | "bench" | "mod") => ("run", *f),
+        ["compile" | "run" | "bench" | "mod" | "fmt", f, ..] => (pos[0], *f),
+        [f, ..] if !matches!(*f, "compile" | "run" | "bench" | "mod" | "fmt") => ("run", *f),
         _ => {
             return Err(
-                "Usage: kaubo2 [--log-level <LEVEL>] [--max-loop-iterations <N>] [compile|run|bench|mod] <file> [iterations] [warmup]"
+                "Usage: kaubo2 [--log-level <LEVEL>] [--max-loop-iterations <N>] [compile|run|bench|mod|fmt] <file>"
                     .to_string(),
             );
         }
@@ -98,6 +102,23 @@ fn run_args(args: &[String]) -> Result<(), String> {
     let config = build_config(args);
 
     match sub {
+        "fmt" => {
+            let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
+            let formatted = kaubo_fmt::format(&source, &kaubo_fmt::FmtOptions::default())
+                .map_err(|e| format!("format error: {e}"))?;
+
+            if fmt_check {
+                if source != formatted {
+                    return Err(format!("{file} is not formatted. Run `kaubo2-cli fmt --write {file}` to fix."));
+                }
+                println!("{file} is formatted.");
+            } else if fmt_write {
+                fs::write(file, &formatted).map_err(|e| format!("write {file}: {e}"))?;
+                println!("Formatted {file}");
+            } else {
+                print!("{}", formatted);
+            }
+        }
         "compile" => {
             let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
             let cps = kaubo_driver::compile_source_with_config(&source, &config)

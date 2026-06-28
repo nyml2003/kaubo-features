@@ -12,3 +12,4 @@ kaubo-vm = { workspace = true }
 kaubo-vfs = { workspace = true }
 kaubo-log = { workspace = true }
 kaubo-log-handlers = { workspace = true }
+kaubo-fmt = { workspace = true }

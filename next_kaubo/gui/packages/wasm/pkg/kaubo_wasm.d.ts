@@ -15,6 +15,11 @@ export function complete(source: string, offset: number): string;
 export function diagnose(source: string): string;
 
 /**
+ * Format Kaubo source code. Returns the formatted source or an error JSON.
+ */
+export function format(source: string): string;
+
+/**
  * Go-to-definition: return JSON { line, col } or "null".
  */
 export function goto_def(source: string, offset: number): string;
@@ -76,6 +81,7 @@ export interface InitOutput {
     readonly semantic_tokens: (a: number, b: number) => [number, number];
     readonly complete: (a: number, b: number, c: number) => [number, number];
     readonly inlay_hints: (a: number, b: number) => [number, number];
+    readonly format: (a: number, b: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

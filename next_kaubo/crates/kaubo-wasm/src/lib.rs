@@ -230,6 +230,15 @@ pub fn inlay_hints(source: &str) -> String {
     "[]".to_string()
 }
 
+/// Format Kaubo source code. Returns the formatted source or an error JSON.
+#[wasm_bindgen]
+pub fn format(source: &str) -> String {
+    match kaubo_fmt::format(source, &kaubo_fmt::FmtOptions::default()) {
+        Ok(formatted) => formatted,
+        Err(e) => format!("// format error: {}", e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

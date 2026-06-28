@@ -66,6 +66,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaubo-fmt"
+version = "0.1.0"
+dependencies = [
+ "kaubo-ast",
+ "kaubo-driver",
+ "kaubo-syntax",
+]
+
+[[package]]
 name = "kaubo-infer"
 version = "0.1.0"
 dependencies = [
@@ -138,6 +147,7 @@ dependencies = [
  "console_error_panic_hook",
  "js-sys",
  "kaubo-driver",
+ "kaubo-fmt",
  "kaubo-language-service",
  "kaubo-log",
  "kaubo-log-handlers",
@@ -169,6 +179,7 @@ name = "kaubo2-cli"
 version = "0.1.0"
 dependencies = [
  "kaubo-driver",
+ "kaubo-fmt",
  "kaubo-log",
  "kaubo-log-handlers",
  "kaubo-vfs",

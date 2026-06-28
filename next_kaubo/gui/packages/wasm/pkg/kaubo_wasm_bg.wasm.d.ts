@@ -13,6 +13,7 @@ export const goto_def: (a: number, b: number, c: number) => [number, number];
 export const semantic_tokens: (a: number, b: number) => [number, number];
 export const complete: (a: number, b: number, c: number) => [number, number];
 export const inlay_hints: (a: number, b: number) => [number, number];
+export const format: (a: number, b: number) => [number, number];
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
