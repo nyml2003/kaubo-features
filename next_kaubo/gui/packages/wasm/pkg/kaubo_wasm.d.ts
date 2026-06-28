@@ -27,6 +27,11 @@ export function hover(source: string, offset: number): string;
 export function init(): void;
 
 /**
+ * Return inlay hints (type annotations) as JSON: [{position, label}]
+ */
+export function inlay_hints(source: string): string;
+
+/**
  * Tokenize source, return JSON array of {kind, from, to}.
  */
 export function lex(source: string): string;
@@ -70,6 +75,7 @@ export interface InitOutput {
     readonly goto_def: (a: number, b: number, c: number) => [number, number];
     readonly semantic_tokens: (a: number, b: number) => [number, number];
     readonly complete: (a: number, b: number, c: number) => [number, number];
+    readonly inlay_hints: (a: number, b: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

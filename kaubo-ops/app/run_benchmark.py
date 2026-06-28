@@ -26,7 +26,7 @@ class RunBenchmark:
     LANGUAGES = {
         "python": Language(name="python", ext="py", cmd="python"),
         "node":    Language(name="node",    ext="js", cmd="node"),
-        "kaubo":   Language(name="kaubo",   ext="kaubo", cmd=""),
+        "kaubo":   Language(name="kaubo",   ext="kb", cmd=""),
     }
 
     def __init__(self, runner: CommandRunner, fs: FileSystem, events: EventBus):
@@ -52,14 +52,14 @@ class RunBenchmark:
                 self.events.emit("error", f"Kaubo binary not found: {kb}")
                 self.events.emit("info", "Build it: python kaubo-ops build-cli")
                 return False
-            langs["kaubo"] = Language(name="kaubo", ext="kaubo", cmd=str(kb.resolve()))
+            langs["kaubo"] = Language(name="kaubo", ext="kb", cmd=str(kb.resolve()))
         else:
             # 尝试默认路径
             default_bin = project.rust_workspace / "target" / "release" / "kaubo2-cli"
             if default_bin.with_suffix(".exe").exists():
                 default_bin = default_bin.with_suffix(".exe")
             if default_bin.exists():
-                langs["kaubo"] = Language(name="kaubo", ext="kaubo", cmd=str(default_bin.resolve()))
+                langs["kaubo"] = Language(name="kaubo", ext="kb", cmd=str(default_bin.resolve()))
 
         if languages:
             langs = {k: v for k, v in langs.items() if k in languages}
@@ -87,8 +87,12 @@ class RunBenchmark:
         for case in cases:
             print(f"{case.name:<12}", end="", flush=True)
             for lang_name in langs:
+                lang = langs[lang_name]
+                if not (case.path / f"main.{lang.ext}").exists():
+                    print(f" {'N/A':>10}", end="", flush=True)
+                    continue
                 try:
-                    avg = self._bench_one(langs[lang_name], case, cfg)
+                    avg = self._bench_one(lang, case, cfg)
                     print(f" {avg:>9.1f}us", end="", flush=True)
                 except Exception as e:
                     print(f" {'ERR':>10}", end="", flush=True)
@@ -198,10 +202,22 @@ console.log(times.reduce((a,b) => a + b, 0) / times.length);
         if not lang.cmd or not Path(lang.cmd).exists():
             raise RuntimeError(f"kaubo binary not found: {lang.cmd}")
         self._validate_output(lang, case)
-        src = (case.path / "main.kaubo").resolve()
+
+        # Module cases: "mod" subcommand doesn't support bench; run once + stub timing
+        if self._is_module(case):
+            src = (case.path / "main.kb").resolve()
+            r = subprocess.run(
+                [lang.cmd, "mod", str(src)],
+                capture_output=True, text=True, encoding="utf-8", timeout=cfg.timeout_s,
+            )
+            if r.returncode != 0:
+                raise RuntimeError(f"kaubo/{case.name} failed: {r.stderr[:200]}")
+            return 0.0
+
+        src = (case.path / "main.kb").resolve()
         out = tempfile.NamedTemporaryFile(delete=False, suffix=".txt", prefix=f"bench_{case.name}_")
         out.close()
-        with open(out.name, "w") as f:
+        with open(out.name, "w", encoding="utf-8") as f:
             ret = subprocess.run(
                 [lang.cmd, "bench", str(src), str(cfg.iterations), str(cfg.warmup)],
                 stdout=f, stderr=subprocess.STDOUT,
@@ -219,6 +235,14 @@ console.log(times.reduce((a,b) => a + b, 0) / times.length);
                 continue
         raise RuntimeError(f"kaubo/{case.name}: no avg in output: {output[:200]}")
 
+    # ── Helpers ────────────────────────────────────────────────
+
+    @staticmethod
+    def _is_module(case: Case) -> bool:
+        """A case is a module if it has .kb files beyond main.kb."""
+        kb_files = list(case.path.glob("*.kb"))
+        return len(kb_files) > 1
+
     # ── Validation ──────────────────────────────────────────────
 
     def _validate_output(self, lang: Language, case: Case) -> None:
@@ -227,23 +251,32 @@ console.log(times.reduce((a,b) => a + b, 0) / times.length);
             return
 
         src_path = case.path / f"main.{lang.ext}"
+        if not src_path.exists():
+            return  # No source file for this language, skip silently
 
         if lang.name == "python":
+            py_path = case.path / "main.py"
+            if not py_path.exists():
+                return
             r = subprocess.run(
-                ["python", str(case.path / "main.py")],
+                ["python", str(py_path)],
                 capture_output=True, text=True, timeout=30,
             )
         elif lang.name == "node":
+            js_path = case.path / "main.js"
+            if not js_path.exists():
+                return
             r = subprocess.run(
-                ["node", str(case.path / "main.js")],
+                ["node", str(js_path)],
                 capture_output=True, text=True, timeout=30,
             )
         elif lang.name == "kaubo":
             if not lang.cmd or not Path(lang.cmd).exists():
                 raise RuntimeError(f"kaubo binary not found: {lang.cmd}")
+            mode = "mod" if self._is_module(case) else "run"
             r = subprocess.run(
-                [lang.cmd, "run", str(src_path)],
-                capture_output=True, text=True, timeout=30,
+                [lang.cmd, mode, str(src_path)],
+                capture_output=True, text=True, encoding="utf-8", timeout=30,
             )
         else:
             return

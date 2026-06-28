@@ -212,6 +212,24 @@ pub fn complete(source: &str, offset: usize) -> String {
     serde_json::to_string(&ls_completions(source, offset)).unwrap_or_else(|_| "[]".to_string())
 }
 
+/// Return inlay hints (type annotations) as JSON: [{position, label}]
+#[wasm_bindgen]
+pub fn inlay_hints(source: &str) -> String {
+    {
+        let mut lsp = LSP.lock().unwrap();
+        if !lsp.is_ready() {
+            let _ = lsp.on_change(source);
+        }
+    }
+
+    let lsp = LSP.lock().unwrap();
+    if lsp.is_ready() {
+        let hints = lsp.inlay_hints();
+        return serde_json::to_string(&hints).unwrap_or_else(|_| "[]".to_string());
+    }
+    "[]".to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

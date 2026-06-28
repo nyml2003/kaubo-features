@@ -6,7 +6,7 @@
 
 pub mod lsp_coordinator;
 
-pub use lsp_coordinator::{HoverInfo, LspCoordinator, SymbolDef, SymbolKind};
+pub use lsp_coordinator::{HoverInfo, InlayHint, LspCoordinator, SymbolDef, SymbolKind};
 
 use kaubo_syntax::lexer::Lexer;
 use kaubo_syntax::token::{Token, TokenKind};

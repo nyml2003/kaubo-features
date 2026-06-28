@@ -7,6 +7,8 @@ use kaubo_ast::{Expr, Module, Span, Stmt};
 use kaubo_driver::stages::{FrontendStage, SemanticStage};
 use kaubo_driver::protocol::{BuildContext, BuildError, Stage};
 use kaubo_driver::SemanticArtifact;
+use kaubo_infer::Scheme;
+use serde::Serialize;
 use std::collections::HashMap;
 
 /// Kind of a symbol (aligned with LSP SymbolKind).
@@ -66,6 +68,15 @@ pub struct HoverInfo {
     pub description: String,
 }
 
+/// An inlay hint — a type annotation shown inline next to a name.
+#[derive(Debug, Clone, Serialize)]
+pub struct InlayHint {
+    /// Char offset in source where the label should appear (right after the name).
+    pub position: usize,
+    /// The label text, e.g. ": Int64", ": String".
+    pub label: String,
+}
+
 /// The LSP coordinator: parse → infer → query.
 pub struct LspCoordinator {
     source: String,
@@ -97,7 +108,14 @@ impl LspCoordinator {
         let semantic = SemanticStage.execute(module.clone(), &BuildContext { events: None })?;
 
         // Collect symbols and references from the AST
-        let (symbols, references) = collect_symbols_and_refs(&module);
+        let (mut symbols, references) = collect_symbols_and_refs(&module);
+
+        // Cross-reference symbols with inferred types from type_env
+        for (name, sym) in symbols.iter_mut() {
+            if let Some(scheme) = semantic.type_env.get(name) {
+                sym.ty = Some(format!("{}", scheme.body));
+            }
+        }
 
         self.module = Some(module);
         self.semantic = Some(semantic);
@@ -142,10 +160,15 @@ impl LspCoordinator {
         // Check references — look up in type_env
         if let Some(ref semantic) = self.semantic {
             if let Some(scheme) = semantic.type_env.get(&name) {
+                let (kind_str, desc) = if let Some(sym) = self.symbols.get(&name) {
+                    (sym.kind.as_str().to_string(), format!("{} {}", sym.kind.as_str(), name))
+                } else {
+                    ("variable".to_string(), format!("variable {}", name))
+                };
                 return Some(HoverInfo {
-                    kind: "variable".to_string(),
+                    kind: kind_str,
                     ty: Some(format!("{}", scheme.body)),
-                    description: format!("variable {}", name),
+                    description: desc,
                 });
             }
         }
@@ -184,6 +207,18 @@ impl LspCoordinator {
         items.extend(token_items);
 
         items
+    }
+
+    /// Produce inlay hints showing inferred types next to definitions.
+    pub fn inlay_hints(&self) -> Vec<InlayHint> {
+        let mut hints = Vec::new();
+        let Some(ref module) = self.module else { return hints; };
+        let Some(ref semantic) = self.semantic else { return hints; };
+
+        for stmt in &module.stmts {
+            collect_hints_stmt(stmt, &semantic.type_env, &self.source, &mut hints);
+        }
+        hints
     }
 
     /// Whether a successful build is available.
@@ -534,4 +569,221 @@ fn collect_from_expr(
         | Expr::Break
         | Expr::Continue => {}
     }
+}
+
+// ── Inlay hints: AST walk to find type annotations ──
+
+fn collect_hints_stmt(
+    stmt: &Stmt,
+    type_env: &HashMap<String, Scheme>,
+    source: &str,
+    hints: &mut Vec<InlayHint>,
+) {
+    match stmt {
+        Stmt::ConstDecl { name, span, value, .. } => {
+            push_hint_with_value(name, span, Some(value), type_env, source, hints);
+            collect_hints_expr(value, type_env, source, hints);
+        }
+        Stmt::VarDecl { name, span, value, .. } => {
+            push_hint_with_value(name, span, value.as_ref(), type_env, source, hints);
+            if let Some(v) = value {
+                collect_hints_expr(v, type_env, source, hints);
+            }
+        }
+        Stmt::StructDef { .. } | Stmt::EnumDef { .. } | Stmt::InterfaceDef { .. } => {
+            // Types are explicit in the source — skip
+        }
+        Stmt::ImplBlock { struct_name, methods, .. } => {
+            for m in methods {
+                let full_name = format!("{}.{}", struct_name, m.name);
+                push_hint(&full_name, &m.span, type_env, source, hints);
+                collect_hints_expr(&m.body, type_env, source, hints);
+            }
+        }
+        Stmt::ExprStmt(expr) => {
+            collect_hints_expr(expr, type_env, source, hints);
+        }
+        Stmt::ExportStmt(inner) => {
+            collect_hints_stmt(inner, type_env, source, hints);
+        }
+        Stmt::Import { .. } => {}
+    }
+}
+
+fn collect_hints_expr(
+    expr: &Expr,
+    type_env: &HashMap<String, Scheme>,
+    source: &str,
+    hints: &mut Vec<InlayHint>,
+) {
+    match expr {
+        Expr::Lambda { params, body, .. } => {
+            for p in params {
+                push_hint(&p.name, &p.span, type_env, source, hints);
+            }
+            collect_hints_expr(body, type_env, source, hints);
+        }
+        Expr::Call { func, arg } => {
+            collect_hints_expr(func, type_env, source, hints);
+            collect_hints_expr(arg, type_env, source, hints);
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_hints_expr(left, type_env, source, hints);
+            collect_hints_expr(right, type_env, source, hints);
+        }
+        Expr::Unary { right, .. } => {
+            collect_hints_expr(right, type_env, source, hints);
+        }
+        Expr::Block(stmts) => {
+            for s in stmts {
+                collect_hints_stmt(s, type_env, source, hints);
+            }
+        }
+        Expr::If { cond, then_branch, else_branch } => {
+            collect_hints_expr(cond, type_env, source, hints);
+            collect_hints_expr(then_branch, type_env, source, hints);
+            if let Some(e) = else_branch {
+                collect_hints_expr(e, type_env, source, hints);
+            }
+        }
+        Expr::While { cond, body } => {
+            collect_hints_expr(cond, type_env, source, hints);
+            collect_hints_expr(body, type_env, source, hints);
+        }
+        Expr::For { var, iterable, body, .. } => {
+            push_hint(&var.name, &var.span, type_env, source, hints);
+            collect_hints_expr(iterable, type_env, source, hints);
+            collect_hints_expr(body, type_env, source, hints);
+        }
+        Expr::Assign { target, value } => {
+            collect_hints_expr(target, type_env, source, hints);
+            collect_hints_expr(value, type_env, source, hints);
+        }
+        Expr::Return(val) => {
+            if let Some(v) = val {
+                collect_hints_expr(v, type_env, source, hints);
+            }
+        }
+        Expr::Member { object, .. } => {
+            collect_hints_expr(object, type_env, source, hints);
+        }
+        Expr::Index { object, index } => {
+            collect_hints_expr(object, type_env, source, hints);
+            collect_hints_expr(index, type_env, source, hints);
+        }
+        Expr::StructLit { fields, spread, .. } => {
+            for (_, val) in fields {
+                collect_hints_expr(val, type_env, source, hints);
+            }
+            if let Some(s) = spread {
+                collect_hints_expr(s, type_env, source, hints);
+            }
+        }
+        Expr::ListLit(items) | Expr::Tuple(items) => {
+            for item in items {
+                collect_hints_expr(item, type_env, source, hints);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_hint(
+    name: &str,
+    span: &Span,
+    type_env: &HashMap<String, Scheme>,
+    source: &str,
+    hints: &mut Vec<InlayHint>,
+) {
+    let type_str = if let Some(scheme) = type_env.get(name) {
+        Some(format!("{}", scheme.body))
+    } else {
+        // Fallback: try to infer type from the value expression
+        None
+    };
+
+    if let Some(type_str) = type_str {
+        // Skip uninformative types (type variables like "t0")
+        if type_str.starts_with('t') && type_str.len() <= 3 {
+            return;
+        }
+        if let Some(pos) = end_of_name_in_source(source, span, name) {
+            hints.push(InlayHint {
+                position: pos,
+                label: format!(": {}", type_str),
+            });
+        }
+    }
+}
+
+/// Like push_hint but also tries to guess the type from a value expression
+/// when the name is not in the global type_env (local variables in blocks).
+fn push_hint_with_value(
+    name: &str,
+    span: &Span,
+    value: Option<&Expr>,
+    type_env: &HashMap<String, Scheme>,
+    source: &str,
+    hints: &mut Vec<InlayHint>,
+) {
+    let type_str = if let Some(scheme) = type_env.get(name) {
+        Some(format!("{}", scheme.body))
+    } else if let Some(val) = value {
+        guess_type(val)
+    } else {
+        None
+    };
+
+    if let Some(type_str) = type_str {
+        if type_str.starts_with('t') && type_str.len() <= 3 {
+            return;
+        }
+        if let Some(pos) = end_of_name_in_source(source, span, name) {
+            hints.push(InlayHint {
+                position: pos,
+                label: format!(": {}", type_str),
+            });
+        }
+    }
+}
+
+/// Guess a type from a simple expression (literals only).
+fn guess_type(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::LitInt(_) => Some("Int64".to_string()),
+        Expr::LitFloat(_) => Some("Float64".to_string()),
+        Expr::LitString(_) => Some("String".to_string()),
+        Expr::LitTrue | Expr::LitFalse => Some("Bool".to_string()),
+        Expr::LitNull => Some("Null".to_string()),
+        _ => None,
+    }
+}
+
+/// Compute the char offset right after `name` in `source`, given its `span`.
+fn end_of_name_in_source(source: &str, span: &Span, name: &str) -> Option<usize> {
+    let chars: Vec<char> = source.chars().collect();
+    let mut line = 1usize;
+    let mut col = 1usize;
+    let mut offset = 0usize;
+    let mut found = false;
+
+    for (i, ch) in chars.iter().enumerate() {
+        if line == span.line && col == span.col {
+            offset = i;
+            found = true;
+            break;
+        }
+        if *ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+
+    if !found && (span.line > 1 || span.col > 1) {
+        return None;
+    }
+
+    Some(offset + name.chars().count())
 }

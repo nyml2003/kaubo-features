@@ -243,6 +243,30 @@ async function activate(context) {
           legend
         )
       );
+        // ── Inlay Hints Provider ──
+
+        if (wasm.inlay_hints) {
+          context.subscriptions.push(
+            vscode.languages.registerInlayHintsProvider("kaubo", {
+              provideInlayHints(document, range, token) {
+                try {
+                  const json = wasm.inlay_hints(document.getText());
+                  const rawHints = JSON.parse(json);
+                  return rawHints.map((hint) => {
+                    const pos = document.positionAt(hint.position);
+                    return new vscode.InlayHint(
+                      pos,
+                      hint.label,
+                      vscode.InlayHintKind.Parameter
+                    );
+                  });
+                } catch (e) {
+                  return [];
+                }
+              },
+            })
+          );
+        }
     }
   }
 }
