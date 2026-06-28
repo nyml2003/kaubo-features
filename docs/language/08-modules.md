@@ -52,4 +52,4 @@ Entry File
 
 ## 设计文档
 
-详见 [module-system-design.md](../module-system-design.md) 和 [kaubo-vfs-design.md](../kaubo-vfs-design.md)。
+详见 [架构总览](../architecture/README.md)。

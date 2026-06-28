@@ -1,116 +1,76 @@
 # 路线图
 
-目标读者：规划架构和功能工作的维护者。
-
-## 当前进度
-
 | 状态 | Phase | 关键交付 |
 |------|-------|---------|
-| ✅ 完成 | Phase 1 | 日志 + 死循环防护 |
-| ✅ 完成 | Phase 4a | Interface + operator 重载 + dyn Trait + 模板字符串 |
-| 🔶 部分 | Phase 4b | 虚拟 prelude 注入完成，真实 prelude.kb + 编译器去硬编码待做 |
-| ✅ 完成 | Phase 2b | DAG 编排层 + Semantic 语义事实层 + EventSink/EventRouter |
-| ✅ 完成 | Phase 3b | 模块系统：import/export、ModuleGraph、ModuleCompiler、LinkStage、kaubo-vfs |
-| ▶ 下一步 | **Phase 3a** | LSP 编排层独立化（LspCoordinator） + go-to-def/hover |
-| ⏸ 推迟 | Phase 2a | VM 性能（当前 ~1.5x CPython，可接受） |
-| 🔲 规划 | 5a/5b | 泛型 / 效应 |
+| ▶ 下一步 | **Phase 1** | 元组 + TypedArray（函数调用语义基础，同构数组运行时优化） |
+| 🔶 部分 | Phase 2 | 虚拟 prelude 注入完成，prelude.kb + 编译器去硬编码待做 |
+| 🔲 规划 | Phase 3 | LSP 编排层独立化（LspCoordinator + go-to-def/hover） |
+| 🔲 规划 | Phase 4 | 显式泛型 |
+| 🔲 规划 | Phase 5 | 效应系统 |
+| ⏸ 推迟 | Phase 6 | VM 性能（当前 ~1.5x CPython，可接受） |
 
-## 当前痛点
+---
 
-| # | 痛点 | 现象 | 状态 |
-|---|------|------|------|
-| 1 | VM 运行时性能差 | 比 CPython 慢 ~1.5x，未做优化 | ⏸ 推迟（可接受范围） |
-| 2 | 特性支持不够 | 已实现 interface/operator/模块系统，缺泛型、效应 | 🔶 部分解决 |
-| 3 | LSP 体验不够好 | 纯 token heuristic，未消费 SemanticArtifact | ▶ 下一步 |
-| 4 | 编译器硬编码 | 内置类型/方法硬编码在 Rust 中，加新类型需改编译器 | 🔶 部分解决（虚拟 prelude 已有） |
+## Phase 1：元组 + TypedArray ▶ 下一步
 
-## 依赖关系总览
+**核心模型**：函数调用 = 标识符 + 元组。所有函数是单参数函数，`|params|` 对传入元组做模式解构。TypedArray 利用类型标注在运行时选择密集同构表示。
+
+### 元组：值语法与类型语法对称
+
+| 概念 | 值语法 | 类型语法 |
+|------|--------|---------|
+| 空元组 / unit | `()` | `()` |
+| 单元素元组 | `(1,)` | `(Int64,)` |
+| 二元组 | `(1, "a")` | `(Int64, String)` |
+| 函数类型 | — | `(Int64, Int64) -> Int64` |
+
+### LL(1) 解析规则
 
 ```
-Phase 1 ─────── ✅ 可观测性 + 死循环防护
-  │
-  ├── Phase 4a ─ ✅ Interface + operator + dyn Trait（跳过 3b，限定单文件）
-  │     └── Phase 4b ─ 🔶 虚拟 prelude 完成，真实 prelude.kb + 去硬编码待做
-  │
-  ├── Phase 2a ─ ⏸ VM 性能（推迟，当前 ~1.5x CPython 可接受）
-  │
-  └── Phase 2b ─ ✅ DAG 编排层 + Semantic 语义事实层
-        │
-        ├── Phase 3a ─ ▶ LSP 编排层独立化（LspCoordinator：Frontend→Semantic）
-        │               go-to-def, hover, completion
-        │
-        └── Phase 3b ─ ✅ 模块系统（import/export, 传递哈希, kaubo-vfs）
-              │
-              ├── Phase 5a ─ 🔲 泛型（可与 3a 并行）
-              │
-              └── Phase 5b ─ 🔲 效应系统（可与 5a 并行）
+( expr ,     → 元组（有逗号）
+( expr )     → 分组（无逗号），AST 折叠为 expr
+( )          → 空元组 / unit
 ```
 
-## Phase 1：可观测性 + 死循环防护 ✅ 已完成
+### TypedArray
 
-解决痛点 #5 + while 死循环。
+根据类型标注在 CPS 层选择运行时表示：
 
-| 交付 | 说明 | 状态 |
-|------|------|------|
-| `kaubo-log` | `EventHandler` trait + 事件类型 + `emit!` 宏。纯抽象，零平台代码 | ✅ |
-| `kaubo-log-handlers` | `ConsoleHandler` + `CompositeHandler` + `KAUBO_LOG` 解析 | ✅ |
-| VM 死循环检测 | `LoopExceeded` 错误，backward jump IP 比较，`(func_idx, block_id)` 独立计数 | ✅ |
-| Driver 透传 | `RunConfig` 携带 `EventHandler`，沿调用链透传到各 Stage | ✅ |
-| CLI 接入 | `--log-level` / `--max-loop-iterations` 参数 | ✅ |
-| WASM 接入 | `set_log_level()` 暴露给 JS | ✅ |
+```
+List<Int64>  [1, 2, 3]  →  NewInt64Array   →  HeapObj::Int64Array(Vec<i64>)
+List<Float64> [1.0, 2.0] →  NewFloat64Array →  HeapObj::Float64Array(Vec<f64>)
+无标注/混合  [1, "a"]    →  NewList         →  HeapObj::List(Vec<i64>)  (现状)
+```
 
-**不改**：Driver 架构、VM 执行核心、parser、type inference。
+列表语法 `[1, 2, 3]` 不变，parser 不改。
 
-**对终态的兼容**：`RunConfig` → 未来 `BuildContext` 的构造参数。`&dyn EventHandler` 透传模式在 DAG 下不变。详见 [架构](architecture.md)。
+### 各层改动
 
-### Phase 1 附带修复
+| 层 | 元组 | TypedArray |
+|----|------|------------|
+| AST | `Expr::Tuple`、`TypeExpr::Tuple` | — |
+| Parser | 括号内逗号判定；`Call` 改为单 arg | — |
+| Infer | 元组类型推断；函数参数解构元组 | 列表类型标注 → CPS hint |
+| CPS | `Call` 单 arg；`GetField(tuple, idx)` | `NewInt64Array` / `NewFloat64Array` |
+| VM | `HeapObj::TupleObj`；`GetField` 复用 struct | `Int64Array` / `Float64Array` + `IndexGet`/`IndexSet` 按类型分派 |
 
-| 修复 | 说明 |
-|------|------|
-| flatten 幽灵前驱 | 已内联 block 残留 terminator 计入 predecessor count，导致后续 block 无法内联 → 物理 IP 乱序 → forward jump 误判为 backward |
-| 默认循环上限 | CLI 默认 `u64::MAX`（不限制），Web playground 可设较低值。`* 8 / 10` 改用 `saturating_mul` 防溢出 |
-| CLI 输出 | `render_run` 去掉冗余的 `= <result>` 尾行 |
-| Benchmark 校验 | 每个 suite 新增 `expected.txt`，runner 在 warmup 前校验输出一致性 |
-| Node.js benchmark | 修复 `_fn()` 漏传参 + V8 常量折叠导致 benchmark 数字虚低
+**合计**：~700 行（元组 ~500 + TypedArray ~200）。元组是泛型前置——做完后 `Result<T, E>` 的类型系统基础就位。
 
-## Phase 2a：VM 运行时性能 ⏸ 推迟
+---
 
-解决痛点 #1。前置：Phase 1。
+## Phase 2：内置模块化（部分完成）
 
-当前 Kaubo 比 CPython 慢 ~1.5x，在没有优化的情况下可接受。DAG 做完后可用日志系统精准 profiling，优化更有针对性。
+| 已完成 | 待做 |
+|--------|------|
+| 9 个虚拟接口注入（Add/Subtract/…/IntoInt） | 真实 `prelude.kb` 文件 |
+| 40+ 内置方法 impl（`impl Add for Int64` 等） | 编译器去硬编码（移除 CPS 层 `to_string`/`IToS` 重写） |
+| 用户可直接 `impl Add for Vec2` | 加新类型不再需要改编译器代码 |
 
-| 方向 | 说明 |
-|------|------|
-| Profile 热点 | 用日志系统 benchmark，定位 VM 执行循环中的瓶颈 |
-| 指令分派优化 | `match opcode` 的分支预测优化 |
-| 寄存器文件 | 访问模式优化 |
-| GC heap | RC 操作热点优化 |
-| Native call | 调用约定优化 |
+---
 
-**不改**：Driver、parser、type inference、CPS lowering。仅 VM 内部。
+## Phase 3：LSP 编排层独立化 🔲
 
-## Phase 2b：编排解耦 + 语义事实 ✅ 已完成
-
-解决痛点 #3 + #4 基础。前置：Phase 1。
-
-| 交付 | 说明 | 状态 |
-|------|------|------|
-| 协议层 | `Stage<I,O>`、`Pass`、`Pipeline`、`Cache` trait | ✅ |
-| 事件层 | `EventSink` + blanket impl、`EventRouter`、扇出到多 Sink | ✅ |
-| Coordinator | 编译器 Coordinator（Frontend→Semantic→CPS→VM） | ✅ |
-| 语义事实层 | `SemanticArtifact`：symbols、type_env、references | ✅ |
-| 缓存 | SHA-256 内容哈希 + 命名空间隔离 | ✅ |
-| 向后兼容 | `compile_source`/`run_source` 内部委托给 Coordinator | ✅ |
-
-**实际规模**：4 文件 ~320 行。不改 VM、Parser、Infer 核心。
-
-**设计文档**：[dag-design.md](dag-design.md)
-
-## Phase 3a：LSP 编排层独立化 ▶ 下一步
-
-解决痛点 #3。前置：Phase 2b。
-
-**核心理念**：语言服务器有自己的 `LspCoordinator`——和编译器 Coordinator 共享协议层，但只跑到 Semantic。
+前置：Phase 1（元组改变函数调用 AST，LSP 应基于新语义）。
 
 | 交付 | 说明 |
 |------|------|
@@ -118,87 +78,28 @@ Phase 1 ─────── ✅ 可观测性 + 死循环防护
 | Go-to-definition | 基于 `SemanticArtifact.references` |
 | Hover type info | 基于 `SemanticArtifact.symbols` |
 | Completion 增强 | `SemanticArtifact` + 原有 token 补全 |
-| Semantic tokens | AST 节点类型 + 原有 token 分类 fallback |
+| Semantic tokens | AST 节点类型 + 原有 token fallback |
 | WASM 适配 | hover/semantic_tokens/complete 改用 LspCoordinator |
 
-**改动层**：`kaubo-language-service` 新增 lsp_coordinator + hover + goto_def，依赖 kaubo-driver 的协议层。~260 行。
+**改动层**：仅 `kaubo-language-service`，~260 行。不改编译器核心。
 
-**不改**：编译器 Coordinator、编译器核心。
+---
 
-## Phase 3b：模块系统 ✅ 已完成
-
-解决痛点 #2——多文件。前置：Phase 2b。
-
-**设计文档**：[module-system-design.md](module-system-design.md) · [kaubo-vfs-design.md](kaubo-vfs-design.md)
-
-| 交付 | 说明 | 状态 |
-|------|------|------|
-| `import`/`export` 语义 | 完整语义实现 | ✅ |
-| 模块图构建 | ModuleGraph: DFS + 拓扑排序 + 循环依赖检测 | ✅ |
-| 传递闭包哈希 | 模块 Key = 源码哈希 + 所有传递依赖 Key 哈希。自动缓存失效 | ✅ |
-| 跨模块名称解析 | Infer 通过 `infer_module_with_imports` 获取依赖类型 | ✅ |
-| 循环依赖检测 | 模块图构建时 DFS 栈检测并报错 | ✅ |
-| kaubo-vfs | VirtualFileSystem trait + FsVfs + MemVfs | ✅ |
-| ModuleLoader | FileLoader + MemLoader | ✅ |
-| ModuleCompiler | 按序编译 + 缓存失效 + resolve_imports | ✅ |
-| LinkStage | 多模块 CPS 链接：函数表合并、func_remap、struct_remap、CallExternal 重映射 | ✅ |
-
-**改动层**：AST import/export 语义化、Driver 模块图、Infer 跨模块查询、CPS 多模块链接。~720 行。
-
-**本期不做**：通配符 import、re-export、包管理器。
-
-## Phase 4a：Interface ✅ 已完成
-
-解决痛点 #2——动态分派。前置：Phase 1（实际实现跳过了 Phase 3b 的模块系统依赖，限定在单文件范围内）。
-
-| 交付 | 说明 | 状态 |
-|------|------|------|
-| 接口定义 | `interface Eq { eq: ... }` | ✅ |
-| 实现块 | `impl Eq for Point { ... }` | ✅ |
-| 胖指针 | `(vtable, data)` → `HeapObj::InterfaceObj` | ✅ |
-| CPS `LoadVtable` | 新指令 | ✅ |
-| CPS `NewInterfaceObj` | 构造胖指针 | ✅ |
-| VM `CallIndirect` | 新 opcode (0x53) | ✅ |
-| Operator 关键字 | `operator add:` 方法声明 | ✅ |
-| 用户 struct 运算符重载 | `a + b` 走 vtable 分派 | ✅ |
-| Interface 类型标注 | `\|x: Speakable\|` dyn Trait 传参 | ✅ |
-| 模板字符串 | `` `hello {name}` `` + `{{` `}}` 转义 | ✅ |
-
-**改动层**：AST `InterfaceDef/ImplBlock/MethodSig.operator`、Parser 解析 `interface/impl/operator`、Infer 接口匹配+ vtable 生成、CPS `LoadVtable/NewInterfaceObj/CallIndirect`、VM 3 个新 opcode。实际 ~290 行核心。
-
-**已跳过**：跨文件 interface 可见性（需模块系统）、interface 类型变量（`const x: Display = ...`）。
-
-## Phase 4b：内置模块化（部分完成）
-
-解决痛点 #4——编译器去硬编码。
-
-| 交付 | 说明 | 状态 |
-|------|------|------|
-| 接口层 | `interface Add`、`interface Display`、`interface Eq` ... | ✅ 9 个虚拟接口 |
-| 内置类型 impl | `impl Add for Int64` 等 40+ 方法 | ✅ 虚拟注入 |
-| `prelude.kb` | 标准库，每个 Kaubo 程序自动导入 | 🔲 仍是硬编码注入 |
-| 编译器去硬编码 | 加新类型不再需要改编译器代码 | 🔲 |
-| 真实 `.kb` 文件 | prelude 从文件加载 | 🔲 |
-
-**已完成**：Add/Subtract/Multiply/Divide/Modulo/Compare/Display/IntoFloat/IntoInt 共 9 个接口 + 40+ 内置方法已通过 `inject_builtin_interfaces`/`inject_builtin_impls` 虚拟注入。用户的 `impl Add for Vec2` 可直接使用，无需显式声明 `interface Add { ... }`。
-
-**待完成**：真实的 prelude.kb 文件、编译器去硬编码（移除 CPS 层的 `to_string`/`IToS` 等重写）。
-
-## Phase 5a：显式泛型
-
-解决痛点 #2——类型参数。前置：无硬依赖（可与 Phase 3a 并行）。
+## Phase 4：显式泛型 🔲
 
 | 交付 | 说明 |
 |------|------|
 | 泛型 struct | `struct Container<T> { value: T }` |
 | 泛型函数 | `const id = \|x: T\| -> T { x }` |
-| Monomorphization | CPS 层函数体复制 + 类型替换。VM 无改动 |
+| Monomorphization | CPS 层函数体复制 + 类型替换，VM 无改动 |
+
+`<>` 定界（类型标注上下文 `:` 后无歧义）。HM 推断消除显式类型参数需求。
 
 **改动层**：AST 泛型参数、Type 参数化、Infer 绑定+实例化、CPS 函数体复制。~1200 行。
 
-## Phase 5b：效应系统
+---
 
-解决痛点 #2——副作用追踪。前置：无硬依赖（可与 Phase 5a 并行）。
+## Phase 5：效应系统 🔲
 
 | 交付 | 说明 |
 |------|------|
@@ -208,47 +109,45 @@ Phase 1 ─────── ✅ 可观测性 + 死循环防护
 | 行多态类型 | `Type::Arrow` 加 `EffectRow` |
 | Suspend 语义化 | CPS Suspend + handler 注册表 + VM 调度 continuation |
 
-**改动层**：AST 新节点、Type 扩展、Infer 效应传播+完备性检查、CPS Suspend 语义化、VM handler dispatch。~2000 行。
+**改动层**：全层。~2000 行。
 
-## 并行度
+---
+
+## Phase 6：VM 运行时性能 ⏸ 推迟
+
+当前 Kaubo 比 CPython 慢 ~1.5x，可接受。
+
+| 方向 | 说明 |
+|------|------|
+| Profile 热点 | 日志系统 benchmark，定位 VM 执行循环瓶颈 |
+| 指令分派 | `match opcode` 分支预测优化 |
+| 寄存器文件 | 访问模式优化 |
+| GC heap | RC 操作热点 |
+| Native call | 调用约定优化 |
+
+仅改 VM 内部。
+
+---
+
+## 依赖关系
 
 ```
-Phase 1 ────────────────── ✅ 完成（日志 + 死循环）
-  │
-  ├── Phase 2a ────────── ⏸ 推迟（VM 性能）
-  │
-  ├── Phase 4a ────────── ✅ 完成（Interface + operator + dyn Trait）
-  │     │                   跳过了 3b 模块系统依赖，限定单文件
-  │     └── Phase 4b ──── 🔶 部分完成（虚拟 prelude 注入已完成）
-  │                        真实 prelude.kb + 编译器去硬编码待做
-  ├── Phase 2b ────────── ✅ 完成（DAG + Semantic）
-  │     │
-  │     ├── Phase 3a ──── ▶ 下一步（LSP，可与 5a 并行）
-  │     │
-  │     └── Phase 3b ──── ✅ 完成（模块系统）
-  │
-  ├── Phase 5a ────────── 🔲 规划（泛型，可与 3a 并行）
-  │
-  └── Phase 5b ────────── 🔲 规划（效应系统，可与 5a 并行）
+元组 + TypedArray (Phase 1) ─── 泛型 (Phase 4) ─── 效应 (Phase 5)
+        │
+        └── LSP (Phase 3)
+
+Interface ─── prelude.kb (Phase 2)
+
+独立: VM 性能 (Phase 6)
 ```
 
-## 各 Phase 成本估算
+## 成本
 
-| Phase | 改动规模 | 风险 | 对用户可见 |
-|-------|---------|------|-----------|
-| **1** 可观测性 + 死循环 | ✅ 已完成：新建 2 crate，修改 5 crate | 低（不改核心逻辑） | CLI flags, WASM API |
-| **2a** VM 性能 | 仅 VM 内部 | 低（不改语义） | 程序跑得更快 |
-| **2b** DAG + Semantic | ✅ 已完成：Driver 重构 + Infer 扩展 | 中（编排层改架构） | LSP 基础设施就绪 |
-| **3a** LSP 完善 | 仅 language-service | 低（不改编译器） | IDE 体验提升 |
-| **3b** 模块系统 | ✅ 已完成：AST + Driver + Infer + CPS + VFS | 中（跨多层） | import/export |
-| **4a** Interface | ✅ 已完成：AST + Parser + Infer + CPS + VM + 虚拟 prelude | 中（新 opcode） | interface + operator + dyn Trait |
-| **4b** 内置模块化 | 编译器 + 标准库 | 低（删代码为主） | 标准库 |
-| **5a** 泛型 | AST + Type + Infer + CPS | 中（Monomorphization） | 泛型语法 |
-| **5b** 效应系统 | 全层 | 高（结构性改动） | 效应语法 |
-
-## 优先级原则
-
-1. **先基础设施，后语言特性**：DAG 调度器是 LSP + 模块系统的地基，必须在泛型/效应之前
-2. **先架构解耦，后性能优化**：Phase 2a（VM 性能）推迟——当前 ~1.5x CPython 可接受，等 DAG 做完后 profiling 更有针对性
-3. **先解耦，后加功能**：Phase 4a 已验证——跳过模块系统直接做 interface，架构灵活后成本低
-4. **向后兼容**：每个 Phase 不应破坏已有测试和 CLI/WASM 行为
+| Phase | 改动范围 | 风险 |
+|-------|---------|------|
+| 1 元组 + TypedArray | 全管线（AST→VM） | 中（破坏性变更：函数调用 AST） |
+| 2 prelude.kb | 编译器 + 标准库 | 低（删代码为主） |
+| 3 LSP | 仅 language-service | 低 |
+| 4 泛型 | AST + Type + Infer + CPS | 中（Monomorphization） |
+| 5 效应 | 全层 | 高（结构性改动） |
+| 6 VM 性能 | 仅 VM 内部 | 低 |

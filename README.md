@@ -72,14 +72,11 @@ cargo make ops-deploy -- 0.5.0 --repo owner/repo
 
 ## 文档
 
-- [架构](docs/architecture.md)
-- [运行时](docs/runtime.md)
-- [Language Service](docs/language-service.md)
-- [语法特性](docs/syntax/README.md)
-- [Web 和 VSCode](docs/web-and-vscode.md)
-- [测试](docs/testing.md)
-- [发布和部署](docs/deploy.md)
-- [路线图](docs/roadmap.md)
+- [文档入口](docs/README.md) — 按读者分层的索引入口
+- [架构：编译管线](docs/architecture/README.md) — crate 地图 + "要改X看这里"
+- [语言参考](docs/language/README.md) — 语法特性、标准库、已实现能力
+- [运维指南](docs/operations/README.md) — 测试、发布、部署
+- [路线图](docs/roadmap.md) — 迭代计划和 Phase 状态
 
 ## 维护规则
 
