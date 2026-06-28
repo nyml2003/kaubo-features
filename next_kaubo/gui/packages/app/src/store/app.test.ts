@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockDoCompile, mockDoRun, mockDoDiagnose, mockSetKauboDiagnostics } =
+const { mockDoCompile, mockDoRun, mockDoDiagnose, mockDoFormat, mockDoLspOnChange, mockSetKauboDiagnostics } =
   vi.hoisted(() => ({
     mockDoCompile: vi.fn(),
     mockDoRun: vi.fn(),
     mockDoDiagnose: vi.fn().mockReturnValue("[]"),
+    mockDoFormat: vi.fn(),
+    mockDoLspOnChange: vi.fn(),
     mockSetKauboDiagnostics: vi.fn(),
   }));
 
@@ -13,6 +15,8 @@ vi.mock("../hooks/useKaubo", () => ({
     doCompile: mockDoCompile,
     doRun: mockDoRun,
     doDiagnose: mockDoDiagnose,
+    doFormat: mockDoFormat,
+    doLspOnChange: mockDoLspOnChange,
     loading: () => false,
   }),
 }));
@@ -55,7 +59,7 @@ describe("createKauboStore", () => {
   });
 
   it("has default code", () => {
-    expect(store.code()).toContain("print(add(2, 3));");
+    expect(store.code()).toContain("Hello, World!");
   });
 
   it("setCode updates code signal", () => {
@@ -63,12 +67,10 @@ describe("createKauboStore", () => {
     expect(store.code()).toBe("var x = 1;");
   });
 
-  it("setCode schedules a debounced diagnose", () => {
+  it("setCode calls diagnose and lsp_on_change immediately", () => {
     store.setCode("var x");
-    expect(mockDoDiagnose).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(400);
     expect(mockDoDiagnose).toHaveBeenCalledWith("var x");
+    expect(mockDoLspOnChange).toHaveBeenCalledWith("var x");
   });
 
   describe("compile", () => {

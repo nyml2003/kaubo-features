@@ -599,16 +599,9 @@ fn type_expr_to_str(ty: &TypeExpr) -> String {
 
 /// Quick inline expression string for struct literal fields.
 fn expr_to_str(expr: &Expr) -> String {
-    match expr {
-        Expr::LitInt(n) => n.to_string(),
-        Expr::LitFloat(n) => n.to_string(),
-        Expr::LitString(s) => format!("\"{}\"", s),
-        Expr::LitTrue => "true".to_string(),
-        Expr::LitFalse => "false".to_string(),
-        Expr::LitNull => "null".to_string(),
-        Expr::VarRef { name, .. } => name.clone(),
-        other => format!("{other:?}"),
-    }
+    let mut f = Formatter::new(&FmtOptions::default());
+    f.fmt_expr(expr, 0);
+    f.output
 }
 
 // ── Tests ──

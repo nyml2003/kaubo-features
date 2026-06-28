@@ -13,6 +13,7 @@
   list-style: none;
 }
 :focus:not(:focus-visible) { outline: none; }
+html, body, #root { height: 100%; overflow: hidden; }
 html { -webkit-text-size-adjust: none; text-size-adjust: none; }
 body { line-height: 1.5; -webkit-font-smoothing: antialiased; }
 img, picture, video, canvas, svg { display: block; max-width: 100%; }

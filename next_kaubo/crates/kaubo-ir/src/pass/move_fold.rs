@@ -5,7 +5,6 @@
 
 use super::Pass;
 use crate::cps::*;
-use std::collections::HashMap;
 
 pub struct MoveFold;
 

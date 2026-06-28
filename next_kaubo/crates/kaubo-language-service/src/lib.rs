@@ -133,17 +133,27 @@ pub fn semantic_tokens(source: &str) -> Vec<SemanticToken> {
 pub fn completions(source: &str, offset: usize) -> Vec<CompletionItem> {
     let tokens = visible_tokens(source);
     let model = build_model(&tokens);
-    let Some(object_name) = object_before_dot(source, offset) else {
+
+    // Determine receiver type: simple variable/literal, or chained method call
+    let type_name: String;
+    if let Some(object_name) = object_before_dot(source, offset) {
+        type_name = if let Some(tn) = model.vars.get(&object_name) {
+            tn.clone()
+        } else if let Some(tn) = literal_type_name(&object_name) {
+            tn.to_string()
+        } else {
+            return Vec::new();
+        };
+    } else if let Some(tn) = chain_type_before_dot(source, offset, &model) {
+        type_name = tn;
+    } else {
         return Vec::new();
-    };
-    let Some(type_name) = model.vars.get(&object_name) else {
-        return Vec::new();
-    };
+    }
 
     let mut result = Vec::new();
 
     // Try struct fields + methods
-    if let Some(info) = model.structs.get(type_name) {
+    if let Some(info) = model.structs.get(&type_name) {
         for field in &info.fields {
             result.push(CompletionItem {
                 label: field.clone(),
@@ -202,7 +212,7 @@ fn semantic_kind(tokens: &[Token], idx: usize, model: &SemanticModel) -> String 
     }
 
     if previous.is_some_and(|t| t.kind == TokenKind::Dot) {
-        if after_next.is_some_and(|t| t.kind == TokenKind::LParen) {
+        if next.is_some_and(|t| t.kind == TokenKind::LParen) {
             return "method".to_string();
         }
         return "field".to_string();
@@ -431,6 +441,17 @@ fn collect_impls(tokens: &[Token], model: &mut SemanticModel) {
                     // `operator method:` — skip operator keyword
                     idx += 1;
                 }
+                // Skip lambda params: `|self: Point, other: Point|`
+                // Single `|` is TokenKind::Bar, `|>` is TokenKind::Pipe
+                if tokens[idx].kind == TokenKind::Bar || tokens[idx].kind == TokenKind::Pipe {
+                    let closing = tokens[idx].kind;
+                    idx += 1;
+                    while idx < tokens.len() && tokens[idx].kind != closing {
+                        idx += 1;
+                    }
+                    if idx < tokens.len() { idx += 1; } // skip closing |
+                    continue;
+                }
                 if idx + 1 < tokens.len()
                     && tokens[idx].kind == TokenKind::Identifier
                     && tokens[idx + 1].kind == TokenKind::Colon
@@ -481,10 +502,124 @@ fn collect_vars(tokens: &[Token], model: &mut SemanticModel) {
     }
 }
 
-fn object_before_dot(source: &str, offset: usize) -> Option<String> {
+/// Return type of a builtin method call (e.g. ("Int64", "to_float") → "Float64").
+fn builtin_method_return(ty: &str, method: &str) -> Option<&'static str> {
+    match (ty, method) {
+        ("Int64", "to_float") => Some("Float64"),
+        ("Int64", "to_string") => Some("String"),
+        ("Float64", "to_int") => Some("Int64"),
+        ("Float64", "to_string") => Some("String"),
+        ("Bool", "to_string") => Some("String"),
+        ("String", "to_int") => Some("Int64"),
+        _ => None,
+    }
+}
+
+/// Resolve the type of a chained call before a dot, e.g. `1.to_float().`
+/// Returns the return type of the last method in the chain.
+fn chain_type_before_dot(source: &str, offset: usize, model: &SemanticModel) -> Option<String> {
     let prefix = source.get(..offset)?;
     let trimmed = prefix.trim_end();
-    let before_dot = trimmed.strip_suffix('.')?.trim_end();
+    let dot_pos = trimmed.rfind('.')?;
+    let before_dot = trimmed[..dot_pos].trim_end();
+
+    // Must end with `)` — a method call
+    let inner = before_dot.strip_suffix(')')?;
+
+    // Find the matching `(` — walk back tracking balanced parens
+    let mut depth = 1i32;
+    let mut call_end = inner.len();
+    for (i, c) in inner.char_indices().rev() {
+        if c == ')' { depth += 1; }
+        if c == '(' { depth -= 1; }
+        if depth == 0 {
+            call_end = i;
+            break;
+        }
+    }
+    if depth != 0 { return None; } // unbalanced
+
+    let before_call = &inner[..call_end];
+    // Extract method name: find the last `.` before the call, or use the whole thing
+    let (receiver_text, method_name) = if let Some(dot_pos) = before_call.rfind('.') {
+        let method = &before_call[dot_pos + 1..];
+        let receiver = &before_call[..dot_pos];
+        (receiver, method.to_string())
+    } else {
+        ("", before_call.to_string())
+    };
+
+    if method_name.is_empty() { return None; }
+
+    // Clean receiver: extract rightmost alphanumeric segment (skip outer context)
+    // e.g. "print(1" → "1",  "f(x).obj" → "obj" (actually "f(x)" → not reached here)
+    let clean_receiver: String = {
+        let chars: Vec<char> = receiver_text.chars().collect();
+        let end = chars.len();
+        let start = chars
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(i, &c)| {
+                if !c.is_alphanumeric() && c != '_' && c != '.' {
+                    Some(i + 1)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+        if start >= end {
+            return None;
+        }
+        chars[start..end].iter().collect()
+    };
+
+    // Determine receiver type
+    let receiver_type: String = if let Some(lt) = literal_type_name(&clean_receiver) {
+        lt.to_string()
+    } else if let Some(tn) = model.vars.get(&clean_receiver) {
+        tn.clone()
+    } else {
+        return None;
+    };
+
+    builtin_method_return(&receiver_type, &method_name).map(|s| s.to_string())
+}
+
+/// Map a literal token to its builtin type name (e.g. "1" → "Int64", "true" → "Bool").
+fn literal_type_name(name: &str) -> Option<&'static str> {
+    if name == "true" || name == "false" {
+        return Some("Bool");
+    }
+    if name == "null" {
+        return Some("Null");
+    }
+    // String literal: "content"
+    if name.starts_with('"') && name.ends_with('"') {
+        return Some("String");
+    }
+    if name.chars().all(|c| c.is_ascii_digit()) {
+        return Some("Int64");
+    }
+    // Float: digits.digits
+    if name.contains('.') && name.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return Some("Float64");
+    }
+    None
+}
+
+pub(crate) fn object_before_dot(source: &str, offset: usize) -> Option<String> {
+    let prefix = source.get(..offset)?;
+    let trimmed = prefix.trim_end();
+    // Find the last dot — handles both `1.|` and `1.t|`
+    let dot_pos = trimmed.rfind('.')?;
+    let before_dot = trimmed[..dot_pos].trim_end();
+
+    // String literal: "hello". → return the whole quoted string
+    if before_dot.starts_with('"') && before_dot.ends_with('"') {
+        return Some(before_dot.to_string());
+    }
+
     let end = before_dot.len();
     let start = before_dot[..end]
         .rfind(|c: char| !(c.is_alphanumeric() || c == '_'))
@@ -650,8 +785,12 @@ mod tests {
 
     #[test]
     fn completions_on_non_struct_object() {
+        // Literals now resolve to their builtin type — 42. → Int64 methods
         let items = completions("42.", 3);
-        assert!(items.is_empty());
+        assert!(!items.is_empty());
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert!(labels.contains(&"to_string"));
+        assert!(labels.contains(&"to_float"));
     }
 
     #[test]

@@ -157,7 +157,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn collect_line_comment(&mut self) -> String {
-        let mut s = String::new();
+        let mut s = String::from("//");
         while let Some(c) = self.peek() {
             if c == '\n' {
                 break;
@@ -169,7 +169,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn collect_block_comment(&mut self) -> String {
-        let mut s = String::new();
+        let mut s = String::from("/*");
         let mut depth = 1;
         while let Some(c) = self.peek() {
             s.push(c);
@@ -237,9 +237,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_template_string(&mut self, line: usize, col: usize) -> Token {
-        let mut s = String::new();
+        let mut s = String::from("`");
         while let Some(c) = self.bump() {
             if c == '`' {
+                s.push('`');
                 return Token::new(TokenKind::TemplateString, s, line, col);
             }
             if c == '\\' {
@@ -293,9 +294,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_string(&mut self, quote: char, line: usize, col: usize) -> Token {
-        let mut s = String::new();
+        let mut s = String::from(quote);
         while let Some(c) = self.bump() {
             if c == quote {
+                s.push(quote);
                 return Token::new(TokenKind::StringLiteral, s, line, col);
             }
             if c == '\\' {
@@ -510,7 +512,7 @@ mod tests {
         let mut lex = Lexer::new(r#""a\nb\tc\\d\"e" "#);
         let toks = lex.tokenize();
         assert_eq!(toks[0].kind, TokenKind::StringLiteral);
-        assert_eq!(toks[0].lexeme, "a\nb\tc\\d\"e");
+        assert_eq!(toks[0].lexeme, "\"a\nb\tc\\d\"e\"");
     }
 
     #[test]
@@ -768,7 +770,7 @@ mod tests {
         let toks = tokens(r#""""#);
         assert_eq!(toks.len(), 1);
         assert_eq!(toks[0].kind, TokenKind::StringLiteral);
-        assert_eq!(toks[0].lexeme, "");
+        assert_eq!(toks[0].lexeme, r#""""#);
     }
 
     #[test]
@@ -776,7 +778,7 @@ mod tests {
         let toks = tokens(r#""x""#);
         assert_eq!(toks.len(), 1);
         assert_eq!(toks[0].kind, TokenKind::StringLiteral);
-        assert_eq!(toks[0].lexeme, "x");
+        assert_eq!(toks[0].lexeme, r#""x""#);
     }
 
     #[test]
@@ -785,7 +787,7 @@ mod tests {
         let toks = tokens("'hello'");
         assert_eq!(toks.len(), 1);
         assert_eq!(toks[0].kind, TokenKind::StringLiteral);
-        assert_eq!(toks[0].lexeme, "hello");
+        assert_eq!(toks[0].lexeme, "'hello'");
     }
 
     #[test]
@@ -793,7 +795,7 @@ mod tests {
         let toks = tokens(r#""你好世界""#);
         assert_eq!(toks.len(), 1);
         assert_eq!(toks[0].kind, TokenKind::StringLiteral);
-        assert_eq!(toks[0].lexeme, "你好世界");
+        assert_eq!(toks[0].lexeme, r#""你好世界""#);
     }
 
     #[test]
@@ -807,25 +809,25 @@ mod tests {
     #[test]
     fn test_string_escape_backslash_n() {
         let toks = tokens(r#""\n""#);
-        assert_eq!(toks[0].lexeme, "\n");
+        assert_eq!(toks[0].lexeme, "\"\n\"");
     }
 
     #[test]
     fn test_string_escape_backslash_t() {
         let toks = tokens(r#""\t""#);
-        assert_eq!(toks[0].lexeme, "\t");
+        assert_eq!(toks[0].lexeme, "\"\t\"");
     }
 
     #[test]
     fn test_string_escape_backslash_r() {
         let toks = tokens(r#""\r""#);
-        assert_eq!(toks[0].lexeme, "\r");
+        assert_eq!(toks[0].lexeme, "\"\r\"");
     }
 
     #[test]
     fn test_string_escape_literal_backslash() {
         let toks = tokens(r#""\\""#);
-        assert_eq!(toks[0].lexeme, "\\");
+        assert_eq!(toks[0].lexeme, "\"\\\"");
     }
 
     #[test]
@@ -846,7 +848,7 @@ mod tests {
         let toks = tokens("// this is a comment\n42");
         assert_eq!(toks.len(), 2);
         assert_eq!(toks[0].kind, TokenKind::Comment);
-        assert_eq!(toks[0].lexeme, " this is a comment");
+        assert_eq!(toks[0].lexeme, "// this is a comment");
         assert_eq!(toks[1].kind, TokenKind::IntLiteral);
     }
 
@@ -855,7 +857,7 @@ mod tests {
         let toks = tokens("// no newline at end");
         assert_eq!(toks.len(), 1);
         assert_eq!(toks[0].kind, TokenKind::Comment);
-        assert_eq!(toks[0].lexeme, " no newline at end");
+        assert_eq!(toks[0].lexeme, "// no newline at end");
     }
 
     #[test]
@@ -863,7 +865,7 @@ mod tests {
         let toks = tokens("/* hello */");
         assert_eq!(toks.len(), 1);
         assert_eq!(toks[0].kind, TokenKind::Comment);
-        assert_eq!(toks[0].lexeme, " hello */");
+        assert_eq!(toks[0].lexeme, "/* hello */");
     }
 
     #[test]
@@ -1115,7 +1117,7 @@ mod tests {
         let toks = tokens("42 3.14 \"hello\" true");
         assert_eq!(toks[0].lexeme, "42");
         assert_eq!(toks[1].lexeme, "3.14");
-        assert_eq!(toks[2].lexeme, "hello");
+        assert_eq!(toks[2].lexeme, r#""hello""#);
         assert_eq!(toks[3].lexeme, "true");
     }
 

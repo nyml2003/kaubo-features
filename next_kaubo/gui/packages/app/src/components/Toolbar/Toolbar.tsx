@@ -14,6 +14,7 @@ export const Toolbar: Component<{
   examplesExpanded: () => boolean;
   onCompile: () => void;
   onRun: () => void;
+  onFormat: () => void;
   onToggleExamples: () => void;
   onOpenSettings: () => void;
 }> = (props) => {
@@ -31,6 +32,9 @@ export const Toolbar: Component<{
       </button>
       <span class={styles.brand}>Kaubo</span>
       <nav class={styles.actions}>
+        <button class={styles.btn} disabled={busy()} onClick={props.onFormat}>
+          Format
+        </button>
         <button class={styles.btn} disabled={busy()} onClick={props.onCompile}>
           Compile
         </button>

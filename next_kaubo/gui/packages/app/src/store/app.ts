@@ -1,18 +1,12 @@
 import type { AppStatus } from "@kaubo/types";
-import { batch, createSignal, onCleanup } from "solid-js";
+import { batch, createSignal } from "solid-js";
 import { setKauboDiagnostics, type KauboError } from "../editor/kauboLang";
 import type { KauboExample } from "../examples";
 import { useKaubo } from "../hooks/useKaubo";
 import type { ThemeName } from "../themes";
 
-const DEFAULT_CODE = `// Kaubo Playground
-var add = |a, b| {
-    return a + b;
-};
-print(add(2, 3));
-`;
+const DEFAULT_CODE = `print("Hello, World!");`;
 
-const DIAGNOSE_DEBOUNCE_MS = 400;
 const WASM_NOT_LOADED_MESSAGE = "WASM not loaded yet";
 
 function getStoredTheme(): ThemeName {
@@ -70,9 +64,7 @@ export function createKauboStore() {
   const [fontSize, setFontSizeSignal] =
     createSignal<number>(getStoredFontSize());
   const [settingsOpen, setSettingsOpen] = createSignal(false);
-  const { doCompile, doRun, doDiagnose, loading } = useKaubo();
-
-  let diagnoseTimer: ReturnType<typeof setTimeout> | null = null;
+  const { doCompile, doRun, doDiagnose, doFormat, doLspOnChange, loading } = useKaubo();
 
   const setTheme = (name: ThemeName) => {
     setThemeSignal(name);
@@ -124,7 +116,6 @@ export function createKauboStore() {
     setOutput("");
     setError(null);
     setKauboDiagnostics(null);
-    if (diagnoseTimer) clearTimeout(diagnoseTimer);
   };
 
   function runDiagnose(source: string) {
@@ -138,21 +129,11 @@ export function createKauboStore() {
     }
   }
 
-  function scheduleDiagnose(source: string) {
-    if (diagnoseTimer) clearTimeout(diagnoseTimer);
-    diagnoseTimer = setTimeout(() => {
-      runDiagnose(source);
-    }, DIAGNOSE_DEBOUNCE_MS);
-  }
-
-  onCleanup(() => {
-    if (diagnoseTimer) clearTimeout(diagnoseTimer);
-  });
-
   const updateCode = (newCode: string) => {
     setCode(newCode);
     setActiveExample(null);
-    scheduleDiagnose(newCode);
+    runDiagnose(newCode);
+    doLspOnChange(newCode);
   };
 
   function requireWasmResult<T>(value: T | null | undefined): T {
@@ -209,6 +190,27 @@ export function createKauboStore() {
     });
   };
 
+  const format = () => {
+    batch(() => {
+      setStatus("compiling");
+      setError(null);
+    });
+    try {
+      const formatted = doFormat(code());
+      batch(() => {
+        setStatus("idle");
+        setCode(formatted);
+        setActiveExample(null);
+        setKauboDiagnostics(null);
+      });
+    } catch (e: unknown) {
+      batch(() => {
+        setStatus("idle");
+        setError(e instanceof Error ? e.message : String(e));
+      });
+    }
+  };
+
   const clearError = () => {
     setError(null);
     setKauboDiagnostics(null);
@@ -237,6 +239,7 @@ export function createKauboStore() {
     loadExample,
     compile,
     run,
+    format,
     clearError,
     clearOutput,
     loading,

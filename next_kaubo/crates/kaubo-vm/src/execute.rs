@@ -836,7 +836,7 @@ impl VM {
                 Opcode::NewList => {
                     // NewList(dst, count, _) — element regs read from block params
                     let d = inst.dst();
-                    let count = inst.src1() as usize;
+                    let count = inst.src1();
                     let block_id = self.block_id_from_ip(ip);
                     let params = &self.func_params[self.current_func][block_id];
                     let mut elements: Vec<i64> = Vec::with_capacity(count);
@@ -852,7 +852,7 @@ impl VM {
                 }
                 Opcode::NewTuple => {
                     let d = inst.dst();
-                    let count = inst.src1() as usize;
+                    let count = inst.src1();
                     let block_id = self.block_id_from_ip(ip);
                     let params = &self.func_params[self.current_func][block_id];
                     let mut elements: Vec<usize> = Vec::with_capacity(count);
@@ -870,7 +870,7 @@ impl VM {
                 Opcode::TupleIndex => {
                     let d = inst.dst();
                     let tuple_reg = inst.src1();
-                    let index = inst.src2() as usize;
+                    let index = inst.src2();
                     let hid = self.regs.regs[tuple_reg] as i64;
                     let val = match self.heap_get(hid)? {
                         HeapObj::TupleObj(elements) => elements[index],
@@ -884,7 +884,7 @@ impl VM {
                 }
                 Opcode::NewInt64Array => {
                     let d = inst.dst();
-                    let count = inst.src1() as usize;
+                    let count = inst.src1();
                     let block_id = self.block_id_from_ip(ip);
                     let params = &self.func_params[self.current_func][block_id];
                     let mut elements: Vec<i64> = Vec::with_capacity(count);
@@ -901,7 +901,7 @@ impl VM {
                 }
                 Opcode::NewFloat64Array => {
                     let d = inst.dst();
-                    let count = inst.src1() as usize;
+                    let count = inst.src1();
                     let block_id = self.block_id_from_ip(ip);
                     let params = &self.func_params[self.current_func][block_id];
                     let mut elements: Vec<f64> = Vec::with_capacity(count);
@@ -953,8 +953,7 @@ impl VM {
                         }
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
-                                "GetField expected struct, got {:?}",
-                                other
+                                "GetField expected struct, got {other:?}"
                             )))
                         }
                     };
@@ -982,8 +981,7 @@ impl VM {
                             }
                             other => {
                                 return Err(RuntimeError::TypeMismatch(format!(
-                                    "SetField expected struct, got {:?}",
-                                    other
+                                    "SetField expected struct, got {other:?}"
                                 )))
                             }
                         };
@@ -1209,8 +1207,7 @@ impl VM {
                         })?,
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
-                                "Unbox: expected struct, got {:?}",
-                                other
+                                "Unbox: expected struct, got {other:?}"
                             )));
                         }
                     };
@@ -1398,8 +1395,7 @@ impl VM {
                         HeapObj::InterfaceObj { vtable_idx, data } => (*vtable_idx, *data),
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
-                                "CallIndirect: expected InterfaceObj, got {:?}",
-                                other
+                                "CallIndirect: expected InterfaceObj, got {other:?}"
                             )))
                         }
                     };
@@ -1449,10 +1445,10 @@ impl VM {
                         if let Some(HeapObj::String(s)) = self.heap.try_get(val as usize) {
                             self.output.push(s.clone());
                         } else {
-                            self.output.push(format!("{}", val));
+                            self.output.push(format!("{val}"));
                         }
                     } else {
-                        self.output.push(format!("{}", val));
+                        self.output.push(format!("{val}"));
                     }
                 }
 
@@ -1803,7 +1799,7 @@ mod tests {
         let mut vm = VM::new();
         vm.load(&m).unwrap();
         vm.execute(0, 1, None).unwrap();
-        assert!(vm.output.len() > 0, "output should have print result");
+        assert!(!vm.output.is_empty(), "output should have print result");
     }
 
     #[test]
@@ -1971,7 +1967,7 @@ mod tests {
         let mut instrs = vec![];
         let mut consts: Vec<Constant> = vec![];
         for i in 0usize..20 {
-            consts.push(Constant::String(format!("s{}", i)));
+            consts.push(Constant::String(format!("s{i}")));
             instrs.push(CpsInstr::LoadConst(i, i));
         }
         for i in 0usize..20 {
@@ -2007,7 +2003,7 @@ mod tests {
         if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "42");
         } else {
-            panic!("expected heap string, got idx {}", r);
+            panic!("expected heap string, got idx {r}");
         }
     }
 
@@ -2030,7 +2026,7 @@ mod tests {
         if let HeapObj::String(s) = vm.heap_get(r).unwrap() {
             assert_eq!(s, "200");
         } else {
-            panic!("expected heap string, got idx {}", r);
+            panic!("expected heap string, got idx {r}");
         }
     }
 

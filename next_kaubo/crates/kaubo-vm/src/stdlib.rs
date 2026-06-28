@@ -74,7 +74,7 @@ fn assert_fn(args: &[i64], _heap: &GcHeap) -> Result<i64, String> {
     if cond == 0 {
         Err(args
             .get(1)
-            .map(|s| format!("assertion failed: {}", s))
+            .map(|s| format!("assertion failed: {s}"))
             .unwrap_or_else(|| "assertion failed".into()))
     } else {
         Ok(cond)

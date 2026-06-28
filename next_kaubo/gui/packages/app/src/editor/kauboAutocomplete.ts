@@ -5,153 +5,6 @@ import {
 } from "@codemirror/autocomplete";
 import { complete as wasmComplete } from "@kaubo/wasm";
 
-const KEYWORDS = [
-  "var",
-  "if",
-  "else",
-  "elif",
-  "while",
-  "for",
-  "return",
-  "in",
-  "yield",
-  "break",
-  "continue",
-  "pass",
-  "struct",
-  "impl",
-  "import",
-  "as",
-  "from",
-  "pub",
-  "json",
-  "module",
-  "interface",
-  "operator",
-  "and",
-  "or",
-  "not",
-];
-
-const ATOMS = ["true", "false", "null"];
-
-const BUILTINS = [
-  "print",
-  "assert",
-  "type",
-  "to_string",
-  "sqrt",
-  "sin",
-  "cos",
-  "floor",
-  "ceil",
-  "len",
-  "push",
-  "is_empty",
-  "range",
-  "clone",
-  "read_file",
-  "write_file",
-  "exists",
-  "is_file",
-  "is_dir",
-  "substring",
-  "contains",
-  "starts_with",
-  "ends_with",
-  "length",
-  "trim",
-  "split",
-  "join",
-  "replace",
-  "to_lower",
-  "to_upper",
-  "now_timestamp",
-  "format_time",
-  "sha256",
-  "base64_encode",
-  "base64_decode",
-  "random",
-  "random_int",
-  "create_coroutine",
-  "resume",
-  "coroutine_status",
-];
-
-const CONSTANTS = [
-  { label: "PI", detail: "≈ 3.14159" },
-  { label: "E", detail: "≈ 2.71828" },
-];
-
-export function kauboCompletions(
-  context: CompletionContext,
-): CompletionResult | null {
-  const dot = context.matchBefore(/[\w]+\.\w*/);
-  if (dot) {
-    const items = completionsFromLanguageService(
-      context.state.doc.toString(),
-      context.pos,
-    );
-    if (items.length > 0) {
-      const prefixStart = dot.text.lastIndexOf(".") + 1;
-      return { from: dot.from + prefixStart, options: items };
-    }
-  }
-
-  const word = context.matchBefore(/\w*/);
-  if (!word || (word.from === word.to && !context.explicit)) {
-    return null;
-  }
-
-  const prefix = word.text.toLowerCase();
-  const options: Completion[] = [];
-
-  for (const kw of KEYWORDS) {
-    if (kw.startsWith(prefix)) {
-      options.push({
-        label: kw,
-        type: "keyword",
-        boost: 2,
-      });
-    }
-  }
-
-  for (const atom of ATOMS) {
-    if (atom.startsWith(prefix)) {
-      options.push({
-        label: atom,
-        type: "constant",
-        boost: 2,
-      });
-    }
-  }
-
-  for (const name of BUILTINS) {
-    if (name.startsWith(prefix)) {
-      options.push({
-        label: name,
-        type: "function",
-        detail: "builtin",
-        boost: 1,
-      });
-    }
-  }
-
-  for (const c of CONSTANTS) {
-    if (c.label.toLowerCase().startsWith(prefix)) {
-      options.push({
-        label: c.label,
-        type: "constant",
-        detail: c.detail,
-        boost: 1,
-      });
-    }
-  }
-
-  if (options.length === 0) return null;
-  return { from: word.from, options };
-}
-
 interface ServiceCompletion {
   label: string;
   kind: string;
@@ -167,17 +20,67 @@ function completionsFromLanguageService(
       wasmComplete(source, offset),
     ) as ServiceCompletion[];
     return parsed.map((item) => {
+      const isMethod = item.kind === "method";
       const completion: Completion = {
-        label: item.label,
+        label: isMethod ? `${item.label}()` : item.label,
         type: item.kind === "field" ? "property" : item.kind,
         boost: 3,
       };
       if (item.detail) {
         completion.detail = item.detail;
       }
+      if (isMethod) {
+        completion.apply = `${item.label}()`;
+        // Place cursor between the parens
+        completion.section = "method";
+      }
       return completion;
     });
   } catch {
     return [];
   }
+}
+
+/** Find the last `.` before the cursor — handles `obj.`, `obj.f`, `1.to_float().` */
+function dotPrefix(
+  source: string,
+  pos: number,
+): { from: number } | null {
+  const text = source.slice(0, pos);
+  const dotIdx = text.lastIndexOf(".");
+  if (dotIdx < 0) return null;
+  // Skip if immediately after a digit (float literal like `1.0`)
+  if (dotIdx + 1 < pos && /\d/.test(source[dotIdx + 1])) {
+    // Might still be valid for `1.to_float` — check if there's an identifier-like pattern
+    // after the dot that's not purely numeric
+    const after = source.slice(dotIdx + 1, pos);
+    if (/^\d+$/.test(after)) return null; // float literal: skip
+  }
+  return { from: dotIdx + 1 };
+}
+
+export function kauboCompletions(
+  context: CompletionContext,
+): CompletionResult | null {
+  const source = context.state.doc.toString();
+
+  // Dot-access: any text after the last `.` (handles `1.|`, `1.t|`, `1.to_float().|`)
+  const dotInfo = dotPrefix(source, context.pos);
+  if (dotInfo) {
+    const items = completionsFromLanguageService(source, context.pos);
+    if (items.length > 0) {
+      return { from: dotInfo.from, options: items };
+    }
+  }
+
+  // Regular word completions via WASM
+  const word = context.matchBefore(/\w*/);
+  if (!word || (word.from === word.to && !context.explicit)) {
+    return null;
+  }
+
+  const items = completionsFromLanguageService(source, context.pos);
+  if (items.length === 0) return null;
+
+  return { from: word.from, options: items };
 }

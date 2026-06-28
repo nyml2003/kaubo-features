@@ -19,7 +19,7 @@ import {
   lineNumbers,
   placeholder,
 } from "@codemirror/view";
-import { complete, lex, semantic_tokens } from "@kaubo/wasm";
+import { complete, goto_def, lex, semantic_tokens } from "@kaubo/wasm";
 import { createEffect, onMount, type Component } from "solid-js";
 import { kauboLanguage } from "../../editor/kauboLang";
 import styles from "./Editor.module.css";
@@ -45,6 +45,7 @@ export const Editor: Component<{
   tabSize: () => number;
   onUpdate: (value: string) => void;
   onRun: () => void;
+  onFormat?: () => void;
 }> = (props) => {
   let container!: HTMLDivElement;
   let view: EditorView;
@@ -78,11 +79,41 @@ export const Editor: Component<{
                 return true;
               },
             },
+            {
+              key: "Shift-Alt-f",
+              run: () => {
+                props.onFormat?.();
+                return true;
+              },
+            },
           ]),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               props.onUpdate(update.state.doc.toString());
             }
+          }),
+          EditorView.domEventHandlers({
+            mousedown(event, view) {
+              if (!event.ctrlKey && !event.metaKey) return false;
+              const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+              if (pos == null) return false;
+              const source = view.state.doc.toString();
+              try {
+                const raw = goto_def(source, pos);
+                if (raw === "null") return false;
+                const target: { line: number; col: number } = JSON.parse(raw);
+                const line = view.state.doc.line(Math.max(1, target.line));
+                const col = Math.max(0, target.col - 1);
+                const targetPos = Math.min(line.from + col, line.to);
+                view.dispatch({
+                  selection: { anchor: targetPos },
+                  scrollIntoView: true,
+                });
+                return true;
+              } catch {
+                return false;
+              }
+            },
           }),
         ],
       }),

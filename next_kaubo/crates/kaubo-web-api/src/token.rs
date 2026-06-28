@@ -32,7 +32,7 @@ pub fn classify_token(kind: TokenKind) -> &'static str {
 
         TokenKind::IntLiteral | TokenKind::FloatLiteral => "number",
 
-        TokenKind::StringLiteral => "string",
+        TokenKind::StringLiteral | TokenKind::TemplateString => "string",
 
         TokenKind::True | TokenKind::False | TokenKind::Null => "atom",
 

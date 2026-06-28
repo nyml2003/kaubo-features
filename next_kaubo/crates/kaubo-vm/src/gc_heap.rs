@@ -181,7 +181,7 @@ mod tests {
     fn t9_alloc_non_zero_idx() {
         let mut heap = GcHeap::new();
         let idx = heap.alloc(str_obj("first"));
-        assert!(idx > 0 || idx == 0); // idx is valid
+        assert!(idx >= 0); // idx is valid
         let idx2 = heap.alloc(str_obj("second"));
         assert_ne!(idx, idx2);
     }

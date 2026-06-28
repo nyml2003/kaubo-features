@@ -28,6 +28,7 @@ export const App: Component = () => {
         <Toolbar
           status={store.status}
           examplesExpanded={store.examplesExpanded}
+          onFormat={store.format}
           onCompile={store.compile}
           onRun={store.run}
           onToggleExamples={store.toggleExamples}
@@ -45,6 +46,7 @@ export const App: Component = () => {
               tabSize={store.tabSize}
               onUpdate={store.setCode}
               onRun={store.run}
+              onFormat={store.format}
             />
             <OutputPanel output={store.output} onClear={store.clearOutput} />
           </main>

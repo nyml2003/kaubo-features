@@ -5,10 +5,11 @@ import {
   Decoration,
   EditorView,
   hoverTooltip,
+  WidgetType,
   type DecorationSet,
   type Tooltip,
 } from "@codemirror/view";
-import { semantic_tokens, hover as wasmHover } from "@kaubo/wasm";
+import { inlay_hints, semantic_tokens, hover as wasmHover } from "@kaubo/wasm";
 import { log } from "../lib/logger";
 import { kauboCompletions } from "./kauboAutocomplete";
 
@@ -181,6 +182,7 @@ export function kauboLintDiagnostics(): Diagnostic[] {
 
 interface HoverInfo {
   kind: string;
+  type?: string;
   from: number;
   to: number;
   description: string;
@@ -199,18 +201,59 @@ function hoverSource(view: EditorView, pos: number): Tooltip | null {
       create() {
         const dom = document.createElement("div");
         dom.className = "cm-tooltip-hover";
-        const kind = document.createElement("div");
-        kind.className = "cm-tooltip-section";
-        kind.textContent = info.kind;
-        const desc = document.createElement("div");
-        desc.className = "cm-tooltip-section";
-        desc.textContent = info.description;
-        dom.append(kind, desc);
+        if (info.type) {
+          const typeEl = document.createElement("div");
+          typeEl.className = "cm-tooltip-section";
+          typeEl.textContent = `${info.kind}: ${info.type}`;
+          dom.append(typeEl);
+        } else {
+          const kind = document.createElement("div");
+          kind.className = "cm-tooltip-section";
+          kind.textContent = info.kind;
+          dom.append(kind);
+        }
+        if (info.description) {
+          const desc = document.createElement("div");
+          desc.className = "cm-tooltip-section";
+          desc.textContent = info.description;
+          dom.append(desc);
+        }
         return { dom };
       },
     };
   } catch {
     return null;
+  }
+}
+
+// ── Inlay hints (type annotations as inline widgets) ─────────────────────────
+
+interface InlayHint {
+  position: number;
+  label: string;
+}
+
+function buildInlayHints(source: string): DecorationSet {
+  try {
+    const raw = inlay_hints(source);
+    if (raw === "[]") return Decoration.none;
+    const hints: InlayHint[] = JSON.parse(raw);
+    const marks = hints.map((h) =>
+      Decoration.widget({
+        widget: new (class extends WidgetType {
+          toDOM() {
+            const span = document.createElement("span");
+            span.className = "cm-kaubo-inlay-hint";
+            span.textContent = h.label;
+            return span;
+          }
+        })(),
+        side: 1, // after the character
+      }).range(h.position),
+    );
+    return Decoration.set(marks, true);
+  } catch {
+    return Decoration.none;
   }
 }
 
@@ -230,9 +273,26 @@ export function kauboLanguage() {
     provide: (field) => EditorView.decorations.from(field),
   });
 
-  const kauboLinter = linter(() => kauboLintDiagnostics());
+  const kauboLinter = linter((view) => {
+    const diags = kauboLintDiagnostics();
+    const len = view.state.doc.length;
+    return diags.filter((d) => d.from < len && d.to <= len);
+  });
   const kauboCompletion = autocompletion({ override: [kauboCompletions] });
   const kauboHover = hoverTooltip(hoverSource);
 
-  return [highlightField, kauboLinter, kauboCompletion, kauboHover];
+  const inlayHintField = StateField.define<DecorationSet>({
+    create(state: EditorState): DecorationSet {
+      return buildInlayHints(state.doc.toString());
+    },
+    update(_old: DecorationSet, tr): DecorationSet {
+      if (tr.docChanged) {
+        return buildInlayHints(tr.state.doc.toString());
+      }
+      return _old;
+    },
+    provide: (field) => EditorView.decorations.from(field),
+  });
+
+  return [highlightField, kauboLinter, kauboCompletion, kauboHover, inlayHintField];
 }

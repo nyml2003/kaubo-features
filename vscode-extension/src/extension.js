@@ -171,12 +171,16 @@ async function activate(context) {
                 const items = JSON.parse(json);
                 return items.map((item) => {
                   const kind = mapCompletionKind(item.kind);
-                  const completion = new vscode.CompletionItem(
-                    item.label,
-                    kind
-                  );
+                  const isMethod = item.kind === "method";
+                  const label = isMethod ? `${item.label}()` : item.label;
+                  const completion = new vscode.CompletionItem(label, kind);
                   if (item.detail) {
                     completion.detail = item.detail;
+                  }
+                  if (isMethod) {
+                    completion.insertText = new vscode.SnippetString(
+                      `${item.label}()$0`
+                    );
                   }
                   return completion;
                 });

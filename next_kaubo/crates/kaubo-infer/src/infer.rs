@@ -1517,6 +1517,28 @@ pub fn infer(
             match s.apply(&t_obj) {
                 Type::List(elem) => Ok((s.clone(), s.apply(&elem))),
                 Type::String => Ok((s, Type::String)),
+                Type::Tuple(elements) => {
+                    // Tuple access: mid[0], mid[1], etc. — index must be a literal int
+                    let idx_val = match index.as_ref() {
+                        Expr::LitInt(n) => *n,
+                        _ => {
+                            return Err(TypeError {
+                                msg: "tuple index must be a literal integer".into(),
+                                line: 0, col: 0,
+                            });
+                        }
+                    };
+                    if idx_val < 0 || idx_val as usize >= elements.len() {
+                        return Err(TypeError {
+                            msg: format!(
+                                "tuple index {idx_val} out of bounds (0..{})",
+                                elements.len()
+                            ),
+                            line: 0, col: 0,
+                        });
+                    }
+                    Ok((s.clone(), elements[idx_val as usize].clone()))
+                }
                 other => Err(TypeError {
                     msg: format!("cannot index into type {other}"),
                     line: 0,

@@ -11,16 +11,16 @@ export const examples: KauboExample[] = [
     id: "hello",
     name: "Hello World",
     description: "Print a string and return a number",
-    code: 'print("Hello, World!");\n42;\n',
+    code: 'print("Hello, World!");\n',
     tags: ["basics"],
   },
   {
     id: "variables",
     name: "Variables & Arithmetic",
-    description: "var, const, to_string, print",
+    description: "const, var, to_string, print",
     code:
-      "var x = 10;\n" +
-      "var y = 32;\n" +
+      "const x = 10;\n" +
+      "const y = 32;\n" +
       "const r = x + y;\n" +
       "print(r.to_string());\n",
     tags: ["basics"],
@@ -32,7 +32,7 @@ export const examples: KauboExample[] = [
     code:
       "const score = 85;\n" +
       "var result = 0;\n" +
-      "if score >= 60 {\n" +
+      "if (score >= 60) {\n" +
       "    result = 1;\n" +
       "} else {\n" +
       '    print("failed");\n' +
@@ -40,7 +40,7 @@ export const examples: KauboExample[] = [
       "\n" +
       "var counter = 0;\n" +
       "var sum = 0;\n" +
-      "while counter < 5 {\n" +
+      "while (counter < 5) {\n" +
       "    sum = sum + counter;\n" +
       "    counter = counter + 1;\n" +
       "};\n" +
@@ -65,12 +65,12 @@ export const examples: KauboExample[] = [
     description: "Lambda with conditional logic",
     code:
       "const abs = |x| {\n" +
-      "    if x < 0 { -x } else { x }\n" +
+      "    if (x < 0) { return -x; } else { return x; };\n" +
       "};\n" +
       "print(abs(-42).to_string());\n" +
       "\n" +
       "const max = |a, b| {\n" +
-      "    if a > b { a } else { b }\n" +
+      "    if (a > b) { return a; } else { return b; };\n" +
       "};\n" +
       "print(max(7, 42).to_string());\n",
     tags: ["functions", "control-flow"],
@@ -83,7 +83,7 @@ export const examples: KauboExample[] = [
       "const factorial = |n| {\n" +
       "    var result = 1;\n" +
       "    var i = 1;\n" +
-      "    while i <= n {\n" +
+      "    while (i <= n) {\n" +
       "        result = result * i;\n" +
       "        i = i + 1;\n" +
       "    };\n" +
@@ -99,7 +99,7 @@ export const examples: KauboExample[] = [
     code:
       "const countdown = |n| {\n" +
       "    var m = n;\n" +
-      "    while m > 0 {\n" +
+      "    while (m > 0) {\n" +
       "        m = m - 1;\n" +
       "    };\n" +
       "    return n;\n" +

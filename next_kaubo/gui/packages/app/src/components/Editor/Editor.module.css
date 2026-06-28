@@ -1,24 +1,27 @@
 .editor {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .editor :global(.cm-editor) {
   height: 100%;
+  max-height: 100%;
   background: var(--kb-bg);
   color: var(--kb-text);
-}
-
-.editor :global(.cm-editor .cm-content) {
-  caret-color: var(--kb-cursor);
-  font-size: var(--kb-font-size);
 }
 
 .editor :global(.cm-editor .cm-scroller) {
   font-family: inherit;
   font-size: var(--kb-font-size);
   line-height: 1.6;
-  overflow: auto;
+  overflow: auto !important;
+}
+
+.editor :global(.cm-editor .cm-content) {
+  caret-color: var(--kb-cursor);
+  font-size: var(--kb-font-size);
 }
 
 .editor :global(.cm-editor.cm-focused) {
@@ -86,6 +89,12 @@
 }
 .editor :global(.cm-kaubo-function) {
   color: var(--kb-function);
+}
+.editor :global(.cm-kaubo-inlay-hint) {
+  color: var(--kb-comment);
+  font-style: italic;
+  opacity: 0.7;
+  user-select: none;
 }
 
 /* Fold & lint gutter */

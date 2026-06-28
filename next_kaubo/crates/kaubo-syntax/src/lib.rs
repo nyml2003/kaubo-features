@@ -1,6 +1,6 @@
 //! kaubo-syntax — v2 词法分析和语法分析
 
-#![allow(clippy::unnecessary_parentheses)]
+#![allow(unused_parens)]
 
 pub mod ast;
 pub mod lexer;

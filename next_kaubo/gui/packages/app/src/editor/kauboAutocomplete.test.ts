@@ -6,15 +6,32 @@ import { EditorState } from "@codemirror/state";
 import { describe, expect, it, vi } from "vitest";
 import { kauboCompletions } from "./kauboAutocomplete";
 
+// Mock WASM complete: returns different completions based on context
 vi.mock("@kaubo/wasm", () => ({
   complete: vi.fn((source: string, offset: number) => {
-    if (source.slice(0, offset).endsWith("p.")) {
+    const prefix = source.slice(0, offset);
+
+    // Dot-access: struct fields and methods
+    if (prefix.endsWith("p.")) {
       return JSON.stringify([
         { label: "x", kind: "field", detail: "Point" },
         { label: "dis", kind: "method", detail: "Point method" },
       ]);
     }
-    return "[]";
+
+    // Generic completions from WASM
+    return JSON.stringify([
+      { label: "var", kind: "keyword" },
+      { label: "while", kind: "keyword" },
+      { label: "struct", kind: "keyword" },
+      { label: "pass", kind: "keyword" },
+      { label: "print", kind: "function", detail: "builtin" },
+      { label: "sqrt", kind: "function", detail: "builtin" },
+      { label: "len", kind: "function", detail: "builtin" },
+      { label: "starts_with", kind: "function", detail: "builtin" },
+      { label: "true", kind: "constant" },
+      { label: "PI", kind: "constant" },
+    ]);
   }),
 }));
 
@@ -62,85 +79,50 @@ describe("kauboCompletions", () => {
     expect(kauboCompletions(ctx)).toBeNull();
   });
 
-  it("returns completions for explicit empty", () => {
+  it("returns completions for explicit empty (via WASM)", () => {
     const ctx = makeContext("", true);
     expect(kauboCompletions(ctx)).not.toBeNull();
   });
 
-  it("completes keyword prefix 'va' to 'var'", () => {
+  it("completes keyword 'var' via WASM", () => {
     const result = requireResult(makeContext("va"));
     expect(labels(result)).toContain("var");
   });
 
-  it("completes 'wh' to 'while'", () => {
+  it("completes 'wh' to 'while' via WASM", () => {
     const result = requireResult(makeContext("wh"));
     expect(labels(result)).toContain("while");
   });
 
-  it("completes 'pr' to 'print'", () => {
+  it("completes builtin 'print' via WASM", () => {
     const result = requireResult(makeContext("pr"));
     expect(labels(result)).toContain("print");
+    expect(findOption(result, "print").type).toBe("function");
   });
 
-  it("completes builtin 'sq' to 'sqrt'", () => {
-    const result = requireResult(makeContext("sq"));
-    expect(labels(result)).toContain("sqrt");
-  });
-
-  it("completes constant 'PI'", () => {
-    const result = requireResult(makeContext("PI"));
-    expect(labels(result)).toContain("PI");
-  });
-
-  it("completes atom 'tru' to 'true'", () => {
+  it("completes atom 'true' via WASM", () => {
     const result = requireResult(makeContext("tru"));
     expect(labels(result)).toContain("true");
+    expect(findOption(result, "true").type).toBe("constant");
   });
 
-  it("completes 'st' to 'struct' and 'starts_with'", () => {
-    const result = requireResult(makeContext("st"));
-    expect(labels(result)).toContain("struct");
-    expect(labels(result)).toContain("starts_with");
-  });
-
-  it("keyword completions have type keyword", () => {
-    const result = requireResult(makeContext("var"));
-    const kw = findOption(result, "var");
-    expect(kw.type).toBe("keyword");
-  });
-
-  it("builtin completions have type function", () => {
-    const result = requireResult(makeContext("len"));
-    const fn = findOption(result, "len");
-    expect(fn.type).toBe("function");
-  });
-
-  it("atom completions have type constant", () => {
-    const result = requireResult(makeContext("true"));
-    const atom = findOption(result, "true");
-    expect(atom.type).toBe("constant");
-  });
-
-  it("returns null for unknown prefix", () => {
-    const ctx = makeContext("xyz");
-    expect(kauboCompletions(ctx)).toBeNull();
-  });
-
-  it("keywords have higher boost than builtins", () => {
-    const result = requireResult(makeContext("p"));
-    const passKw = findOption(result, "pass");
-    const printFn = findOption(result, "print");
-    if (passKw.boost === undefined || printFn.boost === undefined) {
-      throw new Error("Missing boost values");
-    }
-    expect(passKw.boost > printFn.boost).toBe(true);
-  });
-
-  it("completes struct fields and methods after dot", () => {
+  it("completes struct fields and methods after dot via WASM", () => {
     const result = requireResult(makeRawContext("p."));
     expect(labels(result)).toContain("x");
-    expect(labels(result)).toContain("dis");
+    expect(labels(result)).toContain("dis()");
     expect(findOption(result, "x").type).toBe("property");
-    expect(findOption(result, "dis").type).toBe("method");
+    expect(findOption(result, "dis()").type).toBe("method");
+  });
+
+  it("WASM completions have boost 3", () => {
+    const result = requireResult(makeContext("var"));
+    const kw = findOption(result, "var");
+    expect(kw.boost).toBe(3);
+  });
+
+  it("builtin completions have detail from WASM", () => {
+    const result = requireResult(makeContext("len"));
+    const fn = findOption(result, "len");
+    expect(fn.detail).toBe("builtin");
   });
 });

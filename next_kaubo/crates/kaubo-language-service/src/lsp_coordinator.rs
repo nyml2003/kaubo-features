@@ -176,35 +176,42 @@ impl LspCoordinator {
         None
     }
 
-    /// Completions at `offset`: return all visible symbols.
+    /// Completions at `offset`: context-aware (dot-access vs free-standing).
     pub fn completions(&self, offset: usize) -> Vec<crate::CompletionItem> {
-        let mut items = Vec::new();
-
-        // Include all collected symbols
-        for (_, sym) in &self.symbols {
-            items.push(crate::CompletionItem {
-                label: sym.name.clone(),
-                kind: sym.kind.as_str().to_string(),
-                detail: sym.ty.clone(),
-            });
+        // Always try token-based completions first — it handles both
+        // simple dot-access (e.g. `v.`) and chained calls (e.g. `1.to_float().`).
+        let token_items = crate::completions(&self.source, offset);
+        if !token_items.is_empty() {
+            return token_items;
         }
 
-        // Include variables from type_env that aren't already in symbols
-        if let Some(ref semantic) = self.semantic {
-            for (name, scheme) in &semantic.type_env {
-                if !self.symbols.contains_key(name) {
-                    items.push(crate::CompletionItem {
-                        label: name.clone(),
-                        kind: "variable".to_string(),
-                        detail: Some(format!("{}", scheme.body)),
-                    });
-                }
+        // Free-standing: filter symbols by prefix being typed.
+        let prefix = prefix_at(&self.source, offset).unwrap_or_default();
+        let mut items = Vec::new();
+
+        for (_, sym) in &self.symbols {
+            if prefix.is_empty() || sym.name.starts_with(&prefix) {
+                items.push(crate::CompletionItem {
+                    label: sym.name.clone(),
+                    kind: sym.kind.as_str().to_string(),
+                    detail: sym.ty.clone(),
+                });
             }
         }
 
-        // Also run the token-based completion for dot-completion
-        let token_items = crate::completions(&self.source, offset);
-        items.extend(token_items);
+        if let Some(ref semantic) = self.semantic {
+            for (name, scheme) in &semantic.type_env {
+                if !self.symbols.contains_key(name) {
+                    if prefix.is_empty() || name.starts_with(&prefix) {
+                        items.push(crate::CompletionItem {
+                            label: name.clone(),
+                            kind: "variable".to_string(),
+                            detail: Some(format!("{}", scheme.body)),
+                        });
+                    }
+                }
+            }
+        }
 
         items
     }
@@ -244,6 +251,27 @@ impl Default for LspCoordinator {
 }
 
 // ── Helpers ──
+
+/// Find the object name before a dot at the given offset (e.g. "foo" in "foo.b").
+/// Delegates to the token-based implementation in lib.rs.
+fn object_before_dot(source: &str, offset: usize) -> Option<String> {
+    crate::object_before_dot(source, offset)
+}
+
+/// Extract the identifier prefix at `offset` — the word being typed.
+fn prefix_at(source: &str, offset: usize) -> Option<String> {
+    let bytes: Vec<char> = source.chars().collect();
+    let idx = offset.min(bytes.len());
+    // Walk backwards from cursor to find start of the identifier
+    let mut start = idx;
+    while start > 0 && is_ident_char(bytes[start - 1]) {
+        start -= 1;
+    }
+    if start == idx {
+        return None;
+    }
+    Some(bytes[start..idx].iter().collect())
+}
 
 /// Extract the identifier at a UTF-16 byte offset in source.
 fn identifier_at(source: &str, offset: usize) -> Option<String> {
@@ -596,7 +624,7 @@ fn collect_hints_stmt(
         Stmt::ImplBlock { struct_name, methods, .. } => {
             for m in methods {
                 let full_name = format!("{}.{}", struct_name, m.name);
-                push_hint(&full_name, &m.span, type_env, source, hints);
+                push_hint_qualified(&full_name, &m.name, &m.span, type_env, source, hints);
                 collect_hints_expr(&m.body, type_env, source, hints);
             }
         }
@@ -619,7 +647,10 @@ fn collect_hints_expr(
     match expr {
         Expr::Lambda { params, body, .. } => {
             for p in params {
-                push_hint(&p.name, &p.span, type_env, source, hints);
+                // Skip if type is already explicitly annotated in source
+                if p.ty_ann.is_none() {
+                    push_hint(&p.name, &p.span, type_env, source, hints);
+                }
             }
             collect_hints_expr(body, type_env, source, hints);
         }
@@ -685,6 +716,36 @@ fn collect_hints_expr(
             }
         }
         _ => {}
+    }
+}
+
+/// Like push_hint but uses a different name for type lookup vs position.
+/// `lookup_name` is the full qualified name for type_env lookup.
+/// `display_name` is the actual name in source for position calculation.
+fn push_hint_qualified(
+    lookup_name: &str,
+    display_name: &str,
+    span: &Span,
+    type_env: &HashMap<String, Scheme>,
+    source: &str,
+    hints: &mut Vec<InlayHint>,
+) {
+    let type_str = if let Some(scheme) = type_env.get(lookup_name) {
+        Some(format!("{}", scheme.body))
+    } else {
+        None
+    };
+
+    if let Some(type_str) = type_str {
+        if type_str.starts_with('t') && type_str.len() <= 3 {
+            return;
+        }
+        if let Some(pos) = end_of_name_in_source(source, span, display_name) {
+            hints.push(InlayHint {
+                position: pos,
+                label: format!(": {}", type_str),
+            });
+        }
     }
 }
 
@@ -760,16 +821,17 @@ fn guess_type(expr: &Expr) -> Option<String> {
 }
 
 /// Compute the char offset right after `name` in `source`, given its `span`.
+/// Uses the span as a hint, then searches for the identifier near that position.
 fn end_of_name_in_source(source: &str, span: &Span, name: &str) -> Option<usize> {
     let chars: Vec<char> = source.chars().collect();
     let mut line = 1usize;
     let mut col = 1usize;
-    let mut offset = 0usize;
+    let mut approx_offset = 0usize;
     let mut found = false;
 
     for (i, ch) in chars.iter().enumerate() {
         if line == span.line && col == span.col {
-            offset = i;
+            approx_offset = i;
             found = true;
             break;
         }
@@ -781,9 +843,91 @@ fn end_of_name_in_source(source: &str, span: &Span, name: &str) -> Option<usize>
         }
     }
 
-    if !found && (span.line > 1 || span.col > 1) {
+    if !found {
         return None;
     }
 
-    Some(offset + name.chars().count())
+    // Verify: search for `name` near the approximate position
+    let start = approx_offset;
+    let end = (start + 50).min(chars.len());
+    let window: String = chars[start..end].iter().collect();
+
+    if window.starts_with(name) {
+        // Exact match at the span position
+        Some(start + name.chars().count())
+    } else {
+        // Span didn't point exactly to the name; fall back to window search
+        if let Some(rel) = window.find(name) {
+            Some(start + rel + name.chars().count())
+        } else {
+            // Last resort: approximate
+            Some(start + name.chars().count())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn end_of_name_simple() {
+        // "const x = 42;" — 'x' at line 1, col 7
+        let pos = end_of_name_in_source("const x = 42;", &Span::new(1, 7), "x").unwrap();
+        assert_eq!(pos, 7); // position right after 'x'
+    }
+
+    #[test]
+    fn end_of_name_self_in_lambda() {
+        // c o n s t   f   =   | s e l f :   I n t 6 4 |
+        // 1 2 3 4 5 6 7 8 9 10 1112131415 16171819202122
+        let src = "const f = |self: Int64| { self + 1 };";
+        // 'self' at line 1, col 12 (1-based)
+        let pos = end_of_name_in_source(src, &Span::new(1, 12), "self").unwrap();
+        // After 'self' (char offset 11 + 4 = 15), should find ':'
+        assert_eq!(pos, 15);
+    }
+
+    #[test]
+    fn end_of_name_multiline() {
+        let src = "const add = |a, b| {\n    return a + b;\n};";
+        // 'a' at line 1, col 14
+        let pos1 = end_of_name_in_source(src, &Span::new(1, 14), "a").unwrap();
+        assert_eq!(&src[pos1..pos1+1], ",");
+        // 'b' at line 1, col 17
+        let pos2 = end_of_name_in_source(src, &Span::new(1, 17), "b").unwrap();
+        assert_eq!(&src[pos2..pos2+1], "|");
+    }
+
+    #[test]
+    fn end_of_name_line2() {
+        let src = "const a = 1;\nconst b = 2;";
+        // 'b' at line 2, col 7
+        let pos = end_of_name_in_source(src, &Span::new(2, 7), "b").unwrap();
+        assert_eq!(&src[pos..pos+2], " =");
+    }
+
+    #[test]
+    fn inlay_hints_for_simple_program() {
+        let mut coord = LspCoordinator::new();
+        coord.on_change("const x = 42;\nvar y = x + 1;").unwrap();
+        let hints = coord.inlay_hints();
+        // 'x' should have hint ": Int64" from type_env
+        let x_hint = hints.iter().find(|h| h.label == ": Int64").unwrap();
+        // 'const x' — x is at position 6 (0-indexed), hint should be at 7
+        assert_eq!(x_hint.position, 7);
+    }
+
+    #[test]
+    fn inlay_hints_for_lambda_params() {
+        // Lambda params without type annotations and without initial values
+        // are NOT in the module-level type_env (they're local). So no hints.
+        let mut coord = LspCoordinator::new();
+        coord.on_change("const add = |a: Int64, b: Int64| { a + b };").unwrap();
+        let hints = coord.inlay_hints();
+        // 'add' gets hint for its function type
+        let labels: Vec<String> = hints.iter().map(|h| h.label.clone()).collect();
+        // Params have explicit types so they're skipped; only 'add' gets hinted
+        assert!(!labels.is_empty(), "add should get a type hint");
+    }
 }

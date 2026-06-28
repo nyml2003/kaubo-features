@@ -290,6 +290,7 @@ enum ValueHint {
     Struct(String),
     Interface(String),
     List,
+    Tuple,
     Unknown,
 }
 
@@ -503,7 +504,7 @@ impl<'a> CpsBuilder<'a> {
                 _ => ValueHint::Unknown,
             },
             TypeExpr::List(_) => ValueHint::List,
-            TypeExpr::Tuple(_) => ValueHint::Unknown,
+            TypeExpr::Tuple(_) => ValueHint::Tuple,
             TypeExpr::Arrow { .. } => ValueHint::Unknown,
         }
     }
@@ -562,7 +563,7 @@ impl<'a> CpsBuilder<'a> {
             Expr::GetVariantTag(_) => ValueHint::Int,
             Expr::GetVariantField { .. } => ValueHint::Unknown,
             Expr::ListLit(_) => ValueHint::List,
-            Expr::Tuple(_) => ValueHint::Unknown,
+            Expr::Tuple(_) => ValueHint::Tuple,
             Expr::Binary { left, op, right } => match op {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
                     let lh = self.expr_hint(left);
@@ -679,7 +680,8 @@ impl<'a> CpsBuilder<'a> {
             ValueHint::String
             | ValueHint::Struct(_)
             | ValueHint::List
-            | ValueHint::Interface(_) => true,
+            | ValueHint::Interface(_)
+            | ValueHint::Tuple => true,
             ValueHint::Int | ValueHint::Float | ValueHint::Bool | ValueHint::Null => false,
             ValueHint::Unknown => false,
         }
@@ -1279,7 +1281,7 @@ impl<'a> CpsBuilder<'a> {
             (Some(vi), Some(s)) => (vi, s),
             _ => {
                 // Fallback: try static dispatch via func_map
-                let full_name = format!("{}.{}", struct_name, method);
+                let full_name = format!("{struct_name}.{method}");
                 let func_idx =
                     self.ctx.func_map.get(&full_name).copied().ok_or_else(|| {
                         format!("operator '{method}' not found for '{struct_name}'")
@@ -1429,6 +1431,8 @@ impl<'a> CpsBuilder<'a> {
                         vec![CpsInstr::Move(dst, obj_reg)]
                     } else if hint.is_float() {
                         vec![CpsInstr::BinOp(dst, CpsBinOp::FToS, obj_reg, 0)]
+                    } else if hint == ValueHint::Bool {
+                        vec![CpsInstr::BinOp(dst, CpsBinOp::BToS, obj_reg, 0)]
                     } else {
                         vec![CpsInstr::BinOp(dst, CpsBinOp::IToS, obj_reg, 0)]
                     };
@@ -1989,7 +1993,7 @@ impl<'a> CpsBuilder<'a> {
                 _ => None,
             };
             if let Some(method) = op_method {
-                let full_name = format!("{}.{}", struct_name, method);
+                let full_name = format!("{struct_name}.{method}");
                 if self
                     .interface_vtables
                     .values()
@@ -2844,7 +2848,17 @@ impl<'a> CpsBuilder<'a> {
         let (e1, c1, obj) = self.build_expr(object)?;
         let (e2, c2, idx) = self.build_expr(index)?;
         let dst = self.ctx.alloc();
-        let (instrs, _) = cps_emit::emit_index_get(dst, obj, idx);
+        // Use TupleIndex for tuples, IndexGet for lists/strings
+        let hint = self.value_hint(object);
+        let (instrs, _) = if matches!(hint, ValueHint::Tuple) {
+            let lit = match index {
+                Expr::LitInt(n) => *n as usize,
+                _ => return Err("tuple index must be a literal integer".into()),
+            };
+            cps_emit::emit_tuple_index(dst, obj, lit as u16)
+        } else {
+            cps_emit::emit_index_get(dst, obj, idx)
+        };
         let id = self.ctx.new_block();
         self.ctx.set_block(
             id,

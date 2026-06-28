@@ -679,7 +679,10 @@ impl Parser {
     }
 
     fn parse_string(&mut self) -> ParseResult<Expr> {
-        Ok(Expr::LitString(self.consume_lexeme()))
+        let raw = self.consume_lexeme();
+        // Strip surrounding quotes (lexeme now includes "..." or '...')
+        let inner = &raw[1..raw.len() - 1];
+        Ok(Expr::LitString(inner.to_string()))
     }
 
     fn parse_lambda(&mut self) -> ParseResult<Expr> {
@@ -990,7 +993,9 @@ impl Parser {
     }
 
     fn parse_template(&mut self) -> ParseResult<Expr> {
-        let template = self.consume_lexeme();
+        let raw = self.consume_lexeme();
+        // Strip surrounding backticks (lexeme now includes `...`)
+        let template = &raw[1..raw.len() - 1];
         // template: `hello {name}, age {age + 1}`
         // Build: "hello " + name.to_string() + ", age " + (age + 1).to_string()
         //
@@ -1217,7 +1222,8 @@ impl Parser {
 
     fn expect_string(&mut self) -> ParseResult<String> {
         if self.current_kind() == TokenKind::StringLiteral {
-            Ok(self.consume_lexeme())
+            let raw = self.consume_lexeme();
+            Ok(raw[1..raw.len() - 1].to_string())
         } else {
             Err(self.err("expected string"))
         }
@@ -1338,7 +1344,7 @@ fn collect_struct_names(tokens: &[Token]) -> BTreeSet<String> {
     tokens
         .windows(2)
         .filter(|&window| {
-            (window[0].kind == TokenKind::Struct && window[1].kind == TokenKind::Identifier)
+            window[0].kind == TokenKind::Struct && window[1].kind == TokenKind::Identifier
         })
         .map(|window| window[1].lexeme.clone())
         .collect()
