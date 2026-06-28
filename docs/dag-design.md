@@ -552,4 +552,68 @@ Phase 3b:
 | LSP 适配 | ~30 |
 | 测试 | ~50 |
 
-**总计：~420 行**
+**总计：已实现 ~320 行**（协议层 50 + 事件层 80 + Coordinator 70 + stages 50 + 适配 70）
+
+## 10. Phase 3a：LSP 编排层独立化
+
+### 设计原则
+
+语言服务器**不应该依赖编译器 Coordinator**。两者共享同一套协议（Stage、Cache、EventSink），但 Coordinator 各自独立：
+
+```
+kaubo-driver (协议层)                    kaubo-language-service (LSP 编排层)
+├── protocol.rs ← 共享 ──────────────→  ├── lsp_coordinator.rs
+├── event.rs    ← 共享 ──────────────→  │   LspCoordinator (Frontend→Semantic)
+├── coordinator.rs (编译器 Coordinator) │   不到 CPS/VM
+└── stages.rs                           ├── hover.rs (基于 SemanticArtifact)
+                                        ├── goto_def.rs
+                                        ├── completion.rs
+                                        └── diagnostics.rs
+```
+
+**编译器 Coordinator**：Source → Frontend → Semantic → CPS → Passes → VM
+
+**LSP Coordinator**：Source → Frontend → Semantic（断点停下）
+
+### LspCoordinator 设计
+
+```rust
+struct LspCoordinator {
+    cache: MemoryCache,
+    current: Option<(Module, SemanticArtifact)>,
+}
+
+impl LspCoordinator {
+    fn on_change(&mut self, source: &str) -> Result<(), BuildError> {
+        let module = FrontendStage.execute(source, &self.build_ctx())?;
+        let semantic = SemanticStage.execute(module.clone(), &self.build_ctx())?;
+        self.current = Some((module, semantic));
+        Ok(())
+    }
+
+    fn hover(&self, offset: usize) -> Option<HoverInfo> { /* ... */ }
+    fn goto_def(&self, offset: usize) -> Option<Span> { /* ... */ }
+    fn complete(&self, offset: usize) -> Vec<CompletionItem> { /* ... */ }
+    fn semantic_tokens(&self, source: &str) -> Vec<SemanticToken> { /* ... */ }
+}
+```
+
+### 与当前 token-based LSP 的关系
+
+当前 `kaubo-language-service` 是纯 token 扫描。Phase 3a 改为：
+- **主路径**：基于 `SemanticArtifact`（AST + 类型信息）提供 hover/goto-def/completion
+- **Fallback**：原有的 token 扫描保留，用于 `SemanticArtifact` 不可用时的降级
+
+### 改动规模
+
+| 组件 | 预估行数 |
+|------|---------|
+| `lsp_coordinator.rs` (新) | ~60 |
+| `hover.rs` (新) | ~30 |
+| `goto_def.rs` (新) | ~30 |
+| `completion.rs` (重写) | ~40 |
+| `semantic_tokens.rs` (重写) | ~40 |
+| WASM 适配 | ~20 |
+| 测试 | ~40 |
+
+**总计：~260 行**

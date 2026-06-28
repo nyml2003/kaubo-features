@@ -9,9 +9,10 @@
 | ✅ 完成 | Phase 1 | 日志 + 死循环防护 |
 | ✅ 完成 | Phase 4a | Interface + operator 重载 + dyn Trait |
 | 🔶 部分 | Phase 4b | 虚拟 prelude 注入完成，真实 prelude.kb 待做 |
-| ▶ 下一步 | **Phase 2b** | DAG 调度器 + Semantic 语义事实层 |
+| ✅ 完成 | Phase 2b | DAG 编排层 + Semantic 语义事实层 + EventSink/EventRouter |
+| ▶ 下一步 | **Phase 3a** | LSP 编排层独立化（LspCoordinator） + go-to-def/hover |
 | ⏸ 推迟 | Phase 2a | VM 性能（当前 ~1.5x CPython，可接受） |
-| 🔲 规划 | 3a/3b/5a/5b | LSP 完善 / 模块系统 / 泛型 / 效应 |
+| 🔲 规划 | 3b/5a/5b | 模块系统 / 泛型 / 效应 |
 
 ## 当前痛点
 
@@ -33,10 +34,10 @@ Phase 1 ─────── ✅ 可观测性 + 死循环防护
   │
   ├── Phase 2a ─ ⏸ VM 性能（推迟，当前 ~1.5x CPython 可接受）
   │
-  └── Phase 2b ─ ▶ 下一步：DAG 调度器 + Semantic artifact
-        │         解锁 LSP 基础 + 模块系统前提
+  └── Phase 2b ─ ✅ DAG 编排层 + Semantic 语义事实层
         │
-        ├── Phase 3a ─ 🔲 LSP 完善（go-to-def, hover, find-refs）
+        ├── Phase 3a ─ ▶ LSP 编排层独立化（LspCoordinator：Frontend→Semantic）
+        │               go-to-def, hover, completion
         │
         └── Phase 3b ─ 🔲 模块系统（import/export, 传递哈希）
               │
@@ -88,36 +89,47 @@ Phase 1 ─────── ✅ 可观测性 + 死循环防护
 
 **不改**：Driver、parser、type inference、CPS lowering。仅 VM 内部。
 
-## Phase 2b：编排解耦 + 语义事实 ▶ 下一步
+## Phase 2b：编排解耦 + 语义事实 ✅ 已完成
 
 解决痛点 #3 + #4 基础。前置：Phase 1。
 
-| 交付 | 说明 |
-|------|------|
-| DAG 调度器 | `Rule` trait + `ArtifactKey` + `BuildContext`。惰性求值 + 拓扑排序 + 缓存 |
-| 语义事实层 | `InferRule` → `ArtifactKey::Semantic`。symbols、scopes、types、member resolution |
-| LSP 基础 | `kaubo-language-service` 只求值到 `Semantic`，不触发 Lowering/VM |
-| 向后兼容 | `compile_and_run(source)` 保留为 `driver.build(RunResult::key(source))` 的别名 |
+| 交付 | 说明 | 状态 |
+|------|------|------|
+| 协议层 | `Stage<I,O>`、`Pass`、`Pipeline`、`Cache` trait | ✅ |
+| 事件层 | `EventSink` + blanket impl、`EventRouter`、扇出到多 Sink | ✅ |
+| Coordinator | 编译器 Coordinator（Frontend→Semantic→CPS→VM） | ✅ |
+| 语义事实层 | `SemanticArtifact`：symbols、type_env、references | ✅ |
+| 缓存 | SHA-256 内容哈希 + 命名空间隔离 | ✅ |
+| 向后兼容 | `compile_source`/`run_source` 内部委托给 Coordinator | ✅ |
 
-**不改**：VM、parser、token/ast/syntax。Driver 从线性函数重构为规则图。
+**实际规模**：4 文件 ~320 行。不改 VM、Parser、Infer 核心。
 
-## Phase 3a：LSP 完善
+**设计文档**：[dag-design.md](dag-design.md)
+
+## Phase 3a：LSP 编排层独立化 ▶ 下一步
 
 解决痛点 #4。前置：Phase 2b。
 
+**核心理念**：语言服务器有自己的 `LspCoordinator`——和编译器 Coordinator 共享协议层，但只跑到 Semantic。
+
 | 交付 | 说明 |
 |------|------|
-| Go-to-definition | 基于 Semantic 符号表 |
-| Hover type info | 基于 Semantic 类型事实 |
-| Find references | 基于 Semantic 引用图 |
-| Completion 增强 | 作用域感知补全 |
-| Diagnostics 增强 | 类型错误精确定位 |
+| LspCoordinator | 独立编排层：Frontend→Semantic，不到 CPS/VM |
+| Go-to-definition | 基于 `SemanticArtifact.references` |
+| Hover type info | 基于 `SemanticArtifact.symbols` |
+| Completion 增强 | `SemanticArtifact` + 原有 token 补全 |
+| Semantic tokens | AST 节点类型 + 原有 token 分类 fallback |
+| WASM 适配 | hover/semantic_tokens/complete 改用 LspCoordinator |
 
-**模式**：只消费 `Semantic` artifact，不改编译器核心。
+**改动层**：`kaubo-language-service` 新增 lsp_coordinator + hover + goto_def，依赖 kaubo-driver 的协议层。~260 行。
+
+**不改**：编译器 Coordinator、编译器核心。
 
 ## Phase 3b：模块系统
 
 解决痛点 #2——多文件。前置：Phase 2b。
+
+**设计文档**：[module-system-design.md](module-system-design.md) · [kaubo-vfs-design.md](kaubo-vfs-design.md)
 
 | 交付 | 说明 |
 |------|------|

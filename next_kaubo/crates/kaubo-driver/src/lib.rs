@@ -1,22 +1,45 @@
-//! Direct single-file compile and run driver.
+//! Kaubo compilation driver.
 //!
-//! This crate centralizes the current linear path used by CLI and WASM.
+//! # Architecture
 //!
-//! # Configuration
+//! The driver has two layers:
 //!
-//! Use [`RunConfig`] to inject an optional [`kaubo_log::EventHandler`] and
-//! configure the maximum allowed loop iterations.  The legacy functions
-//! (`compile_source`, `run_module`, `run_source`) use [`RunConfig::default`]
-//! and remain available for backward compatibility.
+//! - **Protocol** (`protocol.rs`): `Stage`, `Pass`, `Pipeline`, `Cache` contracts.
+//! - **Coordinator** (`coordinator.rs`): wires stages into a build pipeline with
+//!   caching and event routing.
+//!
+//! Legacy functions (`compile_source`, `run_source`) are retained as convenience
+//! aliases that delegate to a fresh `Coordinator` internally.
 
+pub mod coordinator;
+pub mod event;
+pub mod protocol;
+pub mod stages;
+
+pub use coordinator::Coordinator;
+pub use event::{EventRouter, EventSink, NullSink};
 pub use kaubo_ir::cps::CpsModule;
+pub use protocol::{BuildError, Pipeline};
+pub use stages::{adapt_pass, SemanticArtifact};
+
+/// Legacy run outcome (re-exports the stage type).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunOutcome {
+    pub result: i64,
+    pub output: Vec<String>,
+}
+
 use kaubo_ir::cps_build::build_module;
 use kaubo_ir::flatten::flatten_module;
 use kaubo_ir::pass::binary;
 use kaubo_ir::pass::{empty_block::EmptyBlockElim, fold::ConstantFold, move_fold::MoveFold, run_passes};
+use kaubo_log::EventHandler;
 use kaubo_syntax::parser::Parser;
 use std::fmt;
 
+// ── Type aliases for backward compatibility ──
+
+/// Legacy error type (wraps the new `BuildError`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DriverError {
     Parse(String),
@@ -30,29 +53,52 @@ pub enum DriverError {
 impl fmt::Display for DriverError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DriverError::Parse(message) => write!(f, "parse: {message}"),
-            DriverError::Infer(message) => write!(f, "infer: {message}"),
-            DriverError::Build(message) => write!(f, "build: {message}"),
-            DriverError::Decode(message) => write!(f, "decode: {message}"),
-            DriverError::Load(message) => write!(f, "load: {message}"),
-            DriverError::Runtime(message) => write!(f, "runtime: {message}"),
+            DriverError::Parse(msg) => write!(f, "parse: {msg}"),
+            DriverError::Infer(msg) => write!(f, "infer: {msg}"),
+            DriverError::Build(msg) => write!(f, "build: {msg}"),
+            DriverError::Decode(msg) => write!(f, "decode: {msg}"),
+            DriverError::Load(msg) => write!(f, "load: {msg}"),
+            DriverError::Runtime(msg) => write!(f, "runtime: {msg}"),
         }
     }
 }
 
 impl std::error::Error for DriverError {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunOutcome {
-    pub result: i64,
-    pub output: Vec<String>,
+impl From<BuildError> for DriverError {
+    fn from(e: BuildError) -> Self {
+        match e {
+            BuildError::Parse(msg) => DriverError::Parse(msg),
+            BuildError::Infer(msg) => DriverError::Infer(msg),
+            BuildError::Build(msg) => DriverError::Build(msg),
+            BuildError::Load(msg) => DriverError::Load(msg),
+            BuildError::Runtime(msg) => DriverError::Runtime(msg),
+            BuildError::Bug(msg) => DriverError::Build(msg),
+        }
+    }
 }
 
-/// Configuration passed through the compilation and execution pipeline.
-///
-/// `events` is an optional [`kaubo_log::EventHandler`] that receives structured
-/// events from each stage.  `max_loop_iterations` controls the per-block loop
-/// iteration limit in the VM (default: 1_000_000).
+/// Wraps a `Box<dyn EventHandler>` as an `EventSink`.
+struct EventHandlerSink {
+    inner: Box<dyn EventHandler>,
+}
+
+impl EventSink for EventHandlerSink {
+    fn name(&self) -> &str { "handler" }
+    fn handle(&self, event: &kaubo_log::ToolchainEvent) {
+        if self.inner.filter(event) {
+            self.inner.handle(event);
+        }
+    }
+}
+
+impl From<Box<dyn EventHandler>> for Box<dyn EventSink> {
+    fn from(h: Box<dyn EventHandler>) -> Self {
+        Box::new(EventHandlerSink { inner: h })
+    }
+}
+
+/// Legacy configuration for backward-compatible APIs.
 pub struct RunConfig {
     pub events: Option<Box<dyn kaubo_log::EventHandler>>,
     pub max_loop_iterations: u64,
@@ -68,7 +114,6 @@ impl Default for RunConfig {
 }
 
 impl RunConfig {
-    /// Return a borrowed `Option<&dyn EventHandler>` suitable for passing to stages.
     fn events_ref(&self) -> Option<&dyn kaubo_log::EventHandler> {
         self.events.as_ref().map(|h| h.as_ref())
     }
@@ -88,19 +133,28 @@ pub fn run_source(source: &str) -> Result<RunOutcome, DriverError> {
     run_source_with_config(source, &RunConfig::default())
 }
 
-// ── Config-aware API ──
+// ── Config-aware API (delegates to Coordinator) ──
 
-pub fn compile_source_with_config(source: &str, config: &RunConfig) -> Result<CpsModule, DriverError> {
-    let module = Parser::new(source).parse().map_err(DriverError::Parse)?;
-    kaubo_infer::infer_module(&module).map_err(|e| DriverError::Infer(e.msg))?;
-    let events = config.events_ref();
-    let mut cps = build_module(&module, events).map_err(DriverError::Build)?;
-    flatten_module(&mut cps);
-    run_passes(&mut cps, &[&EmptyBlockElim, &MoveFold, &ConstantFold], events);
-    Ok(cps)
+pub fn compile_source_with_config(
+    source: &str,
+    config: &RunConfig,
+) -> Result<CpsModule, DriverError> {
+    let pipeline = Pipeline::new()
+        .add(adapt_pass(EmptyBlockElim))
+        .add(adapt_pass(MoveFold))
+        .add(adapt_pass(ConstantFold));
+
+    let mut coord = Coordinator::new()
+        .with_pipeline(pipeline)
+        .with_max_loop_iterations(config.max_loop_iterations);
+
+    coord.compile(source).map_err(Into::into)
 }
 
-pub fn run_module_with_config(cps: &CpsModule, config: &RunConfig) -> Result<RunOutcome, DriverError> {
+pub fn run_module_with_config(
+    cps: &CpsModule,
+    config: &RunConfig,
+) -> Result<RunOutcome, DriverError> {
     if cps.functions.is_empty() {
         return Ok(RunOutcome {
             result: 0,
@@ -111,6 +165,7 @@ pub fn run_module_with_config(cps: &CpsModule, config: &RunConfig) -> Result<Run
     let mut vm = kaubo_vm::VM::new();
     vm.max_loop_iterations = config.max_loop_iterations;
     vm.load(cps).map_err(DriverError::Load)?;
+
     let func_idx = cps.functions.len() - 1;
     let reg_count = cps.functions[func_idx].reg_count;
     let events = config.events_ref();
@@ -124,7 +179,10 @@ pub fn run_module_with_config(cps: &CpsModule, config: &RunConfig) -> Result<Run
     })
 }
 
-pub fn run_source_with_config(source: &str, config: &RunConfig) -> Result<RunOutcome, DriverError> {
+pub fn run_source_with_config(
+    source: &str,
+    config: &RunConfig,
+) -> Result<RunOutcome, DriverError> {
     let cps = compile_source_with_config(source, config)?;
     run_module_with_config(&cps, config)
 }
