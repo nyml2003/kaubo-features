@@ -19,8 +19,51 @@ pub fn build_module(
     module: &Module,
     events: Option<&dyn kaubo_log::EventHandler>,
 ) -> Result<CpsModule, String> {
+    build_module_with_imports(module, events, None, &HashSet::new(), None).map(|(cps, _, _)| cps)
+}
+
+/// 带导入表和导出集的 CPS 构建。
+///
+/// `import_table`: local_name → import_handle（CPS 层使用整数句柄）
+/// `is_exported`: 本模块导出符号名集合
+pub fn build_module_with_imports(
+    module: &Module,
+    events: Option<&dyn kaubo_log::EventHandler>,
+    import_table: Option<&HashMap<String, usize>>,
+    is_exported: &HashSet<String>,
+    import_structs: Option<&HashMap<String, (String, usize, Vec<(String, String)>)>>,
+) -> Result<(CpsModule, HashMap<String, usize>, HashMap<String, usize>), String> {
     let mut b = CpsBuilder::new(events);
+    b.import_table = import_table.cloned();
+    b.is_exported = is_exported.clone();
+    b.import_structs = import_structs.cloned();
     b.collect_signatures(module);
+
+    // 注册导入的结构体——使用源模块的原始 struct_id，不重新分配
+    if let Some(import_structs) = &b.import_structs {
+        for (name, (_src_path, src_id, fields)) in import_structs {
+            // 计算 type_bitmap：标记哪些字段是堆类型
+            let mut bitmap: u64 = 0;
+            for (i, (_, field_ty)) in fields.iter().enumerate() {
+                if is_heap_type_name(field_ty) {
+                    bitmap |= 1 << i;
+                }
+            }
+            b.structs.push(StructDef {
+                id: *src_id, // ★ 保留源模块原始 ID，确保 LinkStage 统一映射
+                name: name.clone(),
+                fields: fields.clone(),
+                type_bitmap: bitmap,
+            });
+            b.struct_names.insert(name.clone());
+            let field_hints: HashMap<String, ValueHint> = fields
+                .iter()
+                .map(|(fn_name, fn_ty)| (fn_name.clone(), type_name_to_hint(fn_ty)))
+                .collect();
+            b.struct_field_types.insert(name.clone(), field_hints);
+        }
+    }
+
     b.ctx.new_block(); // entry block id 0
     let mut tail: Option<usize> = None;
 
@@ -39,13 +82,17 @@ pub fn build_module(
 
     b.finalize(0);
     dump_blocks("main", &b.ctx);
-    Ok(CpsModule {
+    let export_func_map = b.export_funcs.clone();
+    let export_const_map = b.export_consts.clone();
+    Ok((CpsModule {
         functions: b.functions,
         constants: b.constants,
         structs: b.structs,
         enums: b.enums,
         vtables: b.vtables,
-    })
+        symbol_map: std::collections::HashMap::new(),
+        func_owners: vec![],
+    }, export_func_map, export_const_map))
 }
 
 fn block_jump(id: usize, target: usize) -> CpsBlock {
@@ -55,6 +102,29 @@ fn block_jump(id: usize, target: usize) -> CpsBlock {
         instrs: vec![],
         term: CpsTerminator::Jump(target, vec![]),
     }
+}
+
+/// 将类型名字符串转换为 ValueHint（用于导入 struct 的字段类型推断）。
+fn type_name_to_hint(type_name: &str) -> ValueHint {
+    match type_name {
+        "Int64" => ValueHint::Int,
+        "Float64" => ValueHint::Float,
+        "String" => ValueHint::String,
+        "Bool" => ValueHint::Bool,
+        "Null" => ValueHint::Null,
+        "List" => ValueHint::List,
+        other => ValueHint::Struct(other.to_string()),
+    }
+}
+
+/// 判断类型名字符串是否表示堆类型（用于 GC bitmap 计算）。
+fn is_heap_type_name(type_name: &str) -> bool {
+    matches!(type_name, "String" | "List")
+        || (!matches!(
+            type_name,
+            "Int64" | "Float64" | "Bool" | "Null"
+        ))
+    // Struct 和 Interface 名称也是堆类型
 }
 
 fn dump_blocks(label: &str, ctx: &FuncCtx) {
@@ -254,6 +324,17 @@ pub struct CpsBuilder<'a> {
     /// Optional event handler for structured logging.
     /// Passed through from the driver; stages only emit events, never touch output.
     events: Option<&'a dyn kaubo_log::EventHandler>,
+    /// 当前模块的导入表：local_name → import_handle
+    import_table: Option<HashMap<String, usize>>,
+    /// 本模块导出符号名集合
+    is_exported: HashSet<String>,
+    /// 导出函数名 → local func_idx 映射
+    export_funcs: HashMap<String, usize>,
+    /// 导出常量名 → local const_idx 映射
+    export_consts: HashMap<String, usize>,
+    /// 导入结构体：struct_name → (source_module_path, original_struct_id, fields)
+    /// type_bitmap 在注册时从字段类型计算
+    import_structs: Option<HashMap<String, (String, usize, Vec<(String, String)>)>>,
 }
 
 impl<'a> Default for CpsBuilder<'a> {
@@ -283,6 +364,11 @@ impl<'a> CpsBuilder<'a> {
             struct_impl_for: HashMap::new(),
             fn_param_hints: HashMap::new(),
             events,
+            import_table: None,
+            is_exported: HashSet::new(),
+            export_funcs: HashMap::new(),
+            export_consts: HashMap::new(),
+            import_structs: None,
         }
     }
 
@@ -726,6 +812,46 @@ impl<'a> CpsBuilder<'a> {
                 }
                 Ok((usize::MAX, usize::MAX, 0))
             }
+            Stmt::ExportStmt(inner) => {
+                // 记录构建前的常量表长度，用于检测新增常量
+                let consts_before = self.constants.len();
+                // 递归构建内部声明——export 在 CPS 层是透明的
+                let result = self.build_top_stmt(inner)?;
+                // 如果是导出函数，记录 name → func_idx 映射
+                if let Stmt::ConstDecl {
+                    name,
+                    value: Expr::Lambda { .. },
+                    ..
+                }
+                | Stmt::VarDecl {
+                    name,
+                    value: Some(Expr::Lambda { .. }),
+                    ..
+                } = inner.as_ref()
+                {
+                    if self.is_exported.contains(name) {
+                        if let Some(&func_idx) = self.ctx.func_map.get(name) {
+                            self.export_funcs.insert(name.clone(), func_idx);
+                        }
+                    }
+                }
+                // 如果是导出常量（非 lambda），记录 name → const_idx 映射
+                if let Stmt::ConstDecl {
+                    name,
+                    value,
+                    ..
+                } = inner.as_ref()
+                {
+                    if self.is_exported.contains(name) && !matches!(value, Expr::Lambda { .. }) {
+                        // 取最后一个新增的常量 idx（如果有的话）
+                        if self.constants.len() > consts_before {
+                            let const_idx = self.constants.len() - 1;
+                            self.export_consts.insert(name.clone(), const_idx);
+                        }
+                    }
+                }
+                Ok(result)
+            }
             _ => Ok((usize::MAX, usize::MAX, 0)),
         }
     }
@@ -777,6 +903,24 @@ impl<'a> CpsBuilder<'a> {
                         },
                     );
                     Ok((id, id, reg))
+                } else if let Some(ref import_table) = self.import_table {
+                    if let Some(&handle) = import_table.get(name) {
+                        // 导入常量：生成 LoadExternalConst，LinkStage 解析
+                        let dst = self.ctx.alloc();
+                        let id = self.ctx.new_block();
+                        self.ctx.set_block(
+                            id,
+                            CpsBlock {
+                                id,
+                                params: vec![],
+                                instrs: vec![CpsInstr::LoadExternalConst(dst, handle)],
+                                term: cps_emit::emit_return(dst),
+                            },
+                        );
+                        Ok((id, id, dst))
+                    } else {
+                        Err(format!("undefined variable '{name}'"))
+                    }
                 } else {
                     Err(format!("undefined variable '{name}'"))
                 }
@@ -1477,9 +1621,76 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
                     }
                 };
             }
+            // ★ 检查导入表：如果名字在 import_table 中，生成 CallExternal
+            if let Some(ref import_table) = self.import_table {
+                if let Some(&import_handle) = import_table.get(name) {
+                    return self.build_call_external(import_handle, args);
+                }
+            }
             return Err(format!("undefined function '{name}'"));
         }
         Err("call target is not a simple name".to_string())
+    }
+
+    /// 构建对外部模块函数的调用——生成 `CallExternal` 终结器。
+    fn build_call_external(
+        &mut self,
+        import_handle: usize,
+        args: &[Expr],
+    ) -> Result<(usize, usize, usize), String> {
+        let mut entry = 0;
+        let mut prev_c: Option<usize> = None;
+        let mut arg_regs = Vec::new();
+        for arg in args {
+            let (e, c, r) = self.build_expr(arg)?;
+            if entry == 0 {
+                entry = e;
+            }
+            if let Some(t) = prev_c {
+                self.ctx.chain(t, e)?;
+            }
+            prev_c = Some(c);
+            arg_regs.push(r);
+        }
+        let result_reg = self.ctx.alloc();
+        let cont_block = self.ctx.new_block();
+        let move_block = self.ctx.new_block();
+        self.ctx.set_block(
+            cont_block,
+            CpsBlock {
+                id: cont_block,
+                params: vec![],
+                instrs: vec![],
+                term: CpsTerminator::Jump(move_block, vec![]),
+            },
+        );
+        self.ctx.set_block(
+            move_block,
+            CpsBlock {
+                id: move_block,
+                params: vec![],
+                instrs: vec![CpsInstr::Move(result_reg, 0)],
+                term: cps_emit::emit_return(result_reg),
+            },
+        );
+        let call_block = self.ctx.new_block();
+        self.ctx.set_block(
+            call_block,
+            CpsBlock {
+                id: call_block,
+                params: vec![],
+                instrs: vec![],
+                term: CpsTerminator::CallExternal {
+                    import_handle,
+                    args: arg_regs,
+                    ret_block: cont_block,
+                },
+            },
+        );
+        if let Some(t) = prev_c {
+            self.ctx.chain(t, call_block)?;
+        }
+        Ok((entry, move_block, result_reg))
     }
 
     fn build_call_with_idx(

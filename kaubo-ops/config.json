@@ -1,0 +1,41 @@
+{
+  "project": {
+    "root": "."
+  },
+  "paths": {
+    "rust_workspace": "next_kaubo",
+    "cli_crate": "next_kaubo/kaubo2-cli",
+    "wasm_crate": "next_kaubo/crates/kaubo-wasm",
+    "gui_root": "next_kaubo/gui",
+    "gui_app_dir": "next_kaubo/gui/packages/app",
+    "gui_types_dir": "next_kaubo/gui/packages/types",
+    "gui_wasm_pkg": "next_kaubo/gui/packages/wasm/pkg",
+    "vscode_root": "vscode-extension",
+    "vscode_wasm_dir": "vscode-extension/wasm",
+    "version_file": "next_kaubo/.version",
+    "gui_dist": "next_kaubo/gui/packages/app/dist",
+    "nginx_conf_src": "next_kaubo/ops/deploy/nginx/kaubo.conf",
+    "benchmark_suites_dir": "next_kaubo/ops/benchmark/suites"
+  },
+  "wasm": {
+    "out_name": "kaubo_wasm",
+    "targets": [
+      {
+        "target": "web",
+        "output": "next_kaubo/gui/packages/wasm/pkg",
+        "consumer": "GUI Playground"
+      },
+      {
+        "target": "nodejs",
+        "output": "vscode-extension/wasm",
+        "consumer": "VSCode Extension"
+      }
+    ]
+  },
+  "release": {
+    "bump_default": "patch"
+  },
+  "tools": {
+    "required": ["cargo", "pnpm", "npm", "wasm-pack"]
+  }
+}

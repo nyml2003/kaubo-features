@@ -27,6 +27,14 @@ impl Parser {
         Self::from_tokens(tokens)
     }
 
+    /// 注册外部已知的结构体名称（用于导入 struct 的解析支持）。
+    ///
+    /// 调用此方法后，parser 会将 `Name { ... }` 形式的语法识别为 StructLit，
+    /// 即使该 struct 没有在当前文件中定义。
+    pub fn register_struct_name(&mut self, name: &str) {
+        self.struct_names.insert(name.to_string());
+    }
+
     pub fn from_tokens(tokens: Vec<Token>) -> Self {
         let struct_names = collect_struct_names(&tokens);
         let (variant_names, variant_to_enum, variant_tag) =
@@ -528,44 +536,41 @@ impl Parser {
                 }
                 TokenKind::LBrace => {
                     if let Expr::VarRef(ref name) = expr {
-                        if self.struct_names.contains(name) {
-                            let struct_name = name.clone();
-                            self.bump();
-                            let mut fields = Vec::new();
-                            let mut spread: Option<Box<Expr>> = None;
-                            while self.current_kind() != TokenKind::RBrace {
-                                if self.current_kind() == TokenKind::DotDotDot {
-                                    self.bump();
-                                    spread = Some(Box::new(self.parse_expr()?));
-                                    if self.current_kind() == TokenKind::Comma {
-                                        self.bump();
-                                    }
-                                    continue;
-                                }
-                                let fname = self.expect_ident()?;
-                                // 简写属性: { x } ≡ { x: x }
-                                let val = if self.current_kind() == TokenKind::Comma
-                                    || self.current_kind() == TokenKind::RBrace
-                                {
-                                    Expr::VarRef(fname.clone())
-                                } else {
-                                    self.expect(TokenKind::Colon)?;
-                                    self.parse_expr()?
-                                };
-                                fields.push((fname, val));
+                        // Name { ... } 始终解析为 StructLit，不查符号表
+                        // struct 名有效性由 infer 阶段检查
+                        let struct_name = name.clone();
+                        self.bump();
+                        let mut fields = Vec::new();
+                        let mut spread: Option<Box<Expr>> = None;
+                        while self.current_kind() != TokenKind::RBrace {
+                            if self.current_kind() == TokenKind::DotDotDot {
+                                self.bump();
+                                spread = Some(Box::new(self.parse_expr()?));
                                 if self.current_kind() == TokenKind::Comma {
                                     self.bump();
                                 }
+                                continue;
                             }
-                            self.bump();
-                            expr = Expr::StructLit {
-                                name: struct_name,
-                                fields,
-                                spread,
+                            let fname = self.expect_ident()?;
+                            let val = if self.current_kind() == TokenKind::Comma
+                                || self.current_kind() == TokenKind::RBrace
+                            {
+                                Expr::VarRef(fname.clone())
+                            } else {
+                                self.expect(TokenKind::Colon)?;
+                                self.parse_expr()?
                             };
-                        } else {
-                            break;
+                            fields.push((fname, val));
+                            if self.current_kind() == TokenKind::Comma {
+                                self.bump();
+                            }
                         }
+                        self.bump();
+                        expr = Expr::StructLit {
+                            name: struct_name,
+                            fields,
+                            spread,
+                        };
                     } else {
                         break;
                     }
@@ -673,8 +678,10 @@ impl Parser {
     }
 
     fn parse_if(&mut self) -> ParseResult<Expr> {
-        self.bump();
+        self.bump(); // if
+        self.expect(TokenKind::LParen)?;
         let cond = self.parse_expr()?;
+        self.expect(TokenKind::RParen)?;
         let then_b = self.parse_expr()?;
         let else_b = if self.current_kind() == TokenKind::Else {
             self.bump();
@@ -690,8 +697,10 @@ impl Parser {
     }
 
     fn parse_while(&mut self) -> ParseResult<Expr> {
-        self.bump();
+        self.bump(); // while
+        self.expect(TokenKind::LParen)?;
         let cond = self.parse_expr()?;
+        self.expect(TokenKind::RParen)?;
         let body = self.parse_expr()?;
         Ok(Expr::While {
             cond: Box::new(cond),
@@ -701,7 +710,9 @@ impl Parser {
 
     fn parse_match(&mut self) -> ParseResult<Expr> {
         self.bump(); // match
+        self.expect(TokenKind::LParen)?;
         let scrutinee = self.parse_expr()?;
+        self.expect(TokenKind::RParen)?;
         self.expect(TokenKind::LBrace)?;
         let mut arms: Vec<(Option<Expr>, Expr)> = Vec::new(); // (pattern|None=wildcard, body)
         while self.current_kind() != TokenKind::RBrace {
@@ -869,11 +880,13 @@ impl Parser {
     }
 
     fn parse_for(&mut self) -> ParseResult<Expr> {
-        self.bump();
+        self.bump(); // for
+        self.expect(TokenKind::LParen)?;
         let varname = self.expect_ident()?;
         self.expect_kw(TokenKind::In)
             .map_err(|_| "expected 'in' in for loop".to_string())?;
         let iterable = self.parse_expr()?;
+        self.expect(TokenKind::RParen)?;
         let body = self.parse_expr()?;
         Ok(Expr::For {
             var: Param {

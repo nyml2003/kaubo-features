@@ -188,6 +188,8 @@ mod tests {
             constants: vec![Constant::Int(1), Constant::Int(42)],
             structs: vec![], enums: vec![],
             vtables: vec![],
+            symbol_map: std::collections::HashMap::new(),
+            func_owners: vec![],
         };
         eprintln!("=== BEFORE (nested if no else pattern) ===");
         for b in &module.functions[0].blocks { if b.id != usize::MAX { eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term); } }

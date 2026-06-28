@@ -3,6 +3,9 @@
 //! of stages, which ones to cache, and how to fan out events.
 
 use crate::event::{EventRouter, EventSink, NullSink};
+use crate::module_compiler::ModuleCompiler;
+use crate::module_graph::ModuleGraph;
+use crate::module_loader::ModuleLoader;
 use crate::protocol::{ArtifactCache, BuildContext, BuildError, MemoryCache, Pipeline, Stage};
 use crate::stages::{CpsBuildStage, FrontendStage, SemanticArtifact, SemanticStage, VmExecStage};
 use crate::RunOutcome;
@@ -72,15 +75,39 @@ impl Coordinator {
 
     // ── Public API ──
 
-    /// Full compile + execute.
+    /// Full compile + execute (单文件模式).
     pub fn run(&mut self, source: &str) -> Result<RunOutcome, BuildError> {
         let cps = self.build_cps(source)?;
         self.execute(cps)
     }
 
-    /// Compile source to optimised CPS (with flatten + passes).
+    /// Compile source to optimised CPS (with flatten + passes) (单文件模式).
     pub fn compile(&mut self, source: &str) -> Result<CpsModule, BuildError> {
         self.build_cps(source)
+    }
+
+    /// 多文件编译 + 执行。
+    ///
+    /// `entry` 是入口模块路径，`loader` 用于加载依赖。
+    /// 内部构建模块图 → 按序编译 → 链接 → 执行。
+    pub fn run_file(
+        &mut self,
+        entry: &str,
+        loader: &dyn ModuleLoader,
+    ) -> Result<RunOutcome, BuildError> {
+        let cps = self.compile_file(entry, loader)?;
+        self.execute(cps)
+    }
+
+    /// 多文件编译（产生链接后的 CpsModule）。
+    pub fn compile_file(
+        &mut self,
+        entry: &str,
+        loader: &dyn ModuleLoader,
+    ) -> Result<CpsModule, BuildError> {
+        let graph = ModuleGraph::build(entry, loader)?;
+        let mut compiler = ModuleCompiler::new(loader);
+        compiler.compile_all(&graph)
     }
 
     /// LSP: build only to Semantic (stops before CPS lowering).

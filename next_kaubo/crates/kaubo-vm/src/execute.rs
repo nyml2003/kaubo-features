@@ -1314,6 +1314,9 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
         CpsInstr::Print(r) => encode(Opcode::Print as u8, *r as u32, 0, 0),
         CpsInstr::LoadVtable(d, vi) => encode(Opcode::LoadVtable as u8, *d as u32, *vi as u32, 0),
         CpsInstr::NewInterfaceObj(d, vr, sr) => encode(Opcode::NewInterfaceObj as u8, *d as u32, *vr as u32, *sr as u32),
+        CpsInstr::LoadExternalConst(..) => {
+            return Err("LoadExternalConst should be resolved by LinkStage before VM execution".into())
+        }
         CpsInstr::Nop => return Err("nop is not executable".into()),
     })
 }
@@ -1328,6 +1331,14 @@ fn encode_term(term: &CpsTerminator) -> Result<u32, String> {
         CpsTerminator::CallNative(fi, _, ret) => encode(Opcode::CallNative as u8, *fi as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
         CpsTerminator::CallIndirect(slot, _, ret) => encode(Opcode::CallIndirect as u8, *slot as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
         CpsTerminator::TailCall(_, _) => encode(Opcode::TailCall as u8, 0, 0, 0),
+        // CallExternal: should be resolved by LinkStage before reaching VM.
+        // Encode same as Call for unlinked single-module test usage.
+        CpsTerminator::CallExternal { import_handle, ret_block, .. } => {
+            encode(Opcode::Call as u8, *import_handle as u32, (*ret_block >> 8) as u32, (*ret_block & 0xFF) as u32)
+        }
+        CpsTerminator::CallExternalDynamic { .. } => {
+            return Err("CallExternalDynamic not supported by VM (use LinkStage)".into())
+        }
     })
 }
 
@@ -1360,6 +1371,8 @@ mod tests {
             structs: vec![],
             enums: vec![],
             vtables: vec![],
+            symbol_map: HashMap::new(),
+            func_owners: vec![],
         }
     }
 
@@ -1443,6 +1456,8 @@ mod tests {
             structs: vec![],
             enums: vec![],
             vtables: vec![],
+            symbol_map: HashMap::new(),
+            func_owners: vec![],
         };
         let mut vm = VM::new();
         vm.load(&m).unwrap();
@@ -1536,6 +1551,8 @@ mod tests {
             structs,
             enums: vec![],
             vtables: vec![],
+            symbol_map: HashMap::new(),
+            func_owners: vec![],
         }
     }
 
@@ -1881,6 +1898,8 @@ mod tests {
             structs: vec![],
             enums: vec![],
             vtables: vec![],
+            symbol_map: HashMap::new(),
+            func_owners: vec![],
         };
         let mut vm = VM::new();
         vm.load(&native).unwrap();
@@ -1937,6 +1956,8 @@ mod tests {
             structs: vec![],
             enums: vec![],
             vtables: vec![],
+            symbol_map: HashMap::new(),
+            func_owners: vec![],
         };
         let mut vm = VM::new();
         vm.load(&native).unwrap();
@@ -1995,6 +2016,8 @@ mod tests {
             structs: vec![],
             enums: vec![],
             vtables: vec![],
+            symbol_map: HashMap::new(),
+            func_owners: vec![],
         }
     }
 
@@ -2053,6 +2076,8 @@ mod tests {
             structs: vec![],
             enums: vec![],
             vtables: vec![],
+            symbol_map: HashMap::new(),
+            func_owners: vec![],
         };
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
@@ -2086,6 +2111,8 @@ mod tests {
             structs: vec![],
             enums: vec![],
             vtables: vec![],
+            symbol_map: HashMap::new(),
+            func_owners: vec![],
         };
         let mut vm = VM::new();
         vm.load(&cps).unwrap();
@@ -2120,6 +2147,8 @@ mod tests {
             structs,
             enums: vec![],
             vtables: vec![],
+            symbol_map: HashMap::new(),
+            func_owners: vec![],
         };
         let mut vm = VM::new();
         vm.load(&cps).unwrap();

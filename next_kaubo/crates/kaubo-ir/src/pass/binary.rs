@@ -140,6 +140,8 @@ pub fn decode_module(bytes: &[u8]) -> Result<CpsModule, String> {
         structs,
         enums: vec![],
         vtables,
+        symbol_map: std::collections::HashMap::new(),
+        func_owners: vec![],
     })
 }
 
@@ -462,6 +464,11 @@ fn encode_instr(w: &mut Vec<u8>, i: &CpsInstr) {
             w_u16(w, *vr as u16);
             w_u16(w, *sr as u16);
         }
+        CpsInstr::LoadExternalConst(d, handle) => {
+            w_u8(w, 0x1B);
+            w_u16(w, *d as u16);
+            w_u16(w, *handle as u16);
+        }
         CpsInstr::Nop => {
             w_u8(w, 0x0D);
         }
@@ -527,6 +534,7 @@ fn decode_instr(r: &mut Cursor<&[u8]>) -> Result<CpsInstr, String> {
             r_u16(r)? as usize,
             r_u16(r)? as usize,
         ),
+        0x1B => CpsInstr::LoadExternalConst(r_u16(r)? as usize, r_u16(r)? as usize),
         _ => return Err(format!("bad instr tag {tag:02x}")),
     })
 }
@@ -589,6 +597,38 @@ fn encode_term(w: &mut Vec<u8>, t: &CpsTerminator) {
         CpsTerminator::Suspend => {
             w_u8(w, 0x15);
         }
+        CpsTerminator::CallExternal {
+            import_handle,
+            args,
+            ret_block,
+        } => {
+            w_u8(w, 0x18);
+            w_u16(w, *import_handle as u16);
+            w_u32(w, *ret_block as u32);
+            w_u16(w, args.len() as u16);
+            for a in args {
+                w_u16(w, *a as u16);
+            }
+        }
+        CpsTerminator::CallExternalDynamic {
+            module_expr,
+            func_name,
+            args,
+            ret_block,
+        } => {
+            w_u8(w, 0x19);
+            let mod_bytes = module_expr.as_bytes();
+            w_u16(w, mod_bytes.len() as u16);
+            w.extend_from_slice(mod_bytes);
+            let fn_bytes = func_name.as_bytes();
+            w_u16(w, fn_bytes.len() as u16);
+            w.extend_from_slice(fn_bytes);
+            w_u32(w, *ret_block as u32);
+            w_u16(w, args.len() as u16);
+            for a in args {
+                w_u16(w, *a as u16);
+            }
+        }
     }
 }
 
@@ -650,6 +690,42 @@ fn decode_term(r: &mut Cursor<&[u8]>) -> Result<CpsTerminator, String> {
                 args.push(r_u16(r)? as usize);
             }
             CpsTerminator::CallIndirect(slot, args, ret)
+        }
+        0x18 => {
+            let import_handle = r_u16(r)? as usize;
+            let ret_block = r_u32(r)? as usize;
+            let n = r_u16(r)? as usize;
+            let mut args = vec![];
+            for _ in 0..n {
+                args.push(r_u16(r)? as usize);
+            }
+            CpsTerminator::CallExternal {
+                import_handle,
+                args,
+                ret_block,
+            }
+        }
+        0x19 => {
+            let mod_len = r_u16(r)? as usize;
+            let mut mod_buf = vec![0u8; mod_len];
+            r.read_exact(&mut mod_buf).map_err(|e| e.to_string())?;
+            let module_expr = String::from_utf8(mod_buf).map_err(|e| e.to_string())?;
+            let fn_len = r_u16(r)? as usize;
+            let mut fn_buf = vec![0u8; fn_len];
+            r.read_exact(&mut fn_buf).map_err(|e| e.to_string())?;
+            let func_name = String::from_utf8(fn_buf).map_err(|e| e.to_string())?;
+            let ret_block = r_u32(r)? as usize;
+            let n = r_u16(r)? as usize;
+            let mut args = vec![];
+            for _ in 0..n {
+                args.push(r_u16(r)? as usize);
+            }
+            CpsTerminator::CallExternalDynamic {
+                module_expr,
+                func_name,
+                args,
+                ret_block,
+            }
         }
         _ => return Err(format!("bad term tag {tag:02x}")),
     })
@@ -970,6 +1046,8 @@ mod tests {
                     }],
                 },
             ],
+            symbol_map: std::collections::HashMap::new(),
+            func_owners: vec![],
         };
 
         let decoded = decode_module(&encode_module(&module)).unwrap();
@@ -1029,6 +1107,8 @@ mod tests {
             enums: vec![],
             vtables: vec![],
             functions: vec![],
+            symbol_map: std::collections::HashMap::new(),
+            func_owners: vec![],
         };
         let mut bytes = encode_module(&module);
         bytes[10] = 0xFF;

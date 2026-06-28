@@ -115,6 +115,7 @@ pub enum Expr {
         fields: Vec<Expr>,
     },
     ListLit(Vec<Expr>),
+    Tuple(Vec<Expr>),
     GetVariantTag(Box<Expr>),
     GetVariantField {
         object: Box<Expr>,

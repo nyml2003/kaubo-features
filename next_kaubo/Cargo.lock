@@ -61,6 +61,7 @@ dependencies = [
  "kaubo-ir",
  "kaubo-log",
  "kaubo-syntax",
+ "kaubo-vfs",
  "kaubo-vm",
 ]
 
@@ -113,6 +114,10 @@ dependencies = [
 
 [[package]]
 name = "kaubo-token"
+version = "0.1.0"
+
+[[package]]
+name = "kaubo-vfs"
 version = "0.1.0"
 
 [[package]]

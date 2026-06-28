@@ -2,7 +2,7 @@
 
 use crate::types::*;
 use kaubo_ast::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static TVAR_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -40,8 +40,17 @@ pub type InferResult<T> = Result<T, TypeError>;
 pub fn infer_module(
     module: &Module,
 ) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>)> {
+    infer_module_with_imports(module, None).map(|(env, sf, _)| (env, sf))
+}
+
+/// 带导入表的类型推断。`imports` 为 `None` 时行为与 `infer_module` 一致（向后兼容）。
+pub fn infer_module_with_imports(
+    module: &Module,
+    imports: Option<&[ImportSpec]>,
+) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>, HashSet<String>)> {
     reset_tvar();
     let mut env: TypeEnv = HashMap::new();
+    let mut exports: HashSet<String> = HashSet::new();
 
     // Pass 1: collect struct, enum, and interface definitions
     let mut interface_registry: HashMap<String, Vec<(String, Vec<(String, Type)>, Option<Type>)>> =
@@ -117,6 +126,34 @@ pub fn infer_module(
         &mut struct_fields,
         &mut interface_registry,
     );
+
+    // Pass 2.5: inject imported symbols from other modules
+    if let Some(imports) = imports {
+        for spec in imports {
+            match &spec.kind {
+                ImportKind::Const { ty } | ImportKind::Function { ty } => {
+                    env.insert(spec.local_name.clone(), Scheme::monomorphic(ty.clone()));
+                }
+                ImportKind::Struct { fields } => {
+                    let id = fresh_struct_id();
+                    struct_registry.insert(spec.local_name.clone(), id);
+                    struct_fields.insert(id, fields.clone());
+                    let field_types: Vec<(String, Type)> = fields.clone();
+                    env.insert(
+                        spec.local_name.clone(),
+                        Scheme::monomorphic(Type::Record(id, field_types)),
+                    );
+                }
+                ImportKind::Interface { methods } => {
+                    interface_registry.insert(spec.local_name.clone(), methods.clone());
+                    env.insert(
+                        spec.local_name.clone(),
+                        Scheme::monomorphic(Type::Null),
+                    );
+                }
+            }
+        }
+    }
 
     // Pass 3: infer all statements
     for stmt in &module.stmts {
@@ -245,11 +282,72 @@ pub fn infer_module(
                 // Register interface name as a type-level entity (no runtime value)
                 env.insert(name.clone(), Scheme::monomorphic(Type::Null));
             }
-            Stmt::ExportStmt(_) | Stmt::Import { .. } => {}
+            Stmt::ExportStmt(inner) => {
+                // 推断内部声明，并记录导出
+                match inner.as_ref() {
+                    Stmt::ConstDecl { name, value, .. } => {
+                        let (s, ty) = infer(&env, value, &struct_registry, &struct_fields, &enum_registry, &enum_variants, &interface_registry)?;
+                        let scheme = generalize(&env, &s.apply(&ty));
+                        env.insert(name.clone(), scheme);
+                        exports.insert(name.clone());
+                    }
+                    Stmt::StructDef { name, fields } => {
+                        let id = struct_registry[name];
+                        let mut fts = Vec::new();
+                        for f in fields {
+                            fts.push((
+                                f.name.clone(),
+                                type_expr_to_type(&f.ty, &struct_registry, &struct_fields, &interface_registry)?,
+                            ));
+                        }
+                        struct_fields.insert(id, fts);
+                        exports.insert(name.clone());
+                    }
+                    Stmt::EnumDef { name, variants } => {
+                        let id = enum_registry[name];
+                        for (tag, v) in variants.iter().enumerate() {
+                            let vtys = enum_variants
+                                .get(&id)
+                                .and_then(|vs| vs.get(tag))
+                                .map(|(_, fts)| fts.clone())
+                                .unwrap_or_default();
+                            let result_ty = Type::Variant(id, v.name.clone(), vtys.clone());
+                            if v.fields.is_empty() {
+                                env.insert(v.name.clone(), Scheme::monomorphic(result_ty));
+                            } else {
+                                let mut arrow = result_ty;
+                                for (_, ft) in vtys.iter().rev() {
+                                    arrow = Type::Arrow(Box::new(ft.clone()), Box::new(arrow));
+                                }
+                                env.insert(v.name.clone(), Scheme::monomorphic(arrow));
+                            }
+                        }
+                        exports.insert(name.clone());
+                    }
+                    Stmt::InterfaceDef { name, .. } => {
+                        env.insert(name.clone(), Scheme::monomorphic(Type::Null));
+                        exports.insert(name.clone());
+                    }
+                    Stmt::VarDecl { name, value, .. } => {
+                        let ty = if let Some(val) = value {
+                            let (s, t) = infer(&env, val, &struct_registry, &struct_fields, &enum_registry, &enum_variants, &interface_registry)?;
+                            s.apply(&t)
+                        } else {
+                            Type::Var(fresh_tvar())
+                        };
+                        env.insert(name.clone(), Scheme::monomorphic(ty));
+                        exports.insert(name.clone());
+                    }
+                    _ => {
+                        // 不支持的导出语句类型，静默忽略（未来可报错）
+                    }
+                }
+            }
+            Stmt::Import { .. } => {}
         }
     }
 
-    Ok((env, struct_fields))
+    Ok((env, struct_fields, exports))
 }
 
 // ── stdlib injection ──
@@ -1285,6 +1383,11 @@ mod tests {
         HashMap::new()
     }
 
+    fn empty_interface_registry(
+    ) -> HashMap<String, Vec<(String, Vec<(String, Type)>, Option<Type>)>> {
+        HashMap::new()
+    }
+
     fn infer_expr(expr: Expr) -> InferResult<Type> {
         let (mut structs, mut fields) = empty_structs();
         let mut interface_registry = HashMap::new();
@@ -1302,7 +1405,7 @@ mod tests {
             &mut fields,
             &mut interface_registry,
         );
-        let (subst, ty) = infer(&env, &expr, &structs, &fields, &empty_enums(), &empty_enum_variants())?;
+        let (subst, ty) = infer(&env, &expr, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry())?;
         Ok(subst.apply(&ty))
     }
 
@@ -2141,7 +2244,7 @@ mod tests {
             fields: vec![("val".into(), Expr::LitInt(42))],
             spread: None,
         };
-        let (sub, ty) = infer(&env, &lit, &structs, &fields, &empty_enums(), &empty_enum_variants()).unwrap();
+        let (sub, ty) = infer(&env, &lit, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).unwrap();
         assert_eq!(sub.apply(&ty), Type::Record(1, vec![("val".into(), Type::Int64)]));
     }
 
@@ -2282,6 +2385,7 @@ mod tests {
                 &TypeExpr::List(Box::new(TypeExpr::named("Int64"))),
                 &structs,
                 &fields,
+                &empty_interface_registry(),
             )
             .unwrap(),
             Type::List(Box::new(Type::Int64))
@@ -2296,12 +2400,13 @@ mod tests {
                     },
                     &structs,
                     &fields,
+                    &empty_interface_registry(),
                 )
                 .unwrap()
             ),
             "(Int64 → Bool)"
         );
-        assert!(type_expr_to_type(&TypeExpr::named("Missing"), &structs, &fields).is_err());
+        assert!(type_expr_to_type(&TypeExpr::named("Missing"), &structs, &fields, &empty_interface_registry()).is_err());
 
         assert!(unify(
             &Type::Var(TypeVar(10)),
@@ -2350,7 +2455,7 @@ mod tests {
             name: "Point".into(), fields: vec![("x".into(), Expr::LitString("hi".into()))], spread: None,
         };
         let env = TypeEnv::new();
-        assert!(infer(&env, &lit, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_err());
+        assert!(infer(&env, &lit, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_err());
     }
 
     #[test]
@@ -2359,7 +2464,7 @@ mod tests {
         let e = Expr::Binary { left: Box::new(Expr::LitInt(1)), op: BinOp::Eq, right: Box::new(Expr::LitString("abc".into())) };
         let (structs, fields) = empty_structs();
         let env = TypeEnv::new();
-        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_err());
+        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_err());
     }
 
     #[test]
@@ -2368,7 +2473,7 @@ mod tests {
         let e = Expr::Binary { left: Box::new(Expr::LitTrue), op: BinOp::Add, right: Box::new(Expr::LitFalse) };
         let (structs, fields) = empty_structs();
         let env = TypeEnv::new();
-        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_err());
+        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_err());
     }
 
     #[test]
@@ -2385,7 +2490,7 @@ mod tests {
         env.insert("x".into(), Scheme::monomorphic(Type::String));
         let e = Expr::Assign { target: Box::new(Expr::VarRef("x".into())), value: Box::new(Expr::LitInt(42)) };
         let (structs, fields) = empty_structs();
-        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_err());
+        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_err());
     }
 
     #[test]
@@ -2410,6 +2515,6 @@ mod tests {
         };
         let (structs, fields) = empty_structs();
         // Should NOT error with "for loop requires List" — should unify list with List<?>
-        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants()).is_ok());
+        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_ok());
     }
 }

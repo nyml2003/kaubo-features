@@ -121,3 +121,25 @@ impl Scheme {
         }
     }
 }
+
+// ── 模块系统：导入规格 ──
+
+/// 从外部模块导入的符号信息。
+///
+/// 由 driver 从 `ExportTable` 翻译，传入 `infer_module`。
+/// kaubo-infer 不依赖 kaubo-driver，这里是纯类型层。
+#[derive(Debug, Clone)]
+pub struct ImportSpec {
+    pub local_name: String,
+    pub source_path: String,
+    pub kind: ImportKind,
+}
+
+/// 导入符号的种类。
+#[derive(Debug, Clone)]
+pub enum ImportKind {
+    Const { ty: Type },
+    Function { ty: Type },
+    Struct { fields: Vec<(String, Type)> },
+    Interface { methods: Vec<(String, Vec<(String, Type)>, Option<Type>)> },
+}

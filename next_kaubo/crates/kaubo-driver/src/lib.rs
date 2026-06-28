@@ -13,6 +13,11 @@
 
 pub mod coordinator;
 pub mod event;
+pub mod export_table;
+pub mod link_stage;
+pub mod module_compiler;
+pub mod module_graph;
+pub mod module_loader;
 pub mod protocol;
 pub mod stages;
 
@@ -74,6 +79,10 @@ impl From<BuildError> for DriverError {
             BuildError::Load(msg) => DriverError::Load(msg),
             BuildError::Runtime(msg) => DriverError::Runtime(msg),
             BuildError::Bug(msg) => DriverError::Build(msg),
+            BuildError::CircularImport { .. } => DriverError::Build(e.to_string()),
+            BuildError::ImportNotFound { .. } => DriverError::Build(e.to_string()),
+            BuildError::ExportNotFound { .. } => DriverError::Build(e.to_string()),
+            BuildError::SymbolConflict { .. } => DriverError::Build(e.to_string()),
         }
     }
 }
@@ -1181,5 +1190,268 @@ mod tests {
         assert_eq!(outcome.output.len(), 2);
         assert_eq!(outcome.output[0], "meow");
         assert_eq!(outcome.output[1], "woof");
+    }
+
+    // ── Phase 3b: 模块系统 E2E 测试 ──
+
+    use crate::module_loader::MemLoader;
+
+    /// 跨模块函数调用（CallExternal → LinkStage → Call）
+    #[test]
+    fn multi_file_import_function() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { add } from \"./math.kb\"; add(2, 3);",
+        );
+        loader.insert(
+            "math.kb",
+            "export const add = |a: Int64, b: Int64| -> Int64 { return a + b; };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 5);
+    }
+
+    /// 跨模块函数调用（带返回语句块，2-arg 函数已验证）
+    #[test]
+    fn multi_file_import_function_returns() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { mul } from \"./util.kb\"; mul(6, 7);",
+        );
+        loader.insert(
+            "util.kb",
+            "export const mul = |a: Int64, b: Int64| -> Int64 { return a * b; };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    /// 循环依赖检测
+    #[test]
+    fn multi_file_circular_dependency_detected() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "a.kb",
+            "import { b } from \"./b.kb\"; export const a = |x| -> Int64 { return b(x); };",
+        );
+        loader.insert(
+            "b.kb",
+            "import { a } from \"./a.kb\"; export const b = |x| -> Int64 { return a(x); };",
+        );
+
+        let mut coord = Coordinator::new();
+        let err = coord.run_file("a.kb", &loader).unwrap_err();
+        assert!(err.to_string().contains("circular"));
+    }
+
+    /// 导入不存在的模块
+    #[test]
+    fn multi_file_import_nonexistent() {
+        let mut loader = MemLoader::new();
+        loader.insert("main.kb", "import { x } from \"./missing.kb\"; x;");
+
+        let mut coord = Coordinator::new();
+        let err = coord.run_file("main.kb", &loader).unwrap_err();
+        assert!(err.to_string().contains("not found"));
+    }
+
+    /// 导入未导出的符号
+    #[test]
+    fn multi_file_import_not_exported() {
+        let mut loader = MemLoader::new();
+        loader.insert("main.kb", "import { f } from \"./lib.kb\"; f();");
+        loader.insert("lib.kb", "const f = || { 42; };"); // 未 export
+
+        let mut coord = Coordinator::new();
+        let err = coord.run_file("main.kb", &loader).unwrap_err();
+        assert!(err.to_string().contains("export"));
+    }
+
+    /// 菱形依赖（函数调用链路，2-arg）
+    #[test]
+    fn multi_file_diamond_dependency() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { add_a } from \"./A.kb\"; import { add_b } from \"./B.kb\"; add_a(1, 10) + add_b(2, 10);",
+        );
+        loader.insert(
+            "A.kb",
+            "import { add10 } from \"./math.kb\"; export const add_a = |x: Int64, y: Int64| -> Int64 { return add10(x, y); };",
+        );
+        loader.insert(
+            "B.kb",
+            "import { add10 } from \"./math.kb\"; export const add_b = |x: Int64, y: Int64| -> Int64 { return add10(x, y); };",
+        );
+        loader.insert(
+            "math.kb",
+            "export const add10 = |a: Int64, b: Int64| -> Int64 { return a + b; };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 23); // (1+10) + (2+10) = 11 + 12 = 23
+    }
+
+    /// 单文件向后兼容
+    #[test]
+    fn single_file_backward_compatible() {
+        let mut coord = Coordinator::new();
+        let outcome = coord.run("const x = 42;").unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    /// 导入多个函数名
+    #[test]
+    fn multi_file_import_multiple_functions() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { add, mul } from \"./math.kb\"; add(2, 3) + mul(4, 5);",
+        );
+        loader.insert(
+            "math.kb",
+            "export const add = |a: Int64, b: Int64| -> Int64 { return a + b; };
+             export const mul = |a: Int64, b: Int64| -> Int64 { return a * b; };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 25); // 5 + 20 = 25
+    }
+
+    /// 传递依赖（函数调用链，2-arg）
+    #[test]
+    fn multi_file_import_transitive_function() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { calc } from \"./middle.kb\"; calc(30, 12);",
+        );
+        loader.insert(
+            "middle.kb",
+            "import { add } from \"./leaf.kb\"; export const calc = |a: Int64, b: Int64| -> Int64 { return add(a, b); };",
+        );
+        loader.insert(
+            "leaf.kb",
+            "export const add = |x: Int64, y: Int64| -> Int64 { return x + y; };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 42); // add(30, 12) = 42
+    }
+
+    // ── Bug 1 修复验证：1-arg 函数导入 ──
+
+    #[test]
+    fn multi_file_import_one_arg_function() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { double } from \"./util.kb\"; double(21);",
+        );
+        loader.insert(
+            "util.kb",
+            "export const double = |x: Int64| -> Int64 { return x * 2; };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 42); // 之前 Bug 1 导致返回 4
+    }
+
+    #[test]
+    fn multi_file_import_one_arg_add() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { inc } from \"./util.kb\"; inc(41);",
+        );
+        loader.insert(
+            "util.kb",
+            "export const inc = |x: Int64| -> Int64 { return x + 1; };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    // ── Bug 2 修复验证：导入常量 ──
+
+    #[test]
+    fn multi_file_import_const_value() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { PI } from \"./math.kb\"; PI + 1;",
+        );
+        loader.insert("math.kb", "export const PI = 3;");
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 4);
+    }
+
+    // ── Bug 3 修复验证：导入 struct ──
+
+    #[test]
+    fn multi_file_import_struct_construct_and_field_access() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { Point } from \"./point.kb\";\nconst p = Point { x: 1, y: 2 };\np.x + p.y;",
+        );
+        loader.insert(
+            "point.kb",
+            "export struct Point { x: Int64, y: Int64 };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 3);
+    }
+
+    /// 跨模块 struct 传递给导入函数（验证 struct_id 统一性）
+    #[test]
+    fn multi_file_import_struct_passed_to_imported_function() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { Point, sum } from \"./point.kb\";\nconst p = Point { x: 3, y: 4 };\nsum(p, 0);",
+        );
+        loader.insert(
+            "point.kb",
+            "export struct Point { x: Int64, y: Int64 };\nexport const sum = |p: Point, _dummy: Int64| -> Int64 { return p.x + p.y; };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 7); // 3 + 4 = 7
+    }
+
+    /// 本地函数接收导入 struct 并访问字段（验证 GetField 的 struct_id 来源）
+    #[test]
+    fn multi_file_import_struct_with_local_function() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { Point } from \"./point.kb\";\nconst get_x = |p: Point, _dummy: Int64| -> Int64 { return p.x; };\nconst pt = Point { x: 42, y: 99 };\nget_x(pt, 0);",
+        );
+        loader.insert(
+            "point.kb",
+            "export struct Point { x: Int64, y: Int64 };",
+        );
+
+        let mut coord = Coordinator::new();
+        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 42);
     }
 }
