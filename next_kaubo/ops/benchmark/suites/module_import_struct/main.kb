@@ -1,0 +1,4 @@
+import { Point } from "./point.kb";
+const p = Point { x: 10, y: 20 };
+const r = p.x + p.y;
+print(r.to_string());

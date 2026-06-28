@@ -271,11 +271,11 @@ mod tests {
     fn float_comparisons_drive_branches() {
         let outcome = run_source(
             r#"
-	const a = if 1.0 < 2.0 { 10 } else { 20 };
-	const b = if 2.0 <= 2.0 { 1 } else { 100 };
-	const c = if 3.0 > 2.0 { 2 } else { 200 };
-	const d = if 3.0 >= 3.0 { 3 } else { 300 };
-	const e = if 3.0 != 4.0 { 4 } else { 400 };
+	const a = if (1.0 < 2.0) { 10 } else { 20 };
+	const b = if (2.0 <= 2.0) { 1 } else { 100 };
+	const c = if (3.0 > 2.0) { 2 } else { 200 };
+	const d = if (3.0 >= 3.0) { 3 } else { 300 };
+	const e = if (3.0 != 4.0) { 4 } else { 400 };
 	a + b + c + d + e;
 	"#,
         )
@@ -358,13 +358,13 @@ mod tests {
 
     #[test]
     fn run_if_true_branch() {
-        let outcome = run_source("const x = if true { 1 } else { 0 };").unwrap();
+        let outcome = run_source("const x = if (true) { 1 } else { 0 };").unwrap();
         assert_eq!(outcome.result, 1);
     }
 
     #[test]
     fn run_if_false_branch() {
-        let outcome = run_source("const x = if false { 1 } else { 0 };").unwrap();
+        let outcome = run_source("const x = if (false) { 1 } else { 0 };").unwrap();
         assert_eq!(outcome.result, 0);
     }
 
@@ -377,7 +377,7 @@ mod tests {
     #[test]
     fn run_nested_if() {
         let outcome = run_source(
-            "const x = if true { if false { 1 } else { 2 } } else { 3 };",
+            "const x = if (true) { if (false) { 1 } else { 2 } } else { 3 };",
         )
         .unwrap();
         assert_eq!(outcome.result, 2);
@@ -385,19 +385,19 @@ mod tests {
 
     #[test]
     fn run_bool_not() {
-        let outcome = run_source("const x = if not false { 42 } else { 0 };").unwrap();
+        let outcome = run_source("const x = if (not false) { 42 } else { 0 };").unwrap();
         assert_eq!(outcome.result, 42);
     }
 
     #[test]
     fn run_int_comparisons() {
         let outcome = run_source(
-            "const a = if 1 < 2 { 10 } else { 0 };
-             const b = if 2 <= 2 { 10 } else { 0 };
-             const c = if 3 > 2 { 10 } else { 0 };
-             const d = if 3 >= 3 { 10 } else { 0 };
-             const e = if 5 != 4 { 10 } else { 0 };
-             const f = if 5 == 5 { 10 } else { 0 };
+            "const a = if (1 < 2) { 10 } else { 0 };
+             const b = if (2 <= 2) { 10 } else { 0 };
+             const c = if (3 > 2) { 10 } else { 0 };
+             const d = if (3 >= 3) { 10 } else { 0 };
+             const e = if (5 != 4) { 10 } else { 0 };
+             const f = if (5 == 5) { 10 } else { 0 };
              a + b + c + d + e + f;",
         )
         .unwrap();
@@ -486,13 +486,13 @@ mod tests {
 
     #[test]
     fn run_const_true() {
-        let outcome = run_source("const t = true; if t { 1 } else { 0 };").unwrap();
+        let outcome = run_source("const t = true; if (t) { 1 } else { 0 };").unwrap();
         assert_eq!(outcome.result, 1);
     }
 
     #[test]
     fn run_const_false() {
-        let outcome = run_source("const f = false; if f { 1 } else { 0 };").unwrap();
+        let outcome = run_source("const f = false; if (f) { 1 } else { 0 };").unwrap();
         assert_eq!(outcome.result, 0);
     }
 
@@ -599,7 +599,7 @@ mod tests {
         let outcome = run_source(
             r#"
 	const x = 2;
-	const desc = match x {
+	const desc = match (x) {
 	    0 -> "zero",
 	    1 -> "one",
 	    _ -> "many",
@@ -618,7 +618,7 @@ mod tests {
             r#"
 	enum Color { Red, Green, Blue }
 	const c = Red;
-	const tag = match c {
+	const tag = match (c) {
 	    Red -> 0,
 	    Green -> 1,
 	    _ -> 99,
@@ -636,7 +636,7 @@ mod tests {
             r#"
 	enum Color { Red, Green }
 	const c = Green;
-	const desc = match c {
+	const desc = match (c) {
 	    Red -> "red",
 	    _ -> "other",
 	};
@@ -654,7 +654,7 @@ mod tests {
             r#"
 	enum Option { Some(value: Int64), None }
 	const x = Some(42);
-	const val = match x {
+	const val = match (x) {
 	    Some(v) -> v,
 	    None -> 0,
 	};
@@ -671,7 +671,7 @@ mod tests {
             r#"
 	enum Option { Some(value: Int64), None }
 	const x = None;
-	const val = match x {
+	const val = match (x) {
 	    Some(v) -> v,
 	    None -> 99,
 	};
@@ -770,7 +770,7 @@ mod tests {
     fn for_loop_iterates_list() {
         let outcome = run_source(r#"
             var sum = 0;
-            for x in [1, 2, 3, 4] {
+            for (x in [1, 2, 3, 4]) {
                 sum = sum + x;
             };
             sum;
@@ -909,7 +909,7 @@ mod tests {
     #[test]
     fn dump_pipeline_diff() {
         // Pipeline pattern: nested if without else — the case that caused timeout
-        let src = "var total = 0; var x = 1; while x <= 5 { if x % 2 != 0 { var t = x * 3; if t % 7 == 0 { total = total + t; }; }; x = x + 1; };";
+        let src = "var total = 0; var x = 1; while (x <= 5) { if (x % 2 != 0) { var t = x * 3; if (t % 7 == 0) { total = total + t; }; }; x = x + 1; };";
         let module = Parser::new(src).parse().unwrap();
         kaubo_infer::infer_module(&module).unwrap();
 
@@ -937,7 +937,7 @@ mod tests {
 
     #[test]
     fn infinite_loop_is_detected() {
-        let source = "var x = 0; while x < 10 { x = x; };";
+        let source = "var x = 0; while (x < 10) { x = x; };";
         let config = RunConfig {
             max_loop_iterations: 100,
             ..RunConfig::default()
@@ -949,7 +949,7 @@ mod tests {
 
     #[test]
     fn finite_loop_completes_under_limit() {
-        let source = "var x = 0; while x < 3 { x = x + 1; }; x;";
+        let source = "var x = 0; while (x < 3) { x = x + 1; }; x;";
         let outcome = run_source(source).unwrap();
         assert_eq!(outcome.result, 3);
     }
@@ -1438,6 +1438,7 @@ mod tests {
     }
 
     /// 本地函数接收导入 struct 并访问字段（验证 GetField 的 struct_id 来源）
+    /// TODO: lambda 参数传递有已知问题，待后续修复
     #[test]
     fn multi_file_import_struct_with_local_function() {
         let mut loader = MemLoader::new();

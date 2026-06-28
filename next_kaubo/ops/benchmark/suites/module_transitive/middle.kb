@@ -1,0 +1,2 @@
+import { add } from "./leaf.kb";
+export const calc = |a: Int64, b: Int64| -> Int64 { return add(a, b); };

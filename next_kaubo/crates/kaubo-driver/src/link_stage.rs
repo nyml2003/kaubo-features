@@ -72,7 +72,24 @@ impl LinkStage {
 
             for func in &mut module_cps.functions {
                 for block in &mut func.blocks {
-                    // 4a. 解析 CallExternal → Call(global_idx)
+                    // 4a. 重映射本地 Call/TailCall → global_idx（必须在 CallExternal 之前）
+                    match &block.term {
+                        CpsTerminator::Call(local_idx, _, _)
+                        | CpsTerminator::TailCall(local_idx, _) => {
+                            let global_idx = func_remap
+                                .get(&(path.to_string(), *local_idx))
+                                .copied()
+                                .unwrap_or(*local_idx);
+                            match &mut block.term {
+                                CpsTerminator::Call(ref mut fi, _, _) => *fi = global_idx,
+                                CpsTerminator::TailCall(ref mut fi, _) => *fi = global_idx,
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    // 4b. 解析 CallExternal → Call(global_idx)（本地 Call 已重映射完毕）
                     if let CpsTerminator::CallExternal {
                         import_handle,
                         args,
@@ -106,9 +123,9 @@ impl LinkStage {
                         block.term = CpsTerminator::Call(global_idx, args.clone(), *ret_block);
                     }
 
-                    // 4b. 跳过 CallExternalDynamic（原样保留，运行时解析）
+                    // 4c. 跳过 CallExternalDynamic（原样保留，运行时解析）
 
-                    // 4c. 重映射 struct_id 引用
+                    // 4d. 重映射 struct_id 引用
                     Self::remap_struct_ids(block, &struct_remap, path);
 
                     // 4d. 重映射 const_idx 引用（LoadConst）——必须在 LoadExternalConst 之前

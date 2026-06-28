@@ -85,11 +85,11 @@ fn run_args(args: &[String]) -> Result<(), String> {
     let pos = positional_args(args);
 
     let (sub, file) = match pos.as_slice() {
-        ["compile" | "run" | "bench", f, ..] => (pos[0], *f),
-        [f, ..] if !matches!(*f, "compile" | "run" | "bench") => ("run", *f),
+        ["compile" | "run" | "bench" | "mod", f, ..] => (pos[0], *f),
+        [f, ..] if !matches!(*f, "compile" | "run" | "bench" | "mod") => ("run", *f),
         _ => {
             return Err(
-                "Usage: kaubo2 [--log-level <LEVEL>] [--max-loop-iterations <N>] [compile|run|bench] <file> [iterations] [warmup]"
+                "Usage: kaubo2 [--log-level <LEVEL>] [--max-loop-iterations <N>] [compile|run|bench|mod] <file> [iterations] [warmup]"
                     .to_string(),
             );
         }
@@ -158,6 +158,29 @@ fn run_args(args: &[String]) -> Result<(), String> {
             let avg_us = times.iter().sum::<f64>() / times.len() as f64 * 1000.0;
             // Single-line output: avg_us instr_count compile_ms
             println!("{} {} {}", avg_us, instr_count, compile_ms);
+        }
+        "mod" => {
+            // 多文件模块模式：以 file 所在目录为 root，file 为入口
+            let abs = std::path::Path::new(file)
+                .canonicalize()
+                .map_err(|e| format!("cannot resolve {file}: {e}"))?;
+            let root = abs.parent().unwrap_or_else(|| std::path::Path::new("."));
+            let entry_name = abs
+                .file_name()
+                .unwrap()
+                .to_str()
+                .ok_or_else(|| format!("invalid entry file: {file}"))?;
+
+            let vfs = kaubo_vfs::FsVfs::new(root);
+            let loader = kaubo_driver::module_loader::FileLoader::new(Box::new(vfs));
+
+            let mut coord = kaubo_driver::Coordinator::new()
+                .with_max_loop_iterations(config.max_loop_iterations);
+
+            let outcome = coord
+                .run_file(entry_name, &loader)
+                .map_err(|e| e.to_string())?;
+            render_run(&outcome);
         }
         "run" => {
             if file.ends_with(".kauboc") {
@@ -236,14 +259,14 @@ mod tests {
     #[test]
     fn e2e_if_else() {
         assert_eq!(
-            run_src("const x = if true { 42 } else { 0 };").unwrap_or(-1),
+            run_src("const x = if (true) { 42 } else { 0 };").unwrap_or(-1),
             42
         );
     }
     #[test]
     fn e2e_if_false() {
         assert_eq!(
-            run_src("const x = if false { 0 } else { 42 };").unwrap_or(-1),
+            run_src("const x = if (false) { 0 } else { 42 };").unwrap_or(-1),
             42
         );
     }
@@ -266,7 +289,7 @@ mod tests {
     #[test]
     fn e2e_while_skip() {
         assert_eq!(
-            run_src("while false { const x = 0; }; const r = 5; r;").unwrap_or(-1),
+            run_src("while (false) { const x = 0; }; const r = 5; r;").unwrap_or(-1),
             5
         );
     }
@@ -274,7 +297,7 @@ mod tests {
     #[test]
     fn e2e_while_count() {
         assert_eq!(
-            run_src("var n = 0; while n < 3 { n = n + 1; }; n;").unwrap_or(-1),
+            run_src("var n = 0; while (n < 3) { n = n + 1; }; n;").unwrap_or(-1),
             3
         );
     }

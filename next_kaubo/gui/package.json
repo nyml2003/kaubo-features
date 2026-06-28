@@ -1,14 +1,6 @@
 {
   "private": true,
   "type": "module",
-  "scripts": {
-    "dev": "pnpm --filter @kaubo/app dev",
-    "build": "pnpm --filter @kaubo/app build",
-    "preview": "pnpm --filter @kaubo/app preview",
-    "lint": "pnpm --filter @kaubo/app lint",
-    "format": "pnpm --filter @kaubo/app format",
-    "test:e2e": "playwright test --config e2e/playwright.config.ts"
-  },
   "devDependencies": {
     "@playwright/test": "^1.60.0"
   }

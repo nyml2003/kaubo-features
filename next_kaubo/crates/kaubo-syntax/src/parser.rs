@@ -247,9 +247,7 @@ impl Parser {
             self.expect(TokenKind::Colon)?;
             let body = self.parse_expr()?;
             methods.push(MethodDef { name: mname, body, operator: is_operator });
-            if self.current_kind() == TokenKind::Semicolon {
-                self.bump();
-            } else if self.current_kind() == TokenKind::Comma {
+            if matches!(self.current_kind(), TokenKind::Semicolon | TokenKind::Comma) {
                 self.bump();
             }
         }
@@ -1340,13 +1338,13 @@ mod tests {
 
     #[test]
     fn test_if_else() {
-        let e = parse_expr_only("if x < 0 { -x } else { x }");
+        let e = parse_expr_only("if (x < 0) { -x } else { x }");
         assert!(matches!(e, Expr::If { .. }));
     }
 
     #[test]
     fn test_while_loop() {
-        let e = parse_expr_only("while i < 10 { i = i + 1 }");
+        let e = parse_expr_only("while (i < 10) { i = i + 1 }");
         assert!(matches!(e, Expr::While { .. }));
     }
 
@@ -1389,7 +1387,7 @@ mod tests {
     #[test]
     fn test_for_loop() {
         // TODO: fix for-loop in struct context
-        let e = parse_expr_only("for x in xs { print(x) }");
+        let e = parse_expr_only("for (x in xs) { print(x) }");
         assert!(matches!(e, Expr::For { .. }));
     }
 
@@ -1463,7 +1461,7 @@ mod tests {
 
     #[test]
     fn test_const_with_type_annotation() {
-        let m = parse_mod("const pi: Float64 = 3.14159;");
+        let m = parse_mod("const pi: Float64 = 123.456;");
         match &m.stmts[0] {
             Stmt::ConstDecl { name, ty_ann, .. } => {
                 assert_eq!(name, "pi");
@@ -1604,8 +1602,8 @@ mod tests {
 
     #[test]
     fn test_expr_lit_float() {
-        let e = parse_expr_only("3.14159");
-        assert_eq!(e, Expr::LitFloat(3.14159));
+        let e = parse_expr_only("123.456");
+        assert_eq!(e, Expr::LitFloat(123.456));
     }
 
     #[test]
@@ -1884,7 +1882,7 @@ mod tests {
 
     #[test]
     fn test_if_without_else() {
-        let e = parse_expr_only("if x > 0 { return x }");
+        let e = parse_expr_only("if (x > 0) { return x }");
         match e {
             Expr::If {
                 cond,
@@ -1901,7 +1899,7 @@ mod tests {
 
     #[test]
     fn test_if_nested() {
-        let e = parse_expr_only("if a > 0 { if b > 0 { 1 } else { 0 } } else { -1 }");
+        let e = parse_expr_only("if (a > 0) { if (b > 0) { 1 } else { 0 } } else { -1 }");
         match e {
             Expr::If { else_branch, .. } => {
                 assert!(else_branch.is_some());
@@ -1912,7 +1910,7 @@ mod tests {
 
     #[test]
     fn test_while_body_is_block() {
-        let e = parse_expr_only("while i < 10 { i = i + 1; x = x * 2 }");
+        let e = parse_expr_only("while (i < 10) { i = i + 1; x = x * 2 }");
         match e {
             Expr::While { body, .. } => {
                 match &*body {
@@ -1926,7 +1924,7 @@ mod tests {
 
     #[test]
     fn test_for_loop_full() {
-        let e = parse_expr_only("for x in xs { print(x) }");
+        let e = parse_expr_only("for (x in xs) { print(x) }");
         match e {
             Expr::For {
                 var,
@@ -2144,15 +2142,18 @@ mod tests {
     }
 
     #[test]
-    fn test_struct_not_declared_is_not_struct_lit() {
-        // Without a prior struct declaration, Foo { ... } should parse as
-        // var ref "Foo" followed by a block expression (or fail)
-        // Actually: chain_postfix checks struct_names. Foo not in set → breaks.
-        // So "Foo { x: 1 }" would be varref "Foo" then block parse fails.
-        // Let's test that a struct-declared name is required
+    fn test_struct_always_parsed_as_struct_lit() {
+        // Name { ... } 始终解析为 StructLit，不查符号表
+        // struct 名有效性由 infer 阶段检查
         let result = Parser::new("const p = Unknown { x: 1 };").parse();
-        // Should fail because { is not a valid expression continuation without struct decl
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let m = result.unwrap();
+        match &m.stmts[0] {
+            Stmt::ConstDecl { value, .. } => {
+                assert!(matches!(value, Expr::StructLit { name, .. } if name == "Unknown"));
+            }
+            _ => panic!("expected ConstDecl"),
+        }
     }
 
     // ── Type annotation ──
@@ -2319,7 +2320,7 @@ mod tests {
 
     #[test]
     fn test_match_basic() {
-        let e = parse_expr_only("match x { 0 -> \"zero\", 1 -> \"one\", _ -> \"many\" }");
+        let e = parse_expr_only("match (x) { 0 -> \"zero\", 1 -> \"one\", _ -> \"many\" }");
         // Should desugar to block with var + if/else chain
         match e {
             Expr::Block(stmts) => {

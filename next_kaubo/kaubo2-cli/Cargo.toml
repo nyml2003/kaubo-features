@@ -9,5 +9,6 @@ description = "Kaubo v2 CLI — direct driver: parse → infer → lower → exe
 [dependencies]
 kaubo-driver = { workspace = true }
 kaubo-vm = { workspace = true }
+kaubo-vfs = { workspace = true }
 kaubo-log = { workspace = true }
 kaubo-log-handlers = { workspace = true }

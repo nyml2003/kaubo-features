@@ -61,7 +61,12 @@ pub fn infer_module_with_imports(
     let mut enum_variants: HashMap<usize, Vec<(String, Vec<(String, Type)>)>> =
         HashMap::new();
     for stmt in &module.stmts {
-        if let Stmt::StructDef { name, fields } = stmt {
+        // Unwrap ExportStmt to reach inner definitions
+        let inner = match stmt {
+            Stmt::ExportStmt(inner) => inner.as_ref(),
+            other => other,
+        };
+        if let Stmt::StructDef { name, fields } = inner {
             let id = fresh_struct_id();
             struct_registry.insert(name.clone(), id);
             let mut fts = Vec::new();
@@ -73,7 +78,7 @@ pub fn infer_module_with_imports(
             }
             struct_fields.insert(id, fts);
         }
-        if let Stmt::EnumDef { name, variants } = stmt {
+        if let Stmt::EnumDef { name, variants } = inner {
             let id = fresh_enum_id();
             enum_registry.insert(name.clone(), id);
             let mut vts: Vec<(String, Vec<(String, Type)>)> = Vec::new();
@@ -89,7 +94,7 @@ pub fn infer_module_with_imports(
             }
             enum_variants.insert(id, vts);
         }
-        if let Stmt::InterfaceDef { name, methods } = stmt {
+        if let Stmt::InterfaceDef { name, methods } = inner {
             let mut sigs: Vec<(String, Vec<(String, Type)>, Option<Type>)> = Vec::new();
             for m in methods {
                 let mut param_types = Vec::new();
@@ -134,14 +139,16 @@ pub fn infer_module_with_imports(
                 ImportKind::Const { ty } | ImportKind::Function { ty } => {
                     env.insert(spec.local_name.clone(), Scheme::monomorphic(ty.clone()));
                 }
-                ImportKind::Struct { fields } => {
-                    let id = fresh_struct_id();
-                    struct_registry.insert(spec.local_name.clone(), id);
-                    struct_fields.insert(id, fields.clone());
-                    let field_types: Vec<(String, Type)> = fields.clone();
+                ImportKind::Struct {
+                    struct_id: src_id,
+                    fields,
+                } => {
+                    // ★ 使用源模块原始 struct_id，不重新分配
+                    struct_registry.insert(spec.local_name.clone(), *src_id);
+                    struct_fields.insert(*src_id, fields.clone());
                     env.insert(
                         spec.local_name.clone(),
-                        Scheme::monomorphic(Type::Record(id, field_types)),
+                        Scheme::monomorphic(Type::Record(*src_id, fields.clone())),
                     );
                 }
                 ImportKind::Interface { methods } => {
@@ -300,7 +307,11 @@ pub fn infer_module_with_imports(
                                 type_expr_to_type(&f.ty, &struct_registry, &struct_fields, &interface_registry)?,
                             ));
                         }
-                        struct_fields.insert(id, fts);
+                        struct_fields.insert(id, fts.clone());
+                        env.insert(
+                            name.clone(),
+                            Scheme::monomorphic(Type::Record(id, fts)),
+                        );
                         exports.insert(name.clone());
                     }
                     Stmt::EnumDef { name, variants } => {
@@ -1135,7 +1146,7 @@ pub fn infer(
             }
         }
 
-        Expr::ListLit(items) => {
+        Expr::ListLit(items) | Expr::Tuple(items) => {
             let mut s = Subst::empty();
             let elem_ty = Type::Var(fresh_tvar());
             for item in items {

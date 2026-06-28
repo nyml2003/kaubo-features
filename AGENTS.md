@@ -2,9 +2,7 @@
 
 ## 构建工具
 
-本仓库用 **Ops2** (`python kaubo-ops <cmd>`) 统一编排所有任务。**优先用 `python kaubo-ops <cmd>`，不要手写 `cd xxx && cargo check ...` 这类裸命令。**
-
-旧入口 `cargo make <task>` 仍可用（向后兼容），但新功能只在 Ops2 中添加。
+本仓库用 **Ops2** (`python kaubo-ops <cmd>`) 统一编排所有任务。**不要手写 `cd xxx && cargo check ...` 这类裸命令。**
 
 ### 所有命令统一在 `kaubo-ops/` 目录
 

@@ -1,0 +1,2 @@
+import { add } from "./math.kb";
+export const add_a = |x: Int64, y: Int64| -> Int64 { return add(x, y); };

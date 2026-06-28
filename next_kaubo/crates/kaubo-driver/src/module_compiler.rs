@@ -283,10 +283,13 @@ fn export_entry_to_import_spec(
             source_path: _source_path.to_string(),
             kind: ImportKind::Function { ty: ty.clone() },
         },
-        ExportEntry::Struct { fields, .. } => ImportSpec {
+        ExportEntry::Struct {
+            fields, struct_id, ..
+        } => ImportSpec {
             local_name: local_name.to_string(),
             source_path: _source_path.to_string(),
             kind: ImportKind::Struct {
+                struct_id: *struct_id,
                 fields: fields.clone(),
             },
         },

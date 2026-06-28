@@ -140,6 +140,10 @@ pub struct ImportSpec {
 pub enum ImportKind {
     Const { ty: Type },
     Function { ty: Type },
-    Struct { fields: Vec<(String, Type)> },
+    /// struct_id 是源模块的原始 ID，导入时复用，不重新分配
+    Struct {
+        struct_id: usize,
+        fields: Vec<(String, Type)>,
+    },
     Interface { methods: Vec<(String, Vec<(String, Type)>, Option<Type>)> },
 }

@@ -167,6 +167,7 @@ dependencies = [
  "kaubo-driver",
  "kaubo-log",
  "kaubo-log-handlers",
+ "kaubo-vfs",
  "kaubo-vm",
 ]
 

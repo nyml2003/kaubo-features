@@ -1,0 +1,3 @@
+import { PI, TAU } from "./constants.kb";
+const r = PI + TAU;
+print(r.to_string());

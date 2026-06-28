@@ -1,0 +1,4 @@
+import { add_a } from "./A.kb";
+import { add_b } from "./B.kb";
+const r = add_a(10, 12) + add_b(10, 12);
+print(r.to_string());

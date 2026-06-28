@@ -52,7 +52,6 @@ impl EventHandler for CompositeHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaubo_log::Severity;
 
     /// A handler that records the last event it saw for test assertions.
     struct RecordingHandler {
@@ -70,10 +69,10 @@ mod tests {
 
     #[test]
     fn composite_broadcasts_to_all_children() {
-        let child1 = RecordingHandler {
+        let _child1 = RecordingHandler {
             seen: std::cell::RefCell::new(vec![]),
         };
-        let child2 = RecordingHandler {
+        let _child2 = RecordingHandler {
             seen: std::cell::RefCell::new(vec![]),
         };
 

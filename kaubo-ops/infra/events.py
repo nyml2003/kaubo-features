@@ -16,14 +16,25 @@ class EventBus(ABC):
 
 
 class ConsoleEventBus(EventBus):
-    """控制台事件输出——带前缀的人类可读格式。"""
+    """控制台事件输出——带前缀的人类可读格式。
+
+    前缀使用 ASCII 安全字符，避免 Windows GBK 终端编码问题。
+    """
+
+    # 使用 ASCII 安全前缀，兼容所有终端编码
+    PREFIXES = {
+        "step": "\n[step]",
+        "info": "  >",
+        "error": "  X",
+        "success": "  OK",
+    }
 
     def emit(self, level: str, message: str) -> None:
-        prefix = {
-            "step": "\n[step]",
-            "info": "  →",
-            "error": "  ✗",
-            "success": "  ✓",
-        }.get(level, "   ")
+        prefix = self.PREFIXES.get(level, "   ")
         stream = sys.stderr if level == "error" else sys.stdout
-        print(f"{prefix} {message}", file=stream)
+        # 用 errors='replace' 防止非 ASCII 字符导致 UnicodeEncodeError
+        safe = f"{prefix} {message}"
+        try:
+            print(safe, file=stream)
+        except UnicodeEncodeError:
+            print(safe.encode(stream.encoding or "utf-8", errors="replace").decode(stream.encoding or "utf-8", errors="replace"), file=stream)

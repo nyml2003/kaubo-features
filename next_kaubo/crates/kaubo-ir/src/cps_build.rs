@@ -37,12 +37,11 @@ pub fn build_module_with_imports(
     b.import_table = import_table.cloned();
     b.is_exported = is_exported.clone();
     b.import_structs = import_structs.cloned();
-    b.collect_signatures(module);
 
-    // 注册导入的结构体——使用源模块的原始 struct_id，不重新分配
+    // ★ 注册导入的结构体——必须在 collect_signatures 之前，
+    // 这样后续的 type_expr_hint 才能识别导入 struct 的类型名
     if let Some(import_structs) = &b.import_structs {
         for (name, (_src_path, src_id, fields)) in import_structs {
-            // 计算 type_bitmap：标记哪些字段是堆类型
             let mut bitmap: u64 = 0;
             for (i, (_, field_ty)) in fields.iter().enumerate() {
                 if is_heap_type_name(field_ty) {
@@ -50,7 +49,7 @@ pub fn build_module_with_imports(
                 }
             }
             b.structs.push(StructDef {
-                id: *src_id, // ★ 保留源模块原始 ID，确保 LinkStage 统一映射
+                id: *src_id,
                 name: name.clone(),
                 fields: fields.clone(),
                 type_bitmap: bitmap,
@@ -64,6 +63,7 @@ pub fn build_module_with_imports(
         }
     }
 
+    b.collect_signatures(module);
     b.ctx.new_block(); // entry block id 0
     let mut tail: Option<usize> = None;
 
@@ -389,7 +389,12 @@ impl<'a> CpsBuilder<'a> {
         }
 
         for stmt in &module.stmts {
-            match stmt {
+            // Unwrap ExportStmt to reach inner definitions
+            let inner = match stmt {
+                Stmt::ExportStmt(inner) => inner.as_ref(),
+                other => other,
+            };
+            match inner {
                 Stmt::StructDef { name, .. } => {
                     self.struct_names.insert(name.clone());
                 }
@@ -413,7 +418,11 @@ impl<'a> CpsBuilder<'a> {
         }
 
         for stmt in &module.stmts {
-            match stmt {
+            let inner = match stmt {
+                Stmt::ExportStmt(inner) => inner.as_ref(),
+                other => other,
+            };
+            match inner {
                 Stmt::StructDef { name, fields } => {
                     let fields = fields
                         .iter()
@@ -544,7 +553,7 @@ impl<'a> CpsBuilder<'a> {
             } => ValueHint::Struct(format!("{enum_name}::{variant_name}")),
             Expr::GetVariantTag(_) => ValueHint::Int,
             Expr::GetVariantField { .. } => ValueHint::Unknown,
-            Expr::ListLit(_) => ValueHint::List,
+            Expr::ListLit(_) | Expr::Tuple(_) => ValueHint::List,
             Expr::Binary { left, op, right } => match op {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
                     let lh = self.expr_hint(left);
@@ -945,7 +954,7 @@ impl<'a> CpsBuilder<'a> {
             Expr::Return(val) => self.build_return(val.as_deref()),
             Expr::Member { object, field } => self.build_member(object, field),
             Expr::Call { func, args } => self.build_call(func, args),
-            Expr::ListLit(items) => self.build_list(items),
+            Expr::ListLit(items) | Expr::Tuple(items) => self.build_list(items),
             Expr::StructLit { name, fields, spread } => {
                 if let Some(spread_expr) = spread {
                     self.build_struct_lit_with_spread(name, fields, spread_expr)

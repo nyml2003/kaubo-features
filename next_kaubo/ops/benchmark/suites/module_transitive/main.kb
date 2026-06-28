@@ -1,0 +1,3 @@
+import { calc } from "./middle.kb";
+const r = calc(10, 32);
+print(r.to_string());
