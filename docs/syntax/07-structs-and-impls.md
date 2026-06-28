@@ -89,8 +89,52 @@ impl Point {
 p1.add(p2);
 ```
 
+## Interface 实现
+
+`impl` 可以实现已定义的接口：
+
+```kaubo
+interface Speakable {
+    speak: |self: Self|;
+};
+
+impl Speakable for Cat {
+    speak: |self: Cat| { print("meow"); };
+};
+```
+
+## Operator 重载
+
+用 `operator` 关键字声明运算符方法：
+
+```kaubo
+interface Add {
+    operator add: |self: Self, other: Self| -> Self;
+};
+
+impl Add for Vec2 {
+    operator add: |self: Vec2, other: Vec2| -> Vec2 {
+        return Vec2 { x: self.x + other.x, y: self.y + other.y };
+    };
+};
+
+const c = Vec2 { x: 1, y: 2 } + Vec2 { x: 3, y: 4 };
+```
+
+内置接口 `Add`/`Subtract`/`Multiply`/`Divide`/`Modulo`/`Compare`/`Display`/`IntoFloat`/`IntoInt` 自动注入，无需显式声明。
+
+## Interface 类型标注
+
+接口名可作为参数类型，实现动态分派（dyn Trait）：
+
+```kaubo
+const speak = |animal: Speakable| { animal.speak(); };
+speak(Cat {});  // 自动包装为 InterfaceObj
+```
+
 ## 当前限制
 
 - 方法体建议写成 lambda。
-- 不应假设已有继承、trait、可见性或泛型方法。
+- 不支持泛型方法。
+- interface 类型标注不支持泛型/类型变量。
 - `self` 是普通关键字 token，方法签名中需要显式写出。

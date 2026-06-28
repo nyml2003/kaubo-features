@@ -32,11 +32,11 @@ _tmp
 
 ```text
 const var if else for in while break continue return
-struct impl enum match export import from as async await self
-true false null not and or
+struct impl interface enum match export import from as async await self
+true false null not and or operator
 ```
 
-VSCode grammar 中出现的 `elif`、`pass`、`yield`、`module`、`pub`、`operator`、`json` 等不是当前核心 parser 关键字。
+VSCode grammar 中出现的 `elif`、`pass`、`yield`、`module`、`pub`、`json` 等不是当前核心 parser 关键字。
 
 ## 字符串
 

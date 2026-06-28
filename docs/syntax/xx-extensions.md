@@ -47,7 +47,7 @@ const id = |x: T| -> T { x };
 | CPS | Monomorphization——函数体复制+类型替换 |
 | VM | 无（单态化后全是具体类型） |
 
-## 2. Interface（L4 · 依赖 enum · 设计阶段）
+## 2. Interface（L4 · 已完成 ✅）
 
 动态分派 + 显式声明。接口值 = 胖指针 `(vtable, data)`。
 
