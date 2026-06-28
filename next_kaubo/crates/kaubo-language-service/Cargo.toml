@@ -9,4 +9,6 @@ description = "Kaubo tooling language service"
 [dependencies]
 kaubo-syntax = { workspace = true }
 kaubo-web-api = { workspace = true }
+kaubo-driver = { workspace = true }
+kaubo-ast = { workspace = true }
 serde = { workspace = true }

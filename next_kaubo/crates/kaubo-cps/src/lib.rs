@@ -133,6 +133,7 @@ pub enum CpsBinOp {
     IToS,
     FToS,
     SToI,
+    BToS,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

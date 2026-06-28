@@ -37,6 +37,41 @@ pub struct TypeError {
 
 pub type InferResult<T> = Result<T, TypeError>;
 
+/// Annotate a TypeError with a better source position.
+fn annotate_err(e: TypeError, span: &Span) -> TypeError {
+    if e.line == 0 {
+        TypeError { line: span.line, col: span.col, msg: e.msg }
+    } else {
+        e
+    }
+}
+
+/// Extract the deepest span from an expression for error reporting.
+fn expr_span(expr: &Expr) -> Span {
+    match expr {
+        Expr::VarRef { span, .. } => *span,
+        Expr::Call { func, arg } => {
+            let a = expr_span(arg);
+            if a.line > 0 { a } else { expr_span(func) }
+        }
+        Expr::Member { object, .. } => expr_span(object),
+        Expr::Binary { left, right, .. } => {
+            let r = expr_span(right);
+            if r.line > 0 { r } else { expr_span(left) }
+        }
+        Expr::Unary { right, .. } => expr_span(right),
+        Expr::If { cond, .. } => expr_span(cond),
+        Expr::While { cond, .. } => expr_span(cond),
+        Expr::Return(val) => val.as_ref().map(|e| expr_span(e.as_ref())).unwrap_or(Span::ZERO),
+        Expr::Assign { target, .. } => expr_span(target),
+        Expr::Tuple(items) => items.iter().find_map(|i| {
+            let s = expr_span(i);
+            if s.line > 0 { Some(s) } else { None }
+        }).unwrap_or(Span::ZERO),
+        _ => Span::ZERO,
+    }
+}
+
 // ── 主入口 ──
 
 pub fn infer_module(
@@ -71,7 +106,7 @@ pub fn infer_module_with_imports(
             Stmt::ExportStmt(inner) => inner.as_ref(),
             other => other,
         };
-        if let Stmt::StructDef { name, fields } = inner {
+        if let Stmt::StructDef { name, fields, .. } = inner {
             let id = fresh_struct_id();
             struct_registry.insert(name.clone(), id);
             let mut fts = Vec::new();
@@ -88,7 +123,7 @@ pub fn infer_module_with_imports(
             }
             struct_fields.insert(id, fts);
         }
-        if let Stmt::EnumDef { name, variants } = inner {
+        if let Stmt::EnumDef { name, variants, .. } = inner {
             let id = fresh_enum_id();
             enum_registry.insert(name.clone(), id);
             let mut vts: Vec<(String, Vec<(String, Type)>)> = Vec::new();
@@ -109,7 +144,7 @@ pub fn infer_module_with_imports(
             }
             enum_variants.insert(id, vts);
         }
-        if let Stmt::InterfaceDef { name, methods } = inner {
+        if let Stmt::InterfaceDef { name, methods, .. } = inner {
             let mut sigs: Vec<(String, Vec<(String, Type)>, Option<Type>)> = Vec::new();
             for m in methods {
                 let mut param_types = Vec::new();
@@ -185,7 +220,7 @@ pub fn infer_module_with_imports(
     // Pass 3: infer all statements
     for stmt in &module.stmts {
         match stmt {
-            Stmt::ConstDecl { name, value, .. } => {
+            Stmt::ConstDecl { name, value, span, .. } => {
                 let (s, ty) = infer(
                     &env,
                     value,
@@ -194,11 +229,12 @@ pub fn infer_module_with_imports(
                     &enum_registry,
                     &enum_variants,
                     &interface_registry,
-                )?;
+                )
+                .map_err(|e| annotate_err(e, span))?;
                 let scheme = generalize(&env, &s.apply(&ty));
                 env.insert(name.clone(), scheme);
             }
-            Stmt::VarDecl { name, value, .. } => {
+            Stmt::VarDecl { name, value, span, .. } => {
                 let ty = if let Some(val) = value {
                     let (s, t) = infer(
                         &env,
@@ -208,14 +244,15 @@ pub fn infer_module_with_imports(
                         &enum_registry,
                         &enum_variants,
                         &interface_registry,
-                    )?;
+                    )
+                    .map_err(|e| annotate_err(e, span))?;
                     s.apply(&t)
                 } else {
                     Type::Var(fresh_tvar())
                 };
                 env.insert(name.clone(), Scheme::monomorphic(ty));
             }
-            Stmt::StructDef { name, fields } => {
+            Stmt::StructDef { name, fields, .. } => {
                 let id = struct_registry[name];
                 let mut fts = Vec::new();
                 for f in fields {
@@ -231,7 +268,7 @@ pub fn infer_module_with_imports(
                 }
                 struct_fields.insert(id, fts);
             }
-            Stmt::EnumDef { name, variants } => {
+            Stmt::EnumDef { name, variants, .. } => {
                 let id = enum_registry[name];
                 // Register each variant constructor in the environment
                 for (tag, v) in variants.iter().enumerate() {
@@ -258,6 +295,7 @@ pub fn infer_module_with_imports(
                 struct_name,
                 interface_name,
                 methods,
+                ..
             } => {
                 // Check interface completeness if implementing a trait
                 if let Some(ref iface_name) = interface_name {
@@ -326,6 +364,7 @@ pub fn infer_module_with_imports(
                 }
             }
             Stmt::ExprStmt(expr) => {
+                let span = expr_span(expr);
                 infer(
                     &env,
                     expr,
@@ -334,7 +373,8 @@ pub fn infer_module_with_imports(
                     &enum_registry,
                     &enum_variants,
                     &interface_registry,
-                )?;
+                )
+                .map_err(|e| annotate_err(e, &span))?;
             }
             Stmt::InterfaceDef { name, .. } => {
                 // Register interface name as a type-level entity (no runtime value)
@@ -343,7 +383,7 @@ pub fn infer_module_with_imports(
             Stmt::ExportStmt(inner) => {
                 // 推断内部声明，并记录导出
                 match inner.as_ref() {
-                    Stmt::ConstDecl { name, value, .. } => {
+                    Stmt::ConstDecl { name, value, span, .. } => {
                         let (s, ty) = infer(
                             &env,
                             value,
@@ -352,12 +392,13 @@ pub fn infer_module_with_imports(
                             &enum_registry,
                             &enum_variants,
                             &interface_registry,
-                        )?;
+                        )
+                        .map_err(|e| annotate_err(e, span))?;
                         let scheme = generalize(&env, &s.apply(&ty));
                         env.insert(name.clone(), scheme);
                         exports.insert(name.clone());
                     }
-                    Stmt::StructDef { name, fields } => {
+                    Stmt::StructDef { name, fields, .. } => {
                         let id = struct_registry[name];
                         let mut fts = Vec::new();
                         for f in fields {
@@ -375,7 +416,7 @@ pub fn infer_module_with_imports(
                         env.insert(name.clone(), Scheme::monomorphic(Type::Record(id, fts)));
                         exports.insert(name.clone());
                     }
-                    Stmt::EnumDef { name, variants } => {
+                    Stmt::EnumDef { name, variants, .. } => {
                         let id = enum_registry[name];
                         for (tag, v) in variants.iter().enumerate() {
                             let vtys = enum_variants
@@ -921,7 +962,7 @@ pub fn infer(
         Expr::LitTrue | Expr::LitFalse => Ok((Subst::empty(), Type::Bool)),
         Expr::LitNull => Ok((Subst::empty(), Type::Null)),
 
-        Expr::VarRef(name) => {
+        Expr::VarRef { name, .. } => {
             let scheme = env.get(name).ok_or_else(|| TypeError {
                 msg: format!("unbound variable '{name}'"),
                 line: 0,
@@ -1194,6 +1235,7 @@ pub fn infer(
                         result = Type::Null;
                     }
                     Stmt::ExprStmt(expr) => {
+                        let span = expr_span(expr);
                         let (s_e, ty) = infer(
                             &local_env,
                             expr,
@@ -1202,7 +1244,8 @@ pub fn infer(
                             enums,
                             enum_variants,
                             interface_registry,
-                        )?;
+                        )
+                        .map_err(|e| annotate_err(e, &span))?;
                         s = s.compose(&s_e);
                         result = ty;
                     }
@@ -1916,6 +1959,8 @@ fn type_expr_to_type(
 mod tests {
     use super::*;
 
+    const S: Span = Span { line: 0, col: 0 };
+
     fn module(stmts: Vec<Stmt>) -> Module {
         Module { stmts }
     }
@@ -1923,6 +1968,7 @@ mod tests {
     fn const_decl(name: &str, value: Expr) -> Stmt {
         Stmt::ConstDecl {
             name: name.to_string(),
+            span: S,
             ty_ann: None,
             value,
         }
@@ -1931,6 +1977,7 @@ mod tests {
     fn var_decl(name: &str, value: Option<Expr>) -> Stmt {
         Stmt::VarDecl {
             name: name.to_string(),
+            span: S,
             ty_ann: None,
             value,
         }
@@ -1939,6 +1986,7 @@ mod tests {
     fn param(name: &str, ty_ann: Option<TypeExpr>) -> Param {
         Param {
             name: name.to_string(),
+            span: S,
             ty_ann,
         }
     }
@@ -2001,19 +2049,21 @@ mod tests {
                 Expr::Lambda {
                     params: vec![
                         Param {
-                            name: "a".to_string(),
-                            ty_ann: None,
-                        },
+                    name: "a".to_string(),
+                    span: S,
+                    ty_ann: None,
+                },
                         Param {
-                            name: "b".to_string(),
-                            ty_ann: None,
-                        },
+                    name: "b".to_string(),
+                    span: S,
+                    ty_ann: None,
+                },
                     ],
                     ret_ty: None,
                     body: Box::new(Expr::Block(vec![Stmt::ExprStmt(Expr::Binary {
-                        left: Box::new(Expr::VarRef("a".to_string())),
+                        left: Box::new(Expr::VarRef { name: "a".to_string(), span: S }),
                         op: BinOp::Add,
-                        right: Box::new(Expr::VarRef("b".to_string())),
+                        right: Box::new(Expr::VarRef { name: "b".to_string(), span: S }),
                     })])),
                 },
             )])),
@@ -2021,28 +2071,30 @@ mod tests {
                 "id",
                 Expr::Lambda {
                     params: vec![Param {
-                        name: "x".to_string(),
-                        ty_ann: None,
-                    }],
+                    name: "x".to_string(),
+                    span: S,
+                    ty_ann: None,
+                }],
                     ret_ty: None,
-                    body: Box::new(Expr::Block(vec![Stmt::ExprStmt(Expr::VarRef(
-                        "x".to_string(),
-                    ))])),
+                    body: Box::new(Expr::Block(vec![Stmt::ExprStmt(Expr::VarRef { name: "x".to_string(), span: S })])),
                 },
             )])),
             "struct Point { x: Float64, y: Float64 }; const p = Point { x: 1.0, y: 2.0 };" => {
                 infer_ast(module(vec![
                     Stmt::StructDef {
-                        name: "Point".to_string(),
-                        fields: vec![
+                    name: "Point".to_string(),
+                    span: S,
+                    fields: vec![
                             FieldDef {
-                                name: "x".to_string(),
-                                ty: TypeExpr::Named("Float64".to_string()),
-                            },
+                    name: "x".to_string(),
+                    span: S,
+                    ty: TypeExpr::Named("Float64".to_string()),
+                },
                             FieldDef {
-                                name: "y".to_string(),
-                                ty: TypeExpr::Named("Float64".to_string()),
-                            },
+                    name: "y".to_string(),
+                    span: S,
+                    ty: TypeExpr::Named("Float64".to_string()),
+                },
                         ],
                     },
                     const_decl(
@@ -2067,6 +2119,7 @@ mod tests {
             )])),
             "var x = 42;" => infer_ast(module(vec![Stmt::VarDecl {
                 name: "x".to_string(),
+                span: S,
                 ty_ann: None,
                 value: Some(Expr::LitInt(42)),
             }])),
@@ -2147,7 +2200,7 @@ mod tests {
         let ty = infer_expr(Expr::Lambda {
             params: vec![param("x", Some(TypeExpr::named("Int64")))],
             ret_ty: None,
-            body: Box::new(Expr::VarRef("x".to_string())),
+            body: Box::new(Expr::VarRef { name: "x".to_string(), span: S }),
         })
         .unwrap();
 
@@ -2159,7 +2212,7 @@ mod tests {
         let id = Expr::Lambda {
             params: vec![param("x", None)],
             ret_ty: None,
-            body: Box::new(Expr::VarRef("x".to_string())),
+            body: Box::new(Expr::VarRef { name: "x".to_string(), span: S }),
         };
         assert_eq!(
             infer_expr(Expr::Call {
@@ -2228,7 +2281,7 @@ mod tests {
             infer_expr(Expr::Block(vec![
                 const_decl("x", Expr::LitInt(1)),
                 var_decl("y", Some(Expr::LitInt(2))),
-                Stmt::ExprStmt(Expr::VarRef("x".to_string())),
+                Stmt::ExprStmt(Expr::VarRef { name: "x".to_string(), span: S }),
             ]))
             .unwrap(),
             Type::Int64
@@ -2291,17 +2344,21 @@ mod tests {
     fn struct_fields_methods_and_member_errors() {
         let program = module(vec![
             Stmt::StructDef {
-                name: "Point".to_string(),
-                fields: vec![FieldDef {
+                    name: "Point".to_string(),
+                    span: S,
+                    fields: vec![FieldDef {
                     name: "x".to_string(),
+                    span: S,
                     ty: TypeExpr::named("Int64"),
                 }],
             },
             Stmt::ImplBlock {
-                struct_name: "Point".to_string(),
-                interface_name: None,
-                methods: vec![MethodDef {
+                    struct_name: "Point".to_string(),
+                    span: S,
+                    interface_name: None,
+                    methods: vec![MethodDef {
                     name: "value".to_string(),
+                    span: S,
                     body: Expr::Lambda {
                         params: vec![param("self", Some(TypeExpr::named("Point")))],
                         ret_ty: None,
@@ -2321,14 +2378,14 @@ mod tests {
             const_decl(
                 "x",
                 Expr::Member {
-                    object: Box::new(Expr::VarRef("p".to_string())),
+                    object: Box::new(Expr::VarRef { name: "p".to_string(), span: S }),
                     field: "x".to_string(),
                 },
             ),
             const_decl(
                 "m",
                 Expr::Member {
-                    object: Box::new(Expr::VarRef("p".to_string())),
+                    object: Box::new(Expr::VarRef { name: "p".to_string(), span: S }),
                     field: "value".to_string(),
                 },
             ),
@@ -2689,11 +2746,12 @@ mod tests {
         // 42 |> |x| { x + 1 }  :  pipe Int64 through (Int64 -> Int64) should give Int64
         let func = Expr::Lambda {
             params: vec![Param {
-                name: "x".to_string(),
-                ty_ann: Some(TypeExpr::Named("Int64".to_string())),
-            }],
+                    name: "x".to_string(),
+                    span: S,
+                    ty_ann: Some(TypeExpr::Named("Int64".to_string())),
+                }],
             body: Box::new(Expr::Binary {
-                left: Box::new(Expr::VarRef("x".to_string())),
+                left: Box::new(Expr::VarRef { name: "x".to_string(), span: S }),
                 op: BinOp::Add,
                 right: Box::new(Expr::LitInt(1)),
             }),
@@ -2891,7 +2949,7 @@ mod tests {
         let func = Expr::Lambda {
             params: vec![param("x", None)],
             ret_ty: None,
-            body: Box::new(Expr::VarRef("x".into())),
+            body: Box::new(Expr::VarRef { name: "x".into(), span: S }),
         };
         let call = Expr::Call {
             func: Box::new(func),
@@ -3127,7 +3185,7 @@ mod tests {
         let mut env = TypeEnv::new();
         env.insert("x".into(), Scheme::monomorphic(Type::String));
         let e = Expr::Assign {
-            target: Box::new(Expr::VarRef("x".into())),
+            target: Box::new(Expr::VarRef { name: "x".into(), span: S }),
             value: Box::new(Expr::LitInt(42)),
         };
         let (structs, fields) = empty_structs();
@@ -3163,10 +3221,11 @@ mod tests {
         env.insert("list".into(), Scheme::monomorphic(Type::Var(list_var)));
         let e = Expr::For {
             var: Param {
-                name: "x".into(),
-                ty_ann: None,
-            },
-            iterable: Box::new(Expr::VarRef("list".into())),
+                    name: "x".into(),
+                    span: S,
+                    ty_ann: None,
+                },
+            iterable: Box::new(Expr::VarRef { name: "list".into(), span: S }),
             body: Box::new(Expr::Block(vec![])),
         };
         let (structs, fields) = empty_structs();

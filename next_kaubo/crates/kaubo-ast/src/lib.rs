@@ -3,6 +3,22 @@
 //! This crate owns syntax tree data structures shared by parser, infer, IR,
 //! and adapters. It does not parse or infer on its own.
 
+/// Source position (1-based line and column).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Span {
+    pub line: usize,
+    pub col: usize,
+}
+
+impl Span {
+    pub fn new(line: usize, col: usize) -> Self {
+        Self { line, col }
+    }
+
+    /// Synthetic span (line=0, col=0) for compiler-generated code.
+    pub const ZERO: Self = Self { line: 0, col: 0 };
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub stmts: Vec<Stmt>,
@@ -12,29 +28,35 @@ pub struct Module {
 pub enum Stmt {
     ConstDecl {
         name: String,
+        span: Span,
         ty_ann: Option<TypeExpr>,
         value: Expr,
     },
     VarDecl {
         name: String,
+        span: Span,
         ty_ann: Option<TypeExpr>,
         value: Option<Expr>,
     },
     StructDef {
         name: String,
+        span: Span,
         fields: Vec<FieldDef>,
     },
     EnumDef {
         name: String,
+        span: Span,
         variants: Vec<VariantDef>,
     },
     ImplBlock {
         struct_name: String,
+        span: Span,
         interface_name: Option<String>,
         methods: Vec<MethodDef>,
     },
     InterfaceDef {
         name: String,
+        span: Span,
         methods: Vec<MethodSig>,
     },
     ExportStmt(Box<Stmt>),
@@ -55,7 +77,7 @@ pub enum Expr {
     LitFalse,
     LitNull,
 
-    VarRef(String),
+    VarRef { name: String, span: Span },
     Lambda {
         params: Vec<Param>,
         ret_ty: Option<TypeExpr>,
@@ -159,24 +181,28 @@ pub enum UnOp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub name: String,
+    pub span: Span,
     pub ty_ann: Option<TypeExpr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
     pub name: String,
+    pub span: Span,
     pub ty: TypeExpr,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VariantDef {
     pub name: String,
+    pub span: Span,
     pub fields: Vec<FieldDef>, // empty = unit variant
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MethodDef {
     pub name: String,
+    pub span: Span,
     pub body: Expr,
     pub operator: bool,
 }
@@ -257,6 +283,8 @@ impl Expr {
 mod tests {
     use super::*;
 
+    const S: Span = Span { line: 0, col: 0 };
+
     #[test]
     fn type_expr_to_string_handles_nesting() {
         let ty = TypeExpr::Arrow {
@@ -276,10 +304,11 @@ mod tests {
             stmts: vec![
                 Stmt::ConstDecl {
                     name: "answer".to_string(),
+                    span: S,
                     ty_ann: Some(TypeExpr::named("Int64")),
                     value: Expr::LitInt(42),
                 },
-                Stmt::ExprStmt(Expr::VarRef("answer".to_string())),
+                Stmt::ExprStmt(Expr::VarRef { name: "answer".to_string(), span: S }),
             ],
         };
 
@@ -290,6 +319,7 @@ mod tests {
                 name,
                 ty_ann,
                 value,
+                ..
             } => {
                 assert_eq!(name, "answer");
                 assert!(matches!(ty_ann, Some(TypeExpr::Named(n)) if n == "Int64"));
@@ -299,7 +329,7 @@ mod tests {
         }
 
         match &module.stmts[1] {
-            Stmt::ExprStmt(Expr::VarRef(name)) => assert_eq!(name, "answer"),
+            Stmt::ExprStmt(Expr::VarRef { name, .. }) => assert_eq!(name, "answer"),
             other => panic!("unexpected second stmt: {other:?}"),
         }
     }
@@ -368,8 +398,14 @@ mod tests {
 
     #[test]
     fn expr_var_ref_partial_eq() {
-        assert_eq!(Expr::VarRef("x".into()), Expr::VarRef("x".into()));
-        assert_ne!(Expr::VarRef("x".into()), Expr::VarRef("y".into()));
+        assert_eq!(
+            Expr::VarRef { name: "x".into(), span: S },
+            Expr::VarRef { name: "x".into(), span: S },
+        );
+        assert_ne!(
+            Expr::VarRef { name: "x".into(), span: S },
+            Expr::VarRef { name: "y".into(), span: S },
+        );
     }
 
     #[test]
@@ -377,18 +413,20 @@ mod tests {
         let l1 = Expr::Lambda {
             params: vec![Param {
                 name: "x".into(),
+                span: S,
                 ty_ann: None,
             }],
             ret_ty: None,
-            body: Box::new(Expr::VarRef("x".into())),
+            body: Box::new(Expr::VarRef { name: "x".into(), span: S }),
         };
         let l2 = Expr::Lambda {
             params: vec![Param {
                 name: "x".into(),
+                span: S,
                 ty_ann: None,
             }],
             ret_ty: None,
-            body: Box::new(Expr::VarRef("x".into())),
+            body: Box::new(Expr::VarRef { name: "x".into(), span: S }),
         };
         assert_eq!(l1, l2);
     }
@@ -399,11 +437,13 @@ mod tests {
     fn stmt_partial_eq() {
         let s1 = Stmt::ConstDecl {
             name: "x".into(),
+            span: S,
             ty_ann: None,
             value: Expr::LitInt(1),
         };
         let s2 = Stmt::ConstDecl {
             name: "x".into(),
+            span: S,
             ty_ann: None,
             value: Expr::LitInt(1),
         };

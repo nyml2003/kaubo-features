@@ -54,6 +54,7 @@ pub enum Opcode {
     IToS = 0x22,
     FToS = 0x23,
     SToI = 0x24,
+    BToS = 0x25,
     // 数据移动
     Move = 0x30,
     LoadImm = 0x31,
@@ -745,6 +746,13 @@ impl VM {
                     let s = inst.src1();
                     let st = format!("{}", self.regs.regs[s] as i64);
                     self.write_heap(d, HeapObj::String(st));
+                }
+                Opcode::BToS => {
+                    // btos
+                    let d = inst.dst();
+                    let s = inst.src1();
+                    let st = if self.regs.regs[s] as i64 != 0 { "true" } else { "false" };
+                    self.write_heap(d, HeapObj::String(st.to_string()));
                 }
                 Opcode::FToS => {
                     // ftos
@@ -1487,6 +1495,7 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
                 CpsBinOp::IToS => Opcode::IToS as u8,
                 CpsBinOp::FToS => Opcode::FToS as u8,
                 CpsBinOp::SToI => Opcode::SToI as u8,
+                CpsBinOp::BToS => Opcode::BToS as u8,
                 CpsBinOp::SAdd => Opcode::SAdd as u8,
             },
             *d as u32,

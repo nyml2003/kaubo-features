@@ -15,6 +15,11 @@ export function complete(source: string, offset: number): string;
 export function diagnose(source: string): string;
 
 /**
+ * Go-to-definition: return JSON { line, col } or "null".
+ */
+export function goto_def(source: string, offset: number): string;
+
+/**
  * Get hover information for token at UTF-16 offset.
  */
 export function hover(source: string, offset: number): string;
@@ -25,6 +30,11 @@ export function init(): void;
  * Tokenize source, return JSON array of {kind, from, to}.
  */
 export function lex(source: string): string;
+
+/**
+ * Feed source to the LSP coordinator. Call after each text change.
+ */
+export function lsp_on_change(source: string): void;
 
 /**
  * Run previously compiled bytecode, return print() output.
@@ -55,7 +65,9 @@ export interface InitOutput {
     readonly set_log_level: (a: number) => void;
     readonly compile: (a: number, b: number) => [number, number, number];
     readonly run: (a: number, b: number) => [number, number, number, number];
+    readonly lsp_on_change: (a: number, b: number) => void;
     readonly hover: (a: number, b: number, c: number) => [number, number];
+    readonly goto_def: (a: number, b: number, c: number) => [number, number];
     readonly semantic_tokens: (a: number, b: number) => [number, number];
     readonly complete: (a: number, b: number, c: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

@@ -109,7 +109,7 @@ fn parse_for_imports(source: &str) -> Result<Module, BuildError> {
     for name in &struct_names {
         parser.register_struct_name(name);
     }
-    parser.parse().map_err(BuildError::Parse)
+    parser.parse().map_err(|e| BuildError::Parse(e.to_string()))
 }
 
 /// 文本扫描——提取源文件中 `struct Name { ... }` 的名称。

@@ -1,5 +1,6 @@
 use kaubo_language_service::{
     completions as ls_completions, semantic_tokens as ls_semantic_tokens,
+    LspCoordinator,
 };
 use kaubo_syntax::lexer::Lexer;
 use kaubo_web_api::token::{classify_token, describe_token, utf16_range};
@@ -8,6 +9,9 @@ use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 
 static COMPILED: Lazy<Mutex<Option<kaubo_driver::CpsModule>>> = Lazy::new(|| Mutex::new(None));
+
+/// Global LSP coordinator — shared across all editor features.
+static LSP: Lazy<Mutex<LspCoordinator>> = Lazy::new(|| Mutex::new(LspCoordinator::new()));
 
 /// Global log-level setting for WASM.  `None` means logging is disabled.
 /// Set via `set_log_level(level)` from JavaScript.
@@ -115,9 +119,31 @@ pub fn run(_bytes: &[u8]) -> Result<String, JsValue> {
     Ok(out)
 }
 
+/// Feed source to the LSP coordinator. Call after each text change.
+#[wasm_bindgen]
+pub fn lsp_on_change(source: &str) {
+    let mut lsp = LSP.lock().unwrap();
+    let _ = lsp.on_change(source);
+}
+
 /// Get hover information for token at UTF-16 offset.
 #[wasm_bindgen]
 pub fn hover(source: &str, offset: usize) -> String {
+    // Try LSP coordinator first
+    if let Ok(mut lsp) = LSP.lock() {
+        if lsp.is_ready() {
+            if let Some(info) = lsp.hover(offset) {
+                return serde_json::json!({
+                    "kind": info.kind,
+                    "type": info.ty,
+                    "description": info.description,
+                })
+                .to_string();
+            }
+        }
+    }
+
+    // Fallback: token-based hover
     let tokens = Lexer::new(source).tokenize();
     for t in &tokens {
         let (from, to) = utf16_range(source, t.line, t.col, &t.lexeme);
@@ -134,13 +160,55 @@ pub fn hover(source: &str, offset: usize) -> String {
     "null".to_string()
 }
 
+/// Go-to-definition: return JSON { line, col } or "null".
+#[wasm_bindgen]
+pub fn goto_def(source: &str, offset: usize) -> String {
+    // Ensure LSP is up to date
+    {
+        let mut lsp = LSP.lock().unwrap();
+        if !lsp.is_ready() {
+            let _ = lsp.on_change(source);
+        }
+    }
+
+    let lsp = LSP.lock().unwrap();
+    if let Some(span) = lsp.goto_def(offset) {
+        return serde_json::json!({
+            "line": span.line,
+            "col": span.col,
+        })
+        .to_string();
+    }
+    "null".to_string()
+}
+
 #[wasm_bindgen]
 pub fn semantic_tokens(source: &str) -> String {
+    // Update LSP state for better token classification
+    if let Ok(mut lsp) = LSP.lock() {
+        let _ = lsp.on_change(source);
+    }
+    // For now, use the existing token-based semantic tokens
     serde_json::to_string(&ls_semantic_tokens(source)).unwrap_or_else(|_| "[]".to_string())
 }
 
 #[wasm_bindgen]
 pub fn complete(source: &str, offset: usize) -> String {
+    // Try LSP coordinator
+    {
+        let mut lsp = LSP.lock().unwrap();
+        if !lsp.is_ready() {
+            let _ = lsp.on_change(source);
+        }
+    }
+
+    let lsp = LSP.lock().unwrap();
+    if lsp.is_ready() {
+        let items = lsp.completions(offset);
+        return serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string());
+    }
+
+    // Fallback
     serde_json::to_string(&ls_completions(source, offset)).unwrap_or_else(|_| "[]".to_string())
 }
 

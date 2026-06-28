@@ -429,14 +429,14 @@ impl<'a> CpsBuilder<'a> {
                 other => other,
             };
             match inner {
-                Stmt::StructDef { name, fields } => {
+                Stmt::StructDef { name, fields, .. } => {
                     let fields = fields
                         .iter()
                         .map(|field| (field.name.clone(), self.type_expr_hint(&field.ty)))
                         .collect();
                     self.struct_field_types.insert(name.clone(), fields);
                 }
-                Stmt::EnumDef { name, variants } => {
+                Stmt::EnumDef { name, variants, .. } => {
                     self.enum_names.insert(name.clone());
                     for v in variants {
                         self.variant_to_enum.insert(v.name.clone(), name.clone());
@@ -452,6 +452,7 @@ impl<'a> CpsBuilder<'a> {
                     struct_name,
                     interface_name,
                     methods,
+                    ..
                 } => {
                     for method in methods {
                         if let Expr::Lambda {
@@ -523,7 +524,7 @@ impl<'a> CpsBuilder<'a> {
 
     fn value_hint(&self, expr: &Expr) -> ValueHint {
         match expr {
-            Expr::VarRef(name) => self
+            Expr::VarRef { name, .. } => self
                 .ctx
                 .type_map
                 .get(name)
@@ -546,7 +547,7 @@ impl<'a> CpsBuilder<'a> {
             Expr::LitString(_) => ValueHint::String,
             Expr::LitTrue | Expr::LitFalse => ValueHint::Bool,
             Expr::LitNull => ValueHint::Null,
-            Expr::VarRef(name) => self
+            Expr::VarRef { name, .. } => self
                 .ctx
                 .type_map
                 .get(name)
@@ -659,7 +660,7 @@ impl<'a> CpsBuilder<'a> {
                     ValueHint::Unknown
                 }
             }
-            Expr::VarRef(name) => match name.as_str() {
+            Expr::VarRef { name, .. } => match name.as_str() {
                 "sqrt" | "sin" | "cos" | "floor" | "ceil" => ValueHint::Float,
                 "print" => ValueHint::Null,
                 "assert" => ValueHint::Null,
@@ -706,6 +707,7 @@ impl<'a> CpsBuilder<'a> {
                 name,
                 ty_ann,
                 value,
+                ..
             } => {
                 if matches!(value, Expr::Lambda { .. }) {
                     let func_idx = self.build_lambda_as_function(value)?;
@@ -724,6 +726,7 @@ impl<'a> CpsBuilder<'a> {
                 name,
                 ty_ann,
                 value,
+                ..
             } => {
                 if let Some(v) = value {
                     if matches!(v, Expr::Lambda { .. }) {
@@ -748,7 +751,7 @@ impl<'a> CpsBuilder<'a> {
                 }
             }
             Stmt::ExprStmt(e) => self.build_expr(e),
-            Stmt::StructDef { name, fields } => {
+            Stmt::StructDef { name, fields, .. } => {
                 let mut bitmap: u64 = 0;
                 for (i, f) in fields.iter().enumerate() {
                     if self.is_heap_type(&f.ty) {
@@ -766,7 +769,7 @@ impl<'a> CpsBuilder<'a> {
                 });
                 Ok((usize::MAX, usize::MAX, 0))
             }
-            Stmt::EnumDef { name, variants } => {
+            Stmt::EnumDef { name, variants, .. } => {
                 let id = self.enums.len();
                 let mut variant_type_bitmaps = Vec::new();
                 for v in variants {
@@ -803,6 +806,7 @@ impl<'a> CpsBuilder<'a> {
                 struct_name,
                 interface_name,
                 methods,
+                ..
             } => {
                 // Build lambda functions for all methods
                 let mut method_funcs: Vec<(String, usize)> = Vec::new();
@@ -906,7 +910,7 @@ impl<'a> CpsBuilder<'a> {
                 let (e, l) = self.ctx.leaf_block(r, c);
                 Ok((e, l, r))
             }
-            Expr::VarRef(name) => {
+            Expr::VarRef { name, .. } => {
                 if let Some(&reg) = self.ctx.var_map.get(name) {
                     let id = self.ctx.new_block();
                     self.ctx.set_block(
@@ -1031,6 +1035,7 @@ impl<'a> CpsBuilder<'a> {
                 name,
                 ty_ann,
                 value,
+                ..
             } => {
                 if matches!(value, Expr::Lambda { .. }) {
                     let func_idx = self.build_lambda_as_function(value)?;
@@ -1049,6 +1054,7 @@ impl<'a> CpsBuilder<'a> {
                 name,
                 ty_ann,
                 value,
+                ..
             } => {
                 if let Some(v) = value {
                     if matches!(v, Expr::Lambda { .. }) {
@@ -1664,7 +1670,7 @@ impl<'a> CpsBuilder<'a> {
             }
         }
 
-        if let Expr::VarRef(name) = func {
+        if let Expr::VarRef { name, .. } = func {
             // Check if this is a variant constructor call: Some(42) → NewVariant
             if let Some(enum_name) = self.variant_to_enum.get(name).cloned() {
                 return self.build_variant_construct(&enum_name, name, args);
@@ -2864,7 +2870,7 @@ impl<'a> CpsBuilder<'a> {
             let (val_entry, val_continu, val_reg) = self.build_expr(value)?;
             let (idx_entry, idx_continu, idx_reg) = self.build_expr(index)?;
             // Look up the list variable
-            let obj_reg = if let Expr::VarRef(name) = object.as_ref() {
+            let obj_reg = if let Expr::VarRef { name, .. } = object.as_ref() {
                 *self
                     .ctx
                     .var_map
@@ -2898,7 +2904,7 @@ impl<'a> CpsBuilder<'a> {
         }
 
         let (val_entry, val_continu, val_reg) = self.build_expr(value)?;
-        let target_reg = if let Expr::VarRef(name) = target {
+        let target_reg = if let Expr::VarRef { name, .. } = target {
             if let Some(&reg) = self.ctx.var_map.get(name) {
                 reg
             } else {
@@ -3021,6 +3027,8 @@ fn remap_term_ids(block: &mut CpsBlock, map: &HashMap<usize, usize>) {
 mod tests {
     use super::*;
 
+    const S: Span = Span { line: 0, col: 0 };
+
     fn build_src(src: &str) -> CpsModule {
         build_module(&fixture_module(src), None).unwrap()
     }
@@ -3037,7 +3045,7 @@ mod tests {
                 }
                 "var x = 10; const y = x;" => vec![
                     var_decl("x", Expr::LitInt(10)),
-                    const_decl("y", Expr::VarRef("x".to_string())),
+                    const_decl("y", Expr::VarRef { name: "x".to_string(), span: S }),
                 ],
                 "var x = 10; var y = 32; const z = x + y;" => vec![
                     var_decl("x", Expr::LitInt(10)),
@@ -3045,9 +3053,9 @@ mod tests {
                     const_decl(
                         "z",
                         Expr::Binary {
-                            left: Box::new(Expr::VarRef("x".to_string())),
+                            left: Box::new(Expr::VarRef { name: "x".to_string(), span: S }),
                             op: BinOp::Add,
-                            right: Box::new(Expr::VarRef("y".to_string())),
+                            right: Box::new(Expr::VarRef { name: "y".to_string(), span: S }),
                         },
                     ),
                 ],
@@ -3129,9 +3137,10 @@ mod tests {
                             "x",
                             Expr::Block(vec![
                                 var_decl("r", Expr::LitInt(42)),
-                                Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef(
-                                    "r".to_string(),
-                                ))))),
+                                Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef {
+                                    name: "r".to_string(),
+                                    span: S,
+                                })))),
                             ]),
                         ),
                     ),
@@ -3144,9 +3153,10 @@ mod tests {
                             "x",
                             Expr::Block(vec![
                                 call_stmt("print", vec![Expr::LitString("hi".to_string())]),
-                                Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef(
-                                    "x".to_string(),
-                                ))))),
+                                Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef {
+                                    name: "x".to_string(),
+                                    span: S,
+                                })))),
                             ]),
                         ),
                     ),
@@ -3160,11 +3170,12 @@ mod tests {
                             Expr::Block(vec![
                                 call_stmt(
                                     "print",
-                                    vec![call_member(Expr::VarRef("x".to_string()), "to_string")],
+                                    vec![call_member(Expr::VarRef { name: "x".to_string(), span: S }, "to_string")],
                                 ),
-                                Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef(
-                                    "x".to_string(),
-                                ))))),
+                                Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef {
+                                    name: "x".to_string(),
+                                    span: S,
+                                })))),
                             ]),
                         ),
                     ),
@@ -3181,12 +3192,13 @@ mod tests {
                                     Stmt::ExprStmt(while_assign(
                                         "i",
                                         BinOp::Lt,
-                                        Expr::VarRef("n".to_string()),
+                                        Expr::VarRef { name: "n".to_string(), span: S },
                                         BinOp::Add,
                                     )),
-                                    Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef(
-                                        "i".to_string(),
-                                    ))))),
+                                    Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef {
+                                        name: "i".to_string(),
+                                        span: S,
+                                    })))),
                                 ]),
                             ),
                         ),
@@ -3199,7 +3211,7 @@ mod tests {
                 "const x = sqrt(4.0);" => vec![const_decl(
                     "x",
                     Expr::Call {
-                        func: Box::new(Expr::VarRef("sqrt".to_string())),
+                        func: Box::new(Expr::VarRef { name: "sqrt".to_string(), span: S }),
                         arg: Box::new(Expr::LitFloat(4.0)),
                     },
                 )],
@@ -3211,6 +3223,7 @@ mod tests {
     fn const_decl(name: &str, value: Expr) -> Stmt {
         Stmt::ConstDecl {
             name: name.to_string(),
+            span: S,
             ty_ann: None,
             value,
         }
@@ -3219,6 +3232,7 @@ mod tests {
     fn var_decl(name: &str, value: Expr) -> Stmt {
         Stmt::VarDecl {
             name: name.to_string(),
+            span: S,
             ty_ann: None,
             value: Some(value),
         }
@@ -3228,6 +3242,7 @@ mod tests {
         Expr::Lambda {
             params: vec![Param {
                 name: param.to_string(),
+                span: S,
                 ty_ann: None,
             }],
             ret_ty: None,
@@ -3237,7 +3252,7 @@ mod tests {
 
     fn binary_var_int(name: &str, op: BinOp, value: i64) -> Expr {
         Expr::Binary {
-            left: Box::new(Expr::VarRef(name.to_string())),
+            left: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
             op,
             right: Box::new(Expr::LitInt(value)),
         }
@@ -3246,12 +3261,12 @@ mod tests {
     fn while_assign(name: &str, cmp: BinOp, rhs: Expr, update: BinOp) -> Expr {
         Expr::While {
             cond: Box::new(Expr::Binary {
-                left: Box::new(Expr::VarRef(name.to_string())),
+                left: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
                 op: cmp,
                 right: Box::new(rhs),
             }),
             body: Box::new(Expr::Block(vec![Stmt::ExprStmt(Expr::Assign {
-                target: Box::new(Expr::VarRef(name.to_string())),
+                target: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
                 value: Box::new(binary_var_int(name, update, 1)),
             })])),
         }
@@ -3273,7 +3288,7 @@ mod tests {
 
     fn call_stmt(name: &str, args: Vec<Expr>) -> Stmt {
         Stmt::ExprStmt(Expr::Call {
-            func: Box::new(Expr::VarRef(name.to_string())),
+            func: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
             arg: Expr::call_arg(args),
         })
     }

@@ -7,8 +7,30 @@ use crate::ast::*;
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
 use std::collections::BTreeSet;
+use std::fmt;
 
-pub type ParseResult<T> = Result<T, String>;
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    pub msg: String,
+    pub line: usize,
+    pub col: usize,
+}
+
+impl ParseError {
+    pub fn new(msg: String, line: usize, col: usize) -> Self {
+        Self { msg, line, col }
+    }
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} at {}:{}", self.msg, self.line, self.col)
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+pub type ParseResult<T> = Result<T, ParseError>;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -89,6 +111,7 @@ impl Parser {
 
     fn parse_const(&mut self) -> ParseResult<Stmt> {
         self.bump(); // const
+        let span = self.current_span();
         let name = self.expect_ident()?;
         let ty = self.opt_type()?;
         self.expect(TokenKind::Eq)?;
@@ -96,6 +119,7 @@ impl Parser {
         self.expect_semi()?;
         Ok(Stmt::ConstDecl {
             name,
+            span,
             ty_ann: ty,
             value: val,
         })
@@ -103,6 +127,7 @@ impl Parser {
 
     fn parse_var(&mut self) -> ParseResult<Stmt> {
         self.bump(); // var
+        let span = self.current_span();
         let name = self.expect_ident()?;
         let ty = self.opt_type()?;
         let val = if self.current_kind() == TokenKind::Eq {
@@ -114,6 +139,7 @@ impl Parser {
         self.expect_semi()?;
         Ok(Stmt::VarDecl {
             name,
+            span,
             ty_ann: ty,
             value: val,
         })
@@ -121,15 +147,18 @@ impl Parser {
 
     fn parse_struct(&mut self) -> ParseResult<Stmt> {
         self.bump(); // struct
+        let span = self.current_span();
         let name = self.expect_ident()?;
         self.expect(TokenKind::LBrace)?;
         let mut fields = Vec::new();
         while self.current_kind() != TokenKind::RBrace {
+            let fspan = self.current_span();
             let fname = self.expect_ident()?;
             self.expect(TokenKind::Colon)?;
             let fty = self.parse_type()?;
             fields.push(FieldDef {
                 name: fname,
+                span: fspan,
                 ty: fty,
             });
             if self.current_kind() == TokenKind::Comma {
@@ -138,25 +167,29 @@ impl Parser {
         }
         self.bump(); // }
         self.skip_semis();
-        Ok(Stmt::StructDef { name, fields })
+        Ok(Stmt::StructDef { name, span, fields })
     }
 
     fn parse_enum(&mut self) -> ParseResult<Stmt> {
         self.bump(); // enum
+        let span = self.current_span();
         let name = self.expect_ident()?;
         self.expect(TokenKind::LBrace)?;
         let mut variants = Vec::new();
         while self.current_kind() != TokenKind::RBrace {
+            let vspan = self.current_span();
             let vname = self.expect_ident()?;
             let fields = if self.current_kind() == TokenKind::LParen {
                 self.bump(); // (
                 let mut fs = Vec::new();
                 while self.current_kind() != TokenKind::RParen {
+                    let fspan = self.current_span();
                     let fname = self.expect_ident()?;
                     self.expect(TokenKind::Colon)?;
                     let fty = self.parse_type()?;
                     fs.push(FieldDef {
                         name: fname,
+                        span: fspan,
                         ty: fty,
                     });
                     if self.current_kind() == TokenKind::Comma {
@@ -170,6 +203,7 @@ impl Parser {
             };
             variants.push(VariantDef {
                 name: vname,
+                span: vspan,
                 fields,
             });
             if self.current_kind() == TokenKind::Comma {
@@ -178,11 +212,12 @@ impl Parser {
         }
         self.bump(); // }
         self.skip_semis();
-        Ok(Stmt::EnumDef { name, variants })
+        Ok(Stmt::EnumDef { name, span, variants })
     }
 
     fn parse_interface(&mut self) -> ParseResult<Stmt> {
         self.bump(); // interface
+        let span = self.current_span();
         let name = self.expect_ident()?;
         self.expect(TokenKind::LBrace)?;
         let mut methods = Vec::new();
@@ -199,11 +234,13 @@ impl Parser {
             self.expect(TokenKind::Bar)?;
             let mut params = Vec::new();
             while self.current_kind() != TokenKind::Bar {
+                let pspan = self.current_span();
                 let pname = self.expect_ident()?;
                 self.expect(TokenKind::Colon)?;
                 let pty = self.parse_type()?;
                 params.push(Param {
                     name: pname,
+                    span: pspan,
                     ty_ann: Some(pty),
                 });
                 if self.current_kind() == TokenKind::Comma {
@@ -227,10 +264,11 @@ impl Parser {
         }
         self.bump(); // }
         self.skip_semis();
-        Ok(Stmt::InterfaceDef { name, methods })
+        Ok(Stmt::InterfaceDef { name, span, methods })
     }
 
     fn parse_impl(&mut self) -> ParseResult<Stmt> {
+        let impl_span = self.current_span();
         self.bump(); // impl
         let first = self.expect_ident()?;
         // impl Interface for Struct { ... } or impl Struct { ... }
@@ -250,11 +288,13 @@ impl Parser {
             } else {
                 false
             };
+            let mspan = self.current_span();
             let mname = self.expect_ident()?;
             self.expect(TokenKind::Colon)?;
             let body = self.parse_expr()?;
             methods.push(MethodDef {
                 name: mname,
+                span: mspan,
                 body,
                 operator: is_operator,
             });
@@ -266,6 +306,7 @@ impl Parser {
         self.skip_semis();
         Ok(Stmt::ImplBlock {
             struct_name,
+            span: impl_span,
             interface_name,
             methods,
         })
@@ -481,6 +522,7 @@ impl Parser {
             TokenKind::TemplateString => self.parse_template(),
             TokenKind::Identifier | TokenKind::Self_ => {
                 let name = self.current().lexeme.clone();
+                let span = self.current_span();
                 if self.variant_names.contains(&name) {
                     self.bump();
                     let enum_name = self.variant_to_enum.get(&name).cloned().unwrap_or_default();
@@ -490,7 +532,7 @@ impl Parser {
                         self.bump(); // (
                         let args = self.parse_call_args()?;
                         return Ok(Expr::Call {
-                            func: Box::new(Expr::VarRef(name.clone())),
+                            func: Box::new(Expr::VarRef { name: name.clone(), span }),
                             arg: Expr::call_arg(args),
                         });
                     }
@@ -502,15 +544,11 @@ impl Parser {
                         fields: vec![],
                     });
                 }
-                Ok(Expr::VarRef(self.consume_lexeme()))
+                self.bump();
+                Ok(Expr::VarRef { name, span })
             }
 
-            _ => Err(format!(
-                "unexpected token {:?} at {}:{}",
-                self.current_kind(),
-                self.current().line,
-                self.current().col
-            )),
+            _ => Err(self.err(format!("unexpected token {:?}", self.current_kind()))),
         }
     }
 
@@ -562,7 +600,7 @@ impl Parser {
                     });
                 }
                 TokenKind::LBrace => {
-                    if let Expr::VarRef(ref name) = expr {
+                    if let Expr::VarRef { ref name, .. } = expr {
                         // Name { ... } 始终解析为 StructLit，不查符号表
                         // struct 名有效性由 infer 阶段检查
                         let struct_name = name.clone();
@@ -578,11 +616,12 @@ impl Parser {
                                 }
                                 continue;
                             }
+                            let fspan = self.current_span();
                             let fname = self.expect_ident()?;
                             let val = if self.current_kind() == TokenKind::Comma
                                 || self.current_kind() == TokenKind::RBrace
                             {
-                                Expr::VarRef(fname.clone())
+                                Expr::VarRef { name: fname.clone(), span: fspan }
                             } else {
                                 self.expect(TokenKind::Colon)?;
                                 self.parse_expr()?
@@ -624,17 +663,19 @@ impl Parser {
     // ── 表达式子解析 ──
 
     fn parse_int(&mut self) -> ParseResult<Expr> {
+        let t = self.current().clone();
         let s = self.consume_lexeme();
         s.parse::<i64>()
             .map(Expr::LitInt)
-            .map_err(|_| format!("invalid int: {s}"))
+            .map_err(|_| ParseError::new(format!("invalid int: {s}"), t.line, t.col))
     }
 
     fn parse_float(&mut self) -> ParseResult<Expr> {
+        let t = self.current().clone();
         let s = self.consume_lexeme();
         s.parse::<f64>()
             .map(Expr::LitFloat)
-            .map_err(|_| format!("invalid float: {s}"))
+            .map_err(|_| ParseError::new(format!("invalid float: {s}"), t.line, t.col))
     }
 
     fn parse_string(&mut self) -> ParseResult<Expr> {
@@ -645,10 +686,12 @@ impl Parser {
         self.bump(); // first |
         let mut params = Vec::new();
         while self.current_kind() != TokenKind::Bar {
+            let pspan = self.current_span();
             let pname = self.expect_ident()?;
             let ty = self.opt_type()?;
             params.push(Param {
                 name: pname,
+                span: pspan,
                 ty_ann: ty,
             });
             if self.current_kind() == TokenKind::Comma {
@@ -769,6 +812,7 @@ impl Parser {
         // { var __mN = scrutinee; if __mN == pat1 { ... } else ... }
         let tmp = format!("__m{}", self.opt_chain_counter);
         self.opt_chain_counter += 1;
+        let synth = Span::new(0, 0); // synthetic span for compiler-generated code
 
         let mut result: Option<Expr> = None;
         for (pattern, body) in arms.into_iter().rev() {
@@ -778,23 +822,25 @@ impl Parser {
                     if let Expr::VariantLit { tag, .. } = &pat {
                         Expr::If {
                             cond: Box::new(Expr::Binary {
-                                left: Box::new(Expr::GetVariantTag(Box::new(Expr::VarRef(
-                                    tmp.clone(),
-                                )))),
+                                left: Box::new(Expr::GetVariantTag(Box::new(Expr::VarRef {
+                                    name: tmp.clone(),
+                                    span: synth,
+                                }))),
                                 op: BinOp::Eq,
                                 right: Box::new(Expr::LitInt(*tag as i64)),
                             }),
                             then_branch: Box::new(body),
                             else_branch: result.map(Box::new),
                         }
-                    } else if let Expr::VarRef(ref vname) = &pat {
-                        if self.variant_names.contains(vname) {
-                            let tag = self.variant_tag.get(vname).copied().unwrap_or(0);
+                    } else if let Expr::VarRef { ref name, .. } = &pat {
+                        if self.variant_names.contains(name) {
+                            let tag = self.variant_tag.get(name).copied().unwrap_or(0);
                             Expr::If {
                                 cond: Box::new(Expr::Binary {
-                                    left: Box::new(Expr::GetVariantTag(Box::new(Expr::VarRef(
-                                        tmp.clone(),
-                                    )))),
+                                    left: Box::new(Expr::GetVariantTag(Box::new(Expr::VarRef {
+                                        name: tmp.clone(),
+                                        span: synth,
+                                    }))),
                                     op: BinOp::Eq,
                                     right: Box::new(Expr::LitInt(tag as i64)),
                                 }),
@@ -805,7 +851,10 @@ impl Parser {
                             // Regular value comparison
                             Expr::If {
                                 cond: Box::new(Expr::Binary {
-                                    left: Box::new(Expr::VarRef(tmp.clone())),
+                                    left: Box::new(Expr::VarRef {
+                                        name: tmp.clone(),
+                                        span: synth,
+                                    }),
                                     op: BinOp::Eq,
                                     right: Box::new(pat),
                                 }),
@@ -819,19 +868,23 @@ impl Parser {
                     } = &pat
                     {
                         // Check for payload variant pattern: Some(v1, v2) -> ...
-                        if let Expr::VarRef(ref vname) = func.as_ref() {
-                            if self.variant_names.contains(vname) {
-                                let tag = self.variant_tag.get(vname).copied().unwrap_or(0);
+                        if let Expr::VarRef { ref name, .. } = func.as_ref() {
+                            if self.variant_names.contains(name) {
+                                let tag = self.variant_tag.get(name).copied().unwrap_or(0);
                                 // Build block: bind variables + body
                                 let mut stmts: Vec<Stmt> = Vec::new();
                                 let binding_list = bindings.as_args();
                                 for (i, binding) in binding_list.iter().enumerate() {
-                                    if let Expr::VarRef(bname) = binding {
+                                    if let Expr::VarRef { name: bname, .. } = binding {
                                         stmts.push(Stmt::VarDecl {
                                             name: bname.clone(),
+                                            span: synth,
                                             ty_ann: None,
                                             value: Some(Expr::GetVariantField {
-                                                object: Box::new(Expr::VarRef(tmp.clone())),
+                                                object: Box::new(Expr::VarRef {
+                                                    name: tmp.clone(),
+                                                    span: synth,
+                                                }),
                                                 field_idx: i as u16,
                                             }),
                                         });
@@ -841,7 +894,10 @@ impl Parser {
                                 Expr::If {
                                     cond: Box::new(Expr::Binary {
                                         left: Box::new(Expr::GetVariantTag(Box::new(
-                                            Expr::VarRef(tmp.clone()),
+                                            Expr::VarRef {
+                                                name: tmp.clone(),
+                                                span: synth,
+                                            },
                                         ))),
                                         op: BinOp::Eq,
                                         right: Box::new(Expr::LitInt(tag as i64)),
@@ -853,7 +909,10 @@ impl Parser {
                                 // Regular function call pattern (fallback)
                                 Expr::If {
                                     cond: Box::new(Expr::Binary {
-                                        left: Box::new(Expr::VarRef(tmp.clone())),
+                                        left: Box::new(Expr::VarRef {
+                                            name: tmp.clone(),
+                                            span: synth,
+                                        }),
                                         op: BinOp::Eq,
                                         right: Box::new(pat),
                                     }),
@@ -864,7 +923,10 @@ impl Parser {
                         } else {
                             Expr::If {
                                 cond: Box::new(Expr::Binary {
-                                    left: Box::new(Expr::VarRef(tmp.clone())),
+                                    left: Box::new(Expr::VarRef {
+                                        name: tmp.clone(),
+                                        span: synth,
+                                    }),
                                     op: BinOp::Eq,
                                     right: Box::new(pat),
                                 }),
@@ -876,7 +938,10 @@ impl Parser {
                         // Default: literal value comparison
                         Expr::If {
                             cond: Box::new(Expr::Binary {
-                                left: Box::new(Expr::VarRef(tmp.clone())),
+                                left: Box::new(Expr::VarRef {
+                                    name: tmp.clone(),
+                                    span: synth,
+                                }),
                                 op: BinOp::Eq,
                                 right: Box::new(pat),
                             }),
@@ -895,6 +960,7 @@ impl Parser {
         Ok(Expr::Block(vec![
             Stmt::VarDecl {
                 name: tmp.clone(),
+                span: synth,
                 ty_ann: None,
                 value: Some(scrutinee),
             },
@@ -905,15 +971,17 @@ impl Parser {
     fn parse_for(&mut self) -> ParseResult<Expr> {
         self.bump(); // for
         self.expect(TokenKind::LParen)?;
+        let var_span = self.current_span();
         let varname = self.expect_ident()?;
         self.expect_kw(TokenKind::In)
-            .map_err(|_| "expected 'in' in for loop".to_string())?;
+            .map_err(|_| self.err("expected 'in' in for loop"))?;
         let iterable = self.parse_expr()?;
         self.expect(TokenKind::RParen)?;
         let body = self.parse_expr()?;
         Ok(Expr::For {
             var: Param {
                 name: varname,
+                span: var_span,
                 ty_ann: None,
             },
             iterable: Box::new(iterable),
@@ -1062,20 +1130,28 @@ impl Parser {
     fn desugar_opt_chain(&mut self, obj: Expr, accessor: impl FnOnce(Expr) -> Expr) -> Expr {
         let tmp = format!("__o{}", self.opt_chain_counter);
         self.opt_chain_counter += 1;
+        let synth = Span::new(0, 0);
         // { var tmp = obj; if tmp != null { accessor(tmp) } else { null } }
         Expr::Block(vec![
             Stmt::VarDecl {
                 name: tmp.clone(),
+                span: synth,
                 ty_ann: None,
                 value: Some(obj),
             },
             Stmt::ExprStmt(Expr::If {
                 cond: Box::new(Expr::Binary {
-                    left: Box::new(Expr::VarRef(tmp.clone())),
+                    left: Box::new(Expr::VarRef {
+                        name: tmp.clone(),
+                        span: synth,
+                    }),
                     op: BinOp::Ne,
                     right: Box::new(Expr::LitNull),
                 }),
-                then_branch: Box::new(accessor(Expr::VarRef(tmp))),
+                then_branch: Box::new(accessor(Expr::VarRef {
+                    name: tmp,
+                    span: synth,
+                })),
                 else_branch: Some(Box::new(Expr::LitNull)),
             }),
         ])
@@ -1115,8 +1191,17 @@ impl Parser {
         t
     }
 
+    fn err(&self, msg: impl Into<String>) -> ParseError {
+        ParseError::new(msg.into(), self.current().line, self.current().col)
+    }
+
     fn consume_lexeme(&mut self) -> String {
         self.bump().lexeme.clone()
+    }
+
+    fn current_span(&self) -> Span {
+        let t = self.current();
+        Span::new(t.line, t.col)
     }
 
     fn expect_ident(&mut self) -> ParseResult<String> {
@@ -1126,12 +1211,7 @@ impl Parser {
         ) {
             Ok(self.consume_lexeme())
         } else {
-            Err(format!(
-                "expected ident at {}:{}, got {:?}",
-                self.current().line,
-                self.current().col,
-                self.current_kind()
-            ))
+            Err(self.err(format!("expected ident, got {:?}", self.current_kind())))
         }
     }
 
@@ -1139,11 +1219,7 @@ impl Parser {
         if self.current_kind() == TokenKind::StringLiteral {
             Ok(self.consume_lexeme())
         } else {
-            Err(format!(
-                "expected string at {}:{}",
-                self.current().line,
-                self.current().col
-            ))
+            Err(self.err("expected string"))
         }
     }
 
@@ -1152,13 +1228,7 @@ impl Parser {
             self.bump();
             Ok(())
         } else {
-            Err(format!(
-                "expected {:?} at {}:{}, got {:?}",
-                kind,
-                self.current().line,
-                self.current().col,
-                self.current_kind()
-            ))
+            Err(self.err(format!("expected {kind:?}, got {:?}", self.current_kind())))
         }
     }
 
@@ -1171,12 +1241,7 @@ impl Parser {
             self.bump();
             Ok(())
         } else {
-            Err(format!(
-                "expected ; at {}:{}, got {:?}",
-                self.current().line,
-                self.current().col,
-                self.current_kind()
-            ))
+            Err(self.err(format!("expected ;, got {:?}", self.current_kind())))
         }
     }
 
@@ -1349,7 +1414,7 @@ mod tests {
     fn test_struct_def() {
         let m = parse_mod("struct Point { x: Float64, y: Float64 }");
         match &m.stmts[0] {
-            Stmt::StructDef { name, fields } => {
+            Stmt::StructDef { name, fields, .. } => {
                 assert_eq!(name, "Point");
                 assert_eq!(fields.len(), 2);
             }
@@ -1551,7 +1616,7 @@ mod tests {
     fn test_struct_single_field() {
         let m = parse_mod("struct Nothing { value: Int64 }");
         match &m.stmts[0] {
-            Stmt::StructDef { name, fields } => {
+            Stmt::StructDef { name, fields, .. } => {
                 assert_eq!(name, "Nothing");
                 assert_eq!(fields.len(), 1);
                 assert_eq!(fields[0].name, "value");
@@ -1564,7 +1629,7 @@ mod tests {
     fn test_struct_with_trailing_comma() {
         let m = parse_mod("struct Point { x: Int64, y: Int64, }");
         match &m.stmts[0] {
-            Stmt::StructDef { name, fields } => {
+            Stmt::StructDef { name, fields, .. } => {
                 assert_eq!(name, "Point");
                 assert_eq!(fields.len(), 2);
             }
@@ -1664,13 +1729,13 @@ mod tests {
     #[test]
     fn test_expr_var_ref() {
         let e = parse_expr_only("myVariable");
-        assert_eq!(e, Expr::VarRef("myVariable".to_string()));
+        assert!(matches!(e, Expr::VarRef { ref name, .. } if name == "myVariable"));
     }
 
     #[test]
     fn test_expr_self_ref() {
         let e = parse_expr_only("self");
-        assert_eq!(e, Expr::VarRef("self".to_string()));
+        assert!(matches!(e, Expr::VarRef { ref name, .. } if name == "self"));
     }
 
     // ── Unary expressions ──
@@ -1779,7 +1844,7 @@ mod tests {
                 left,
                 right,
             } => {
-                assert!(matches!(*left, Expr::VarRef(_)));
+                assert!(matches!(*left, Expr::VarRef { .. }));
                 assert!(matches!(*right, Expr::Binary { op: BinOp::Mul, .. }));
             }
             _ => panic!("expected a + (b * c), got {e:?}"),
@@ -1812,7 +1877,7 @@ mod tests {
                 right,
             } => {
                 assert!(matches!(*left, Expr::Binary { op: BinOp::Add, .. }));
-                assert!(matches!(*right, Expr::VarRef(_)));
+                assert!(matches!(*right, Expr::VarRef { .. }));
             }
             _ => panic!("expected left-assoc add, got {e:?}"),
         }
@@ -1829,7 +1894,7 @@ mod tests {
                 right,
             } => {
                 assert!(matches!(*left, Expr::Binary { op: BinOp::Sub, .. }));
-                assert!(matches!(*right, Expr::VarRef(_)));
+                assert!(matches!(*right, Expr::VarRef { .. }));
             }
             _ => panic!("expected left-assoc sub, got {e:?}"),
         }
@@ -1857,7 +1922,7 @@ mod tests {
         let e = parse_expr_only("f()");
         match e {
             Expr::Call { func, arg } => {
-                assert_eq!(*func, Expr::VarRef("f".to_string()));
+                assert!(matches!(&*func, Expr::VarRef { ref name, .. } if name == "f"));
                 assert!(arg.as_args().is_empty());
             }
             _ => panic!("expected call, got {e:?}"),
@@ -1869,7 +1934,7 @@ mod tests {
         let e = parse_expr_only("f(a, b, c)");
         match e {
             Expr::Call { func, arg } => {
-                assert_eq!(*func, Expr::VarRef("f".to_string()));
+                assert!(matches!(&*func, Expr::VarRef { ref name, .. } if name == "f"));
                 assert_eq!(arg.as_args().len(), 3);
             }
             _ => panic!("expected call, got {e:?}"),
@@ -1881,14 +1946,14 @@ mod tests {
         let e = parse_expr_only("f(g(x))");
         match e {
             Expr::Call { func, arg } => {
-                assert_eq!(*func, Expr::VarRef("f".to_string()));
+                assert!(matches!(&*func, Expr::VarRef { ref name, .. } if name == "f"));
                 let args = arg.as_args();
                 assert_eq!(args.len(), 1);
                 match &args[0] {
                     Expr::Call {
                         func: inner_func, ..
                     } => {
-                        assert_eq!(**inner_func, Expr::VarRef("g".to_string()));
+                        assert!(matches!(&**inner_func, Expr::VarRef { ref name, .. } if name == "g"));
                     }
                     _ => panic!("expected nested call"),
                 }
@@ -1902,7 +1967,7 @@ mod tests {
         let e = parse_expr_only("obj.field");
         match e {
             Expr::Member { object, field } => {
-                assert_eq!(*object, Expr::VarRef("obj".to_string()));
+                assert!(matches!(&*object, Expr::VarRef { ref name, .. } if name == "obj"));
                 assert_eq!(field, "field");
             }
             _ => panic!("expected member, got {e:?}"),
@@ -1993,7 +2058,7 @@ mod tests {
         let e = parse_expr_only("f()");
         match e {
             Expr::Call { func, arg } => {
-                assert_eq!(*func, Expr::VarRef("f".to_string()));
+                assert!(matches!(&*func, Expr::VarRef { ref name, .. } if name == "f"));
                 assert!(matches!(*arg, Expr::Tuple(items) if items.is_empty()));
             }
             _ => panic!("expected call, got {e:?}"),
@@ -2005,7 +2070,7 @@ mod tests {
         let e = parse_expr_only("add(1, 2)");
         match e {
             Expr::Call { func, arg } => {
-                assert_eq!(*func, Expr::VarRef("add".to_string()));
+                assert!(matches!(&*func, Expr::VarRef { ref name, .. } if name == "add"));
                 assert!(matches!(*arg, Expr::Tuple(items) if items.len() == 2));
             }
             _ => panic!("expected call, got {e:?}"),
@@ -2048,7 +2113,7 @@ mod tests {
         let e = parse_expr_only("arr[0]");
         match e {
             Expr::Index { object, index } => {
-                assert_eq!(*object, Expr::VarRef("arr".to_string()));
+                assert!(matches!(&*object, Expr::VarRef { ref name, .. } if name == "arr"));
                 assert_eq!(*index, Expr::LitInt(0));
             }
             _ => panic!("expected index, got {e:?}"),
@@ -2118,7 +2183,7 @@ mod tests {
                 body,
             } => {
                 assert_eq!(var.name, "x");
-                assert_eq!(*iterable, Expr::VarRef("xs".to_string()));
+                assert!(matches!(&*iterable, Expr::VarRef { ref name, .. } if name == "xs"));
                 assert!(matches!(*body, Expr::Block(_)));
             }
             _ => panic!("expected for loop, got {e:?}"),
@@ -2284,9 +2349,9 @@ mod tests {
                     assert_eq!(name, "Point");
                     assert_eq!(fields.len(), 2);
                     assert_eq!(fields[0].0, "x");
-                    assert_eq!(fields[0].1, Expr::VarRef("x".to_string()));
+                    assert!(matches!(&fields[0].1, Expr::VarRef { ref name, .. } if name == "x"));
                     assert_eq!(fields[1].0, "y");
-                    assert_eq!(fields[1].1, Expr::VarRef("y".to_string()));
+                    assert!(matches!(&fields[1].1, Expr::VarRef { ref name, .. } if name == "y"));
                 }
                 _ => panic!("expected struct lit, got {value:?}"),
             },
@@ -2302,7 +2367,7 @@ mod tests {
                 Expr::StructLit { fields, .. } => {
                     assert_eq!(fields.len(), 2);
                     assert_eq!(fields[0].0, "x");
-                    assert_eq!(fields[0].1, Expr::VarRef("x".to_string()));
+                    assert!(matches!(&fields[0].1, Expr::VarRef { ref name, .. } if name == "x"));
                     assert_eq!(fields[1].0, "y");
                     assert_eq!(fields[1].1, Expr::LitInt(10));
                 }
@@ -2384,7 +2449,7 @@ mod tests {
     fn test_error_missing_semicolon() {
         let result = Parser::new("const x = 42").parse();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("expected ;"));
+        assert!(result.unwrap_err().to_string().contains("expected ;"));
     }
 
     #[test]
@@ -2419,7 +2484,7 @@ mod tests {
                 else_branch,
             } => {
                 assert!(matches!(*cond, Expr::Binary { op: BinOp::Ne, .. }));
-                assert_eq!(*then_branch, Expr::VarRef("a".to_string()));
+                assert!(matches!(&*then_branch, Expr::VarRef { ref name, .. } if name == "a"));
                 assert!(else_branch.is_some());
             }
             _ => panic!("expected if from ?? desugar, got {e:?}"),
@@ -2442,7 +2507,7 @@ mod tests {
         let e = parse_expr_only("x = a ?? \"default\"");
         match e {
             Expr::Assign { target, value } => {
-                assert_eq!(*target, Expr::VarRef("x".to_string()));
+                assert!(matches!(&*target, Expr::VarRef { ref name, .. } if name == "x"));
                 assert!(matches!(*value, Expr::If { .. }));
             }
             _ => panic!("expected assign with ??, got {e:?}"),

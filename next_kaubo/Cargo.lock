@@ -86,6 +86,8 @@ dependencies = [
 name = "kaubo-language-service"
 version = "0.1.0"
 dependencies = [
+ "kaubo-ast",
+ "kaubo-driver",
  "kaubo-syntax",
  "kaubo-web-api",
  "serde",
@@ -149,6 +151,7 @@ dependencies = [
 name = "kaubo-web-api"
 version = "0.1.0"
 dependencies = [
+ "kaubo-ast",
  "kaubo-infer",
  "kaubo-syntax",
  "kaubo-token",

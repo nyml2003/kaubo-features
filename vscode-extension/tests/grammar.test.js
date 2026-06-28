@@ -18,9 +18,10 @@ describe("kaubo.tmLanguage.json", () => {
   it("contains all required pattern groups", () => {
     const includes = grammar.patterns.map((p) => p.include);
     assert.ok(includes.includes("#comments"));
+    assert.ok(includes.includes("#template-strings"));
     assert.ok(includes.includes("#strings"));
     assert.ok(includes.includes("#keywords"));
-    assert.ok(includes.includes("#constants"));
+    assert.ok(includes.includes("#atoms"));
     assert.ok(includes.includes("#numbers"));
     assert.ok(includes.includes("#operators"));
     assert.ok(includes.includes("#identifiers"));
@@ -29,9 +30,10 @@ describe("kaubo.tmLanguage.json", () => {
   it("has all repository entries", () => {
     const repos = Object.keys(grammar.repository);
     assert.ok(repos.includes("comments"));
+    assert.ok(repos.includes("template-strings"));
     assert.ok(repos.includes("strings"));
     assert.ok(repos.includes("keywords"));
-    assert.ok(repos.includes("constants"));
+    assert.ok(repos.includes("atoms"));
     assert.ok(repos.includes("numbers"));
     assert.ok(repos.includes("operators"));
     assert.ok(repos.includes("identifiers"));
@@ -53,20 +55,20 @@ describe("kaubo.tmLanguage.json", () => {
 
   it("recognizes string patterns with escape sequences", () => {
     const strings = grammar.repository.strings.patterns;
-    assert.equal(strings.length, 2);
+    assert.equal(strings.length, 1); // only double-quoted strings
 
-    for (const str of strings) {
-      assert.ok(str.patterns, "string has escape patterns");
-      const escapes = str.patterns.filter((p) => p.name === "constant.character.escape.kaubo");
-      assert.equal(escapes.length, 1);
-      assert.equal(escapes[0].match, "\\\\(n|r|t|\\\\|\"|')");
-    }
+    const str = strings[0];
+    assert.ok(str.patterns, "string has escape patterns");
+    const escapes = str.patterns.filter((p) => p.name === "constant.character.escape.kaubo");
+    assert.equal(escapes.length, 1);
+    assert.equal(escapes[0].match, "\\\\(n|r|t|\\\\|\"|0)");
   });
 
   const keywordGroups = [
-    { name: "keyword.control.kaubo", words: ["if", "else", "elif", "while", "for", "return", "in", "break", "continue", "pass", "yield"] },
-    { name: "keyword.struct.kaubo", words: ["struct", "impl", "operator"] },
-    { name: "keyword.other.kaubo", words: ["var", "module", "pub", "import", "as", "from", "and", "or", "not", "print", "json", "true", "false", "null"] },
+    { name: "keyword.control.kaubo", words: ["if", "else", "while", "for", "return", "in", "break", "continue", "match"] },
+    { name: "keyword.declaration.kaubo", words: ["const", "var"] },
+    { name: "keyword.type.kaubo", words: ["struct", "enum", "interface", "impl"] },
+    { name: "keyword.other.kaubo", words: ["export", "import", "as", "from", "operator", "async", "await", "and", "or", "not", "self"] },
   ];
 
   for (const group of keywordGroups) {
@@ -82,12 +84,15 @@ describe("kaubo.tmLanguage.json", () => {
     });
   }
 
-  it("covers all 24 kaubo keywords", () => {
+  it("covers all 23 kaubo keywords", () => {
     const allKeywords = [
-      "var", "if", "else", "elif", "while", "for", "return", "in", "yield",
-      "break", "continue", "pass", "struct", "impl",
-      "import", "as", "from", "and", "or", "not",
-      "module", "operator", "pub", "print",
+      "const", "var",
+      "if", "else", "while", "for", "return", "in",
+      "break", "continue", "match",
+      "struct", "enum", "interface", "impl",
+      "export", "import", "as", "from", "operator",
+      "async", "await", "self",
+      "and", "or", "not",
     ];
     const allPatterns = grammar.repository.keywords.patterns.map((p) => p.match).join("|");
 
@@ -97,15 +102,15 @@ describe("kaubo.tmLanguage.json", () => {
     }
   });
 
-  it("has boolean and null constants", () => {
-    const booleans = grammar.repository.constants.patterns.find(
+  it("has boolean and null atoms", () => {
+    const booleans = grammar.repository.atoms.patterns.find(
       (p) => p.name === "constant.language.boolean.kaubo"
     );
     assert.ok(booleans, "boolean pattern exists");
     assert.ok(booleans.match.includes("true"));
     assert.ok(booleans.match.includes("false"));
 
-    const nullPat = grammar.repository.constants.patterns.find(
+    const nullPat = grammar.repository.atoms.patterns.find(
       (p) => p.name === "constant.language.null.kaubo"
     );
     assert.ok(nullPat, "null pattern exists");
@@ -126,14 +131,15 @@ describe("kaubo.tmLanguage.json", () => {
   });
 
   const operatorChecks = [
+    "keyword.operator.nullish.kaubo",
     "keyword.operator.comparison.kaubo",
-    "keyword.operator.kaubo",
+    "keyword.operator.arithmetic.kaubo",
     "keyword.operator.assignment.kaubo",
-    "keyword.operator.bitwise.kaubo",
+    "keyword.operator.spread.kaubo",
     "punctuation.separator.kaubo",
     "punctuation.section.kaubo",
     "keyword.operator.accessor.kaubo",
-    "keyword.operator.pipe.kaubo",
+    "keyword.operator.lambda.kaubo",
   ];
 
   for (const name of operatorChecks) {
@@ -151,8 +157,8 @@ describe("kaubo.tmLanguage.json", () => {
     assert.ok(func, "function identifier pattern exists");
     assert.ok(func.match.includes("(?=\\()"), "uses lookahead for function call");
 
-    const structId = idents.find((p) => p.name === "entity.name.struct.kaubo");
-    assert.ok(structId, "struct identifier pattern exists");
+    const typeId = idents.find((p) => p.name === "entity.name.type.kaubo");
+    assert.ok(typeId, "type identifier pattern exists");
 
     const variable = idents.find((p) => p.name === "variable.other.kaubo");
     assert.ok(variable, "variable pattern exists");

@@ -20,7 +20,7 @@ impl Stage<&str, Module> for FrontendStage {
     }
 
     fn execute(&self, source: &str, _ctx: &BuildContext) -> Result<Module, BuildError> {
-        Parser::new(source).parse().map_err(BuildError::Parse)
+        Parser::new(source).parse().map_err(|e| BuildError::Parse(e.to_string()))
     }
 }
 

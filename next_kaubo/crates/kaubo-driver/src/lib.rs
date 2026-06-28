@@ -1156,7 +1156,7 @@ mod tests {
             print(true.to_string());
         "#;
         let outcome = run_source(source).unwrap();
-        assert_eq!(outcome.output, vec!["1"]); // bool true → "1"
+        assert_eq!(outcome.output, vec!["true"]);
     }
 
     // ── User struct operator overloading (via interface) ──

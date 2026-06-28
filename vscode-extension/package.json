@@ -20,7 +20,7 @@
       {
         "id": "kaubo",
         "aliases": ["Kaubo", "kaubo"],
-        "extensions": [".kaubo"],
+        "extensions": [".kb"],
         "configuration": "./language-configuration.json"
       }
     ],

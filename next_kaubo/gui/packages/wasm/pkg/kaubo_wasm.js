@@ -57,6 +57,27 @@ export function diagnose(source) {
 }
 
 /**
+ * Go-to-definition: return JSON { line, col } or "null".
+ * @param {string} source
+ * @param {number} offset
+ * @returns {string}
+ */
+export function goto_def(source, offset) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.goto_def(ptr0, len0, offset);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * Get hover information for token at UTF-16 offset.
  * @param {string} source
  * @param {number} offset
@@ -99,6 +120,16 @@ export function lex(source) {
     } finally {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
+}
+
+/**
+ * Feed source to the LSP coordinator. Call after each text change.
+ * @param {string} source
+ */
+export function lsp_on_change(source) {
+    const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.lsp_on_change(ptr0, len0);
 }
 
 /**

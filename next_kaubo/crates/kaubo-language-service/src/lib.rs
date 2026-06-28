@@ -1,7 +1,12 @@
 //! Kaubo language service for editor-facing semantic features.
 //!
-//! This crate is a tooling/use-case layer. It consumes syntax-stage output and
-//! produces semantic tokens and completions for adapters.
+//! This crate is a tooling/use-case layer. It provides:
+//! - Token-based semantic tokens and completions (legacy)
+//! - LspCoordinator: semantic-aware editor features via compiler frontend
+
+pub mod lsp_coordinator;
+
+pub use lsp_coordinator::{HoverInfo, LspCoordinator, SymbolDef, SymbolKind};
 
 use kaubo_syntax::lexer::Lexer;
 use kaubo_syntax::token::{Token, TokenKind};

@@ -14,6 +14,8 @@ pub mod pass;
 mod test_fixtures {
     use kaubo_ast::*;
 
+    const S: Span = Span::ZERO;
+
     pub fn module(src: &str) -> Module {
         Module {
             stmts: match src {
@@ -45,7 +47,7 @@ mod test_fixtures {
                 "var x = 2; x = x + 1; var y = x + 3;" => vec![
                     var_decl("x", Expr::LitInt(2)),
                     Stmt::ExprStmt(Expr::Assign {
-                        target: Box::new(Expr::VarRef("x".to_string())),
+                        target: Box::new(Expr::VarRef { name: "x".to_string(), span: S }),
                         value: Box::new(var_bin("x", BinOp::Add, Expr::LitInt(1))),
                     }),
                     var_decl("y", var_bin("x", BinOp::Add, Expr::LitInt(3))),
@@ -79,13 +81,16 @@ mod test_fixtures {
                     vec![
                         Stmt::StructDef {
                             name: "Point".to_string(),
+                            span: S,
                             fields: vec![
                                 FieldDef {
                                     name: "x".to_string(),
+                                    span: S,
                                     ty: TypeExpr::Named("Int64".to_string()),
                                 },
                                 FieldDef {
                                     name: "y".to_string(),
+                                    span: S,
                                     ty: TypeExpr::Named("Int64".to_string()),
                                 },
                             ],
@@ -111,6 +116,7 @@ mod test_fixtures {
     fn const_decl(name: &str, value: Expr) -> Stmt {
         Stmt::ConstDecl {
             name: name.to_string(),
+            span: S,
             ty_ann: None,
             value,
         }
@@ -119,6 +125,7 @@ mod test_fixtures {
     fn var_decl(name: &str, value: Expr) -> Stmt {
         Stmt::VarDecl {
             name: name.to_string(),
+            span: S,
             ty_ann: None,
             value: Some(value),
         }
@@ -134,7 +141,7 @@ mod test_fixtures {
 
     fn var_bin(name: &str, op: BinOp, right: Expr) -> Expr {
         Expr::Binary {
-            left: Box::new(Expr::VarRef(name.to_string())),
+            left: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
             op,
             right: Box::new(right),
         }
@@ -143,12 +150,12 @@ mod test_fixtures {
     fn while_assign(name: &str, cmp: BinOp, rhs: Expr, update: BinOp) -> Expr {
         Expr::While {
             cond: Box::new(Expr::Binary {
-                left: Box::new(Expr::VarRef(name.to_string())),
+                left: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
                 op: cmp,
                 right: Box::new(rhs),
             }),
             body: Box::new(Expr::Block(vec![Stmt::ExprStmt(Expr::Assign {
-                target: Box::new(Expr::VarRef(name.to_string())),
+                target: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
                 value: Box::new(var_bin(name, update, Expr::LitInt(1))),
             })])),
         }
@@ -158,6 +165,7 @@ mod test_fixtures {
         Expr::Lambda {
             params: vec![Param {
                 name: param.to_string(),
+                span: S,
                 ty_ann: None,
             }],
             ret_ty: None,
@@ -167,7 +175,7 @@ mod test_fixtures {
 
     fn call_stmt(name: &str, args: Vec<Expr>) -> Stmt {
         Stmt::ExprStmt(Expr::Call {
-            func: Box::new(Expr::VarRef(name.to_string())),
+            func: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
             arg: Expr::call_arg(args),
         })
     }

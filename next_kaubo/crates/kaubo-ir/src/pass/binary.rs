@@ -765,6 +765,7 @@ fn binop_to_u8(op: CpsBinOp) -> u8 {
         CpsBinOp::FLe => 24,
         CpsBinOp::FGt => 25,
         CpsBinOp::FGe => 26,
+        CpsBinOp::BToS => 27,
     }
 }
 
@@ -797,6 +798,7 @@ fn u8_to_binop(v: u8) -> Result<CpsBinOp, String> {
         24 => CpsBinOp::FLe,
         25 => CpsBinOp::FGt,
         26 => CpsBinOp::FGe,
+        27 => CpsBinOp::BToS,
         _ => return Err(format!("bad binop tag {v}")),
     })
 }
@@ -939,6 +941,7 @@ mod tests {
             CpsBinOp::IToS,
             CpsBinOp::FToS,
             CpsBinOp::SToI,
+            CpsBinOp::BToS,
         ];
         let mut instrs = Vec::new();
         for (i, op) in binops.iter().enumerate() {
@@ -1061,7 +1064,7 @@ mod tests {
         assert_eq!(decoded.functions.len(), 2);
         assert_eq!(decoded.functions[0].blocks.len(), 7);
         assert_eq!(decoded.functions[0].blocks[0].params, vec![0, 1]);
-        assert_eq!(decoded.functions[0].blocks[0].instrs.len(), 42);
+        assert_eq!(decoded.functions[0].blocks[0].instrs.len(), 43);
         assert!(matches!(
             decoded.functions[0].blocks[0].instrs[0],
             CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)

@@ -10,5 +10,5 @@ pub mod token;
 // re-exports
 pub use ast::{BinOp, Expr, FieldDef, MethodDef, Module, Param, Stmt, UnOp};
 pub use lexer::Lexer;
-pub use parser::Parser;
+pub use parser::{ParseError, Parser};
 pub use token::TokenKind;
