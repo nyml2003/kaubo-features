@@ -3,8 +3,8 @@
 | 状态 | Phase | 关键交付 |
 |------|-------|---------|
 | ✅ 完成 | Phase 1 | 元组 + TypedArray（函数调用=标识符+元组；Call单arg；Int64Array/Float64Array） |
-| ▶ 下一步 | **Phase 2** | 虚拟 prelude 注入完成，prelude.kb + 编译器去硬编码待做 |
-| 🔲 规划 | Phase 3 | LSP 编排层独立化（LspCoordinator + go-to-def/hover） |
+| ▶ 下一步 | **Phase 2** | LSP 编排层独立化（LspCoordinator + go-to-def/hover/completion） |
+| 🔶 部分 | Phase 3 | 虚拟 prelude 注入完成，prelude.kb + 编译器去硬编码待做 |
 | 🔲 规划 | Phase 4 | 显式泛型 |
 | 🔲 规划 | Phase 5 | 效应系统 |
 | ⏸ 推迟 | Phase 6 | VM 性能（当前 ~1.5x CPython，可接受） |
@@ -58,19 +58,9 @@ List<Float64> [1.0, 2.0] →  NewFloat64Array →  HeapObj::Float64Array(Vec<f64
 
 ---
 
-## Phase 2：内置模块化（部分完成）
+## Phase 2：LSP 编排层独立化 ▶ 下一步
 
-| 已完成 | 待做 |
-|--------|------|
-| 9 个虚拟接口注入（Add/Subtract/…/IntoInt） | 真实 `prelude.kb` 文件 |
-| 40+ 内置方法 impl（`impl Add for Int64` 等） | 编译器去硬编码（移除 CPS 层 `to_string`/`IToS` 重写） |
-| 用户可直接 `impl Add for Vec2` | 加新类型不再需要改编译器代码 |
-
----
-
-## Phase 3：LSP 编排层独立化 🔲
-
-前置：Phase 1（元组改变函数调用 AST，LSP 应基于新语义）。
+前置：Phase 1（元组 + Call 单 arg 语义已就位）。
 
 | 交付 | 说明 |
 |------|------|
@@ -81,7 +71,17 @@ List<Float64> [1.0, 2.0] →  NewFloat64Array →  HeapObj::Float64Array(Vec<f64
 | Semantic tokens | AST 节点类型 + 原有 token fallback |
 | WASM 适配 | hover/semantic_tokens/complete 改用 LspCoordinator |
 
-**改动层**：仅 `kaubo-language-service`，~260 行。不改编译器核心。
+**改动层**：仅 `kaubo-language-service`，~260 行。不改编译器核心。详见 [LSP 实施计划](../architecture/10-lsp-implementation-plan.md)。
+
+---
+
+## Phase 3：内置模块化（部分完成）
+
+| 已完成 | 待做 |
+|--------|------|
+| 9 个虚拟接口注入（Add/Subtract/…/IntoInt） | 真实 `prelude.kb` 文件 |
+| 40+ 内置方法 impl（`impl Add for Int64` 等） | 编译器去硬编码（移除 CPS 层 `to_string`/`IToS` 重写） |
+| 用户可直接 `impl Add for Vec2` | 加新类型不再需要改编译器代码 |
 
 ---
 
@@ -132,22 +132,20 @@ List<Float64> [1.0, 2.0] →  NewFloat64Array →  HeapObj::Float64Array(Vec<f64
 ## 依赖关系
 
 ```
-元组 + TypedArray (Phase 1) ─── 泛型 (Phase 4) ─── 效应 (Phase 5)
-        │
-        └── LSP (Phase 3)
+Phase 1 (元组) ─── Phase 2 (LSP) ─── Phase 4 (泛型) ─── Phase 5 (效应)
 
-Interface ─── prelude.kb (Phase 2)
+Interface ─── Phase 3 (prelude.kb)
 
-独立: VM 性能 (Phase 6)
+独立: Phase 6 (VM 性能)
 ```
 
 ## 成本
 
 | Phase | 改动范围 | 风险 |
 |-------|---------|------|
-| 1 元组 + TypedArray | 全管线（AST→VM） | 中（破坏性变更：函数调用 AST） |
-| 2 prelude.kb | 编译器 + 标准库 | 低（删代码为主） |
-| 3 LSP | 仅 language-service | 低 |
+| 1 元组 + TypedArray | 全管线（AST→VM） | ✅ 已完成 |
+| 2 LSP | 仅 language-service | 低 |
+| 3 prelude.kb | 编译器 + 标准库 | 低（删代码为主） |
 | 4 泛型 | AST + Type + Infer + CPS | 中（Monomorphization） |
 | 5 效应 | 全层 | 高（结构性改动） |
 | 6 VM 性能 | 仅 VM 内部 | 低 |

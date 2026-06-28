@@ -70,6 +70,8 @@ Source text
 | 加日志 / 调试输出 | [06 事件与日志](06-events-and-logging.md) | `kaubo-log/src/` |
 | 改编辑器补全 / 高亮 | [07 Language Service](07-language-service.md) | `kaubo-language-service/src/lib.rs` |
 | 改 WASM 边界 / 适配 | [08 Web 与 VSCode](08-web-vscode.md) | `kaubo-wasm/src/` |
+| LSP / go-to-def / hover 方案 | [10 LSP 实施计划](10-lsp-implementation-plan.md) | — |
+| 元组实施记录 | [09 元组实施记录](09-tuple-implementation.md) | — |
 
 ## 阅读顺序
 
