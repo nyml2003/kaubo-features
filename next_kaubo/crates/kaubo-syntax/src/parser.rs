@@ -37,8 +37,7 @@ impl Parser {
 
     pub fn from_tokens(tokens: Vec<Token>) -> Self {
         let struct_names = collect_struct_names(&tokens);
-        let (variant_names, variant_to_enum, variant_tag) =
-            collect_enum_metadata(&tokens);
+        let (variant_names, variant_to_enum, variant_tag) = collect_enum_metadata(&tokens);
         Self {
             tokens,
             pos: 0,
@@ -203,7 +202,10 @@ impl Parser {
                 let pname = self.expect_ident()?;
                 self.expect(TokenKind::Colon)?;
                 let pty = self.parse_type()?;
-                params.push(Param { name: pname, ty_ann: Some(pty) });
+                params.push(Param {
+                    name: pname,
+                    ty_ann: Some(pty),
+                });
                 if self.current_kind() == TokenKind::Comma {
                     self.bump();
                 }
@@ -215,7 +217,12 @@ impl Parser {
             } else {
                 None
             };
-            methods.push(MethodSig { name: mname, params, return_type, operator: is_operator });
+            methods.push(MethodSig {
+                name: mname,
+                params,
+                return_type,
+                operator: is_operator,
+            });
             self.expect(TokenKind::Semicolon)?;
         }
         self.bump(); // }
@@ -246,7 +253,11 @@ impl Parser {
             let mname = self.expect_ident()?;
             self.expect(TokenKind::Colon)?;
             let body = self.parse_expr()?;
-            methods.push(MethodDef { name: mname, body, operator: is_operator });
+            methods.push(MethodDef {
+                name: mname,
+                body,
+                operator: is_operator,
+            });
             if matches!(self.current_kind(), TokenKind::Semicolon | TokenKind::Comma) {
                 self.bump();
             }
@@ -416,9 +427,28 @@ impl Parser {
 
             TokenKind::LParen => {
                 self.bump();
-                let e = self.parse_expr()?;
+                // 空括号 () → 空元组 / unit
+                if self.current_kind() == TokenKind::RParen {
+                    self.bump();
+                    return Ok(Expr::Tuple(vec![]));
+                }
+                let first = self.parse_expr()?;
+                // 逗号 → 元组模式，继续收集直到 RParen
+                if self.current_kind() == TokenKind::Comma {
+                    let mut items = vec![first];
+                    while self.current_kind() == TokenKind::Comma {
+                        self.bump();
+                        if self.current_kind() == TokenKind::RParen {
+                            break; // 尾随逗号：单元素元组 (expr,)
+                        }
+                        items.push(self.parse_expr()?);
+                    }
+                    self.expect(TokenKind::RParen)?;
+                    return Ok(Expr::Tuple(items));
+                }
+                // 无逗号 → 分组，折叠
                 self.expect(TokenKind::RParen)?;
-                Ok(e)
+                Ok(first)
             }
             TokenKind::LBrace => self.parse_block(),
             TokenKind::LBracket => self.parse_list(),
@@ -453,8 +483,7 @@ impl Parser {
                 let name = self.current().lexeme.clone();
                 if self.variant_names.contains(&name) {
                     self.bump();
-                    let enum_name =
-                        self.variant_to_enum.get(&name).cloned().unwrap_or_default();
+                    let enum_name = self.variant_to_enum.get(&name).cloned().unwrap_or_default();
                     let tag = self.variant_tag.get(&name).copied().unwrap_or(0);
                     if self.current_kind() == TokenKind::LParen {
                         // Payload variant: Some(args) → parse as Call for CPS build to handle
@@ -462,7 +491,7 @@ impl Parser {
                         let args = self.parse_call_args()?;
                         return Ok(Expr::Call {
                             func: Box::new(Expr::VarRef(name.clone())),
-                            args,
+                            arg: Expr::call_arg(args),
                         });
                     }
                     // Unit variant: Red → VariantLit
@@ -495,7 +524,7 @@ impl Parser {
                     let args = self.parse_call_args()?;
                     expr = Expr::Call {
                         func: Box::new(expr),
-                        args,
+                        arg: Expr::call_arg(args),
                     };
                 }
                 TokenKind::Dot => {
@@ -714,14 +743,13 @@ impl Parser {
         self.expect(TokenKind::LBrace)?;
         let mut arms: Vec<(Option<Expr>, Expr)> = Vec::new(); // (pattern|None=wildcard, body)
         while self.current_kind() != TokenKind::RBrace {
-            let pattern = if self.current_kind() == TokenKind::Identifier
-                && self.current().lexeme == "_"
-            {
-                self.bump();
-                None // wildcard
-            } else {
-                Some(self.parse_expr()?)
-            };
+            let pattern =
+                if self.current_kind() == TokenKind::Identifier && self.current().lexeme == "_" {
+                    self.bump();
+                    None // wildcard
+                } else {
+                    Some(self.parse_expr()?)
+                };
             self.expect(TokenKind::FatArrow)?;
             let body = self.parse_expr()?;
             arms.push((pattern, body));
@@ -733,7 +761,11 @@ impl Parser {
         self.desugar_match(scrutinee, arms)
     }
 
-    fn desugar_match(&mut self, scrutinee: Expr, arms: Vec<(Option<Expr>, Expr)>) -> ParseResult<Expr> {
+    fn desugar_match(
+        &mut self,
+        scrutinee: Expr,
+        arms: Vec<(Option<Expr>, Expr)>,
+    ) -> ParseResult<Expr> {
         // { var __mN = scrutinee; if __mN == pat1 { ... } else ... }
         let tmp = format!("__m{}", self.opt_chain_counter);
         self.opt_chain_counter += 1;
@@ -743,17 +775,12 @@ impl Parser {
             result = Some(match pattern {
                 Some(pat) => {
                     // Check for unit variant pattern: VariantLit
-                    if let Expr::VariantLit {
-                        
-                        tag,
-                        ..
-                    } = &pat
-                    {
+                    if let Expr::VariantLit { tag, .. } = &pat {
                         Expr::If {
                             cond: Box::new(Expr::Binary {
-                                left: Box::new(Expr::GetVariantTag(Box::new(
-                                    Expr::VarRef(tmp.clone()),
-                                ))),
+                                left: Box::new(Expr::GetVariantTag(Box::new(Expr::VarRef(
+                                    tmp.clone(),
+                                )))),
                                 op: BinOp::Eq,
                                 right: Box::new(Expr::LitInt(*tag as i64)),
                             }),
@@ -765,9 +792,9 @@ impl Parser {
                             let tag = self.variant_tag.get(vname).copied().unwrap_or(0);
                             Expr::If {
                                 cond: Box::new(Expr::Binary {
-                                    left: Box::new(Expr::GetVariantTag(Box::new(
-                                        Expr::VarRef(tmp.clone()),
-                                    ))),
+                                    left: Box::new(Expr::GetVariantTag(Box::new(Expr::VarRef(
+                                        tmp.clone(),
+                                    )))),
                                     op: BinOp::Eq,
                                     right: Box::new(Expr::LitInt(tag as i64)),
                                 }),
@@ -788,25 +815,23 @@ impl Parser {
                         }
                     } else if let Expr::Call {
                         func,
-                        args: bindings,
+                        arg: bindings,
                     } = &pat
                     {
                         // Check for payload variant pattern: Some(v1, v2) -> ...
                         if let Expr::VarRef(ref vname) = func.as_ref() {
                             if self.variant_names.contains(vname) {
-                                let tag =
-                                    self.variant_tag.get(vname).copied().unwrap_or(0);
+                                let tag = self.variant_tag.get(vname).copied().unwrap_or(0);
                                 // Build block: bind variables + body
                                 let mut stmts: Vec<Stmt> = Vec::new();
-                                for (i, binding) in bindings.iter().enumerate() {
+                                let binding_list = bindings.as_args();
+                                for (i, binding) in binding_list.iter().enumerate() {
                                     if let Expr::VarRef(bname) = binding {
                                         stmts.push(Stmt::VarDecl {
                                             name: bname.clone(),
                                             ty_ann: None,
                                             value: Some(Expr::GetVariantField {
-                                                object: Box::new(Expr::VarRef(
-                                                    tmp.clone(),
-                                                )),
+                                                object: Box::new(Expr::VarRef(tmp.clone())),
                                                 field_idx: i as u16,
                                             }),
                                         });
@@ -960,7 +985,7 @@ impl Parser {
                         object: Box::new(expr),
                         field: "to_string".to_string(),
                     }),
-                    args: vec![],
+                    arg: Expr::call_arg(vec![]),
                 });
                 // }} → append literal "}"
                 if trailing_brace {
@@ -991,6 +1016,29 @@ impl Parser {
     // ── 类型 ──
 
     fn parse_type(&mut self) -> ParseResult<TypeExpr> {
+        // 元组类型: (T1, T2, ...) 或 ()
+        if self.current_kind() == TokenKind::LParen {
+            self.bump();
+            if self.current_kind() == TokenKind::RParen {
+                self.bump();
+                return Ok(TypeExpr::Tuple(vec![]));
+            }
+            let first = self.parse_type()?;
+            if self.current_kind() == TokenKind::Comma {
+                let mut items = vec![first];
+                while self.current_kind() == TokenKind::Comma {
+                    self.bump();
+                    if self.current_kind() == TokenKind::RParen {
+                        break;
+                    }
+                    items.push(self.parse_type()?);
+                }
+                self.expect(TokenKind::RParen)?;
+                return Ok(TypeExpr::Tuple(items));
+            }
+            self.expect(TokenKind::RParen)?;
+            return Ok(first); // (T) → 不是元组，折叠
+        }
         let name = self.expect_ident()?;
         if name == "List" {
             self.expect(TokenKind::Lt)?;
@@ -1152,8 +1200,7 @@ fn collect_enum_metadata(
     let mut variant_names = BTreeSet::new();
     let mut variant_to_enum: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
-    let mut variant_tag: std::collections::HashMap<String, u16> =
-        std::collections::HashMap::new();
+    let mut variant_tag: std::collections::HashMap<String, u16> = std::collections::HashMap::new();
 
     let mut i = 0;
     while i < tokens.len() {
@@ -1195,9 +1242,7 @@ fn collect_enum_metadata(
                         variant_tag.insert(vname.clone(), tag);
                         tag += 1;
                         // Skip variant payload: Identifier ( Type , ... )
-                        if i + 1 < tokens.len()
-                            && tokens[i + 1].kind == TokenKind::LParen
-                        {
+                        if i + 1 < tokens.len() && tokens[i + 1].kind == TokenKind::LParen {
                             let mut p_depth = 1;
                             i += 2; // skip past Identifier and LParen
                             while i < tokens.len() && p_depth > 0 {
@@ -1227,7 +1272,10 @@ fn collect_enum_metadata(
 fn collect_struct_names(tokens: &[Token]) -> BTreeSet<String> {
     tokens
         .windows(2)
-        .filter(|&window| (window[0].kind == TokenKind::Struct && window[1].kind == TokenKind::Identifier)).map(|window| window[1].lexeme.clone())
+        .filter(|&window| {
+            (window[0].kind == TokenKind::Struct && window[1].kind == TokenKind::Identifier)
+        })
+        .map(|window| window[1].lexeme.clone())
         .collect()
 }
 
@@ -1315,7 +1363,8 @@ mod tests {
         match &m.stmts[0] {
             Stmt::ImplBlock {
                 struct_name,
-                methods, ..
+                methods,
+                ..
             } => {
                 assert_eq!(struct_name, "Point");
                 assert_eq!(methods.len(), 1);
@@ -1525,13 +1574,13 @@ mod tests {
 
     #[test]
     fn test_impl_block_multiple_methods() {
-        let m = parse_mod(
-            "impl Point { norm: |self| { 0.0 }, dist: |self, other| { return 0.0; } }",
-        );
+        let m =
+            parse_mod("impl Point { norm: |self| { 0.0 }, dist: |self, other| { return 0.0; } }");
         match &m.stmts[0] {
             Stmt::ImplBlock {
                 struct_name,
-                methods, ..
+                methods,
+                ..
             } => {
                 assert_eq!(struct_name, "Point");
                 assert_eq!(methods.len(), 2);
@@ -1642,7 +1691,10 @@ mod tests {
     fn test_unary_double_neg() {
         let e = parse_expr_only("--x");
         match e {
-            Expr::Unary { op: UnOp::Neg, right } => {
+            Expr::Unary {
+                op: UnOp::Neg,
+                right,
+            } => {
                 assert!(matches!(*right, Expr::Unary { op: UnOp::Neg, .. }));
             }
             _ => panic!("expected double neg, got {e:?}"),
@@ -1653,7 +1705,10 @@ mod tests {
     fn test_unary_neg_literal() {
         let e = parse_expr_only("-42");
         match e {
-            Expr::Unary { op: UnOp::Neg, right } => {
+            Expr::Unary {
+                op: UnOp::Neg,
+                right,
+            } => {
                 assert_eq!(*right, Expr::LitInt(42));
             }
             _ => panic!("expected neg literal, got {e:?}"),
@@ -1664,7 +1719,10 @@ mod tests {
     fn test_unary_not_literal() {
         let e = parse_expr_only("not true");
         match e {
-            Expr::Unary { op: UnOp::Not, right } => {
+            Expr::Unary {
+                op: UnOp::Not,
+                right,
+            } => {
                 assert_eq!(*right, Expr::LitTrue);
             }
             _ => panic!("expected not true, got {e:?}"),
@@ -1678,8 +1736,17 @@ mod tests {
             #[test]
             fn $name() {
                 let e = parse_expr_only($src);
-                assert!(matches!(e, Expr::Binary { op: BinOp::$expected_op, .. }),
-                        "expected {}, got {e:?}", stringify!($expected_op));
+                assert!(
+                    matches!(
+                        e,
+                        Expr::Binary {
+                            op: BinOp::$expected_op,
+                            ..
+                        }
+                    ),
+                    "expected {}, got {e:?}",
+                    stringify!($expected_op)
+                );
             }
         };
     }
@@ -1707,7 +1774,11 @@ mod tests {
         let e = parse_expr_only("a + b * c");
         // (a + (b * c))
         match e {
-            Expr::Binary { op: BinOp::Add, left, right } => {
+            Expr::Binary {
+                op: BinOp::Add,
+                left,
+                right,
+            } => {
                 assert!(matches!(*left, Expr::VarRef(_)));
                 assert!(matches!(*right, Expr::Binary { op: BinOp::Mul, .. }));
             }
@@ -1768,7 +1839,11 @@ mod tests {
     fn test_grouping_with_parens() {
         let e = parse_expr_only("(a + b) * c");
         match e {
-            Expr::Binary { op: BinOp::Mul, left, .. } => {
+            Expr::Binary {
+                op: BinOp::Mul,
+                left,
+                ..
+            } => {
                 assert!(matches!(*left, Expr::Binary { op: BinOp::Add, .. }));
             }
             _ => panic!("expected (a+b) * c, got {e:?}"),
@@ -1781,9 +1856,9 @@ mod tests {
     fn test_call_no_args() {
         let e = parse_expr_only("f()");
         match e {
-            Expr::Call { func, args } => {
+            Expr::Call { func, arg } => {
                 assert_eq!(*func, Expr::VarRef("f".to_string()));
-                assert!(args.is_empty());
+                assert!(arg.as_args().is_empty());
             }
             _ => panic!("expected call, got {e:?}"),
         }
@@ -1793,9 +1868,9 @@ mod tests {
     fn test_call_multiple_args() {
         let e = parse_expr_only("f(a, b, c)");
         match e {
-            Expr::Call { func, args } => {
+            Expr::Call { func, arg } => {
                 assert_eq!(*func, Expr::VarRef("f".to_string()));
-                assert_eq!(args.len(), 3);
+                assert_eq!(arg.as_args().len(), 3);
             }
             _ => panic!("expected call, got {e:?}"),
         }
@@ -1805,12 +1880,15 @@ mod tests {
     fn test_nested_call() {
         let e = parse_expr_only("f(g(x))");
         match e {
-            Expr::Call { func, args } => {
+            Expr::Call { func, arg } => {
                 assert_eq!(*func, Expr::VarRef("f".to_string()));
+                let args = arg.as_args();
                 assert_eq!(args.len(), 1);
                 match &args[0] {
-                    Expr::Call { func, .. } => {
-                        assert_eq!(**func, Expr::VarRef("g".to_string()));
+                    Expr::Call {
+                        func: inner_func, ..
+                    } => {
+                        assert_eq!(**inner_func, Expr::VarRef("g".to_string()));
                     }
                     _ => panic!("expected nested call"),
                 }
@@ -1847,11 +1925,121 @@ mod tests {
     fn test_method_call_on_value() {
         let e = parse_expr_only("42.as_float()");
         match e {
-            Expr::Call { func, args } => {
-                assert!(matches!(*func, Expr::Member { object, .. } if *object == Expr::LitInt(42)));
-                assert!(args.is_empty());
+            Expr::Call { func, arg } => {
+                assert!(
+                    matches!(*func, Expr::Member { object, .. } if *object == Expr::LitInt(42))
+                );
+                assert!(arg.as_args().is_empty());
             }
             _ => panic!("expected method call, got {e:?}"),
+        }
+    }
+
+    // ── 元组字面量 ──
+
+    #[test]
+    fn test_empty_tuple() {
+        let e = parse_expr_only("()");
+        assert!(matches!(e, Expr::Tuple(items) if items.is_empty()));
+    }
+
+    #[test]
+    fn test_single_element_tuple() {
+        let e = parse_expr_only("(1,)");
+        match e {
+            Expr::Tuple(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0], Expr::LitInt(1));
+            }
+            _ => panic!("expected tuple, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_multi_element_tuple() {
+        let e = parse_expr_only("(1, 2)");
+        match e {
+            Expr::Tuple(items) => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0], Expr::LitInt(1));
+                assert_eq!(items[1], Expr::LitInt(2));
+            }
+            _ => panic!("expected tuple, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_nested_tuple() {
+        let e = parse_expr_only("((1, 2), 3)");
+        match e {
+            Expr::Tuple(items) => {
+                assert_eq!(items.len(), 2);
+                assert!(matches!(&items[0], Expr::Tuple(inner) if inner.len() == 2));
+                assert_eq!(items[1], Expr::LitInt(3));
+            }
+            _ => panic!("expected nested tuple, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_grouping_not_tuple() {
+        let e = parse_expr_only("(1 + 2)");
+        // (1 + 2) is grouping, NOT a tuple — no comma
+        assert!(!matches!(e, Expr::Tuple(_)));
+    }
+
+    #[test]
+    fn test_zero_arg_call_produces_empty_tuple() {
+        let e = parse_expr_only("f()");
+        match e {
+            Expr::Call { func, arg } => {
+                assert_eq!(*func, Expr::VarRef("f".to_string()));
+                assert!(matches!(*arg, Expr::Tuple(items) if items.is_empty()));
+            }
+            _ => panic!("expected call, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_call_with_two_args_produces_tuple() {
+        let e = parse_expr_only("add(1, 2)");
+        match e {
+            Expr::Call { func, arg } => {
+                assert_eq!(*func, Expr::VarRef("add".to_string()));
+                assert!(matches!(*arg, Expr::Tuple(items) if items.len() == 2));
+            }
+            _ => panic!("expected call, got {e:?}"),
+        }
+    }
+
+    // ── 元组类型标注 ──
+
+    #[test]
+    fn test_parse_tuple_type() {
+        let m = Parser::new("const x: (Int64, String) = (1, \"a\");")
+            .parse()
+            .unwrap();
+        match &m.stmts[0] {
+            Stmt::ConstDecl { ty_ann, .. } => match ty_ann {
+                Some(TypeExpr::Tuple(items)) => {
+                    assert_eq!(items.len(), 2);
+                    assert!(matches!(&items[0], TypeExpr::Named(n) if n == "Int64"));
+                    assert!(matches!(&items[1], TypeExpr::Named(n) if n == "String"));
+                }
+                _ => panic!("expected Tuple type, got {ty_ann:?}"),
+            },
+            _ => panic!("expected ConstDecl"),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_tuple_type() {
+        let m = Parser::new("const x: () = ();").parse().unwrap();
+        match &m.stmts[0] {
+            Stmt::ConstDecl { ty_ann, .. } => {
+                assert!(matches!(ty_ann, Some(TypeExpr::Tuple(items)) if items.is_empty()));
+            }
+            _ => panic!("expected ConstDecl"),
         }
     }
 
@@ -1912,12 +2100,10 @@ mod tests {
     fn test_while_body_is_block() {
         let e = parse_expr_only("while (i < 10) { i = i + 1; x = x * 2 }");
         match e {
-            Expr::While { body, .. } => {
-                match &*body {
-                    Expr::Block(stmts) => assert_eq!(stmts.len(), 2),
-                    _ => panic!("expected block body"),
-                }
-            }
+            Expr::While { body, .. } => match &*body {
+                Expr::Block(stmts) => assert_eq!(stmts.len(), 2),
+                _ => panic!("expected block body"),
+            },
             _ => panic!("expected while, got {e:?}"),
         }
     }
@@ -2077,16 +2263,14 @@ mod tests {
     fn test_struct_literal_single_field() {
         let m = parse_mod("struct Pair { first: Int64 }; const p = Pair { first: 10 };");
         match &m.stmts[1] {
-            Stmt::ConstDecl { value, .. } => {
-                match value {
-                    Expr::StructLit { name, fields, .. } => {
-                        assert_eq!(name, "Pair");
-                        assert_eq!(fields.len(), 1);
-                        assert_eq!(fields[0].0, "first");
-                    }
-                    _ => panic!("expected struct lit, got {value:?}"),
+            Stmt::ConstDecl { value, .. } => match value {
+                Expr::StructLit { name, fields, .. } => {
+                    assert_eq!(name, "Pair");
+                    assert_eq!(fields.len(), 1);
+                    assert_eq!(fields[0].0, "first");
                 }
-            }
+                _ => panic!("expected struct lit, got {value:?}"),
+            },
             _ => panic!(),
         }
     }
@@ -2130,9 +2314,7 @@ mod tests {
 
     #[test]
     fn test_struct_literal_dot_access() {
-        let m = parse_mod(
-            "struct Point { x: Int64 }; const val = Point { x: 100 }.x;",
-        );
+        let m = parse_mod("struct Point { x: Int64 }; const val = Point { x: 100 }.x;");
         match &m.stmts[1] {
             Stmt::ConstDecl { value, .. } => {
                 assert!(matches!(value, Expr::Member { field, .. } if field == "x"));
@@ -2231,7 +2413,11 @@ mod tests {
         let e = parse_expr_only("a ?? b");
         // Should desugar to: if a != null { a } else { b }
         match e {
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 assert!(matches!(*cond, Expr::Binary { op: BinOp::Ne, .. }));
                 assert_eq!(*then_branch, Expr::VarRef("a".to_string()));
                 assert!(else_branch.is_some());
@@ -2287,8 +2473,10 @@ mod tests {
                 // outer block: var __o1 = (inner block); if ...
                 match &stmts[0] {
                     Stmt::VarDecl { value, .. } => {
-                        assert!(matches!(value, Some(Expr::Block(_))),
-                            "inner should be block from first ?.");
+                        assert!(
+                            matches!(value, Some(Expr::Block(_))),
+                            "inner should be block from first ?."
+                        );
                     }
                     _ => panic!("expected var decl"),
                 }
@@ -2304,7 +2492,11 @@ mod tests {
         let m = parse_mod("struct Point { x: Int64, y: Int64 }; const p2 = Point { ...p1, y: 3 };");
         match &m.stmts[1] {
             Stmt::ConstDecl { value, .. } => match value {
-                Expr::StructLit { name, fields, spread } => {
+                Expr::StructLit {
+                    name,
+                    fields,
+                    spread,
+                } => {
                     assert_eq!(name, "Point");
                     assert_eq!(fields.len(), 1);
                     assert_eq!(fields[0].0, "y");
@@ -2338,7 +2530,9 @@ mod tests {
         let e = parse_expr_only("`hello {name}`");
         // Should desugar to: "hello " + name.to_string()
         match e {
-            Expr::Binary { op: BinOp::SAdd, .. } => {}
+            Expr::Binary {
+                op: BinOp::SAdd, ..
+            } => {}
             _ => panic!("expected SAdd chain from template, got {e:?}"),
         }
     }
@@ -2347,7 +2541,9 @@ mod tests {
     fn test_template_string_multiple_exprs() {
         let e = parse_expr_only("`{a} + {b} = {a + b}`");
         match e {
-            Expr::Binary { op: BinOp::SAdd, .. } => {}
+            Expr::Binary {
+                op: BinOp::SAdd, ..
+            } => {}
             _ => panic!("expected SAdd chain, got {e:?}"),
         }
     }

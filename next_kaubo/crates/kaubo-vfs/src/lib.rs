@@ -123,7 +123,10 @@ mod tests {
     #[test]
     fn mem_vfs_read_missing() {
         let vfs = MemVfs::new();
-        assert!(matches!(vfs.read("nope.kb"), Err(VfsError::NotFound { .. })));
+        assert!(matches!(
+            vfs.read("nope.kb"),
+            Err(VfsError::NotFound { .. })
+        ));
     }
 
     #[test]

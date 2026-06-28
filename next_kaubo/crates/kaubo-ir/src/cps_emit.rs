@@ -80,11 +80,7 @@ pub fn emit_get_variant_tag(dst: usize, obj: usize) -> EmitResult {
     )
 }
 
-pub fn emit_set_variant_field(
-    val: usize,
-    obj: usize,
-    field_idx: u16,
-) -> EmitResult {
+pub fn emit_set_variant_field(val: usize, obj: usize, field_idx: u16) -> EmitResult {
     (
         vec![CpsInstr::SetVariantField(val, obj, field_idx, 0)],
         CpsTerminator::Return(val),
@@ -108,6 +104,34 @@ pub fn emit_list_len(dst: usize, obj: usize) -> EmitResult {
 pub fn emit_new_list(dst: usize, elements: Vec<usize>) -> EmitResult {
     (
         vec![CpsInstr::NewList(dst, elements)],
+        CpsTerminator::Return(dst),
+    )
+}
+
+pub fn emit_new_tuple(dst: usize, elements: Vec<usize>) -> EmitResult {
+    (
+        vec![CpsInstr::NewTuple(dst, elements)],
+        CpsTerminator::Return(dst),
+    )
+}
+
+pub fn emit_tuple_index(dst: usize, tuple_reg: usize, index: u16) -> EmitResult {
+    (
+        vec![CpsInstr::TupleIndex(dst, tuple_reg, index)],
+        CpsTerminator::Return(dst),
+    )
+}
+
+pub fn emit_new_int64_array(dst: usize, elements: Vec<usize>) -> EmitResult {
+    (
+        vec![CpsInstr::NewInt64Array(dst, elements)],
+        CpsTerminator::Return(dst),
+    )
+}
+
+pub fn emit_new_float64_array(dst: usize, elements: Vec<usize>) -> EmitResult {
+    (
+        vec![CpsInstr::NewFloat64Array(dst, elements)],
         CpsTerminator::Return(dst),
     )
 }
@@ -153,22 +177,14 @@ pub fn emit_load_vtable(dst: usize, vtable_idx: usize) -> EmitResult {
     )
 }
 
-pub fn emit_new_interface_obj(
-    dst: usize,
-    vtable_reg: usize,
-    struct_reg: usize,
-) -> EmitResult {
+pub fn emit_new_interface_obj(dst: usize, vtable_reg: usize, struct_reg: usize) -> EmitResult {
     (
         vec![CpsInstr::NewInterfaceObj(dst, vtable_reg, struct_reg)],
         CpsTerminator::Return(dst),
     )
 }
 
-pub fn emit_call_indirect(
-    slot: usize,
-    args: Vec<usize>,
-    cont_block: usize,
-) -> CpsTerminator {
+pub fn emit_call_indirect(slot: usize, args: Vec<usize>, cont_block: usize) -> CpsTerminator {
     CpsTerminator::CallIndirect(slot, args, cont_block)
 }
 
@@ -307,55 +323,82 @@ mod tests {
     #[test]
     fn emit_binop_mul_int() {
         let (instrs, _) = emit_binary(0, CpsBinOp::MulInt, 1, 2);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::MulInt, 1, 2)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::MulInt, 1, 2)
+        ));
     }
 
     #[test]
     fn emit_binop_div_int() {
         let (instrs, _) = emit_binary(0, CpsBinOp::DivInt, 1, 2);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::DivInt, 1, 2)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::DivInt, 1, 2)
+        ));
     }
 
     #[test]
     fn emit_binop_mod_int() {
         let (instrs, _) = emit_binary(0, CpsBinOp::ModInt, 1, 2);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::ModInt, 1, 2)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::ModInt, 1, 2)
+        ));
     }
 
     #[test]
     fn emit_binop_lt_int() {
         let (instrs, _) = emit_binary(0, CpsBinOp::LtInt, 1, 2);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::LtInt, 1, 2)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::LtInt, 1, 2)
+        ));
     }
 
     #[test]
     fn emit_binop_le_int() {
         let (instrs, _) = emit_binary(0, CpsBinOp::LeInt, 1, 2);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::LeInt, 1, 2)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::LeInt, 1, 2)
+        ));
     }
 
     #[test]
     fn emit_binop_gt_int() {
         let (instrs, _) = emit_binary(0, CpsBinOp::GtInt, 1, 2);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::GtInt, 1, 2)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::GtInt, 1, 2)
+        ));
     }
 
     #[test]
     fn emit_binop_ge_int() {
         let (instrs, _) = emit_binary(0, CpsBinOp::GeInt, 1, 2);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::GeInt, 1, 2)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::GeInt, 1, 2)
+        ));
     }
 
     #[test]
     fn emit_binop_ne_int() {
         let (instrs, _) = emit_binary(0, CpsBinOp::NeInt, 1, 2);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::NeInt, 1, 2)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::NeInt, 1, 2)
+        ));
     }
 
     #[test]
     fn emit_binop_ftos() {
         let (instrs, _) = emit_binary(0, CpsBinOp::FToS, 1, 0);
-        assert!(matches!(instrs[0], CpsInstr::BinOp(0, CpsBinOp::FToS, 1, 0)));
+        assert!(matches!(
+            instrs[0],
+            CpsInstr::BinOp(0, CpsBinOp::FToS, 1, 0)
+        ));
     }
 
     #[test]

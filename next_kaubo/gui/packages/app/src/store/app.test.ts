@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockDoCompile, mockDoRun, mockDoDiagnose, mockSetKauboDiagnostics } = vi.hoisted(() => ({
-  mockDoCompile: vi.fn(),
-  mockDoRun: vi.fn(),
-  mockDoDiagnose: vi.fn().mockReturnValue("[]"),
-  mockSetKauboDiagnostics: vi.fn(),
-}));
+const { mockDoCompile, mockDoRun, mockDoDiagnose, mockSetKauboDiagnostics } =
+  vi.hoisted(() => ({
+    mockDoCompile: vi.fn(),
+    mockDoRun: vi.fn(),
+    mockDoDiagnose: vi.fn().mockReturnValue("[]"),
+    mockSetKauboDiagnostics: vi.fn(),
+  }));
 
 vi.mock("../hooks/useKaubo", () => ({
   useKaubo: () => ({
@@ -17,7 +18,9 @@ vi.mock("../hooks/useKaubo", () => ({
 }));
 
 vi.mock("../editor/kauboLang", async () => {
-  const actual = await vi.importActual<typeof import("../editor/kauboLang")>("../editor/kauboLang");
+  const actual = await vi.importActual<typeof import("../editor/kauboLang")>(
+    "../editor/kauboLang",
+  );
   return {
     ...actual,
     setKauboDiagnostics: mockSetKauboDiagnostics,
@@ -83,7 +86,7 @@ describe("createKauboStore", () => {
         throw new Error("parse error at line 1");
       });
       mockDoDiagnose.mockReturnValue(
-        '[{"severity":"error","from":0,"to":3,"message":"bad"}]'
+        '[{"severity":"error","from":0,"to":3,"message":"bad"}]',
       );
 
       store.compile();
@@ -199,7 +202,13 @@ describe("createKauboStore", () => {
 
   describe("loadExample", () => {
     it("loads example code and sets active ID", () => {
-      store.loadExample({ id: "hello", name: "Test", description: "desc", code: "print(1);", tags: [] });
+      store.loadExample({
+        id: "hello",
+        name: "Test",
+        description: "desc",
+        code: "print(1);",
+        tags: [],
+      });
       expect(store.activeExample()).toBe("hello");
       expect(store.code()).toBe("print(1);");
       expect(store.error()).toBeNull();
@@ -211,7 +220,13 @@ describe("createKauboStore", () => {
       store.compile();
       expect(store.output()).toContain("Compiled");
 
-      store.loadExample({ id: "hello", name: "Test", description: "desc", code: "x", tags: [] });
+      store.loadExample({
+        id: "hello",
+        name: "Test",
+        description: "desc",
+        code: "x",
+        tags: [],
+      });
       expect(store.output()).toBe("");
     });
   });
@@ -222,7 +237,13 @@ describe("createKauboStore", () => {
     });
 
     it("is cleared when user types", () => {
-      store.loadExample({ id: "hello", name: "Test", description: "desc", code: "print(1);", tags: [] });
+      store.loadExample({
+        id: "hello",
+        name: "Test",
+        description: "desc",
+        code: "print(1);",
+        tags: [],
+      });
       expect(store.activeExample()).toBe("hello");
 
       store.setCode("var x = 1;");

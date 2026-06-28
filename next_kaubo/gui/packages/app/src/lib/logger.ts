@@ -8,7 +8,10 @@ export const log = {
   },
   token(label: string, count: number, sample?: unknown) {
     if (!isDev) return;
-    console.debug(`[kaubo:token:${label}] ${String(count)} tokens`, sample ?? "");
+    console.debug(
+      `[kaubo:token:${label}] ${String(count)} tokens`,
+      sample ?? "",
+    );
   },
   deco(label: string, count: number) {
     if (!isDev) return;

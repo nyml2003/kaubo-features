@@ -84,15 +84,19 @@ pub fn build_module_with_imports(
     dump_blocks("main", &b.ctx);
     let export_func_map = b.export_funcs.clone();
     let export_const_map = b.export_consts.clone();
-    Ok((CpsModule {
-        functions: b.functions,
-        constants: b.constants,
-        structs: b.structs,
-        enums: b.enums,
-        vtables: b.vtables,
-        symbol_map: std::collections::HashMap::new(),
-        func_owners: vec![],
-    }, export_func_map, export_const_map))
+    Ok((
+        CpsModule {
+            functions: b.functions,
+            constants: b.constants,
+            structs: b.structs,
+            enums: b.enums,
+            vtables: b.vtables,
+            symbol_map: std::collections::HashMap::new(),
+            func_owners: vec![],
+        },
+        export_func_map,
+        export_const_map,
+    ))
 }
 
 fn block_jump(id: usize, target: usize) -> CpsBlock {
@@ -120,10 +124,7 @@ fn type_name_to_hint(type_name: &str) -> ValueHint {
 /// 判断类型名字符串是否表示堆类型（用于 GC bitmap 计算）。
 fn is_heap_type_name(type_name: &str) -> bool {
     matches!(type_name, "String" | "List")
-        || (!matches!(
-            type_name,
-            "Int64" | "Float64" | "Bool" | "Null"
-        ))
+        || (!matches!(type_name, "Int64" | "Float64" | "Bool" | "Null"))
     // Struct 和 Interface 名称也是堆类型
 }
 
@@ -195,9 +196,7 @@ impl FuncCtx {
             return Ok(());
         }
         if !matches!(self.blocks[from].term, CpsTerminator::Return(_)) {
-            return Err(format!(
-                "chain: block {from} not Return (already chained?)"
-            ));
+            return Err(format!("chain: block {from} not Return (already chained?)"));
         }
         self.blocks[from].term = CpsTerminator::Jump(to, vec![]);
         Ok(())
@@ -376,16 +375,23 @@ impl<'a> CpsBuilder<'a> {
         // Inject builtin interface definitions so `impl Add for ...` works without
         // needing explicit `interface Add { ... }` in source.
         for iface_name in &[
-            "Add", "Subtract", "Multiply", "Divide", "Modulo",
-            "Compare", "Display", "IntoFloat", "IntoInt",
+            "Add",
+            "Subtract",
+            "Multiply",
+            "Divide",
+            "Modulo",
+            "Compare",
+            "Display",
+            "IntoFloat",
+            "IntoInt",
         ] {
-            self.interface_vtables.entry(iface_name.to_string()).or_insert_with(|| {
-                VtableDef {
+            self.interface_vtables
+                .entry(iface_name.to_string())
+                .or_insert_with(|| VtableDef {
                     interface_name: iface_name.to_string(),
                     struct_name: String::new(),
                     methods: vec![],
-                }
-            });
+                });
         }
 
         for stmt in &module.stmts {
@@ -433,15 +439,13 @@ impl<'a> CpsBuilder<'a> {
                 Stmt::EnumDef { name, variants } => {
                     self.enum_names.insert(name.clone());
                     for v in variants {
-                        self.variant_to_enum
-                            .insert(v.name.clone(), name.clone());
+                        self.variant_to_enum.insert(v.name.clone(), name.clone());
                         let fields: Vec<(String, String)> = v
                             .fields
                             .iter()
                             .map(|f| (f.name.clone(), f.ty.to_string()))
                             .collect();
-                        self.variant_field_map
-                            .insert(v.name.clone(), fields);
+                        self.variant_field_map.insert(v.name.clone(), fields);
                     }
                 }
                 Stmt::ImplBlock {
@@ -469,13 +473,13 @@ impl<'a> CpsBuilder<'a> {
                     }
                 }
                 Stmt::InterfaceDef { name, .. } => {
-                    self.interface_vtables.entry(name.clone()).or_insert_with(|| {
-                        VtableDef {
+                    self.interface_vtables
+                        .entry(name.clone())
+                        .or_insert_with(|| VtableDef {
                             interface_name: name.clone(),
                             struct_name: String::new(),
                             methods: vec![],
-                        }
-                    });
+                        });
                 }
                 _ => {}
             }
@@ -492,10 +496,13 @@ impl<'a> CpsBuilder<'a> {
                 "Null" => ValueHint::Null,
                 "List" => ValueHint::List,
                 _ if self.struct_names.contains(name) => ValueHint::Struct(name.clone()),
-                _ if self.interface_vtables.contains_key(name) => ValueHint::Interface(name.clone()),
+                _ if self.interface_vtables.contains_key(name) => {
+                    ValueHint::Interface(name.clone())
+                }
                 _ => ValueHint::Unknown,
             },
             TypeExpr::List(_) => ValueHint::List,
+            TypeExpr::Tuple(_) => ValueHint::Unknown,
             TypeExpr::Arrow { .. } => ValueHint::Unknown,
         }
     }
@@ -553,7 +560,8 @@ impl<'a> CpsBuilder<'a> {
             } => ValueHint::Struct(format!("{enum_name}::{variant_name}")),
             Expr::GetVariantTag(_) => ValueHint::Int,
             Expr::GetVariantField { .. } => ValueHint::Unknown,
-            Expr::ListLit(_) | Expr::Tuple(_) => ValueHint::List,
+            Expr::ListLit(_) => ValueHint::List,
+            Expr::Tuple(_) => ValueHint::Unknown,
             Expr::Binary { left, op, right } => match op {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
                     let lh = self.expr_hint(left);
@@ -589,7 +597,10 @@ impl<'a> CpsBuilder<'a> {
                     ValueHint::Unknown
                 }
             }
-            Expr::Call { func, args } => self.call_hint(func, args),
+            Expr::Call { func, arg } => {
+                let args: Vec<Expr> = arg.as_args().into_iter().cloned().collect();
+                self.call_hint(func, &args)
+            }
             Expr::Block(stmts) => stmts
                 .iter()
                 .rev()
@@ -664,7 +675,10 @@ impl<'a> CpsBuilder<'a> {
 
     fn is_heap_type(&self, ty: &TypeExpr) -> bool {
         match self.type_expr_hint(ty) {
-            ValueHint::String | ValueHint::Struct(_) | ValueHint::List | ValueHint::Interface(_) => true,
+            ValueHint::String
+            | ValueHint::Struct(_)
+            | ValueHint::List
+            | ValueHint::Interface(_) => true,
             ValueHint::Int | ValueHint::Float | ValueHint::Bool | ValueHint::Null => false,
             ValueHint::Unknown => false,
         }
@@ -776,9 +790,7 @@ impl<'a> CpsBuilder<'a> {
                                 tag as u16,
                                 v.fields
                                     .iter()
-                                    .map(|f| {
-                                        (f.name.clone(), f.ty.to_string())
-                                    })
+                                    .map(|f| (f.name.clone(), f.ty.to_string()))
                                     .collect(),
                             )
                         })
@@ -845,12 +857,7 @@ impl<'a> CpsBuilder<'a> {
                     }
                 }
                 // 如果是导出常量（非 lambda），记录 name → const_idx 映射
-                if let Stmt::ConstDecl {
-                    name,
-                    value,
-                    ..
-                } = inner.as_ref()
-                {
+                if let Stmt::ConstDecl { name, value, .. } = inner.as_ref() {
                     if self.is_exported.contains(name) && !matches!(value, Expr::Lambda { .. }) {
                         // 取最后一个新增的常量 idx（如果有的话）
                         if self.constants.len() > consts_before {
@@ -953,9 +960,17 @@ impl<'a> CpsBuilder<'a> {
             Expr::Continue => self.build_continue(),
             Expr::Return(val) => self.build_return(val.as_deref()),
             Expr::Member { object, field } => self.build_member(object, field),
-            Expr::Call { func, args } => self.build_call(func, args),
-            Expr::ListLit(items) | Expr::Tuple(items) => self.build_list(items),
-            Expr::StructLit { name, fields, spread } => {
+            Expr::Call { func, arg } => {
+                let args: Vec<Expr> = arg.as_args().into_iter().cloned().collect();
+                self.build_call(func, &args)
+            }
+            Expr::ListLit(items) => self.build_list(items),
+            Expr::Tuple(items) => self.build_tuple(items),
+            Expr::StructLit {
+                name,
+                fields,
+                spread,
+            } => {
                 if let Some(spread_expr) = spread {
                     self.build_struct_lit_with_spread(name, fields, spread_expr)
                 } else {
@@ -972,8 +987,7 @@ impl<'a> CpsBuilder<'a> {
                 let (entry, continu, obj_reg) = self.build_expr(inner)?;
                 let dst = self.ctx.alloc();
                 let id = self.ctx.new_block();
-                let (instrs, _) =
-                    cps_emit::emit_get_variant_tag(dst, obj_reg);
+                let (instrs, _) = cps_emit::emit_get_variant_tag(dst, obj_reg);
                 self.ctx.set_block(
                     id,
                     CpsBlock {
@@ -990,8 +1004,7 @@ impl<'a> CpsBuilder<'a> {
                 let (entry, continu, obj_reg) = self.build_expr(object)?;
                 let dst = self.ctx.alloc();
                 let id = self.ctx.new_block();
-                let (instrs, _) =
-                    cps_emit::emit_get_variant_field(dst, obj_reg, *field_idx);
+                let (instrs, _) = cps_emit::emit_get_variant_field(dst, obj_reg, *field_idx);
                 self.ctx.set_block(
                     id,
                     CpsBlock {
@@ -1172,9 +1185,9 @@ impl<'a> CpsBuilder<'a> {
 
     // ── Operator method dispatch helpers ──
 
-/// Map a built-in method name to the corresponding BinOp for rewrite.
-/// Returns `None` if the method is not a recognized builtin operator.
-fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<BinOp> {
+    /// Map a built-in method name to the corresponding BinOp for rewrite.
+    /// Returns `None` if the method is not a recognized builtin operator.
+    fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<BinOp> {
         match method {
             "add" => Some(BinOp::Add),
             "subtract" => Some(BinOp::Sub),
@@ -1245,7 +1258,12 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         let mut vtable_idx: Option<usize> = None;
         let mut slot: Option<usize> = None;
         for (vi, vdef) in self.vtables.iter().enumerate() {
-            if let Some((s, _)) = vdef.methods.iter().enumerate().find(|(_, (mname, _))| mname == method) {
+            if let Some((s, _)) = vdef
+                .methods
+                .iter()
+                .enumerate()
+                .find(|(_, (mname, _))| mname == method)
+            {
                 vtable_idx = Some(vi);
                 slot = Some(s);
                 break;
@@ -1256,26 +1274,43 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
             _ => {
                 // Fallback: try static dispatch via func_map
                 let full_name = format!("{}.{}", struct_name, method);
-                let func_idx = self.ctx.func_map.get(&full_name).copied()
-                    .ok_or_else(|| format!("operator '{method}' not found for '{struct_name}'"))?;
+                let func_idx =
+                    self.ctx.func_map.get(&full_name).copied().ok_or_else(|| {
+                        format!("operator '{method}' not found for '{struct_name}'")
+                    })?;
                 // Use the existing build_call_with_idx but with right_reg already built
                 // Simpler: chain right_continu then do call
                 let result_reg = self.ctx.alloc();
                 let cont_block = self.ctx.new_block();
                 let move_block0 = self.ctx.new_block();
-                self.ctx.set_block(cont_block, CpsBlock {
-                    id: cont_block, params: vec![], instrs: vec![],
-                    term: CpsTerminator::Jump(move_block0, vec![]),
-                });
-                self.ctx.set_block(move_block0, CpsBlock {
-                    id: move_block0, params: vec![], instrs: vec![CpsInstr::Move(result_reg, 0)],
-                    term: cps_emit::emit_return(result_reg),
-                });
+                self.ctx.set_block(
+                    cont_block,
+                    CpsBlock {
+                        id: cont_block,
+                        params: vec![],
+                        instrs: vec![],
+                        term: CpsTerminator::Jump(move_block0, vec![]),
+                    },
+                );
+                self.ctx.set_block(
+                    move_block0,
+                    CpsBlock {
+                        id: move_block0,
+                        params: vec![],
+                        instrs: vec![CpsInstr::Move(result_reg, 0)],
+                        term: cps_emit::emit_return(result_reg),
+                    },
+                );
                 let call_block = self.ctx.new_block();
-                self.ctx.set_block(call_block, CpsBlock {
-                    id: call_block, params: vec![], instrs: vec![],
-                    term: cps_emit::emit_call(func_idx, vec![left_reg, right_reg], cont_block),
-                });
+                self.ctx.set_block(
+                    call_block,
+                    CpsBlock {
+                        id: call_block,
+                        params: vec![],
+                        instrs: vec![],
+                        term: cps_emit::emit_call(func_idx, vec![left_reg, right_reg], cont_block),
+                    },
+                );
                 self.ctx.chain(left_continu, right_continu)?;
                 self.ctx.chain(right_continu, call_block)?;
                 return Ok((bl, move_block0, result_reg));
@@ -1286,20 +1321,30 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         let vt_r = self.ctx.alloc();
         let (vt_instrs, _) = cps_emit::emit_load_vtable(vt_r, vtable_idx);
         let vt_id = self.ctx.new_block();
-        self.ctx.set_block(vt_id, CpsBlock {
-            id: vt_id, params: vec![], instrs: vt_instrs,
-            term: cps_emit::emit_return(vt_r),
-        });
+        self.ctx.set_block(
+            vt_id,
+            CpsBlock {
+                id: vt_id,
+                params: vec![],
+                instrs: vt_instrs,
+                term: cps_emit::emit_return(vt_r),
+            },
+        );
         self.ctx.chain(left_continu, vt_id)?;
 
         // NewInterfaceObj
         let iface_r = self.ctx.alloc();
         let (iface_instrs, _) = cps_emit::emit_new_interface_obj(iface_r, vt_r, left_reg);
         let iface_id = self.ctx.new_block();
-        self.ctx.set_block(iface_id, CpsBlock {
-            id: iface_id, params: vec![], instrs: iface_instrs,
-            term: cps_emit::emit_return(iface_r),
-        });
+        self.ctx.set_block(
+            iface_id,
+            CpsBlock {
+                id: iface_id,
+                params: vec![],
+                instrs: iface_instrs,
+                term: cps_emit::emit_return(iface_r),
+            },
+        );
         self.ctx.chain(vt_id, iface_id)?;
 
         // Chain right operand after iface block
@@ -1308,21 +1353,36 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         // Continuation block
         let cont_block = self.ctx.new_block();
         let move_block = self.ctx.new_block();
-        self.ctx.set_block(cont_block, CpsBlock {
-            id: cont_block, params: vec![], instrs: vec![],
-            term: CpsTerminator::Jump(move_block, vec![]),
-        });
-        self.ctx.set_block(move_block, CpsBlock {
-            id: move_block, params: vec![], instrs: vec![CpsInstr::Move(r, 0)],
-            term: cps_emit::emit_return(r),
-        });
+        self.ctx.set_block(
+            cont_block,
+            CpsBlock {
+                id: cont_block,
+                params: vec![],
+                instrs: vec![],
+                term: CpsTerminator::Jump(move_block, vec![]),
+            },
+        );
+        self.ctx.set_block(
+            move_block,
+            CpsBlock {
+                id: move_block,
+                params: vec![],
+                instrs: vec![CpsInstr::Move(r, 0)],
+                term: cps_emit::emit_return(r),
+            },
+        );
 
         // CallIndirect
         let call_block = self.ctx.new_block();
-        self.ctx.set_block(call_block, CpsBlock {
-            id: call_block, params: vec![], instrs: vec![],
-            term: cps_emit::emit_call_indirect(slot, vec![iface_r, right_reg], cont_block),
-        });
+        self.ctx.set_block(
+            call_block,
+            CpsBlock {
+                id: call_block,
+                params: vec![],
+                instrs: vec![],
+                term: cps_emit::emit_call_indirect(slot, vec![iface_r, right_reg], cont_block),
+            },
+        );
         self.ctx.chain(right_continu, call_block)?;
 
         self.set_value_hint(r, ValueHint::Struct(struct_name.to_string()));
@@ -1349,7 +1409,11 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
                 let hint = self.value_hint(object);
                 let is_builtin = matches!(
                     hint,
-                    ValueHint::Int | ValueHint::Float | ValueHint::String | ValueHint::Bool | ValueHint::Unknown
+                    ValueHint::Int
+                        | ValueHint::Float
+                        | ValueHint::String
+                        | ValueHint::Bool
+                        | ValueHint::Unknown
                 );
                 if is_builtin {
                     let (entry, continu, obj_reg) = self.build_expr(object)?;
@@ -1448,40 +1512,65 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
                     let vtables = self.vtables.clone();
                     for (vi, vdef) in vtables.iter().enumerate() {
                         if vdef.interface_name == *iface_name {
-                            if let Some((slot, _)) = vdef.methods.iter().enumerate()
+                            if let Some((slot, _)) = vdef
+                                .methods
+                                .iter()
+                                .enumerate()
                                 .find(|(_, (mname, _))| mname == field)
                             {
                                 let mut arg_regs = vec![obj_reg];
                                 let mut prev_c = Some(obj_continu);
                                 for arg in args {
                                     let (e, c, r) = self.build_expr(arg)?;
-                                    if let Some(t) = prev_c { self.ctx.chain(t, e)?; }
+                                    if let Some(t) = prev_c {
+                                        self.ctx.chain(t, e)?;
+                                    }
                                     prev_c = Some(c);
                                     arg_regs.push(r);
                                 }
                                 let result_reg = self.ctx.alloc();
                                 let cont_block = self.ctx.new_block();
                                 let mb = self.ctx.new_block();
-                                self.ctx.set_block(cont_block, CpsBlock {
-                                    id: cont_block, params: vec![], instrs: vec![],
-                                    term: CpsTerminator::Jump(mb, vec![]),
-                                });
-                                self.ctx.set_block(mb, CpsBlock {
-                                    id: mb, params: vec![],
-                                    instrs: vec![CpsInstr::Move(result_reg, 0)],
-                                    term: cps_emit::emit_return(result_reg),
-                                });
+                                self.ctx.set_block(
+                                    cont_block,
+                                    CpsBlock {
+                                        id: cont_block,
+                                        params: vec![],
+                                        instrs: vec![],
+                                        term: CpsTerminator::Jump(mb, vec![]),
+                                    },
+                                );
+                                self.ctx.set_block(
+                                    mb,
+                                    CpsBlock {
+                                        id: mb,
+                                        params: vec![],
+                                        instrs: vec![CpsInstr::Move(result_reg, 0)],
+                                        term: cps_emit::emit_return(result_reg),
+                                    },
+                                );
                                 let call_block = self.ctx.new_block();
-                                self.ctx.set_block(call_block, CpsBlock {
-                                    id: call_block, params: vec![], instrs: vec![],
-                                    term: cps_emit::emit_call_indirect(slot, arg_regs, cont_block),
-                                });
-                                if let Some(t) = prev_c { self.ctx.chain(t, call_block)?; }
+                                self.ctx.set_block(
+                                    call_block,
+                                    CpsBlock {
+                                        id: call_block,
+                                        params: vec![],
+                                        instrs: vec![],
+                                        term: cps_emit::emit_call_indirect(
+                                            slot, arg_regs, cont_block,
+                                        ),
+                                    },
+                                );
+                                if let Some(t) = prev_c {
+                                    self.ctx.chain(t, call_block)?;
+                                }
                                 return Ok((obj_entry, mb, result_reg));
                             }
                         }
                     }
-                    return Err(format!("method '{field}' not found on interface {iface_name}"));
+                    return Err(format!(
+                        "method '{field}' not found on interface {iface_name}"
+                    ));
                 }
                 let vtables = self.vtables.clone();
                 for (vi, vdef) in vtables.iter().enumerate() {
@@ -1563,11 +1652,7 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
                                 id: call_block,
                                 params: vec![],
                                 instrs: vec![],
-                                term: cps_emit::emit_call_indirect(
-                                    slot,
-                                    arg_regs,
-                                    cont_block,
-                                ),
+                                term: cps_emit::emit_call_indirect(slot, arg_regs, cont_block),
                             },
                         );
                         if let Some(t) = prev_c {
@@ -1729,19 +1814,30 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
                             }) {
                                 let vt_r = self.ctx.alloc();
                                 let vt_id = self.ctx.new_block();
-                                self.ctx.set_block(vt_id, CpsBlock {
-                                    id: vt_id, params: vec![],
-                                    instrs: (cps_emit::emit_load_vtable(vt_r, vi)).0,
-                                    term: cps_emit::emit_return(vt_r),
-                                });
+                                self.ctx.set_block(
+                                    vt_id,
+                                    CpsBlock {
+                                        id: vt_id,
+                                        params: vec![],
+                                        instrs: (cps_emit::emit_load_vtable(vt_r, vi)).0,
+                                        term: cps_emit::emit_return(vt_r),
+                                    },
+                                );
                                 self.ctx.chain(arg_continu, vt_id)?;
                                 let iface_r = self.ctx.alloc();
                                 let iface_id = self.ctx.new_block();
-                                self.ctx.set_block(iface_id, CpsBlock {
-                                    id: iface_id, params: vec![],
-                                    instrs: (cps_emit::emit_new_interface_obj(iface_r, vt_r, r)).0,
-                                    term: cps_emit::emit_return(iface_r),
-                                });
+                                self.ctx.set_block(
+                                    iface_id,
+                                    CpsBlock {
+                                        id: iface_id,
+                                        params: vec![],
+                                        instrs: (cps_emit::emit_new_interface_obj(
+                                            iface_r, vt_r, r,
+                                        ))
+                                        .0,
+                                        term: cps_emit::emit_return(iface_r),
+                                    },
+                                );
                                 self.ctx.chain(vt_id, iface_id)?;
                                 arg_r = iface_r;
                                 arg_continu = iface_id;
@@ -1888,13 +1984,26 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
             };
             if let Some(method) = op_method {
                 let full_name = format!("{}.{}", struct_name, method);
-                if self.interface_vtables.values().any(|v| {
-                    v.methods.iter().any(|(mname, _)| mname == method)
-                }) || self.ctx.func_map.contains_key(&full_name)
+                if self
+                    .interface_vtables
+                    .values()
+                    .any(|v| v.methods.iter().any(|(mname, _)| mname == method))
+                    || self.ctx.func_map.contains_key(&full_name)
                 {
                     // Found operator method — use interface dispatch path
                     // Build the left operand (self) then the right operand, then CallIndirect
-                    return self.build_operator_dispatch(&struct_name, method, op, cl, rl, br, cr, rr, bl, r);
+                    return self.build_operator_dispatch(
+                        &struct_name,
+                        method,
+                        op,
+                        cl,
+                        rl,
+                        br,
+                        cr,
+                        rr,
+                        bl,
+                        r,
+                    );
                 }
             }
         }
@@ -2029,8 +2138,10 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         );
 
         self.ctx.chain(cond_continu, branch)?;
-        self.ctx.rewire_return_args(right_continu, merge, &[right_reg])?;
-        self.ctx.rewire_return_args(short_block, merge, &[short_reg])?;
+        self.ctx
+            .rewire_return_args(right_continu, merge, &[right_reg])?;
+        self.ctx
+            .rewire_return_args(short_block, merge, &[short_reg])?;
 
         let entry = if cond_entry != 0 { cond_entry } else { branch };
         self.set_value_hint(merge_reg, ValueHint::Bool);
@@ -2151,9 +2262,7 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         let header_block = self.ctx.new_block();
         let body_entry_block = self.ctx.new_block();
         let exit_block = self.ctx.new_block();
-        self.ctx
-            .loop_stack
-            .push((header_block, exit_block));
+        self.ctx.loop_stack.push((header_block, exit_block));
 
         self.ctx.set_block(
             header_block,
@@ -2240,7 +2349,11 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         self.ctx.loop_stack.pop();
 
         // Entry path: list_entry → len → init_idx → header
-        let entry = if list_entry != 0 { list_entry } else { len_block };
+        let entry = if list_entry != 0 {
+            list_entry
+        } else {
+            len_block
+        };
         Ok((entry, exit_block, 0))
     }
 
@@ -2440,17 +2553,61 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         }
         let dst = self.ctx.alloc();
         let id = self.ctx.new_block();
+        // 元素类型一致时选择对应的 TypedArray 指令
+        let all_int = items.iter().all(|e| matches!(e, Expr::LitInt(_)));
+        let all_float = items.iter().all(|e| matches!(e, Expr::LitFloat(_)));
+        let instr = if all_float {
+            CpsInstr::NewFloat64Array(dst, regs.clone())
+        } else if all_int {
+            CpsInstr::NewInt64Array(dst, regs.clone())
+        } else {
+            CpsInstr::NewList(dst, regs.clone())
+        };
         self.ctx.set_block(
             id,
             CpsBlock {
                 id,
                 params: regs.clone(),
-                instrs: vec![CpsInstr::NewList(dst, regs.clone())],
+                instrs: vec![instr],
                 term: cps_emit::emit_return(dst),
             },
         );
         if let Some(t) = prev_c {
             // Rewire to pass element regs as jump args (not chain's empty args)
+            if let Some(block) = self.ctx.blocks.get_mut(t) {
+                block.term = CpsTerminator::Jump(id, regs.clone());
+            }
+        }
+        Ok((if entry != 0 { entry } else { id }, id, dst))
+    }
+
+    fn build_tuple(&mut self, items: &[Expr]) -> Result<(usize, usize, usize), String> {
+        let mut entry = 0;
+        let mut prev_c: Option<usize> = None;
+        let mut regs = Vec::new();
+        for item in items {
+            let (e, c, r) = self.build_expr(item)?;
+            if entry == 0 {
+                entry = e;
+            }
+            if let Some(t) = prev_c {
+                self.ctx.chain(t, e)?;
+            }
+            prev_c = Some(c);
+            regs.push(r);
+        }
+        let dst = self.ctx.alloc();
+        let id = self.ctx.new_block();
+        self.ctx.set_block(
+            id,
+            CpsBlock {
+                id,
+                params: regs.clone(),
+                instrs: vec![CpsInstr::NewTuple(dst, regs.clone())],
+                term: cps_emit::emit_return(dst),
+            },
+        );
+        if let Some(t) = prev_c {
             if let Some(block) = self.ctx.blocks.get_mut(t) {
                 block.term = CpsTerminator::Jump(id, regs.clone());
             }
@@ -2471,7 +2628,9 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
             .ok_or_else(|| format!("unknown struct '{struct_name}'"))?;
         for (name, _) in fields {
             if !sd.fields.iter().any(|(declared, _)| declared == name) {
-                return Err(format!("field '{name}' not found on struct '{struct_name}'"));
+                return Err(format!(
+                    "field '{name}' not found on struct '{struct_name}'"
+                ));
             }
         }
         for (declared, _) in &sd.fields {
@@ -2548,7 +2707,9 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         // Check no unknown fields
         for (name, _) in fields {
             if !sd.fields.iter().any(|(declared, _)| declared == name) {
-                return Err(format!("field '{name}' not found on struct '{struct_name}'"));
+                return Err(format!(
+                    "field '{name}' not found on struct '{struct_name}'"
+                ));
             }
         }
 
@@ -2639,13 +2800,10 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         }
         let dst = self.ctx.alloc();
         let id = self.ctx.new_block();
-        let mut instrs =
-            vec![CpsInstr::NewVariant(dst, ed.id, tag, vec![])];
+        let mut instrs = vec![CpsInstr::NewVariant(dst, ed.id, tag, vec![])];
         // Set each field value
         for (i, &reg) in field_regs.iter().enumerate() {
-            instrs.push(CpsInstr::SetVariantField(
-                reg, dst, i as u16, 0,
-            ));
+            instrs.push(CpsInstr::SetVariantField(reg, dst, i as u16, 0));
         }
         self.ctx.set_block(
             id,
@@ -2707,9 +2865,11 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
             let (idx_entry, idx_continu, idx_reg) = self.build_expr(index)?;
             // Look up the list variable
             let obj_reg = if let Expr::VarRef(name) = object.as_ref() {
-                *self.ctx.var_map.get(name).ok_or_else(|| {
-                    format!("undefined variable '{name}'")
-                })?
+                *self
+                    .ctx
+                    .var_map
+                    .get(name)
+                    .ok_or_else(|| format!("undefined variable '{name}'"))?
             } else {
                 return Err("index assignment target must be a variable".into());
             };
@@ -2728,7 +2888,11 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
                 },
             );
             // Chain: idx_continu (or val_continu) → id
-            let chain_from = if idx_entry != 0 { idx_continu } else { val_continu };
+            let chain_from = if idx_entry != 0 {
+                idx_continu
+            } else {
+                val_continu
+            };
             self.ctx.chain(chain_from, id)?;
             return Ok((val_entry, id, val_reg));
         }
@@ -3029,12 +3193,14 @@ mod tests {
                         call_stmt("f", vec![Expr::LitInt(5)]),
                     ]
                 }
-                "print(\"hi\");" => vec![call_stmt("print", vec![Expr::LitString("hi".to_string())])],
+                "print(\"hi\");" => {
+                    vec![call_stmt("print", vec![Expr::LitString("hi".to_string())])]
+                }
                 "const x = sqrt(4.0);" => vec![const_decl(
                     "x",
                     Expr::Call {
                         func: Box::new(Expr::VarRef("sqrt".to_string())),
-                        args: vec![Expr::LitFloat(4.0)],
+                        arg: Box::new(Expr::LitFloat(4.0)),
                     },
                 )],
                 _ => panic!("missing AST fixture for {src}"),
@@ -3101,14 +3267,14 @@ mod tests {
     fn call_member(object: Expr, field: &str) -> Expr {
         Expr::Call {
             func: Box::new(member(object, field)),
-            args: vec![],
+            arg: Expr::call_arg(vec![]),
         }
     }
 
     fn call_stmt(name: &str, args: Vec<Expr>) -> Stmt {
         Stmt::ExprStmt(Expr::Call {
             func: Box::new(Expr::VarRef(name.to_string())),
-            args,
+            arg: Expr::call_arg(args),
         })
     }
 
@@ -3310,11 +3476,10 @@ mod tests {
     #[test]
     fn build_print_emits_print_opcode() {
         let c = build_src("print(\"hi\");");
-        let has_print = c.functions[0].blocks.iter().any(|b| {
-            b.instrs
-                .iter()
-                .any(|i| matches!(i, CpsInstr::Print(_)))
-        });
+        let has_print = c.functions[0]
+            .blocks
+            .iter()
+            .any(|b| b.instrs.iter().any(|i| matches!(i, CpsInstr::Print(_))));
         assert!(has_print, "print should emit CpsInstr::Print");
     }
 
@@ -3324,10 +3489,7 @@ mod tests {
         let has_call_native = cps.functions[0].blocks.iter().any(|b| {
             matches!(b.term, CpsTerminator::CallNative(3, _, _)) // sqrt = native idx 3
         });
-        assert!(
-            has_call_native,
-            "sqrt should emit CallNative(3)"
-        );
+        assert!(has_call_native, "sqrt should emit CallNative(3)");
     }
 
     #[test]
@@ -3373,7 +3535,11 @@ mod tests {
         b.ctx = FuncCtx::new("test".into());
         let no_args: Vec<Expr> = vec![];
         let result = b.build_native_call(0, &no_args);
-        assert!(result.is_ok(), "0 args should not panic, got {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "0 args should not panic, got {:?}",
+            result.err()
+        );
 
         let mut b = CpsBuilder::new(None);
         b.ctx = FuncCtx::new("test".into());
@@ -3387,5 +3553,4 @@ mod tests {
         let result = b.build_native_call(0, &two_args);
         assert!(result.is_ok(), "2 args should work, got {:?}", result.err());
     }
-
 }

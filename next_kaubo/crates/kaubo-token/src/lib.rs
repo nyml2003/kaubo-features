@@ -5,29 +5,29 @@
 #[repr(u8)]
 pub enum TokenKind {
     // ── 语法关键字 (19) ──
-    Const,    // const
-    Var,      // var
-    If,       // if
-    Else,     // else
-    For,      // for
-    In,       // in
-    While,    // while
-    Break,    // break
-    Continue, // continue
-    Return,   // return
-    Struct,   // struct
-    Enum,     // enum
-    Impl,     // impl
+    Const,     // const
+    Var,       // var
+    If,        // if
+    Else,      // else
+    For,       // for
+    In,        // in
+    While,     // while
+    Break,     // break
+    Continue,  // continue
+    Return,    // return
+    Struct,    // struct
+    Enum,      // enum
+    Impl,      // impl
     Interface, // interface
-    Export,   // export
-    Import,   // import
-    From,     // from
-    As,       // as (import 别名)
-    Async_,   // async
-    Await,    // await
-    Self_,    // self
-    Match,    // match
-    Operator, // operator
+    Export,    // export
+    Import,    // import
+    From,      // from
+    As,        // as (import 别名)
+    Async_,    // async
+    Await,     // await
+    Self_,     // self
+    Match,     // match
+    Operator,  // operator
 
     // ── 字面量 ──
     Identifier,    // 标识符
@@ -68,15 +68,15 @@ pub enum TokenKind {
     Dot,       // .
 
     // ── 复合运算符 ──
-    Pipe,              // |>
-    Bar,               // | (lambda 分隔符)
-    FatArrow,          // ->
-    GtGt,              // >>
-    QuestionQuestion,  // ??
-    QuestionDot,       // ?.
-    QuestionLBracket,  // ?[
-    TemplateString,    // `...` template string content
-    DotDotDot,         // ...
+    Pipe,             // |>
+    Bar,              // | (lambda 分隔符)
+    FatArrow,         // ->
+    GtGt,             // >>
+    QuestionQuestion, // ??
+    QuestionDot,      // ?.
+    QuestionLBracket, // ?[
+    TemplateString,   // `...` template string content
+    DotDotDot,        // ...
 
     // ── 特殊 ──
     Eof,        // 文件结尾
@@ -272,15 +272,72 @@ mod tests {
         // If repr(u8), all discriminants must fit in u8
         use TokenKind::*;
         let kinds = [
-            Const, Var, If, Else, For, In, While, Break, Continue, Return,
-            Struct, Enum, Impl, Export, Import, From, As, Async_, Await, Self_, Match,
-            Identifier, IntLiteral, FloatLiteral, StringLiteral, True, False, Null,
-            Plus, Minus, Asterisk, Slash, Percent,
-            Eq, EqEq, NotEq, Lt, Le, Gt, Ge, Not, And, Or,
-            LParen, RParen, LBrace, RBrace, LBracket, RBracket,
-            Comma, Semicolon, Colon, Dot,
-            Pipe, Bar, FatArrow, GtGt, QuestionQuestion, QuestionDot, QuestionLBracket, TemplateString, DotDotDot,
-            Eof, Comment, Whitespace, Error,
+            Const,
+            Var,
+            If,
+            Else,
+            For,
+            In,
+            While,
+            Break,
+            Continue,
+            Return,
+            Struct,
+            Enum,
+            Impl,
+            Export,
+            Import,
+            From,
+            As,
+            Async_,
+            Await,
+            Self_,
+            Match,
+            Identifier,
+            IntLiteral,
+            FloatLiteral,
+            StringLiteral,
+            True,
+            False,
+            Null,
+            Plus,
+            Minus,
+            Asterisk,
+            Slash,
+            Percent,
+            Eq,
+            EqEq,
+            NotEq,
+            Lt,
+            Le,
+            Gt,
+            Ge,
+            Not,
+            And,
+            Or,
+            LParen,
+            RParen,
+            LBrace,
+            RBrace,
+            LBracket,
+            RBracket,
+            Comma,
+            Semicolon,
+            Colon,
+            Dot,
+            Pipe,
+            Bar,
+            FatArrow,
+            GtGt,
+            QuestionQuestion,
+            QuestionDot,
+            QuestionLBracket,
+            TemplateString,
+            DotDotDot,
+            Eof,
+            Comment,
+            Whitespace,
+            Error,
         ];
         assert_eq!(kinds.len(), 66);
     }

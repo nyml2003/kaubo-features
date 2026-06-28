@@ -23,6 +23,7 @@ pub enum Type {
     Record(usize, Vec<(String, Type)>), // struct_id, fields
     Variant(usize, String, Vec<(String, Type)>), // enum_id, variant_name, field_types
     List(Box<Type>),
+    Tuple(Vec<Type>),
     Interface(String), // interface name (for type annotations like `x: Add`)
 }
 
@@ -34,8 +35,7 @@ pub struct Scheme {
 }
 
 /// 类型代换 — Var → Type
-#[derive(Debug, Clone)]
-#[derive(PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Subst(HashMap<TypeVar, Type>);
 
 /// 类型环境 — Name → Scheme
@@ -52,14 +52,15 @@ impl fmt::Display for Type {
             Type::Null => write!(f, "Null"),
             Type::Arrow(a, b) => write!(f, "({a} → {b})"),
             Type::Record(_, fields) => {
-                let fs: Vec<_> = fields
-                    .iter()
-                    .map(|(n, t)| format!("{n}: {t}"))
-                    .collect();
+                let fs: Vec<_> = fields.iter().map(|(n, t)| format!("{n}: {t}")).collect();
                 write!(f, "{{{}}}", fs.join(", "))
             }
             Type::Variant(id, name, _) => write!(f, "{name}#{id}"),
             Type::List(t) => write!(f, "List<{t}>"),
+            Type::Tuple(elements) => {
+                let ts: Vec<_> = elements.iter().map(|t| t.to_string()).collect();
+                write!(f, "({})", ts.join(", "))
+            }
             Type::Interface(name) => write!(f, "interface {name}"),
         }
     }
@@ -96,6 +97,7 @@ impl Subst {
                     .collect(),
             ),
             Type::List(t) => Type::List(Box::new(self.apply(t))),
+            Type::Tuple(elements) => Type::Tuple(elements.iter().map(|t| self.apply(t)).collect()),
             other => other.clone(),
         }
     }
@@ -138,12 +140,18 @@ pub struct ImportSpec {
 /// 导入符号的种类。
 #[derive(Debug, Clone)]
 pub enum ImportKind {
-    Const { ty: Type },
-    Function { ty: Type },
+    Const {
+        ty: Type,
+    },
+    Function {
+        ty: Type,
+    },
     /// struct_id 是源模块的原始 ID，导入时复用，不重新分配
     Struct {
         struct_id: usize,
         fields: Vec<(String, Type)>,
     },
-    Interface { methods: Vec<(String, Vec<(String, Type)>, Option<Type>)> },
+    Interface {
+        methods: Vec<(String, Vec<(String, Type)>, Option<Type>)>,
+    },
 }

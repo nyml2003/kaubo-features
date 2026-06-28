@@ -25,16 +25,12 @@ pub fn run_passes(
     for pass in passes {
         emit!(
             events,
-            kaubo_log::ToolchainEvent::Pass(kaubo_log::PassEvent::Started {
-                name: pass.name(),
-            })
+            kaubo_log::ToolchainEvent::Pass(kaubo_log::PassEvent::Started { name: pass.name() })
         );
         pass.run(module);
         emit!(
             events,
-            kaubo_log::ToolchainEvent::Pass(kaubo_log::PassEvent::Finished {
-                name: pass.name(),
-            })
+            kaubo_log::ToolchainEvent::Pass(kaubo_log::PassEvent::Finished { name: pass.name() })
         );
     }
 }

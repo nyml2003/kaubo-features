@@ -1,17 +1,26 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { presets } from "./presets";
-import { THEME_NAMES } from "./types";
 import type { KauboTheme } from "./types";
+import { THEME_NAMES } from "./types";
 
 const TOKEN_KEYS: (keyof KauboTheme["tokens"])[] = [
-  "keyword", "number", "string", "comment",
-  "identifier", "atom", "operator",
-  "type", "field", "method", "function",
+  "keyword",
+  "number",
+  "string",
+  "comment",
+  "identifier",
+  "atom",
+  "operator",
+  "type",
+  "field",
+  "method",
+  "function",
 ];
 
-const CHROME_KEYS: (keyof Pick<KauboTheme, "background" | "gutter" | "activeLine" | "selection" | "cursor" | "text">)[] = [
-  "background", "gutter", "activeLine", "selection", "cursor", "text",
-];
+const CHROME_KEYS: (keyof Pick<
+  KauboTheme,
+  "background" | "gutter" | "activeLine" | "selection" | "cursor" | "text"
+>)[] = ["background", "gutter", "activeLine", "selection", "cursor", "text"];
 
 describe("presets", () => {
   it("has a preset for every theme name", () => {

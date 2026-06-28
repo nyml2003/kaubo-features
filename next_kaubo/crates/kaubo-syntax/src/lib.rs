@@ -1,6 +1,6 @@
 //! kaubo-syntax — v2 词法分析和语法分析
-//!
-//! 输出 AST，不做类型推断（类型推断在 kaubo-infer 中）
+
+#![allow(clippy::unnecessary_parentheses)]
 
 pub mod ast;
 pub mod lexer;

@@ -14,7 +14,10 @@ const TOKEN_CSS_VARS: Record<keyof KauboTheme["tokens"], string> = {
   function: "--kb-function",
 };
 
-const CHROME_CSS_VARS: Record<"background" | "gutter" | "activeLine" | "selection" | "cursor" | "text", string> = {
+const CHROME_CSS_VARS: Record<
+  "background" | "gutter" | "activeLine" | "selection" | "cursor" | "text",
+  string
+> = {
   background: "--kb-bg",
   gutter: "--kb-gutter",
   activeLine: "--kb-active-line",
@@ -25,9 +28,15 @@ const CHROME_CSS_VARS: Record<"background" | "gutter" | "activeLine" | "selectio
 
 export function applyTheme(element: HTMLElement, theme: KauboTheme): void {
   for (const [key, cssVar] of Object.entries(CHROME_CSS_VARS)) {
-    element.style.setProperty(cssVar, theme[key as keyof typeof CHROME_CSS_VARS]);
+    element.style.setProperty(
+      cssVar,
+      theme[key as keyof typeof CHROME_CSS_VARS],
+    );
   }
   for (const [tokenKind, cssVar] of Object.entries(TOKEN_CSS_VARS)) {
-    element.style.setProperty(cssVar, theme.tokens[tokenKind as keyof KauboTheme["tokens"]]);
+    element.style.setProperty(
+      cssVar,
+      theme.tokens[tokenKind as keyof KauboTheme["tokens"]],
+    );
   }
 }

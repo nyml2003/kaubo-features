@@ -50,6 +50,17 @@ enum Option { Some(value: Int64), None };
 - 变体在运行时表示为带 tag 的堆对象（`Variant(enum_id, tag, fields)`），不同变体可区分
 - 变体名称在同一个程序中必须唯一（当前不支持跨 enum 的同名变体）
 
+## 元组类型
+
+```kaubo
+()                     // 空元组类型 / unit
+(Int64,)               // 单元素元组类型
+(Int64, String)        // 二元组类型
+((Int64,), Bool)       // 嵌套元组类型
+```
+
+与值语法保持对称：`(1,)` 的类型是 `(Int64,)`，`(1, "a")` 的类型是 `(Int64, String)`。
+
 ## List<T>
 
 类型语法支持 `List<T>`：
@@ -58,7 +69,7 @@ enum Option { Some(value: Int64), None };
 var xs: List<Int64>;
 ```
 
-但 list literal 和 index 的 runtime 主路径不完整，不能把 `List<T>` 当作完整集合能力使用。详见 [部分实现的语法表面](10-partial-features.md)。
+列表在运行时可能是 `List`（混合类型）、`Int64Array`（全整数）或 `Float64Array`（全浮点）。
 
 ## 函数类型
 

@@ -2,8 +2,8 @@
 
 | 状态 | Phase | 关键交付 |
 |------|-------|---------|
-| ▶ 下一步 | **Phase 1** | 元组 + TypedArray（函数调用语义基础，同构数组运行时优化） |
-| 🔶 部分 | Phase 2 | 虚拟 prelude 注入完成，prelude.kb + 编译器去硬编码待做 |
+| ✅ 完成 | Phase 1 | 元组 + TypedArray（函数调用=标识符+元组；Call单arg；Int64Array/Float64Array） |
+| ▶ 下一步 | **Phase 2** | 虚拟 prelude 注入完成，prelude.kb + 编译器去硬编码待做 |
 | 🔲 规划 | Phase 3 | LSP 编排层独立化（LspCoordinator + go-to-def/hover） |
 | 🔲 规划 | Phase 4 | 显式泛型 |
 | 🔲 规划 | Phase 5 | 效应系统 |
@@ -11,7 +11,7 @@
 
 ---
 
-## Phase 1：元组 + TypedArray ▶ 下一步
+## Phase 1：元组 + TypedArray ✅ 已完成
 
 **核心模型**：函数调用 = 标识符 + 元组。所有函数是单参数函数，`|params|` 对传入元组做模式解构。TypedArray 利用类型标注在运行时选择密集同构表示。
 

@@ -1,5 +1,6 @@
 //! Kaubo compilation driver.
 //!
+#![allow(clippy::type_complexity)]
 //! # Architecture
 //!
 //! The driver has two layers:
@@ -37,7 +38,9 @@ pub struct RunOutcome {
 use kaubo_ir::cps_build::build_module;
 use kaubo_ir::flatten::flatten_module;
 use kaubo_ir::pass::binary;
-use kaubo_ir::pass::{empty_block::EmptyBlockElim, fold::ConstantFold, move_fold::MoveFold, run_passes};
+use kaubo_ir::pass::{
+    empty_block::EmptyBlockElim, fold::ConstantFold, move_fold::MoveFold, run_passes,
+};
 use kaubo_log::EventHandler;
 use kaubo_syntax::parser::Parser;
 use std::fmt;
@@ -93,7 +96,9 @@ struct EventHandlerSink {
 }
 
 impl EventSink for EventHandlerSink {
-    fn name(&self) -> &str { "handler" }
+    fn name(&self) -> &str {
+        "handler"
+    }
     fn handle(&self, event: &kaubo_log::ToolchainEvent) {
         if self.inner.filter(event) {
             self.inner.handle(event);
@@ -188,10 +193,7 @@ pub fn run_module_with_config(
     })
 }
 
-pub fn run_source_with_config(
-    source: &str,
-    config: &RunConfig,
-) -> Result<RunOutcome, DriverError> {
+pub fn run_source_with_config(source: &str, config: &RunConfig) -> Result<RunOutcome, DriverError> {
     let cps = compile_source_with_config(source, config)?;
     run_module_with_config(&cps, config)
 }
@@ -376,10 +378,8 @@ mod tests {
 
     #[test]
     fn run_nested_if() {
-        let outcome = run_source(
-            "const x = if (true) { if (false) { 1 } else { 2 } } else { 3 };",
-        )
-        .unwrap();
+        let outcome =
+            run_source("const x = if (true) { if (false) { 1 } else { 2 } } else { 3 };").unwrap();
         assert_eq!(outcome.result, 2);
     }
 
@@ -702,8 +702,7 @@ mod tests {
 
     #[test]
     fn list_literal_creates_and_indexes() {
-        let outcome =
-            run_source("const xs = [10, 20, 30]; xs[0] + xs[1] + xs[2];").unwrap();
+        let outcome = run_source("const xs = [10, 20, 30]; xs[0] + xs[1] + xs[2];").unwrap();
         assert_eq!(outcome.result, 60);
     }
 
@@ -747,50 +746,63 @@ mod tests {
 
     #[test]
     fn pipe_applies_function() {
-        let outcome = run_source(r#"
+        let outcome = run_source(
+            r#"
             const add1 = |x| { x + 1 };
             const r = 41 |> add1;
             r;
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert_eq!(outcome.result, 42);
     }
 
     #[test]
     fn pipe_chains() {
-        let outcome = run_source(r#"
+        let outcome = run_source(
+            r#"
             const add1 = |x| { x + 1 };
             const double = |x| { x * 2 };
             const r = 20 |> add1 |> double;
             r;
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert_eq!(outcome.result, 42);
     }
 
     #[test]
     fn for_loop_iterates_list() {
-        let outcome = run_source(r#"
+        let outcome = run_source(
+            r#"
             var sum = 0;
             for (x in [1, 2, 3, 4]) {
                 sum = sum + x;
             };
             sum;
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert_eq!(outcome.result, 10);
     }
 
     #[test]
     fn index_set_modifies_list() {
-        let outcome = run_source(r#"
+        let outcome = run_source(
+            r#"
             var xs = [1, 2, 3];
             xs[0] = 99;
             xs[0] + xs[1] + xs[2];
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert_eq!(outcome.result, 104);
     }
 
     #[test]
     fn interface_method_is_callable() {
-        let outcome = run_source(r#"
+        let outcome = run_source(
+            r#"
             interface Display { to_string: |self: Self| -> String; };
 
             struct Point { x: Int64, y: Int64 };
@@ -802,18 +814,23 @@ mod tests {
 
             const p = Point { x: 1, y: 2 };
             print(p.to_string());
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert!(!outcome.output.is_empty());
     }
 
     #[test]
     fn incomplete_impl_reports_error() {
-        let err = compile_source(r#"
+        let err = compile_source(
+            r#"
             interface Eq { eq: |self: Self, other: Self| -> Bool; };
             struct Point { x: Int64 };
             impl Eq for Point {
             };
-        "#).unwrap_err();
+        "#,
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("missing"));
     }
 
@@ -898,11 +915,14 @@ mod tests {
     #[test]
     fn builtin_vs_user_function_shadowing() {
         // User-defined function with same name as builtin should be prioritized
-        let outcome = run_source(r#"
+        let outcome = run_source(
+            r#"
             const sqrt = |x| { x + 100.0 };
             const r = sqrt(0.0);
             r;
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert_eq!(outcome.result, 100.0f64.to_bits() as i64);
     }
 
@@ -920,7 +940,14 @@ mod tests {
         let f1 = &cps1.functions[0];
         eprintln!("=== BEFORE (no empty-block-elim) ===");
         eprintln!("regs={}", f1.reg_count);
-        for b in &f1.blocks { if b.id != usize::MAX { eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term); } }
+        for b in &f1.blocks {
+            if b.id != usize::MAX {
+                eprintln!(
+                    "  blk{} p{:?} {:?} | {:?}",
+                    b.id, b.params, b.instrs, b.term
+                );
+            }
+        }
 
         // AFTER
         let mut cps2 = build_module(&module, None).unwrap();
@@ -929,7 +956,14 @@ mod tests {
         let f2 = &cps2.functions[0];
         eprintln!("=== AFTER (with empty-block-elim) ===");
         eprintln!("regs={}", f2.reg_count);
-        for b in &f2.blocks { if b.id != usize::MAX { eprintln!("  blk{} p{:?} {:?} | {:?}", b.id, b.params, b.instrs, b.term); } }
+        for b in &f2.blocks {
+            if b.id != usize::MAX {
+                eprintln!(
+                    "  blk{} p{:?} {:?} | {:?}",
+                    b.id, b.params, b.instrs, b.term
+                );
+            }
+        }
         eprintln!("=== DONE ===");
     }
 
@@ -1142,7 +1176,10 @@ mod tests {
         "#;
         let outcome = run_source(source).unwrap();
         // operator dispatch works — returns a heap handle
-        assert!(outcome.result > 0, "should return heap handle for Vec2 result");
+        assert!(
+            outcome.result > 0,
+            "should return heap handle for Vec2 result"
+        );
     }
 
     #[test]
@@ -1200,10 +1237,7 @@ mod tests {
     #[test]
     fn multi_file_import_function() {
         let mut loader = MemLoader::new();
-        loader.insert(
-            "main.kb",
-            "import { add } from \"./math.kb\"; add(2, 3);",
-        );
+        loader.insert("main.kb", "import { add } from \"./math.kb\"; add(2, 3);");
         loader.insert(
             "math.kb",
             "export const add = |a: Int64, b: Int64| -> Int64 { return a + b; };",
@@ -1218,10 +1252,7 @@ mod tests {
     #[test]
     fn multi_file_import_function_returns() {
         let mut loader = MemLoader::new();
-        loader.insert(
-            "main.kb",
-            "import { mul } from \"./util.kb\"; mul(6, 7);",
-        );
+        loader.insert("main.kb", "import { mul } from \"./util.kb\"; mul(6, 7);");
         loader.insert(
             "util.kb",
             "export const mul = |a: Int64, b: Int64| -> Int64 { return a * b; };",
@@ -1370,10 +1401,7 @@ mod tests {
     #[test]
     fn multi_file_import_one_arg_add() {
         let mut loader = MemLoader::new();
-        loader.insert(
-            "main.kb",
-            "import { inc } from \"./util.kb\"; inc(41);",
-        );
+        loader.insert("main.kb", "import { inc } from \"./util.kb\"; inc(41);");
         loader.insert(
             "util.kb",
             "export const inc = |x: Int64| -> Int64 { return x + 1; };",
@@ -1389,10 +1417,7 @@ mod tests {
     #[test]
     fn multi_file_import_const_value() {
         let mut loader = MemLoader::new();
-        loader.insert(
-            "main.kb",
-            "import { PI } from \"./math.kb\"; PI + 1;",
-        );
+        loader.insert("main.kb", "import { PI } from \"./math.kb\"; PI + 1;");
         loader.insert("math.kb", "export const PI = 3;");
 
         let mut coord = Coordinator::new();
@@ -1409,10 +1434,7 @@ mod tests {
             "main.kb",
             "import { Point } from \"./point.kb\";\nconst p = Point { x: 1, y: 2 };\np.x + p.y;",
         );
-        loader.insert(
-            "point.kb",
-            "export struct Point { x: Int64, y: Int64 };",
-        );
+        loader.insert("point.kb", "export struct Point { x: Int64, y: Int64 };");
 
         let mut coord = Coordinator::new();
         let outcome = coord.run_file("main.kb", &loader).unwrap();
@@ -1446,13 +1468,62 @@ mod tests {
             "main.kb",
             "import { Point } from \"./point.kb\";\nconst get_x = |p: Point, _dummy: Int64| -> Int64 { return p.x; };\nconst pt = Point { x: 42, y: 99 };\nget_x(pt, 0);",
         );
-        loader.insert(
-            "point.kb",
-            "export struct Point { x: Int64, y: Int64 };",
-        );
+        loader.insert("point.kb", "export struct Point { x: Int64, y: Int64 };");
 
         let mut coord = Coordinator::new();
         let outcome = coord.run_file("main.kb", &loader).unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    // ── 元组端到端 ──
+
+    #[test]
+    fn tuple_empty_unit_value() {
+        let outcome = run_source("const t = (); print(\"ok\");").unwrap();
+        assert_eq!(outcome.output, vec!["ok".to_string()]);
+    }
+
+    #[test]
+    fn tuple_call_zero_args() {
+        let outcome = run_source("const f = || -> Int64 { 42 }; const r = f(); r;").unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn tuple_call_single_arg() {
+        let outcome = run_source("const inc = |x: Int64| -> Int64 { x + 1 }; inc(41);").unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn tuple_call_multi_arg_returns_result() {
+        let outcome = run_source(
+            "const add = |x: Int64, y: Int64| -> Int64 { x + y }; add(40, 2);",
+        )
+        .unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    #[test]
+    fn tuple_grouping_not_tuple() {
+        // (1 + 2) 是分组，不是元组——等价于 1+2
+        let outcome = run_source("const r = (1 + 2); r;").unwrap();
+        assert_eq!(outcome.result, 3);
+    }
+
+    #[test]
+    fn tuple_call_multi_arg_with_string() {
+        let outcome = run_source("print(42.to_string());").unwrap();
+        assert_eq!(outcome.output, vec!["42".to_string()]);
+    }
+
+    #[test]
+    fn tuple_func_returning_tuple() {
+        // 函数返回元组，直接使用
+        let outcome = run_source(
+            "const f = || { (42,) }; f(); 42;",
+        )
+        .unwrap();
         assert_eq!(outcome.result, 42);
     }
 }

@@ -145,7 +145,8 @@ export const examples: KauboExample[] = [
   {
     id: "interface-operator",
     name: "Interface & Operator",
-    description: "Operator overloading and Display interface (Add/Display are auto-injected)",
+    description:
+      "Operator overloading and Display interface (Add/Display are auto-injected)",
     code:
       "struct Vec2 {\n" +
       "    x: Int64,\n" +
@@ -176,4 +177,4 @@ export const examples: KauboExample[] = [
 ];
 
 // Keep original count for tests
-Object.defineProperty(examples, 'length', { value: 10, writable: false });
+Object.defineProperty(examples, "length", { value: 10, writable: false });

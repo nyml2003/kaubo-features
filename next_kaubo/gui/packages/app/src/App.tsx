@@ -1,14 +1,13 @@
-import { createEffect, type Component } from "solid-js";
-import { Show } from "solid-js";
+import { createEffect, Show, type Component } from "solid-js";
+import styles from "./App.module.css";
 import { Editor } from "./components/Editor/Editor";
-import { OutputPanel } from "./components/OutputPanel/OutputPanel";
-import { Toolbar } from "./components/Toolbar/Toolbar";
 import { ErrorOverlay } from "./components/ErrorOverlay/ErrorOverlay";
 import { Examples } from "./components/Examples/Examples";
+import { OutputPanel } from "./components/OutputPanel/OutputPanel";
 import { Settings } from "./components/Settings/Settings";
+import { Toolbar } from "./components/Toolbar/Toolbar";
 import { createKauboStore } from "./store/app";
 import { applyTheme, presets } from "./themes";
-import styles from "./App.module.css";
 
 export const App: Component = () => {
   const store = createKauboStore();
@@ -22,9 +21,10 @@ export const App: Component = () => {
 
   return (
     <div class={styles.layout}>
-      <Show when={!store.loading()} fallback={
-        <div class={styles.splash}>Loading Kaubo WASM...</div>
-      }>
+      <Show
+        when={!store.loading()}
+        fallback={<div class={styles.splash}>Loading Kaubo WASM...</div>}
+      >
         <Toolbar
           status={store.status}
           examplesExpanded={store.examplesExpanded}

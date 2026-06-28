@@ -1,5 +1,7 @@
 //! Algorithm W — Hindley-Milner 类型推断
 
+#![allow(clippy::type_complexity)]
+
 use crate::types::*;
 use kaubo_ast::*;
 use std::collections::{HashMap, HashSet};
@@ -47,7 +49,11 @@ pub fn infer_module(
 pub fn infer_module_with_imports(
     module: &Module,
     imports: Option<&[ImportSpec]>,
-) -> InferResult<(TypeEnv, HashMap<usize, Vec<(String, Type)>>, HashSet<String>)> {
+) -> InferResult<(
+    TypeEnv,
+    HashMap<usize, Vec<(String, Type)>>,
+    HashSet<String>,
+)> {
     reset_tvar();
     let mut env: TypeEnv = HashMap::new();
     let mut exports: HashSet<String> = HashSet::new();
@@ -58,8 +64,7 @@ pub fn infer_module_with_imports(
     let mut struct_registry: HashMap<String, usize> = HashMap::new();
     let mut struct_fields: HashMap<usize, Vec<(String, Type)>> = HashMap::new();
     let mut enum_registry: HashMap<String, usize> = HashMap::new();
-    let mut enum_variants: HashMap<usize, Vec<(String, Vec<(String, Type)>)>> =
-        HashMap::new();
+    let mut enum_variants: HashMap<usize, Vec<(String, Vec<(String, Type)>)>> = HashMap::new();
     for stmt in &module.stmts {
         // Unwrap ExportStmt to reach inner definitions
         let inner = match stmt {
@@ -73,7 +78,12 @@ pub fn infer_module_with_imports(
             for f in fields {
                 fts.push((
                     f.name.clone(),
-                    type_expr_to_type(&f.ty, &struct_registry, &struct_fields, &interface_registry)?,
+                    type_expr_to_type(
+                        &f.ty,
+                        &struct_registry,
+                        &struct_fields,
+                        &interface_registry,
+                    )?,
                 ));
             }
             struct_fields.insert(id, fts);
@@ -87,7 +97,12 @@ pub fn infer_module_with_imports(
                 for f in &v.fields {
                     fts.push((
                         f.name.clone(),
-                        type_expr_to_type(&f.ty, &struct_registry, &struct_fields, &interface_registry)?,
+                        type_expr_to_type(
+                            &f.ty,
+                            &struct_registry,
+                            &struct_fields,
+                            &interface_registry,
+                        )?,
                     ));
                 }
                 vts.push((v.name.clone(), fts));
@@ -103,7 +118,12 @@ pub fn infer_module_with_imports(
                         if s == "Self" {
                             Type::Var(fresh_tvar()) // Self is a placeholder
                         } else {
-                            type_expr_to_type(&p.ty_ann.clone().unwrap(), &struct_registry, &struct_fields, &interface_registry)?
+                            type_expr_to_type(
+                                &p.ty_ann.clone().unwrap(),
+                                &struct_registry,
+                                &struct_fields,
+                                &interface_registry,
+                            )?
                         }
                     } else {
                         Type::Var(fresh_tvar())
@@ -112,9 +132,12 @@ pub fn infer_module_with_imports(
                 }
                 let ret = m.return_type.as_ref().map(|t| {
                     if let TypeExpr::Named(s) = t {
-                        if s == "Self" { return Type::Var(fresh_tvar()); }
+                        if s == "Self" {
+                            return Type::Var(fresh_tvar());
+                        }
                     }
-                    type_expr_to_type(t, &struct_registry, &struct_fields, &interface_registry).unwrap_or(Type::Null)
+                    type_expr_to_type(t, &struct_registry, &struct_fields, &interface_registry)
+                        .unwrap_or(Type::Null)
                 });
                 sigs.push((m.name.clone(), param_types, ret));
             }
@@ -153,10 +176,7 @@ pub fn infer_module_with_imports(
                 }
                 ImportKind::Interface { methods } => {
                     interface_registry.insert(spec.local_name.clone(), methods.clone());
-                    env.insert(
-                        spec.local_name.clone(),
-                        Scheme::monomorphic(Type::Null),
-                    );
+                    env.insert(spec.local_name.clone(), Scheme::monomorphic(Type::Null));
                 }
             }
         }
@@ -166,13 +186,29 @@ pub fn infer_module_with_imports(
     for stmt in &module.stmts {
         match stmt {
             Stmt::ConstDecl { name, value, .. } => {
-                let (s, ty) = infer(&env, value, &struct_registry, &struct_fields, &enum_registry, &enum_variants, &interface_registry)?;
+                let (s, ty) = infer(
+                    &env,
+                    value,
+                    &struct_registry,
+                    &struct_fields,
+                    &enum_registry,
+                    &enum_variants,
+                    &interface_registry,
+                )?;
                 let scheme = generalize(&env, &s.apply(&ty));
                 env.insert(name.clone(), scheme);
             }
             Stmt::VarDecl { name, value, .. } => {
                 let ty = if let Some(val) = value {
-                    let (s, t) = infer(&env, val, &struct_registry, &struct_fields, &enum_registry, &enum_variants, &interface_registry)?;
+                    let (s, t) = infer(
+                        &env,
+                        val,
+                        &struct_registry,
+                        &struct_fields,
+                        &enum_registry,
+                        &enum_variants,
+                        &interface_registry,
+                    )?;
                     s.apply(&t)
                 } else {
                     Type::Var(fresh_tvar())
@@ -185,7 +221,12 @@ pub fn infer_module_with_imports(
                 for f in fields {
                     fts.push((
                         f.name.clone(),
-                        type_expr_to_type(&f.ty, &struct_registry, &struct_fields, &interface_registry)?,
+                        type_expr_to_type(
+                            &f.ty,
+                            &struct_registry,
+                            &struct_fields,
+                            &interface_registry,
+                        )?,
                     ));
                 }
                 struct_fields.insert(id, fts);
@@ -199,27 +240,17 @@ pub fn infer_module_with_imports(
                         .and_then(|vs| vs.get(tag))
                         .map(|(_, fts)| fts.clone())
                         .unwrap_or_default();
-                    let result_ty =
-                        Type::Variant(id, v.name.clone(), vtys.clone());
+                    let result_ty = Type::Variant(id, v.name.clone(), vtys.clone());
                     if v.fields.is_empty() {
                         // Unit variant: just the variant type
-                        env.insert(
-                            v.name.clone(),
-                            Scheme::monomorphic(result_ty),
-                        );
+                        env.insert(v.name.clone(), Scheme::monomorphic(result_ty));
                     } else {
                         // Payload variant: fields... -> Variant
                         let mut arrow = result_ty;
                         for (_, ft) in vtys.iter().rev() {
-                            arrow = Type::Arrow(
-                                Box::new(ft.clone()),
-                                Box::new(arrow),
-                            );
+                            arrow = Type::Arrow(Box::new(ft.clone()), Box::new(arrow));
                         }
-                        env.insert(
-                            v.name.clone(),
-                            Scheme::monomorphic(arrow),
-                        );
+                        env.insert(v.name.clone(), Scheme::monomorphic(arrow));
                     }
                 }
             }
@@ -248,7 +279,15 @@ pub fn infer_module_with_imports(
                 }
                 // Register methods on struct — with interface signature checking
                 for m in methods {
-                    let (s, ty) = infer(&env, &m.body, &struct_registry, &struct_fields, &enum_registry, &enum_variants, &interface_registry)?;
+                    let (s, ty) = infer(
+                        &env,
+                        &m.body,
+                        &struct_registry,
+                        &struct_fields,
+                        &enum_registry,
+                        &enum_variants,
+                        &interface_registry,
+                    )?;
                     let inferred = s.apply(&ty);
                     // If implementing an interface, check method type against declared signature
                     if let Some(ref iface_name) = interface_name {
@@ -256,14 +295,18 @@ pub fn infer_module_with_imports(
                             if let Some((_, param_types, ret_ty)) =
                                 required.iter().find(|(mn, _, _)| mn == &m.name)
                             {
-                                // Build expected type: params... -> ret
-                                let mut expected = ret_ty.clone().unwrap_or(Type::Null);
-                                for (_, pt) in param_types.iter().rev() {
-                                    expected = Type::Arrow(
-                                        Box::new(pt.clone()),
-                                        Box::new(expected),
-                                    );
-                                }
+                                // Build expected type: params → ret
+                                let tys: Vec<Type> =
+                                    param_types.iter().map(|(_, t)| t.clone()).collect();
+                                let param_ty = match tys.len() {
+                                    0 => Type::Tuple(vec![]),
+                                    1 => tys.into_iter().next().unwrap(),
+                                    _ => Type::Tuple(tys),
+                                };
+                                let expected = Type::Arrow(
+                                    Box::new(param_ty),
+                                    Box::new(ret_ty.clone().unwrap_or(Type::Null)),
+                                );
                                 // Unify inferred method type with expected signature
                                 if let Err(e) = unify(&inferred, &expected) {
                                     return Err(TypeError {
@@ -283,7 +326,15 @@ pub fn infer_module_with_imports(
                 }
             }
             Stmt::ExprStmt(expr) => {
-                infer(&env, expr, &struct_registry, &struct_fields, &enum_registry, &enum_variants, &interface_registry)?;
+                infer(
+                    &env,
+                    expr,
+                    &struct_registry,
+                    &struct_fields,
+                    &enum_registry,
+                    &enum_variants,
+                    &interface_registry,
+                )?;
             }
             Stmt::InterfaceDef { name, .. } => {
                 // Register interface name as a type-level entity (no runtime value)
@@ -293,7 +344,15 @@ pub fn infer_module_with_imports(
                 // 推断内部声明，并记录导出
                 match inner.as_ref() {
                     Stmt::ConstDecl { name, value, .. } => {
-                        let (s, ty) = infer(&env, value, &struct_registry, &struct_fields, &enum_registry, &enum_variants, &interface_registry)?;
+                        let (s, ty) = infer(
+                            &env,
+                            value,
+                            &struct_registry,
+                            &struct_fields,
+                            &enum_registry,
+                            &enum_variants,
+                            &interface_registry,
+                        )?;
                         let scheme = generalize(&env, &s.apply(&ty));
                         env.insert(name.clone(), scheme);
                         exports.insert(name.clone());
@@ -304,14 +363,16 @@ pub fn infer_module_with_imports(
                         for f in fields {
                             fts.push((
                                 f.name.clone(),
-                                type_expr_to_type(&f.ty, &struct_registry, &struct_fields, &interface_registry)?,
+                                type_expr_to_type(
+                                    &f.ty,
+                                    &struct_registry,
+                                    &struct_fields,
+                                    &interface_registry,
+                                )?,
                             ));
                         }
                         struct_fields.insert(id, fts.clone());
-                        env.insert(
-                            name.clone(),
-                            Scheme::monomorphic(Type::Record(id, fts)),
-                        );
+                        env.insert(name.clone(), Scheme::monomorphic(Type::Record(id, fts)));
                         exports.insert(name.clone());
                     }
                     Stmt::EnumDef { name, variants } => {
@@ -326,10 +387,11 @@ pub fn infer_module_with_imports(
                             if v.fields.is_empty() {
                                 env.insert(v.name.clone(), Scheme::monomorphic(result_ty));
                             } else {
-                                let mut arrow = result_ty;
-                                for (_, ft) in vtys.iter().rev() {
-                                    arrow = Type::Arrow(Box::new(ft.clone()), Box::new(arrow));
-                                }
+                                let param_ty = match vtys.len() {
+                                    1 => vtys.into_iter().next().unwrap().1,
+                                    _ => Type::Tuple(vtys.into_iter().map(|(_, t)| t).collect()),
+                                };
+                                let arrow = Type::Arrow(Box::new(param_ty), Box::new(result_ty));
                                 env.insert(v.name.clone(), Scheme::monomorphic(arrow));
                             }
                         }
@@ -341,7 +403,15 @@ pub fn infer_module_with_imports(
                     }
                     Stmt::VarDecl { name, value, .. } => {
                         let ty = if let Some(val) = value {
-                            let (s, t) = infer(&env, val, &struct_registry, &struct_fields, &enum_registry, &enum_variants, &interface_registry)?;
+                            let (s, t) = infer(
+                                &env,
+                                val,
+                                &struct_registry,
+                                &struct_fields,
+                                &enum_registry,
+                                &enum_variants,
+                                &interface_registry,
+                            )?;
                             s.apply(&t)
                         } else {
                             Type::Var(fresh_tvar())
@@ -417,40 +487,48 @@ fn inject_builtin_interfaces(
     });
     // interface Subtract { operator subtract: |self, other: Self| -> Self; }
     let sv = self_tv();
-    interface_registry.entry("Subtract".into()).or_insert_with(|| {
-        vec![(
-            "subtract".into(),
-            vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
-            Some(sv.clone()),
-        )]
-    });
+    interface_registry
+        .entry("Subtract".into())
+        .or_insert_with(|| {
+            vec![(
+                "subtract".into(),
+                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                Some(sv.clone()),
+            )]
+        });
     // interface Multiply { operator multiply: |self, other: Self| -> Self; }
     let sv = self_tv();
-    interface_registry.entry("Multiply".into()).or_insert_with(|| {
-        vec![(
-            "multiply".into(),
-            vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
-            Some(sv.clone()),
-        )]
-    });
+    interface_registry
+        .entry("Multiply".into())
+        .or_insert_with(|| {
+            vec![(
+                "multiply".into(),
+                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                Some(sv.clone()),
+            )]
+        });
     // interface Divide { operator divide: |self, other: Self| -> Self; }
     let sv = self_tv();
-    interface_registry.entry("Divide".into()).or_insert_with(|| {
-        vec![(
-            "divide".into(),
-            vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
-            Some(sv.clone()),
-        )]
-    });
+    interface_registry
+        .entry("Divide".into())
+        .or_insert_with(|| {
+            vec![(
+                "divide".into(),
+                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                Some(sv.clone()),
+            )]
+        });
     // interface Modulo { operator modulo: |self, other: Self| -> Self; }
     let sv = self_tv();
-    interface_registry.entry("Modulo".into()).or_insert_with(|| {
-        vec![(
-            "modulo".into(),
-            vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
-            Some(sv.clone()),
-        )]
-    });
+    interface_registry
+        .entry("Modulo".into())
+        .or_insert_with(|| {
+            vec![(
+                "modulo".into(),
+                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                Some(sv.clone()),
+            )]
+        });
     // interface Compare {
     //     operator less: |self, other: Self| -> Bool;
     //     operator less_equal: |self, other: Self| -> Bool;
@@ -460,44 +538,58 @@ fn inject_builtin_interfaces(
     //     operator not_equal: |self, other: Self| -> Bool;
     // }
     let sv = self_tv();
-    interface_registry.entry("Compare".into()).or_insert_with(|| {
-        vec![
-            (
-                "less".into(),
-                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
-                Some(bool_ty.clone()),
-            ),
-            (
-                "less_equal".into(),
-                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
-                Some(bool_ty.clone()),
-            ),
-            (
-                "greater".into(),
-                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
-                Some(bool_ty.clone()),
-            ),
-            (
-                "greater_equal".into(),
-                vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
-                Some(bool_ty.clone()),
-            ),
-            (
-                "equal".into(),
-                vec![("self".into(), sv.clone()), ("other".into(), sv)],
-                Some(bool_ty.clone()),
-            ),
-            ("not_equal".into(), vec![], Some(bool_ty.clone())),
-        ]
-    });
+    interface_registry
+        .entry("Compare".into())
+        .or_insert_with(|| {
+            vec![
+                (
+                    "less".into(),
+                    vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                    Some(bool_ty.clone()),
+                ),
+                (
+                    "less_equal".into(),
+                    vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                    Some(bool_ty.clone()),
+                ),
+                (
+                    "greater".into(),
+                    vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                    Some(bool_ty.clone()),
+                ),
+                (
+                    "greater_equal".into(),
+                    vec![("self".into(), sv.clone()), ("other".into(), sv.clone())],
+                    Some(bool_ty.clone()),
+                ),
+                (
+                    "equal".into(),
+                    vec![("self".into(), sv.clone()), ("other".into(), sv)],
+                    Some(bool_ty.clone()),
+                ),
+                ("not_equal".into(), vec![], Some(bool_ty.clone())),
+            ]
+        });
     // interface Display { to_string: |self| -> String; }
-    interface_registry.entry("Display".into()).or_insert_with(|| {
-        vec![("to_string".into(), vec![("self".into(), self_tv())], Some(string_ty.clone()))]
-    });
+    interface_registry
+        .entry("Display".into())
+        .or_insert_with(|| {
+            vec![(
+                "to_string".into(),
+                vec![("self".into(), self_tv())],
+                Some(string_ty.clone()),
+            )]
+        });
     // interface IntoFloat { to_float: |self| -> Float64; }
-    interface_registry.entry("IntoFloat".into()).or_insert_with(|| {
-        vec![("to_float".into(), vec![("self".into(), self_tv())], Some(float_ty.clone()))]
-    });
+    interface_registry
+        .entry("IntoFloat".into())
+        .or_insert_with(|| {
+            vec![(
+                "to_float".into(),
+                vec![("self".into(), self_tv())],
+                Some(float_ty.clone()),
+            )]
+        });
     // interface IntoInt { to_int: |self| -> Int64; }
     interface_registry
         .entry("IntoInt".into())
@@ -540,63 +632,220 @@ fn inject_builtin_impls(
     // For zero-arg methods (to_string, to_float, etc.), it's just:
     //   self_type → return_type
     // Member handler strips the first Arrow (self), leaving either `ret` or `other → ret`.
-    let mut reg = |struct_name: &str, method: &str, self_ty: Type, other_ty: Option<Type>, ret_ty: Type| {
-        let full = format!("{struct_name}.{method}");
-        let ty = if let Some(other) = other_ty {
-            Type::Arrow(
-                Box::new(self_ty),
-                Box::new(Type::Arrow(Box::new(other), Box::new(ret_ty))),
-            )
-        } else {
-            Type::Arrow(Box::new(self_ty), Box::new(ret_ty))
+    let mut reg =
+        |struct_name: &str, method: &str, self_ty: Type, other_ty: Option<Type>, ret_ty: Type| {
+            let full = format!("{struct_name}.{method}");
+            let ty = if let Some(other) = other_ty {
+                Type::Arrow(
+                    Box::new(self_ty),
+                    Box::new(Type::Arrow(Box::new(other), Box::new(ret_ty))),
+                )
+            } else {
+                Type::Arrow(Box::new(self_ty), Box::new(ret_ty))
+            };
+            env.insert(full, Scheme::monomorphic(ty));
         };
-        env.insert(full, Scheme::monomorphic(ty));
-    };
 
     // ── Int64 ── (operator methods: self + other → return)
     reg("Int64", "add", Type::Int64, Some(Type::Int64), Type::Int64);
-    reg("Int64", "subtract", Type::Int64, Some(Type::Int64), Type::Int64);
-    reg("Int64", "multiply", Type::Int64, Some(Type::Int64), Type::Int64);
-    reg("Int64", "divide", Type::Int64, Some(Type::Int64), Type::Int64);
-    reg("Int64", "modulo", Type::Int64, Some(Type::Int64), Type::Int64);
+    reg(
+        "Int64",
+        "subtract",
+        Type::Int64,
+        Some(Type::Int64),
+        Type::Int64,
+    );
+    reg(
+        "Int64",
+        "multiply",
+        Type::Int64,
+        Some(Type::Int64),
+        Type::Int64,
+    );
+    reg(
+        "Int64",
+        "divide",
+        Type::Int64,
+        Some(Type::Int64),
+        Type::Int64,
+    );
+    reg(
+        "Int64",
+        "modulo",
+        Type::Int64,
+        Some(Type::Int64),
+        Type::Int64,
+    );
     reg("Int64", "less", Type::Int64, Some(Type::Int64), Type::Bool);
-    reg("Int64", "less_equal", Type::Int64, Some(Type::Int64), Type::Bool);
-    reg("Int64", "greater", Type::Int64, Some(Type::Int64), Type::Bool);
-    reg("Int64", "greater_equal", Type::Int64, Some(Type::Int64), Type::Bool);
+    reg(
+        "Int64",
+        "less_equal",
+        Type::Int64,
+        Some(Type::Int64),
+        Type::Bool,
+    );
+    reg(
+        "Int64",
+        "greater",
+        Type::Int64,
+        Some(Type::Int64),
+        Type::Bool,
+    );
+    reg(
+        "Int64",
+        "greater_equal",
+        Type::Int64,
+        Some(Type::Int64),
+        Type::Bool,
+    );
     reg("Int64", "equal", Type::Int64, Some(Type::Int64), Type::Bool);
-    reg("Int64", "not_equal", Type::Int64, Some(Type::Int64), Type::Bool);
+    reg(
+        "Int64",
+        "not_equal",
+        Type::Int64,
+        Some(Type::Int64),
+        Type::Bool,
+    );
     // zero-arg methods: no other type
     reg("Int64", "to_string", Type::Int64, None, Type::String);
     reg("Int64", "to_float", Type::Int64, None, Type::Float64);
 
     // ── Float64 ──
-    reg("Float64", "add", Type::Float64, Some(Type::Float64), Type::Float64);
-    reg("Float64", "subtract", Type::Float64, Some(Type::Float64), Type::Float64);
-    reg("Float64", "multiply", Type::Float64, Some(Type::Float64), Type::Float64);
-    reg("Float64", "divide", Type::Float64, Some(Type::Float64), Type::Float64);
-    reg("Float64", "less", Type::Float64, Some(Type::Float64), Type::Bool);
-    reg("Float64", "less_equal", Type::Float64, Some(Type::Float64), Type::Bool);
-    reg("Float64", "greater", Type::Float64, Some(Type::Float64), Type::Bool);
-    reg("Float64", "greater_equal", Type::Float64, Some(Type::Float64), Type::Bool);
-    reg("Float64", "equal", Type::Float64, Some(Type::Float64), Type::Bool);
-    reg("Float64", "not_equal", Type::Float64, Some(Type::Float64), Type::Bool);
+    reg(
+        "Float64",
+        "add",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Float64,
+    );
+    reg(
+        "Float64",
+        "subtract",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Float64,
+    );
+    reg(
+        "Float64",
+        "multiply",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Float64,
+    );
+    reg(
+        "Float64",
+        "divide",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Float64,
+    );
+    reg(
+        "Float64",
+        "less",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Bool,
+    );
+    reg(
+        "Float64",
+        "less_equal",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Bool,
+    );
+    reg(
+        "Float64",
+        "greater",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Bool,
+    );
+    reg(
+        "Float64",
+        "greater_equal",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Bool,
+    );
+    reg(
+        "Float64",
+        "equal",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Bool,
+    );
+    reg(
+        "Float64",
+        "not_equal",
+        Type::Float64,
+        Some(Type::Float64),
+        Type::Bool,
+    );
     reg("Float64", "to_string", Type::Float64, None, Type::String);
     reg("Float64", "to_int", Type::Float64, None, Type::Int64);
 
     // ── String ──
-    reg("String", "add", Type::String, Some(Type::String), Type::String);
-    reg("String", "less", Type::String, Some(Type::String), Type::Bool);
-    reg("String", "less_equal", Type::String, Some(Type::String), Type::Bool);
-    reg("String", "greater", Type::String, Some(Type::String), Type::Bool);
-    reg("String", "greater_equal", Type::String, Some(Type::String), Type::Bool);
-    reg("String", "equal", Type::String, Some(Type::String), Type::Bool);
-    reg("String", "not_equal", Type::String, Some(Type::String), Type::Bool);
+    reg(
+        "String",
+        "add",
+        Type::String,
+        Some(Type::String),
+        Type::String,
+    );
+    reg(
+        "String",
+        "less",
+        Type::String,
+        Some(Type::String),
+        Type::Bool,
+    );
+    reg(
+        "String",
+        "less_equal",
+        Type::String,
+        Some(Type::String),
+        Type::Bool,
+    );
+    reg(
+        "String",
+        "greater",
+        Type::String,
+        Some(Type::String),
+        Type::Bool,
+    );
+    reg(
+        "String",
+        "greater_equal",
+        Type::String,
+        Some(Type::String),
+        Type::Bool,
+    );
+    reg(
+        "String",
+        "equal",
+        Type::String,
+        Some(Type::String),
+        Type::Bool,
+    );
+    reg(
+        "String",
+        "not_equal",
+        Type::String,
+        Some(Type::String),
+        Type::Bool,
+    );
     reg("String", "to_string", Type::String, None, Type::String);
     reg("String", "to_int", Type::String, None, Type::Int64);
 
     // ── Bool ──
     reg("Bool", "equal", Type::Bool, Some(Type::Bool), Type::Bool);
-    reg("Bool", "not_equal", Type::Bool, Some(Type::Bool), Type::Bool);
+    reg(
+        "Bool",
+        "not_equal",
+        Type::Bool,
+        Some(Type::Bool),
+        Type::Bool,
+    );
     reg("Bool", "to_string", Type::Bool, None, Type::String);
 
     // Register builtin interface impls in interface_registry so completeness checks pass
@@ -613,7 +862,7 @@ fn inject_builtin_impls(
     ] {
         for bt in *builtin_types {
             let key = format!("{bt}::{iface_name}");
-            interface_registry.entry(key).or_insert_with(Vec::new);
+            interface_registry.entry(key).or_default();
         }
     }
 }
@@ -645,7 +894,10 @@ fn type_to_name(ty: &Type, structs: &HashMap<String, usize>) -> Option<String> {
         Type::String => Some("String".into()),
         Type::Bool => Some("Bool".into()),
         Type::List(_) => Some("List".into()),
-        Type::Record(id, _) => structs.iter().find(|(_, &sid)| sid == *id).map(|(n, _)| n.clone()),
+        Type::Record(id, _) => structs
+            .iter()
+            .find(|(_, &sid)| sid == *id)
+            .map(|(n, _)| n.clone()),
         Type::Variant(_, name, _) => Some(name.clone()),
         _ => None,
     }
@@ -693,42 +945,91 @@ pub fn infer(
                 env_local.insert(p.name.clone(), Scheme::monomorphic(pt));
             }
 
-            let (s_body, body_ty) = infer(&env_local, body, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (s_body, body_ty) = infer(
+                &env_local,
+                body,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             s = s.compose(&s_body);
 
-            let mut arrow_ty = body_ty;
-            for pt in param_types.into_iter().rev() {
-                arrow_ty = Type::Arrow(Box::new(s.apply(&pt)), Box::new(arrow_ty));
-            }
+            // 构建参数类型：单参数不包裹（边界条件 1）
+            let param_ty = match param_types.len() {
+                0 => Type::Tuple(vec![]),
+                1 => param_types.into_iter().next().unwrap(),
+                _ => Type::Tuple(param_types),
+            };
+            let arrow_ty = Type::Arrow(Box::new(s.apply(&param_ty)), Box::new(body_ty));
             Ok((s, arrow_ty))
         }
 
-        Expr::Call { func, args } => {
-            let (mut s, func_ty) = infer(env, func, structs, struct_fields, enums, enum_variants, interface_registry)?;
-            let mut arg_types = Vec::new();
-            for arg in args {
-                let (s_arg, arg_ty) = infer(env, arg, structs, struct_fields, enums, enum_variants, interface_registry)?;
-                s = s.compose(&s_arg);
-                arg_types.push(arg_ty);
+        Expr::Call { func, arg } => {
+            let (s_func, func_ty) = infer(
+                env,
+                func,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
+            let (s_arg, arg_ty) = infer(
+                env,
+                arg,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
+            let mut s = s_func.compose(&s_arg);
+            // func_ty 若不是 Arrow（如零参 method call 直接返回结果类型），跳过参数匹配
+            if let Type::Arrow(param_ty, body_ty) = s.apply(&func_ty) {
+                // 整体统一：param_ty（Int64 或 (Int64, Int64) 或 (））与 arg_ty 匹配
+                s = unify_with_registry(&param_ty, &arg_ty, interface_registry, structs)
+                    .map_err(|e| TypeError {
+                        msg: e,
+                        line: 0,
+                        col: 0,
+                    })?
+                    .compose(&s);
+                Ok((s.clone(), s.apply(&body_ty)))
+            } else {
+                // 方法调用等已消解场景：func_ty 为结果类型，arg 必须为空元组
+                if matches!(s.apply(&arg_ty), Type::Tuple(elems) if elems.is_empty()) {
+                    Ok((s.clone(), s.apply(&func_ty)))
+                } else {
+                    Err(TypeError {
+                        msg: format!("cannot call non-function type {}", s.apply(&func_ty)),
+                        line: 0,
+                        col: 0,
+                    })
+                }
             }
-            let ret = Type::Var(fresh_tvar());
-            let mut arrow = ret.clone();
-            for at in arg_types.into_iter().rev() {
-                arrow = Type::Arrow(Box::new(at), Box::new(arrow));
-            }
-            s = unify_with_registry(&s.apply(&func_ty), &arrow, interface_registry, structs)
-                .map_err(|e| TypeError {
-                    msg: e,
-                    line: 0,
-                    col: 0,
-                })?
-                .compose(&s);
-            Ok((s.clone(), s.apply(&ret)))
         }
 
         Expr::Binary { left, op, right } => {
-            let (s1, t1) = infer(env, left, structs, struct_fields, enums, enum_variants, interface_registry)?;
-            let (s2, t2) = infer(env, right, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (s1, t1) = infer(
+                env,
+                left,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
+            let (s2, t2) = infer(
+                env,
+                right,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             let mut s = s1.compose(&s2);
 
             let result_type = match op {
@@ -742,8 +1043,7 @@ pub fn infer(
                         .compose(&s);
                     let unified = s.apply(&t1);
                     // Try builtin numeric types first
-                    match unify(&unified, &Type::Int64)
-                        .or_else(|_| unify(&unified, &Type::Float64))
+                    match unify(&unified, &Type::Int64).or_else(|_| unify(&unified, &Type::Float64))
                     {
                         Ok(subst) => {
                             s = subst.compose(&s);
@@ -789,12 +1089,7 @@ pub fn infer(
                         }
                     }
                 }
-                BinOp::Eq
-                | BinOp::Ne
-                | BinOp::Lt
-                | BinOp::Le
-                | BinOp::Gt
-                | BinOp::Ge => {
+                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                     // Unify operand types for comparison (unless one side is Null)
                     let a1 = s.apply(&t1);
                     let a2 = s.apply(&t2);
@@ -809,8 +1104,7 @@ pub fn infer(
                     }
                     Type::Bool
                 }
-                BinOp::And
-                | BinOp::Or => Type::Bool,
+                BinOp::And | BinOp::Or => Type::Bool,
                 BinOp::Pipe => {
                     // a |> f : if f has type T -> U, unify T with type of a, result is U
                     let ret = Type::Var(fresh_tvar());
@@ -833,7 +1127,15 @@ pub fn infer(
         }
 
         Expr::Unary { op, right } => {
-            let (mut s, t) = infer(env, right, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (mut s, t) = infer(
+                env,
+                right,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             match op {
                 UnOp::Neg => {
                     let applied = s.apply(&t);
@@ -858,7 +1160,15 @@ pub fn infer(
             for stmt in stmts {
                 match stmt {
                     Stmt::ConstDecl { name, value, .. } => {
-                        let (s_val, ty) = infer(&local_env, value, structs, struct_fields, enums, enum_variants, interface_registry)?;
+                        let (s_val, ty) = infer(
+                            &local_env,
+                            value,
+                            structs,
+                            struct_fields,
+                            enums,
+                            enum_variants,
+                            interface_registry,
+                        )?;
                         let scheme = generalize(&local_env, &s_val.apply(&ty));
                         local_env.insert(name.clone(), scheme);
                         s = s.compose(&s_val);
@@ -866,7 +1176,15 @@ pub fn infer(
                     }
                     Stmt::VarDecl { name, value, .. } => {
                         let ty = if let Some(val) = value {
-                            let (s_val, t) = infer(&local_env, val, structs, struct_fields, enums, enum_variants, interface_registry)?;
+                            let (s_val, t) = infer(
+                                &local_env,
+                                val,
+                                structs,
+                                struct_fields,
+                                enums,
+                                enum_variants,
+                                interface_registry,
+                            )?;
                             s = s.compose(&s_val);
                             t
                         } else {
@@ -876,7 +1194,15 @@ pub fn infer(
                         result = Type::Null;
                     }
                     Stmt::ExprStmt(expr) => {
-                        let (s_e, ty) = infer(&local_env, expr, structs, struct_fields, enums, enum_variants, interface_registry)?;
+                        let (s_e, ty) = infer(
+                            &local_env,
+                            expr,
+                            structs,
+                            struct_fields,
+                            enums,
+                            enum_variants,
+                            interface_registry,
+                        )?;
                         s = s.compose(&s_e);
                         result = ty;
                     }
@@ -891,10 +1217,34 @@ pub fn infer(
             then_branch,
             else_branch,
         } => {
-            let (s_c, _tc) = infer(env, cond, structs, struct_fields, enums, enum_variants, interface_registry)?;
-            let (s_t, tt) = infer(env, then_branch, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (s_c, _tc) = infer(
+                env,
+                cond,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
+            let (s_t, tt) = infer(
+                env,
+                then_branch,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             if let Some(eb) = else_branch {
-                let (s_e, te) = infer(env, eb, structs, struct_fields, enums, enum_variants, interface_registry)?;
+                let (s_e, te) = infer(
+                    env,
+                    eb,
+                    structs,
+                    struct_fields,
+                    enums,
+                    enum_variants,
+                    interface_registry,
+                )?;
                 let mut s = s_c.compose(&s_t).compose(&s_e);
                 s = unify(&s.apply(&tt), &s.apply(&te))
                     .map_err(|e| TypeError {
@@ -911,8 +1261,24 @@ pub fn infer(
         }
 
         Expr::While { cond, body } => {
-            let (s_c, _) = infer(env, cond, structs, struct_fields, enums, enum_variants, interface_registry)?;
-            let (s_b, _) = infer(env, body, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (s_c, _) = infer(
+                env,
+                cond,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
+            let (s_b, _) = infer(
+                env,
+                body,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             Ok((s_c.compose(&s_b), Type::Null))
         }
 
@@ -921,14 +1287,30 @@ pub fn infer(
             iterable,
             body,
         } => {
-            let (mut s_i, ti) = infer(env, iterable, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (mut s_i, ti) = infer(
+                env,
+                iterable,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             let applied = s_i.apply(&ti);
             // ti should be List<'a>; if it's a type var, unify it with List<?>
             match applied {
                 Type::List(elem) => {
                     let mut local_env = env.clone();
                     local_env.insert(var.name.clone(), Scheme::monomorphic((*elem).clone()));
-                    let (s_b, _) = infer(&local_env, body, structs, struct_fields, enums, enum_variants, interface_registry)?;
+                    let (s_b, _) = infer(
+                        &local_env,
+                        body,
+                        structs,
+                        struct_fields,
+                        enums,
+                        enum_variants,
+                        interface_registry,
+                    )?;
                     Ok((s_i.compose(&s_b), Type::Null))
                 }
                 Type::Var(_) => {
@@ -943,7 +1325,15 @@ pub fn infer(
                         .compose(&s_i);
                     let mut local_env = env.clone();
                     local_env.insert(var.name.clone(), Scheme::monomorphic(elem));
-                    let (s_b, _) = infer(&local_env, body, structs, struct_fields, enums, enum_variants, interface_registry)?;
+                    let (s_b, _) = infer(
+                        &local_env,
+                        body,
+                        structs,
+                        struct_fields,
+                        enums,
+                        enum_variants,
+                        interface_registry,
+                    )?;
                     Ok((s_i.compose(&s_b), Type::Null))
                 }
                 other => Err(TypeError {
@@ -957,26 +1347,45 @@ pub fn infer(
         Expr::Break | Expr::Continue => Ok((Subst::empty(), Type::Null)),
         Expr::Return(val) => {
             if let Some(expr) = val {
-                infer(env, expr, structs, struct_fields, enums, enum_variants, interface_registry)
+                infer(
+                    env,
+                    expr,
+                    structs,
+                    struct_fields,
+                    enums,
+                    enum_variants,
+                    interface_registry,
+                )
             } else {
                 Ok((Subst::empty(), Type::Null))
             }
         }
 
         Expr::Member { object, field } => {
-            let (s, ty) = infer(env, object, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (s, ty) = infer(
+                env,
+                object,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             let applied = s.apply(&ty);
 
             // Handle Interface type: look up method in interface definition
             if let Type::Interface(iface_name) = &applied {
                 if let Some(methods) = interface_registry.get(iface_name) {
-                    if let Some((_, _, ret_ty)) = methods.iter().find(|(mname, _, _)| mname == field) {
+                    if let Some((_, _, ret_ty)) =
+                        methods.iter().find(|(mname, _, _)| mname == field)
+                    {
                         return Ok((s, ret_ty.clone().unwrap_or(Type::Null)));
                     }
                 }
                 return Err(TypeError {
                     msg: format!("method '{field}' not found on interface {iface_name}"),
-                    line: 0, col: 0,
+                    line: 0,
+                    col: 0,
                 });
             }
 
@@ -987,9 +1396,10 @@ pub fn infer(
                 Type::String => Some("String".into()),
                 Type::Bool => Some("Bool".into()),
                 Type::List(_) => Some("List".into()),
-                Type::Record(id, _) => {
-                    structs.iter().find(|(_, &sid)| sid == *id).map(|(n, _)| n.clone())
-                }
+                Type::Record(id, _) => structs
+                    .iter()
+                    .find(|(_, &sid)| sid == *id)
+                    .map(|(n, _)| n.clone()),
                 Type::Variant(_, name, _) => Some(name.clone()),
                 _ => None,
             };
@@ -999,8 +1409,24 @@ pub fn infer(
                 let method_name = format!("{sn}.{field}");
                 if let Some(scheme) = env.get(&method_name) {
                     let method_ty = instantiate(scheme);
+                    // 剥离 self 参数：从 param tuple 中移除第一个元素
                     let result_ty = match method_ty {
-                        Type::Arrow(_, body) => *body,
+                        Type::Arrow(param_ty, body_ty) => {
+                            match *param_ty {
+                                Type::Tuple(mut elems) if !elems.is_empty() => {
+                                    elems.remove(0); // drop self
+                                    match elems.len() {
+                                        0 => *body_ty,
+                                        1 => Type::Arrow(
+                                            Box::new(elems.into_iter().next().unwrap()),
+                                            body_ty,
+                                        ),
+                                        _ => Type::Arrow(Box::new(Type::Tuple(elems)), body_ty),
+                                    }
+                                }
+                                _ => *body_ty, // single self param, no remaining args
+                            }
+                        }
                         other => other,
                     };
                     return Ok((s, result_ty));
@@ -1026,8 +1452,24 @@ pub fn infer(
         }
 
         Expr::Index { object, index } => {
-            let (s1, t_obj) = infer(env, object, structs, struct_fields, enums, enum_variants, interface_registry)?;
-            let (s2, _) = infer(env, index, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (s1, t_obj) = infer(
+                env,
+                object,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
+            let (s2, _) = infer(
+                env,
+                index,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             let s = s1.compose(&s2);
             match s.apply(&t_obj) {
                 Type::List(elem) => Ok((s.clone(), s.apply(&elem))),
@@ -1049,19 +1491,24 @@ pub fn infer(
             let field_types = struct_fields.get(id).cloned().unwrap_or_default();
             let mut s = Subst::empty();
             for (fname, fval) in fields {
-                let (s_f, t_val) = infer(env, fval, structs, struct_fields, enums, enum_variants, interface_registry)?;
+                let (s_f, t_val) = infer(
+                    env,
+                    fval,
+                    structs,
+                    struct_fields,
+                    enums,
+                    enum_variants,
+                    interface_registry,
+                )?;
                 // Unify field value type with declared field type
                 if let Some((_, declared)) = field_types.iter().find(|(n, _)| n == fname) {
-                    s = unify(
-                        &s.apply(&t_val),
-                        &s.apply(declared),
-                    )
-                    .map_err(|e| TypeError {
-                        msg: format!("field '{fname}': {e}"),
-                        line: 0,
-                        col: 0,
-                    })?
-                    .compose(&s);
+                    s = unify(&s.apply(&t_val), &s.apply(declared))
+                        .map_err(|e| TypeError {
+                            msg: format!("field '{fname}': {e}"),
+                            line: 0,
+                            col: 0,
+                        })?
+                        .compose(&s);
                 }
                 s = s.compose(&s_f);
             }
@@ -1089,16 +1536,29 @@ pub fn infer(
                 })?;
             let mut s = Subst::empty();
             for (i, fval) in fields.iter().enumerate() {
-                let (s_f, t_val) = infer(env, fval, structs, struct_fields, enums, enum_variants, interface_registry)?;
+                let (s_f, t_val) = infer(
+                    env,
+                    fval,
+                    structs,
+                    struct_fields,
+                    enums,
+                    enum_variants,
+                    interface_registry,
+                )?;
                 // Unify with declared variant field type
                 if let Some((_, declared)) = variant_info.1.get(i) {
-                    s = unify_with_registry(&s.apply(&t_val), &s.apply(declared), interface_registry, structs)
-                        .map_err(|e| TypeError {
-                            msg: format!("variant field: {e}"),
-                            line: 0,
-                            col: 0,
-                        })?
-                        .compose(&s);
+                    s = unify_with_registry(
+                        &s.apply(&t_val),
+                        &s.apply(declared),
+                        interface_registry,
+                        structs,
+                    )
+                    .map_err(|e| TypeError {
+                        msg: format!("variant field: {e}"),
+                        line: 0,
+                        col: 0,
+                    })?
+                    .compose(&s);
                 }
                 s = s.compose(&s_f);
             }
@@ -1109,7 +1569,15 @@ pub fn infer(
         }
 
         Expr::GetVariantTag(inner) => {
-            let (s, ty) = infer(env, inner, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (s, ty) = infer(
+                env,
+                inner,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             // Verify inner is a variant type
             match s.apply(&ty) {
                 Type::Variant(..) => {}
@@ -1125,7 +1593,15 @@ pub fn infer(
         }
 
         Expr::GetVariantField { object, field_idx } => {
-            let (s, ty) = infer(env, object, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (s, ty) = infer(
+                env,
+                object,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             let applied = s.apply(&ty);
             match applied {
                 Type::Variant(_id, _name, fields) => {
@@ -1137,20 +1613,26 @@ pub fn infer(
                     Ok((s, ft))
                 }
                 _ => Err(TypeError {
-                    msg: format!(
-                        "GetVariantField expected variant type, got {ty}"
-                    ),
+                    msg: format!("GetVariantField expected variant type, got {ty}"),
                     line: 0,
                     col: 0,
                 }),
             }
         }
 
-        Expr::ListLit(items) | Expr::Tuple(items) => {
+        Expr::ListLit(items) => {
             let mut s = Subst::empty();
             let elem_ty = Type::Var(fresh_tvar());
             for item in items {
-                let (s_i, ti) = infer(env, item, structs, struct_fields, enums, enum_variants, interface_registry)?;
+                let (s_i, ti) = infer(
+                    env,
+                    item,
+                    structs,
+                    struct_fields,
+                    enums,
+                    enum_variants,
+                    interface_registry,
+                )?;
                 s = s.compose(&s_i);
                 s = unify(&s.apply(&elem_ty), &s.apply(&ti))
                     .map_err(|e| TypeError {
@@ -1163,9 +1645,44 @@ pub fn infer(
             Ok((s, Type::List(Box::new(elem_ty))))
         }
 
+        Expr::Tuple(items) => {
+            let mut s = Subst::empty();
+            let mut element_types = Vec::with_capacity(items.len());
+            for item in items {
+                let (s_i, ti) = infer(
+                    env,
+                    item,
+                    structs,
+                    struct_fields,
+                    enums,
+                    enum_variants,
+                    interface_registry,
+                )?;
+                s = s.compose(&s_i);
+                element_types.push(ti);
+            }
+            Ok((s, Type::Tuple(element_types)))
+        }
+
         Expr::Assign { target, value } => {
-            let (s1, t_target) = infer(env, target, structs, struct_fields, enums, enum_variants, interface_registry)?;
-            let (s2, t_val) = infer(env, value, structs, struct_fields, enums, enum_variants, interface_registry)?;
+            let (s1, t_target) = infer(
+                env,
+                target,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
+            let (s2, t_val) = infer(
+                env,
+                value,
+                structs,
+                struct_fields,
+                enums,
+                enum_variants,
+                interface_registry,
+            )?;
             let mut s = s1.compose(&s2);
             s = unify(&s.apply(&t_target), &s.apply(&t_val))
                 .map_err(|e| TypeError {
@@ -1177,8 +1694,24 @@ pub fn infer(
             Ok((s, Type::Null))
         }
 
-        Expr::Async(body) => infer(env, body, structs, struct_fields, enums, enum_variants, interface_registry),
-        Expr::Await(body) => infer(env, body, structs, struct_fields, enums, enum_variants, interface_registry),
+        Expr::Async(body) => infer(
+            env,
+            body,
+            structs,
+            struct_fields,
+            enums,
+            enum_variants,
+            interface_registry,
+        ),
+        Expr::Await(body) => infer(
+            env,
+            body,
+            structs,
+            struct_fields,
+            enums,
+            enum_variants,
+            interface_registry,
+        ),
     }
 }
 
@@ -1225,10 +1758,28 @@ fn unify_impl(
         }
         (Type::Arrow(a1, r1), Type::Arrow(a2, r2)) => {
             let s1 = unify_impl(a1, a2, interface_registry, struct_registry)?;
-            let s2 = unify_impl(&s1.apply(r1), &s1.apply(r2), interface_registry, struct_registry)?;
+            let s2 = unify_impl(
+                &s1.apply(r1),
+                &s1.apply(r2),
+                interface_registry,
+                struct_registry,
+            )?;
             Ok(s2.compose(&s1))
         }
         (Type::List(t1), Type::List(t2)) => unify_impl(t1, t2, interface_registry, struct_registry),
+        (Type::Tuple(e1), Type::Tuple(e2)) if e1.len() == e2.len() => {
+            let mut s = Subst::empty();
+            for (a, b) in e1.iter().zip(e2.iter()) {
+                let s_i = unify_impl(
+                    &s.apply(a),
+                    &s.apply(b),
+                    interface_registry,
+                    struct_registry,
+                )?;
+                s = s_i.compose(&s);
+            }
+            Ok(s)
+        }
         (Type::Record(id1, _), Type::Record(id2, _)) if id1 == id2 => Ok(Subst::empty()),
         (Type::Variant(id1, _, _), Type::Variant(id2, _, _)) if id1 == id2 => Ok(Subst::empty()),
         _ => Err(format!("cannot unify {t1} and {t2}")),
@@ -1240,12 +1791,9 @@ fn occurs_check(var: &TypeVar, ty: &Type) -> bool {
         Type::Var(v) => v == var,
         Type::Arrow(a, r) => occurs_check(var, a) || occurs_check(var, r),
         Type::List(t) => occurs_check(var, t),
-        Type::Record(_, fields) => fields
-            .iter()
-            .any(|(_, t)| occurs_check(var, t)),
-        Type::Variant(_, _, fields) => fields
-            .iter()
-            .any(|(_, t)| occurs_check(var, t)),
+        Type::Tuple(elements) => elements.iter().any(|t| occurs_check(var, t)),
+        Type::Record(_, fields) => fields.iter().any(|(_, t)| occurs_check(var, t)),
+        Type::Variant(_, _, fields) => fields.iter().any(|(_, t)| occurs_check(var, t)),
         _ => false,
     }
 }
@@ -1332,17 +1880,31 @@ fn type_expr_to_type(
             }
         },
         TypeExpr::List(t) => Ok(Type::List(Box::new(type_expr_to_type(
-            t, structs, struct_fields, interface_registry,
+            t,
+            structs,
+            struct_fields,
+            interface_registry,
         )?))),
         TypeExpr::Arrow { params, ret } => {
-            let mut arrow = type_expr_to_type(ret, structs, struct_fields, interface_registry)?;
-            for p in params.iter().rev() {
-                arrow = Type::Arrow(
-                    Box::new(type_expr_to_type(p, structs, struct_fields, interface_registry)?),
-                    Box::new(arrow),
-                );
-            }
-            Ok(arrow)
+            let ret_ty = type_expr_to_type(ret, structs, struct_fields, interface_registry)?;
+            let param_tys: Vec<Type> = params
+                .iter()
+                .map(|p| type_expr_to_type(p, structs, struct_fields, interface_registry))
+                .collect::<Result<Vec<_>, _>>()?;
+            // 单参数不包裹元组（边界条件 1），多参数包裹为 Tuple
+            let param_ty = match param_tys.len() {
+                0 => Type::Tuple(vec![]),
+                1 => param_tys.into_iter().next().unwrap(),
+                _ => Type::Tuple(param_tys),
+            };
+            Ok(Type::Arrow(Box::new(param_ty), Box::new(ret_ty)))
+        }
+        TypeExpr::Tuple(elements) => {
+            let tys: Vec<Type> = elements
+                .iter()
+                .map(|e| type_expr_to_type(e, structs, struct_fields, interface_registry))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Type::Tuple(tys))
         }
     }
 }
@@ -1389,8 +1951,7 @@ mod tests {
         HashMap::new()
     }
 
-    fn empty_enum_variants(
-    ) -> HashMap<usize, Vec<(String, Vec<(String, Type)>)>> {
+    fn empty_enum_variants() -> HashMap<usize, Vec<(String, Vec<(String, Type)>)>> {
         HashMap::new()
     }
 
@@ -1410,13 +1971,16 @@ mod tests {
             &mut interface_registry,
         );
         let mut env = TypeEnv::new();
-        inject_builtin_impls(
-            &mut env,
-            &mut structs,
-            &mut fields,
-            &mut interface_registry,
-        );
-        let (subst, ty) = infer(&env, &expr, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry())?;
+        inject_builtin_impls(&mut env, &mut structs, &mut fields, &mut interface_registry);
+        let (subst, ty) = infer(
+            &env,
+            &expr,
+            &structs,
+            &fields,
+            &empty_enums(),
+            &empty_enum_variants(),
+            &empty_interface_registry(),
+        )?;
         Ok(subst.apply(&ty))
     }
 
@@ -1600,7 +2164,7 @@ mod tests {
         assert_eq!(
             infer_expr(Expr::Call {
                 func: Box::new(id),
-                args: vec![Expr::LitString("ok".to_string())],
+                arg: Box::new(Expr::LitString("ok".to_string())),
             })
             .unwrap(),
             Type::String
@@ -1608,10 +2172,10 @@ mod tests {
 
         let err = infer_expr(Expr::Call {
             func: Box::new(Expr::LitInt(1)),
-            args: vec![Expr::LitInt(2)],
+            arg: Box::new(Expr::LitInt(2)),
         })
         .unwrap_err();
-        assert!(err.msg.contains("cannot unify"));
+        assert!(err.msg.contains("cannot call non-function type"));
     }
 
     #[test]
@@ -1826,10 +2390,24 @@ mod tests {
         assert!(infer_expr(Expr::Index {
             object: Box::new(Expr::LitInt(1)),
             index: Box::new(Expr::LitInt(0)),
-        }).is_err());
-        assert_eq!(infer_expr(Expr::Assign { target: Box::new(Expr::LitInt(1)), value: Box::new(Expr::LitInt(42)) }).unwrap(), Type::Null);
-        assert_eq!(infer_expr(Expr::Async(Box::new(Expr::LitInt(1)))).unwrap(), Type::Int64);
-        assert_eq!(infer_expr(Expr::Await(Box::new(Expr::LitFloat(3.14)))).unwrap(), Type::Float64);
+        })
+        .is_err());
+        assert_eq!(
+            infer_expr(Expr::Assign {
+                target: Box::new(Expr::LitInt(1)),
+                value: Box::new(Expr::LitInt(42))
+            })
+            .unwrap(),
+            Type::Null
+        );
+        assert_eq!(
+            infer_expr(Expr::Async(Box::new(Expr::LitInt(1)))).unwrap(),
+            Type::Int64
+        );
+        assert_eq!(
+            infer_expr(Expr::Await(Box::new(Expr::LitFloat(3.14)))).unwrap(),
+            Type::Float64
+        );
     }
 
     #[test]
@@ -1871,27 +2449,15 @@ mod tests {
 
     #[test]
     fn unify_arrow_types() {
-        let t1 = Type::Arrow(
-            Box::new(Type::Int64),
-            Box::new(Type::Bool),
-        );
-        let t2 = Type::Arrow(
-            Box::new(Type::Int64),
-            Box::new(Type::Bool),
-        );
+        let t1 = Type::Arrow(Box::new(Type::Int64), Box::new(Type::Bool));
+        let t2 = Type::Arrow(Box::new(Type::Int64), Box::new(Type::Bool));
         assert!(unify(&t1, &t2).is_ok());
     }
 
     #[test]
     fn unify_arrow_types_different_args() {
-        let t1 = Type::Arrow(
-            Box::new(Type::Int64),
-            Box::new(Type::Bool),
-        );
-        let t2 = Type::Arrow(
-            Box::new(Type::Float64),
-            Box::new(Type::Bool),
-        );
+        let t1 = Type::Arrow(Box::new(Type::Int64), Box::new(Type::Bool));
+        let t2 = Type::Arrow(Box::new(Type::Float64), Box::new(Type::Bool));
         assert!(unify(&t1, &t2).is_err());
     }
 
@@ -1929,10 +2495,7 @@ mod tests {
     #[test]
     fn occurs_check_prevents_infinite_types() {
         let v = TypeVar(0);
-        let infinite = Type::Arrow(
-            Box::new(Type::Var(v)),
-            Box::new(Type::Var(v)),
-        );
+        let infinite = Type::Arrow(Box::new(Type::Var(v)), Box::new(Type::Var(v)));
         // This should fail the occurs check
         assert!(unify(&Type::Var(v), &infinite).is_err());
     }
@@ -1949,10 +2512,13 @@ mod tests {
     #[test]
     fn generalize_open_type_is_polymorphic() {
         let env = TypeEnv::new();
-        let scheme = generalize(&env, &Type::Arrow(
-            Box::new(Type::Var(TypeVar(7))),
-            Box::new(Type::Var(TypeVar(7))),
-        ));
+        let scheme = generalize(
+            &env,
+            &Type::Arrow(
+                Box::new(Type::Var(TypeVar(7))),
+                Box::new(Type::Var(TypeVar(7))),
+            ),
+        );
         assert_eq!(scheme.bound.len(), 1);
     }
 
@@ -1995,7 +2561,10 @@ mod tests {
 
     #[test]
     fn infer_lit_string() {
-        assert_eq!(infer_expr(Expr::LitString("hello".into())).unwrap(), Type::String);
+        assert_eq!(
+            infer_expr(Expr::LitString("hello".into())).unwrap(),
+            Type::String
+        );
     }
 
     #[test]
@@ -2255,8 +2824,20 @@ mod tests {
             fields: vec![("val".into(), Expr::LitInt(42))],
             spread: None,
         };
-        let (sub, ty) = infer(&env, &lit, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).unwrap();
-        assert_eq!(sub.apply(&ty), Type::Record(1, vec![("val".into(), Type::Int64)]));
+        let (sub, ty) = infer(
+            &env,
+            &lit,
+            &structs,
+            &fields,
+            &empty_enums(),
+            &empty_enum_variants(),
+            &empty_interface_registry(),
+        )
+        .unwrap();
+        assert_eq!(
+            sub.apply(&ty),
+            Type::Record(1, vec![("val".into(), Type::Int64)])
+        );
     }
 
     #[test]
@@ -2314,7 +2895,7 @@ mod tests {
         };
         let call = Expr::Call {
             func: Box::new(func),
-            args: vec![Expr::LitInt(1)],
+            arg: Box::new(Expr::LitInt(1)),
         };
         assert_eq!(infer_expr(call).unwrap(), Type::Int64);
     }
@@ -2329,7 +2910,7 @@ mod tests {
         };
         let call = Expr::Call {
             func: Box::new(func),
-            args: vec![Expr::LitInt(1), Expr::LitInt(2)],
+            arg: Expr::call_arg(vec![Expr::LitInt(1), Expr::LitInt(2)]),
         };
         assert_eq!(infer_expr(call).unwrap(), Type::Float64);
     }
@@ -2417,7 +2998,13 @@ mod tests {
             ),
             "(Int64 → Bool)"
         );
-        assert!(type_expr_to_type(&TypeExpr::named("Missing"), &structs, &fields, &empty_interface_registry()).is_err());
+        assert!(type_expr_to_type(
+            &TypeExpr::named("Missing"),
+            &structs,
+            &fields,
+            &empty_interface_registry()
+        )
+        .is_err());
 
         assert!(unify(
             &Type::Var(TypeVar(10)),
@@ -2463,34 +3050,74 @@ mod tests {
             (s, f)
         };
         let lit = Expr::StructLit {
-            name: "Point".into(), fields: vec![("x".into(), Expr::LitString("hi".into()))], spread: None,
+            name: "Point".into(),
+            fields: vec![("x".into(), Expr::LitString("hi".into()))],
+            spread: None,
         };
         let env = TypeEnv::new();
-        assert!(infer(&env, &lit, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_err());
+        assert!(infer(
+            &env,
+            &lit,
+            &structs,
+            &fields,
+            &empty_enums(),
+            &empty_enum_variants(),
+            &empty_interface_registry()
+        )
+        .is_err());
     }
 
     #[test]
     fn t31_cmp_rejects_cross_type() {
         // 1 == "abc" — must fail
-        let e = Expr::Binary { left: Box::new(Expr::LitInt(1)), op: BinOp::Eq, right: Box::new(Expr::LitString("abc".into())) };
+        let e = Expr::Binary {
+            left: Box::new(Expr::LitInt(1)),
+            op: BinOp::Eq,
+            right: Box::new(Expr::LitString("abc".into())),
+        };
         let (structs, fields) = empty_structs();
         let env = TypeEnv::new();
-        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_err());
+        assert!(infer(
+            &env,
+            &e,
+            &structs,
+            &fields,
+            &empty_enums(),
+            &empty_enum_variants(),
+            &empty_interface_registry()
+        )
+        .is_err());
     }
 
     #[test]
     fn t32_arith_rejects_bool() {
         // true + false — must fail
-        let e = Expr::Binary { left: Box::new(Expr::LitTrue), op: BinOp::Add, right: Box::new(Expr::LitFalse) };
+        let e = Expr::Binary {
+            left: Box::new(Expr::LitTrue),
+            op: BinOp::Add,
+            right: Box::new(Expr::LitFalse),
+        };
         let (structs, fields) = empty_structs();
         let env = TypeEnv::new();
-        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_err());
+        assert!(infer(
+            &env,
+            &e,
+            &structs,
+            &fields,
+            &empty_enums(),
+            &empty_enum_variants(),
+            &empty_interface_registry()
+        )
+        .is_err());
     }
 
     #[test]
     fn t33_neg_rejects_non_numeric() {
         // -true — must fail
-        let e = Expr::Unary { op: UnOp::Neg, right: Box::new(Expr::LitTrue) };
+        let e = Expr::Unary {
+            op: UnOp::Neg,
+            right: Box::new(Expr::LitTrue),
+        };
         assert!(infer_expr(e).is_err());
     }
 
@@ -2499,15 +3126,30 @@ mod tests {
         // x = 42 when x: String — must fail (x must be pre-bound as String)
         let mut env = TypeEnv::new();
         env.insert("x".into(), Scheme::monomorphic(Type::String));
-        let e = Expr::Assign { target: Box::new(Expr::VarRef("x".into())), value: Box::new(Expr::LitInt(42)) };
+        let e = Expr::Assign {
+            target: Box::new(Expr::VarRef("x".into())),
+            value: Box::new(Expr::LitInt(42)),
+        };
         let (structs, fields) = empty_structs();
-        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_err());
+        assert!(infer(
+            &env,
+            &e,
+            &structs,
+            &fields,
+            &empty_enums(),
+            &empty_enum_variants(),
+            &empty_interface_registry()
+        )
+        .is_err());
     }
 
     #[test]
     fn t35_index_rejects_non_list_non_string() {
         // 42[0] — must fail
-        let e = Expr::Index { object: Box::new(Expr::LitInt(42)), index: Box::new(Expr::LitInt(0)) };
+        let e = Expr::Index {
+            object: Box::new(Expr::LitInt(42)),
+            index: Box::new(Expr::LitInt(0)),
+        };
         assert!(infer_expr(e).is_err());
     }
 
@@ -2520,12 +3162,24 @@ mod tests {
         // Unbound: list is just Var, not yet unified with List
         env.insert("list".into(), Scheme::monomorphic(Type::Var(list_var)));
         let e = Expr::For {
-            var: Param { name: "x".into(), ty_ann: None },
+            var: Param {
+                name: "x".into(),
+                ty_ann: None,
+            },
             iterable: Box::new(Expr::VarRef("list".into())),
             body: Box::new(Expr::Block(vec![])),
         };
         let (structs, fields) = empty_structs();
         // Should NOT error with "for loop requires List" — should unify list with List<?>
-        assert!(infer(&env, &e, &structs, &fields, &empty_enums(), &empty_enum_variants(), &empty_interface_registry()).is_ok());
+        assert!(infer(
+            &env,
+            &e,
+            &structs,
+            &fields,
+            &empty_enums(),
+            &empty_enum_variants(),
+            &empty_interface_registry()
+        )
+        .is_ok());
     }
 }

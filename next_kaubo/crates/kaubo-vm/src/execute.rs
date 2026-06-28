@@ -6,8 +6,8 @@ use crate::gc_heap::GcHeap;
 use crate::regfile::*;
 use crate::stdlib;
 use kaubo_cps::*;
-use kaubo_log::EventHandler;
 use kaubo_log::emit;
+use kaubo_log::EventHandler;
 use std::collections::HashMap;
 
 // ── 编码 ──
@@ -21,36 +21,80 @@ pub fn encode(op: u8, dst: u32, src1: u32, src2: u32) -> u32 {
 #[repr(u8)]
 pub enum Opcode {
     // 整数算术
-    AddInt = 0x00, SubInt = 0x01, MulInt = 0x02, DivInt = 0x03, ModInt = 0x04,
+    AddInt = 0x00,
+    SubInt = 0x01,
+    MulInt = 0x02,
+    DivInt = 0x03,
+    ModInt = 0x04,
     NegInt = 0x05,
     // 浮点
-    FAdd = 0x08, FSub = 0x09, FMul = 0x0A, FDiv = 0x0B, FNeg = 0x0C,
+    FAdd = 0x08,
+    FSub = 0x09,
+    FMul = 0x0A,
+    FDiv = 0x0B,
+    FNeg = 0x0C,
     // 比较
-    EqInt = 0x10, LtInt = 0x11, LeInt = 0x12, FEq = 0x13, FLt = 0x14,
-    Not = 0x15, NeInt = 0x16, GtInt = 0x17,
-    SAdd = 0x18, GeInt = 0x19, FNe = 0x1A, FLe = 0x1B, FGt = 0x1C, FGe = 0x1D,
+    EqInt = 0x10,
+    LtInt = 0x11,
+    LeInt = 0x12,
+    FEq = 0x13,
+    FLt = 0x14,
+    Not = 0x15,
+    NeInt = 0x16,
+    GtInt = 0x17,
+    SAdd = 0x18,
+    GeInt = 0x19,
+    FNe = 0x1A,
+    FLe = 0x1B,
+    FGt = 0x1C,
+    FGe = 0x1D,
     // 转换
-    IToF = 0x20, FToI = 0x21, IToS = 0x22, FToS = 0x23, SToI = 0x24,
+    IToF = 0x20,
+    FToI = 0x21,
+    IToS = 0x22,
+    FToS = 0x23,
+    SToI = 0x24,
     // 数据移动
-    Move = 0x30, LoadImm = 0x31, LoadConst = 0x32,
+    Move = 0x30,
+    LoadImm = 0x31,
+    LoadConst = 0x32,
     // 堆分配
-    ListLen = 0x33, NewStruct = 0x34, NewList = 0x35,
+    ListLen = 0x33,
+    NewStruct = 0x34,
+    NewList = 0x35,
     // 字段/索引
-    GetField = 0x36, SetField = 0x37,
-    IndexGet = 0x38, IndexSet = 0x39,
+    GetField = 0x36,
+    SetField = 0x37,
+    IndexGet = 0x38,
+    IndexSet = 0x39,
     // 装箱
-    Box_ = 0x3A, Unbox = 0x3B,
+    Box_ = 0x3A,
+    Unbox = 0x3B,
     // Enum/Variant
-    NewVariant = 0x3C, GetVariantTag = 0x3D,
-    GetVariantField = 0x3E, SetVariantField = 0x3F,
+    NewVariant = 0x3C,
+    GetVariantTag = 0x3D,
+    GetVariantField = 0x3E,
+    SetVariantField = 0x3F,
     // 控制流
-    Jump = 0x40, Branch = 0x41,
+    Jump = 0x40,
+    Branch = 0x41,
     // 调用
-    Call = 0x50, TailCall = 0x51, Return = 0x52,
-    CallIndirect = 0x53, LoadVtable = 0x54, NewInterfaceObj = 0x55,
+    Call = 0x50,
+    TailCall = 0x51,
+    Return = 0x52,
+    CallIndirect = 0x53,
+    LoadVtable = 0x54,
+    NewInterfaceObj = 0x55,
     CallNative = 0x5F,
+    // 元组
+    NewTuple = 0x56,
+    TupleIndex = 0x57,
+    // TypedArray
+    NewInt64Array = 0x58,
+    NewFloat64Array = 0x59,
     // Async
-    AsyncPoll = 0x60, Suspend = 0x61,
+    AsyncPoll = 0x60,
+    Suspend = 0x61,
     // I/O
     Print = 0x7F,
 }
@@ -69,26 +113,40 @@ pub struct Inst(pub u32);
 
 impl Inst {
     #[inline(always)]
-    pub fn opcode(self) -> Opcode { Opcode::from_inst(self.0) }
+    pub fn opcode(self) -> Opcode {
+        Opcode::from_inst(self.0)
+    }
 
     #[inline(always)]
-    pub fn dst(self) -> usize { ((self.0 >> 17) & 0xFF) as usize }
+    pub fn dst(self) -> usize {
+        ((self.0 >> 17) & 0xFF) as usize
+    }
 
     #[inline(always)]
-    pub fn src1(self) -> usize { ((self.0 >> 8) & 0x1FF) as usize }
+    pub fn src1(self) -> usize {
+        ((self.0 >> 8) & 0x1FF) as usize
+    }
 
     #[inline(always)]
-    pub fn src2(self) -> usize { (self.0 & 0xFF) as usize }
+    pub fn src2(self) -> usize {
+        (self.0 & 0xFF) as usize
+    }
 
     #[inline(always)]
-    pub fn imm25(self) -> usize { (self.0 & 0x1FF_FFFF) as usize }
+    pub fn imm25(self) -> usize {
+        (self.0 & 0x1FF_FFFF) as usize
+    }
 
     /// 17-bit 立即数 (bits 0–16), 用于 Call/CallNative cont_block
     #[inline(always)]
-    pub fn imm17(self) -> usize { (self.0 & 0x1FFFF) as usize }
+    pub fn imm17(self) -> usize {
+        (self.0 & 0x1FFFF) as usize
+    }
 
     #[inline(always)]
-    pub fn abc(self) -> (usize, usize, usize) { (self.dst(), self.src1(), self.src2()) }
+    pub fn abc(self) -> (usize, usize, usize) {
+        (self.dst(), self.src1(), self.src2())
+    }
 }
 
 // ── 运行时错误 ──
@@ -114,13 +172,13 @@ pub enum RuntimeError {
 pub enum HeapObj {
     String(String),
     List(Vec<i64>),
-    Struct(usize, Vec<i64>), // (struct_id, field_values)
+    Struct(usize, Vec<i64>),       // (struct_id, field_values)
     Variant(usize, u16, Vec<i64>), // (enum_id, tag, field_values)
-    InterfaceObj {
-        vtable_idx: usize,
-        data: i64,
-    },
+    InterfaceObj { vtable_idx: usize, data: i64 },
     Closure(Box<ClosureObj>),
+    TupleObj(Vec<usize>),
+    Int64Array(Vec<i64>),
+    Float64Array(Vec<f64>),
 }
 
 #[derive(Debug, Clone)]
@@ -455,50 +513,65 @@ impl VM {
             match opcode {
                 // ── 整数算术 ──
                 Opcode::AddInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_add(self.regs.regs[c] as i64));
+                    self.write_int(
+                        a,
+                        (self.regs.regs[b] as i64).wrapping_add(self.regs.regs[c] as i64),
+                    );
                 }
                 Opcode::SubInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_sub(self.regs.regs[c] as i64));
+                    self.write_int(
+                        a,
+                        (self.regs.regs[b] as i64).wrapping_sub(self.regs.regs[c] as i64),
+                    );
                 }
                 Opcode::MulInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_mul(self.regs.regs[c] as i64));
+                    self.write_int(
+                        a,
+                        (self.regs.regs[b] as i64).wrapping_mul(self.regs.regs[c] as i64),
+                    );
                 }
                 Opcode::DivInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     if self.regs.regs[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
-                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_div(self.regs.regs[c] as i64));
+                    self.write_int(
+                        a,
+                        (self.regs.regs[b] as i64).wrapping_div(self.regs.regs[c] as i64),
+                    );
                 }
                 Opcode::ModInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     if self.regs.regs[c] == 0 {
                         return Err(RuntimeError::DivisionByZero);
                     }
-                    self.write_int(a, (self.regs.regs[b] as i64).wrapping_rem(self.regs.regs[c] as i64));
+                    self.write_int(
+                        a,
+                        (self.regs.regs[b] as i64).wrapping_rem(self.regs.regs[c] as i64),
+                    );
                 }
                 Opcode::NegInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     self.write_int(a, (self.regs.regs[b] as i64).wrapping_neg());
                 }
 
                 // ── 浮点 ──
                 Opcode::FAdd => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     let fb = f64::from_bits(self.regs.regs[b]);
@@ -506,7 +579,7 @@ impl VM {
                     self.write_float(a, fb + fc);
                 }
                 Opcode::FSub => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     let fb = f64::from_bits(self.regs.regs[b]);
@@ -514,7 +587,7 @@ impl VM {
                     self.write_float(a, fb - fc);
                 }
                 Opcode::FMul => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     let fb = f64::from_bits(self.regs.regs[b]);
@@ -522,7 +595,7 @@ impl VM {
                     self.write_float(a, fb * fc);
                 }
                 Opcode::FDiv => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     let fb = f64::from_bits(self.regs.regs[b]);
@@ -530,7 +603,7 @@ impl VM {
                     self.write_float(a, fb / fc);
                 }
                 Opcode::FNeg => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let fb = f64::from_bits(self.regs.regs[b]);
                     self.write_float(a, -fb);
@@ -538,51 +611,57 @@ impl VM {
 
                 // ── 比较 ──
                 Opcode::EqInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     self.write_bool(a, (self.regs.regs[b] as i64) == self.regs.regs[c] as i64);
                 }
                 Opcode::LtInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     self.write_bool(a, (self.regs.regs[b] as i64) < self.regs.regs[c] as i64);
                 }
                 Opcode::LeInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     self.write_bool(a, (self.regs.regs[b] as i64) <= self.regs.regs[c] as i64);
                 }
                 Opcode::FEq => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) == f64::from_bits(self.regs.regs[c]));
+                    self.write_bool(
+                        a,
+                        f64::from_bits(self.regs.regs[b]) == f64::from_bits(self.regs.regs[c]),
+                    );
                 }
                 Opcode::FLt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) < f64::from_bits(self.regs.regs[c]));
+                    self.write_bool(
+                        a,
+                        f64::from_bits(self.regs.regs[b]) < f64::from_bits(self.regs.regs[c]),
+                    );
                 }
 
                 // ── Not ──
                 Opcode::Not => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     self.write_bool(a, self.regs.regs[b] == 0);
                 }
                 Opcode::NeInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     self.write_bool(a, self.regs.regs[b] as i64 != self.regs.regs[c] as i64);
                 }
 
                 Opcode::GtInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     self.write_bool(a, (self.regs.regs[b] as i64) > self.regs.regs[c] as i64);
@@ -590,80 +669,94 @@ impl VM {
 
                 // ── 字符串拼接 ──
                 Opcode::SAdd => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     let lhs = self.heap_get(self.regs.regs[b] as i64)?.clone();
                     let rhs = self.heap_get(self.regs.regs[c] as i64)?.clone();
                     let result = match (lhs, rhs) {
                         (HeapObj::String(l), HeapObj::String(r)) => HeapObj::String(l + &r),
-                        _ => return Err(RuntimeError::TypeMismatch(
-                            "SAdd requires two string operands".into(),
-                        )),
+                        _ => {
+                            return Err(RuntimeError::TypeMismatch(
+                                "SAdd requires two string operands".into(),
+                            ))
+                        }
                     };
                     self.write_heap(a, result);
                 }
                 Opcode::GeInt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
                     self.write_bool(a, self.regs.regs[b] as i64 >= self.regs.regs[c] as i64);
                 }
                 Opcode::FNe => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) != f64::from_bits(self.regs.regs[c]));
+                    self.write_bool(
+                        a,
+                        f64::from_bits(self.regs.regs[b]) != f64::from_bits(self.regs.regs[c]),
+                    );
                 }
                 Opcode::FLe => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) <= f64::from_bits(self.regs.regs[c]));
+                    self.write_bool(
+                        a,
+                        f64::from_bits(self.regs.regs[b]) <= f64::from_bits(self.regs.regs[c]),
+                    );
                 }
                 Opcode::FGt => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) > f64::from_bits(self.regs.regs[c]));
+                    self.write_bool(
+                        a,
+                        f64::from_bits(self.regs.regs[b]) > f64::from_bits(self.regs.regs[c]),
+                    );
                 }
                 Opcode::FGe => {
-                                        let a = inst.dst();
+                    let a = inst.dst();
                     let b = inst.src1();
                     let c = inst.src2();
-                    self.write_bool(a, f64::from_bits(self.regs.regs[b]) >= f64::from_bits(self.regs.regs[c]));
+                    self.write_bool(
+                        a,
+                        f64::from_bits(self.regs.regs[b]) >= f64::from_bits(self.regs.regs[c]),
+                    );
                 }
 
                 // ── 转换 ──
                 Opcode::IToF => {
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     self.write_float(d, self.regs.regs[s] as i64 as f64);
                 }
                 Opcode::FToI => {
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let f = f64::from_bits(self.regs.regs[s]);
                     self.write_int(d, f as i64);
                 }
                 Opcode::IToS => {
                     // itos
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let st = format!("{}", self.regs.regs[s] as i64);
                     self.write_heap(d, HeapObj::String(st));
                 }
                 Opcode::FToS => {
                     // ftos
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let st = format!("{}", f64::from_bits(self.regs.regs[s]));
                     self.write_heap(d, HeapObj::String(st));
                 }
                 Opcode::SToI => {
                     // stoi
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let hid = self.regs.regs[s] as i64;
                     if hid < 0 {
                         return Err(RuntimeError::TypeMismatch(
@@ -689,17 +782,17 @@ impl VM {
 
                 // ── 数据移动 ──
                 Opcode::Move => {
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     self.regs.regs[d] = self.regs.regs[s];
                 }
                 Opcode::LoadImm => {
-                                        let d = inst.dst();
+                    let d = inst.dst();
                     self.write_int(d, inst.imm17() as i64);
                 }
                 Opcode::LoadConst => {
-                                        let d = inst.dst();
-                                        let idx = inst.src1();
+                    let d = inst.dst();
+                    let idx = inst.src1();
                     let constant = self
                         .consts
                         .get(idx)
@@ -716,8 +809,8 @@ impl VM {
 
                 // ── 堆分配 ──
                 Opcode::NewStruct => {
-                                        let d = inst.dst();
-                                        let sid = inst.src1();
+                    let d = inst.dst();
+                    let sid = inst.src1();
                     let nf = self
                         .struct_field_counts
                         .get(sid)
@@ -734,8 +827,8 @@ impl VM {
                 }
                 Opcode::NewList => {
                     // NewList(dst, count, _) — element regs read from block params
-                                        let d = inst.dst();
-                                        let count = inst.src1() as usize;
+                    let d = inst.dst();
+                    let count = inst.src1() as usize;
                     let block_id = self.block_id_from_ip(ip);
                     let params = &self.func_params[self.current_func][block_id];
                     let mut elements: Vec<i64> = Vec::with_capacity(count);
@@ -749,16 +842,84 @@ impl VM {
                     }
                     self.write_heap(d, HeapObj::List(elements));
                 }
+                Opcode::NewTuple => {
+                    let d = inst.dst();
+                    let count = inst.src1() as usize;
+                    let block_id = self.block_id_from_ip(ip);
+                    let params = &self.func_params[self.current_func][block_id];
+                    let mut elements: Vec<usize> = Vec::with_capacity(count);
+                    for i in 0..count {
+                        let val = if i < params.len() {
+                            self.regs.regs[params[i]] as usize
+                        } else {
+                            0
+                        };
+                        elements.push(val);
+                    }
+                    let hid = self.heap.alloc(HeapObj::TupleObj(elements));
+                    self.regs.regs[d] = hid as u64;
+                }
+                Opcode::TupleIndex => {
+                    let d = inst.dst();
+                    let tuple_reg = inst.src1();
+                    let index = inst.src2() as usize;
+                    let hid = self.regs.regs[tuple_reg] as i64;
+                    let val = match self.heap_get(hid)? {
+                        HeapObj::TupleObj(elements) => elements[index],
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "expected Tuple, got {other:?}"
+                            )))
+                        }
+                    };
+                    self.regs.regs[d] = val as u64;
+                }
+                Opcode::NewInt64Array => {
+                    let d = inst.dst();
+                    let count = inst.src1() as usize;
+                    let block_id = self.block_id_from_ip(ip);
+                    let params = &self.func_params[self.current_func][block_id];
+                    let mut elements: Vec<i64> = Vec::with_capacity(count);
+                    for i in 0..count {
+                        let val: i64 = if i < params.len() {
+                            self.regs.regs[params[i]] as i64
+                        } else {
+                            0
+                        };
+                        elements.push(val);
+                    }
+                    let hid = self.heap.alloc(HeapObj::Int64Array(elements));
+                    self.regs.regs[d] = hid as u64;
+                }
+                Opcode::NewFloat64Array => {
+                    let d = inst.dst();
+                    let count = inst.src1() as usize;
+                    let block_id = self.block_id_from_ip(ip);
+                    let params = &self.func_params[self.current_func][block_id];
+                    let mut elements: Vec<f64> = Vec::with_capacity(count);
+                    for i in 0..count {
+                        let val: f64 = if i < params.len() {
+                            f64::from_bits(self.regs.regs[params[i]])
+                        } else {
+                            0.0
+                        };
+                        elements.push(val);
+                    }
+                    let hid = self.heap.alloc(HeapObj::Float64Array(elements));
+                    self.regs.regs[d] = hid as u64;
+                }
                 Opcode::ListLen => {
                     // ListLen(dst, obj) — return list length
-                                        let d = inst.dst();
-                                        let obj = inst.src1();
+                    let d = inst.dst();
+                    let obj = inst.src1();
                     let hid = self.regs.regs[obj] as i64;
                     let len = match self.heap_get(hid)? {
                         HeapObj::List(v) => v.len() as i64,
+                        HeapObj::Int64Array(v) => v.len() as i64,
+                        HeapObj::Float64Array(v) => v.len() as i64,
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
-                                "ListLen: expected list, got {:?}", other
+                                "ListLen: expected indexable, got {other:?}"
                             )));
                         }
                     };
@@ -768,17 +929,20 @@ impl VM {
                 // ── 字段访问 ──
                 Opcode::GetField => {
                     // GetField(dst, src, idx)
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let idx = inst.src2();
                     let hid = self.regs.regs[s] as i64;
                     let val = match self.heap_get(hid)? {
-                        HeapObj::Struct(_, fields) => fields.get(idx).copied().ok_or(
-                            RuntimeError::FieldOutOfBounds {
-                                index: idx,
-                                len: fields.len(),
-                            },
-                        )?,
+                        HeapObj::Struct(_, fields) => {
+                            fields
+                                .get(idx)
+                                .copied()
+                                .ok_or(RuntimeError::FieldOutOfBounds {
+                                    index: idx,
+                                    len: fields.len(),
+                                })?
+                        }
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
                                 "GetField expected struct, got {:?}",
@@ -790,30 +954,31 @@ impl VM {
                 }
                 Opcode::SetField => {
                     // SetField(dst, src, idx, val)
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let idx = inst.src2();
                     let hid = self.regs.regs[s] as i64;
                     let val = self.regs.regs[d] as i64;
 
                     // Read struct_id and old field value
-                    let (sid, old_val, len) = match self.heap_get(hid)? {
-                        HeapObj::Struct(sid, fields) => {
-                            let old_val = fields.get(idx).copied().ok_or(
-                                RuntimeError::FieldOutOfBounds {
-                                    index: idx,
-                                    len: fields.len(),
-                                },
-                            )?;
-                            (*sid, old_val, fields.len())
-                        }
-                        other => {
-                            return Err(RuntimeError::TypeMismatch(format!(
-                                "SetField expected struct, got {:?}",
-                                other
-                            )))
-                        }
-                    };
+                    let (sid, old_val, len) =
+                        match self.heap_get(hid)? {
+                            HeapObj::Struct(sid, fields) => {
+                                let old_val = fields.get(idx).copied().ok_or(
+                                    RuntimeError::FieldOutOfBounds {
+                                        index: idx,
+                                        len: fields.len(),
+                                    },
+                                )?;
+                                (*sid, old_val, fields.len())
+                            }
+                            other => {
+                                return Err(RuntimeError::TypeMismatch(format!(
+                                    "SetField expected struct, got {:?}",
+                                    other
+                                )))
+                            }
+                        };
                     // Check if this field is a heap type
                     let is_heap = (self.struct_bitmaps[sid] >> idx) & 1 != 0;
 
@@ -848,9 +1013,9 @@ impl VM {
                 // ── 索引 ──
                 Opcode::IndexGet => {
                     // IndexGet(dst, obj, idx)
-                                        let d = inst.dst();
-                                        let o = inst.src1();
-                                        let i = inst.src2();
+                    let d = inst.dst();
+                    let o = inst.src1();
+                    let i = inst.src2();
                     let hid = self.regs.regs[o] as i64;
                     let index = self.regs.regs[i] as i64 as usize;
                     match self.heap_get(hid)? {
@@ -860,36 +1025,56 @@ impl VM {
                                 .ok_or(RuntimeError::IndexOutOfBounds(index as i64, v.len()))?;
                             self.write_int(d, val);
                         }
+                        HeapObj::Int64Array(v) => {
+                            let val = *v
+                                .get(index)
+                                .ok_or(RuntimeError::IndexOutOfBounds(index as i64, v.len()))?;
+                            self.write_int(d, val);
+                        }
+                        HeapObj::Float64Array(v) => {
+                            let val = *v
+                                .get(index)
+                                .ok_or(RuntimeError::IndexOutOfBounds(index as i64, v.len()))?;
+                            self.regs.regs[d] = val.to_bits();
+                        }
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
-                                "IndexGet expected list, got {:?}",
-                                other
+                                "IndexGet: expected indexable, got {other:?}"
                             )))
                         }
                     }
                 }
                 Opcode::IndexSet => {
-                    // IndexSet(val, obj, idx) — list[idx] = val
-                                        let val = inst.dst();
-                                        let obj = inst.src1();
-                                        let idx = inst.src2();
+                    // IndexSet(val, obj, idx)
+                    let val = inst.dst();
+                    let obj = inst.src1();
+                    let idx = inst.src2();
                     let hid = self.regs.regs[obj] as i64;
                     let index = self.regs.regs[idx] as i64 as usize;
                     let value = self.regs.regs[val] as i64;
+                    let f64_val = f64::from_bits(self.regs.regs[val]); // read before heap_get_mut borrow
                     match self.heap_get_mut(hid)? {
                         HeapObj::List(v) => {
                             if index >= v.len() {
-                                return Err(RuntimeError::IndexOutOfBounds(
-                                    index as i64,
-                                    v.len(),
-                                ));
+                                return Err(RuntimeError::IndexOutOfBounds(index as i64, v.len()));
                             }
                             v[index] = value;
                         }
+                        HeapObj::Int64Array(v) => {
+                            if index >= v.len() {
+                                return Err(RuntimeError::IndexOutOfBounds(index as i64, v.len()));
+                            }
+                            v[index] = value;
+                        }
+                        HeapObj::Float64Array(v) => {
+                            if index >= v.len() {
+                                return Err(RuntimeError::IndexOutOfBounds(index as i64, v.len()));
+                            }
+                            v[index] = f64_val;
+                        }
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
-                                "IndexSet: expected list, got {:?}",
-                                other
+                                "IndexSet: expected indexable, got {other:?}"
                             )));
                         }
                     }
@@ -898,9 +1083,9 @@ impl VM {
 
                 // ── Enum/Variant ──
                 Opcode::NewVariant => {
-                                        let d = inst.dst();
-                                        let enum_id = inst.src1();
-                                        let tag = inst.src2() as u16;
+                    let d = inst.dst();
+                    let enum_id = inst.src1();
+                    let tag = inst.src2() as u16;
                     let nf = self.enum_variant_counts[enum_id][tag as usize];
                     let bitmap = self.enum_variant_bitmaps[enum_id][tag as usize];
                     let mut fields = vec![0i64; nf];
@@ -912,58 +1097,73 @@ impl VM {
                     self.write_heap(d, HeapObj::Variant(enum_id, tag, fields));
                 }
                 Opcode::GetVariantTag => {
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let hid = self.regs.regs[s] as i64;
                     let tag = match self.heap_get(hid)? {
                         HeapObj::Variant(_, tag, _) => *tag as i64,
-                        other => return Err(RuntimeError::TypeMismatch(format!(
-                            "GetVariantTag expected variant, got {other:?}"
-                        ))),
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "GetVariantTag expected variant, got {other:?}"
+                            )))
+                        }
                     };
                     self.write_int(d, tag);
                 }
                 Opcode::GetVariantField => {
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let fi = inst.src2();
                     let hid = self.regs.regs[s] as i64;
                     let val = match self.heap_get(hid)? {
-                        HeapObj::Variant(_, _, fields) => fields.get(fi).copied().ok_or(
-                            RuntimeError::FieldOutOfBounds { index: fi, len: fields.len() },
-                        )?,
-                        other => return Err(RuntimeError::TypeMismatch(format!(
-                            "GetVariantField expected variant, got {other:?}"
-                        ))),
+                        HeapObj::Variant(_, _, fields) => {
+                            fields
+                                .get(fi)
+                                .copied()
+                                .ok_or(RuntimeError::FieldOutOfBounds {
+                                    index: fi,
+                                    len: fields.len(),
+                                })?
+                        }
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "GetVariantField expected variant, got {other:?}"
+                            )))
+                        }
                     };
                     self.write_int(d, val);
                 }
                 Opcode::SetVariantField => {
                     // SetVariantField(val_reg, obj_reg, field_idx)
-                                        let d = inst.dst(); // val reg
-                                        let s = inst.src1(); // obj reg
+                    let d = inst.dst(); // val reg
+                    let s = inst.src1(); // obj reg
                     let fi = inst.src2(); // field idx
                     let hid = self.regs.regs[s] as i64;
                     let val = self.regs.regs[d] as i64;
-                    let (old_val, is_heap) = match self.heap_get(hid)? {
-                        HeapObj::Variant(eid, t, fields) => {
-                            let old = fields.get(fi).copied().ok_or(
-                                RuntimeError::FieldOutOfBounds { index: fi, len: fields.len() },
-                            )?;
-                            let bitmap = self.enum_variant_bitmaps
-                                .get(*eid)
-                                .and_then(|bm| bm.get(*t as usize))
-                                .copied()
-                                .unwrap_or(0);
-                            let heap = (bitmap >> fi) & 1 != 0;
-                            (old, heap)
-                        }
-                        other => {
-                            return Err(RuntimeError::TypeMismatch(format!(
-                                "SetVariantField expected variant, got {other:?}"
-                            )))
-                        }
-                    };
+                    let (old_val, is_heap) =
+                        match self.heap_get(hid)? {
+                            HeapObj::Variant(eid, t, fields) => {
+                                let old = fields.get(fi).copied().ok_or(
+                                    RuntimeError::FieldOutOfBounds {
+                                        index: fi,
+                                        len: fields.len(),
+                                    },
+                                )?;
+                                let bitmap = self
+                                    .enum_variant_bitmaps
+                                    .get(*eid)
+                                    .and_then(|bm| bm.get(*t as usize))
+                                    .copied()
+                                    .unwrap_or(0);
+                                let heap = (bitmap >> fi) & 1 != 0;
+                                (old, heap)
+                            }
+                            other => {
+                                return Err(RuntimeError::TypeMismatch(format!(
+                                    "SetVariantField expected variant, got {other:?}"
+                                )))
+                            }
+                        };
                     if is_heap {
                         // GC: release old, write new, retain new (skip if self-assign)
                         let self_assign = old_val == val && old_val != -1;
@@ -984,23 +1184,21 @@ impl VM {
                 // ── 装箱/拆箱 ──
                 Opcode::Box_ => {
                     // Box(dst, src) — wrap value in a single-field struct
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let val = self.regs.regs[s] as i64;
                     // Use struct id 0 as a "Box" marker, single field
                     self.write_heap(d, HeapObj::Struct(0, vec![val]));
                 }
                 Opcode::Unbox => {
                     // Unbox(dst, src) — extract value from boxed struct
-                                        let d = inst.dst();
-                                        let s = inst.src1();
+                    let d = inst.dst();
+                    let s = inst.src1();
                     let hid = self.regs.regs[s] as i64;
                     let val = match self.heap_get(hid)? {
-                        HeapObj::Struct(_, fields) => {
-                            *fields.first().ok_or_else(|| {
-                                RuntimeError::TypeMismatch("Unbox: empty boxed struct".into())
-                            })?
-                        }
+                        HeapObj::Struct(_, fields) => *fields.first().ok_or_else(|| {
+                            RuntimeError::TypeMismatch("Unbox: empty boxed struct".into())
+                        })?,
                         other => {
                             return Err(RuntimeError::TypeMismatch(format!(
                                 "Unbox: expected struct, got {:?}",
@@ -1026,8 +1224,8 @@ impl VM {
                     ip = target_ip;
                 }
                 Opcode::Branch => {
-                                        let c = inst.dst();
-                                        let tb = inst.src1();
+                    let c = inst.dst();
+                    let tb = inst.src1();
                     let fb = inst.src2();
                     let take_true = self.regs.regs[c] as i64 != 0;
                     let block_id = if take_true { tb } else { fb };
@@ -1054,8 +1252,8 @@ impl VM {
                 // ── 调用 ──
                 Opcode::Call => {
                     // Call(func_idx, args, cont_block)
-                                        let func_idx = inst.dst();
-                                        let cont_block = (inst.src1() << 8) | inst.src2();
+                    let func_idx = inst.dst();
+                    let cont_block = (inst.src1() << 8) | inst.src2();
                     if self.frames.len() >= MAX_CALL_DEPTH {
                         return Err(RuntimeError::StackOverflow);
                     }
@@ -1097,7 +1295,7 @@ impl VM {
                 }
                 Opcode::Return => {
                     // ret
-                                        let r = inst.dst();
+                    let r = inst.dst();
                     if let Some(frame) = self.frames.pop() {
                         let result = self.regs.regs[r];
                         self.regs.regs = frame.saved_regs;
@@ -1114,15 +1312,16 @@ impl VM {
 
                 // ── native call ──
                 Opcode::CallNative => {
-                                        let fi = inst.dst();
-                                        let ret_block = (inst.src1() << 8) | inst.src2();
+                    let fi = inst.dst();
+                    let ret_block = (inst.src1() << 8) | inst.src2();
                     let args: Vec<i64> = self
                         .jump_args(ip - 1)
                         .iter()
                         .map(|&r| self.regs.regs[r] as i64)
                         .collect();
                     if fi < self.natives.len() {
-                        let result = (self.natives[fi].1)(&args, &self.heap).map_err(RuntimeError::NativeError)?;
+                        let result = (self.natives[fi].1)(&args, &self.heap)
+                            .map_err(RuntimeError::NativeError)?;
                         self.write_int(0, result);
                     } else {
                         return Err(RuntimeError::Bug(format!("unknown native index {fi}")));
@@ -1181,24 +1380,32 @@ impl VM {
                     }
                     let args = self.jump_args(ip - 1).to_vec();
                     if args.is_empty() {
-                        return Err(RuntimeError::Bug("CallIndirect: no args (need at least self)".into()));
+                        return Err(RuntimeError::Bug(
+                            "CallIndirect: no args (need at least self)".into(),
+                        ));
                     }
                     // First arg is the InterfaceObj handle
                     let iface_handle = self.regs.regs[args[0]] as i64;
                     let (vtable_idx, data_handle) = match self.heap_get(iface_handle)? {
                         HeapObj::InterfaceObj { vtable_idx, data } => (*vtable_idx, *data),
-                        other => return Err(RuntimeError::TypeMismatch(format!(
-                            "CallIndirect: expected InterfaceObj, got {:?}", other
-                        ))),
+                        other => {
+                            return Err(RuntimeError::TypeMismatch(format!(
+                                "CallIndirect: expected InterfaceObj, got {:?}",
+                                other
+                            )))
+                        }
                     };
                     // Look up the method func_idx from the vtable
-                    let vtable = self.vtables.get(vtable_idx)
-                        .ok_or_else(|| RuntimeError::Bug(format!("vtable index {vtable_idx} out of bounds")))?;
-                    let (_, func_idx) = vtable.methods.get(slot)
-                        .ok_or_else(|| RuntimeError::Bug(format!(
+                    let vtable = self.vtables.get(vtable_idx).ok_or_else(|| {
+                        RuntimeError::Bug(format!("vtable index {vtable_idx} out of bounds"))
+                    })?;
+                    let (_, func_idx) = vtable.methods.get(slot).ok_or_else(|| {
+                        RuntimeError::Bug(format!(
                             "vtable slot {slot} out of bounds (vtable '{}' has {} methods)",
-                            vtable.interface_name, vtable.methods.len()
-                        )))?;
+                            vtable.interface_name,
+                            vtable.methods.len()
+                        ))
+                    })?;
                     let func_idx = *func_idx;
                     let callee_regs = self.func_reg_counts[func_idx];
                     // Save caller regs
@@ -1228,7 +1435,7 @@ impl VM {
 
                 // ── print ──
                 Opcode::Print => {
-                                        let r = inst.dst();
+                    let r = inst.dst();
                     let val = self.regs.regs[r] as i64;
                     if val >= 0 {
                         if let Some(HeapObj::String(s)) = self.heap.try_get(val as usize) {
@@ -1298,24 +1505,78 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
         ),
         CpsInstr::LoadConst(d, idx) => encode(Opcode::LoadConst as u8, *d as u32, *idx as u32, 0),
         CpsInstr::Move(d, s) => encode(Opcode::Move as u8, *d as u32, *s as u32, 0),
-        CpsInstr::NewStruct(d, sid, _) => encode(Opcode::NewStruct as u8, *d as u32, *sid as u32, 0),
-        CpsInstr::GetField(d, o, idx) => encode(Opcode::GetField as u8, *d as u32, *o as u32, *idx as u32),
-        CpsInstr::SetField(d, o, idx, _) => encode(Opcode::SetField as u8, *d as u32, *o as u32, *idx as u32),
-        CpsInstr::NewVariant(d, eid, tag, _) => encode(Opcode::NewVariant as u8, *d as u32, *eid as u32, *tag as u32),
-        CpsInstr::GetVariantTag(d, o) => encode(Opcode::GetVariantTag as u8, *d as u32, *o as u32, 0),
-        CpsInstr::GetVariantField(d, o, fi) => encode(Opcode::GetVariantField as u8, *d as u32, *o as u32, *fi as u32),
-        CpsInstr::SetVariantField(d, o, fi, _) => encode(Opcode::SetVariantField as u8, *d as u32, *o as u32, *fi as u32),
-        CpsInstr::NewList(d, elements) => encode(Opcode::NewList as u8, *d as u32, elements.len() as u32, 0),
+        CpsInstr::NewStruct(d, sid, _) => {
+            encode(Opcode::NewStruct as u8, *d as u32, *sid as u32, 0)
+        }
+        CpsInstr::GetField(d, o, idx) => {
+            encode(Opcode::GetField as u8, *d as u32, *o as u32, *idx as u32)
+        }
+        CpsInstr::SetField(d, o, idx, _) => {
+            encode(Opcode::SetField as u8, *d as u32, *o as u32, *idx as u32)
+        }
+        CpsInstr::NewVariant(d, eid, tag, _) => encode(
+            Opcode::NewVariant as u8,
+            *d as u32,
+            *eid as u32,
+            *tag as u32,
+        ),
+        CpsInstr::GetVariantTag(d, o) => {
+            encode(Opcode::GetVariantTag as u8, *d as u32, *o as u32, 0)
+        }
+        CpsInstr::GetVariantField(d, o, fi) => encode(
+            Opcode::GetVariantField as u8,
+            *d as u32,
+            *o as u32,
+            *fi as u32,
+        ),
+        CpsInstr::SetVariantField(d, o, fi, _) => encode(
+            Opcode::SetVariantField as u8,
+            *d as u32,
+            *o as u32,
+            *fi as u32,
+        ),
+        CpsInstr::NewList(d, elements) => {
+            encode(Opcode::NewList as u8, *d as u32, elements.len() as u32, 0)
+        }
+        CpsInstr::NewTuple(d, elements) => {
+            encode(Opcode::NewTuple as u8, *d as u32, elements.len() as u32, 0)
+        }
+        CpsInstr::TupleIndex(d, t, idx) => {
+            encode(Opcode::TupleIndex as u8, *d as u32, *t as u32, *idx as u32)
+        }
+        CpsInstr::NewInt64Array(d, elements) => encode(
+            Opcode::NewInt64Array as u8,
+            *d as u32,
+            elements.len() as u32,
+            0,
+        ),
+        CpsInstr::NewFloat64Array(d, elements) => encode(
+            Opcode::NewFloat64Array as u8,
+            *d as u32,
+            elements.len() as u32,
+            0,
+        ),
         CpsInstr::ListLen(d, obj) => encode(Opcode::ListLen as u8, *d as u32, *obj as u32, 0),
-        CpsInstr::IndexGet(d, o, i) => encode(Opcode::IndexGet as u8, *d as u32, *o as u32, *i as u32),
-        CpsInstr::IndexSet(d, o, i, _) => encode(Opcode::IndexSet as u8, *d as u32, *o as u32, *i as u32),
+        CpsInstr::IndexGet(d, o, i) => {
+            encode(Opcode::IndexGet as u8, *d as u32, *o as u32, *i as u32)
+        }
+        CpsInstr::IndexSet(d, o, i, _) => {
+            encode(Opcode::IndexSet as u8, *d as u32, *o as u32, *i as u32)
+        }
         CpsInstr::Box(d, s) => encode(Opcode::Box_ as u8, *d as u32, *s as u32, 0),
         CpsInstr::Unbox(d, s) => encode(Opcode::Unbox as u8, *d as u32, *s as u32, 0),
         CpsInstr::Print(r) => encode(Opcode::Print as u8, *r as u32, 0, 0),
         CpsInstr::LoadVtable(d, vi) => encode(Opcode::LoadVtable as u8, *d as u32, *vi as u32, 0),
-        CpsInstr::NewInterfaceObj(d, vr, sr) => encode(Opcode::NewInterfaceObj as u8, *d as u32, *vr as u32, *sr as u32),
+        CpsInstr::NewInterfaceObj(d, vr, sr) => encode(
+            Opcode::NewInterfaceObj as u8,
+            *d as u32,
+            *vr as u32,
+            *sr as u32,
+        ),
         CpsInstr::LoadExternalConst(..) => {
-            return Err("LoadExternalConst should be resolved by LinkStage before VM execution".into())
+            return Err(
+                "LoadExternalConst should be resolved by LinkStage before VM execution".into(),
+            )
         }
         CpsInstr::Nop => return Err("nop is not executable".into()),
     })
@@ -1323,19 +1584,45 @@ fn encode_instr(instr: &CpsInstr) -> Result<u32, String> {
 
 fn encode_term(term: &CpsTerminator) -> Result<u32, String> {
     Ok(match term {
-        CpsTerminator::Jump(b, _) => encode(Opcode::Jump as u8, 0, (*b >> 8) as u32, (*b & 0xFF) as u32),
-        CpsTerminator::Branch(c, tb, _, fb, _) => encode(Opcode::Branch as u8, *c as u32, *tb as u32, *fb as u32),
+        CpsTerminator::Jump(b, _) => {
+            encode(Opcode::Jump as u8, 0, (*b >> 8) as u32, (*b & 0xFF) as u32)
+        }
+        CpsTerminator::Branch(c, tb, _, fb, _) => {
+            encode(Opcode::Branch as u8, *c as u32, *tb as u32, *fb as u32)
+        }
         CpsTerminator::Suspend => encode(Opcode::Suspend as u8, 0, 0, 0),
         CpsTerminator::Return(r) => encode(Opcode::Return as u8, *r as u32, 0, 0),
-        CpsTerminator::Call(fi, _, ret) => encode(Opcode::Call as u8, *fi as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
-        CpsTerminator::CallNative(fi, _, ret) => encode(Opcode::CallNative as u8, *fi as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
-        CpsTerminator::CallIndirect(slot, _, ret) => encode(Opcode::CallIndirect as u8, *slot as u32, (*ret >> 8) as u32, (*ret & 0xFF) as u32),
+        CpsTerminator::Call(fi, _, ret) => encode(
+            Opcode::Call as u8,
+            *fi as u32,
+            (*ret >> 8) as u32,
+            (*ret & 0xFF) as u32,
+        ),
+        CpsTerminator::CallNative(fi, _, ret) => encode(
+            Opcode::CallNative as u8,
+            *fi as u32,
+            (*ret >> 8) as u32,
+            (*ret & 0xFF) as u32,
+        ),
+        CpsTerminator::CallIndirect(slot, _, ret) => encode(
+            Opcode::CallIndirect as u8,
+            *slot as u32,
+            (*ret >> 8) as u32,
+            (*ret & 0xFF) as u32,
+        ),
         CpsTerminator::TailCall(_, _) => encode(Opcode::TailCall as u8, 0, 0, 0),
         // CallExternal: should be resolved by LinkStage before reaching VM.
         // Encode same as Call for unlinked single-module test usage.
-        CpsTerminator::CallExternal { import_handle, ret_block, .. } => {
-            encode(Opcode::Call as u8, *import_handle as u32, (*ret_block >> 8) as u32, (*ret_block & 0xFF) as u32)
-        }
+        CpsTerminator::CallExternal {
+            import_handle,
+            ret_block,
+            ..
+        } => encode(
+            Opcode::Call as u8,
+            *import_handle as u32,
+            (*ret_block >> 8) as u32,
+            (*ret_block & 0xFF) as u32,
+        ),
         CpsTerminator::CallExternalDynamic { .. } => {
             return Err("CallExternalDynamic not supported by VM (use LinkStage)".into())
         }
@@ -1912,10 +2199,7 @@ mod tests {
     #[test]
     fn test_index_out_of_bounds() {
         let cps = simple_mod(
-            vec![
-                CpsInstr::LoadConst(0, 0),
-                CpsInstr::IndexGet(2, 1, 0),
-            ],
+            vec![CpsInstr::LoadConst(0, 0), CpsInstr::IndexGet(2, 1, 0)],
             CpsTerminator::Return(2),
             vec![Constant::Int(99)],
             3,
@@ -2056,9 +2340,7 @@ mod tests {
     #[test]
     fn t20_loadconst_above_255() {
         // LoadConst index encoded in src1 (9 bits), handler must read all 9 bits
-        let mut consts: Vec<Constant> = (0..256)
-            .map(|_| Constant::Int(0))
-            .collect();
+        let mut consts: Vec<Constant> = (0..256).map(|_| Constant::Int(0)).collect();
         consts.push(Constant::Int(42)); // index 256
         let cps = CpsModule {
             functions: vec![CpsFunction {
@@ -2094,13 +2376,13 @@ mod tests {
                     id: 0,
                     params: vec![],
                     instrs: vec![
-                        CpsInstr::LoadConst(0, 0), // r0 = i64::MIN
-                        CpsInstr::LoadConst(1, 1), // r1 = -1
-                        CpsInstr::UnOp(2, CpsUnOp::NegInt, 0), // r2 = -r0
+                        CpsInstr::LoadConst(0, 0),                  // r0 = i64::MIN
+                        CpsInstr::LoadConst(1, 1),                  // r1 = -1
+                        CpsInstr::UnOp(2, CpsUnOp::NegInt, 0),      // r2 = -r0
                         CpsInstr::BinOp(3, CpsBinOp::DivInt, 0, 1), // r3 = r0 / r1
                         CpsInstr::BinOp(4, CpsBinOp::ModInt, 0, 1), // r4 = r0 % r1
-                        CpsInstr::BinOp(5, CpsBinOp::AddInt, 2, 3),  // r5 = r2 + r3
-                        CpsInstr::BinOp(6, CpsBinOp::AddInt, 5, 4),  // r6 = r5 + r4
+                        CpsInstr::BinOp(5, CpsBinOp::AddInt, 2, 3), // r5 = r2 + r3
+                        CpsInstr::BinOp(6, CpsBinOp::AddInt, 5, 4), // r6 = r5 + r4
                     ],
                     term: CpsTerminator::Return(6),
                 }],
@@ -2133,15 +2415,21 @@ mod tests {
         // Self-assign must not corrupt ref-counts: string rc should be 2 (LoadConst + 1 retain from field)
         let instrs = vec![
             CpsInstr::LoadConst(0, 0),         // r0 = "hi" (slot 0, rc=1)
-            CpsInstr::NewStruct(1, 0, vec![]),  // r1 = struct (slot 1, rc=1)
-            CpsInstr::SetField(0, 1, 0, 0),     // retain: rc 1→2
-            CpsInstr::SetField(0, 1, 0, 0),     // self-assign: release-retain should cancel
+            CpsInstr::NewStruct(1, 0, vec![]), // r1 = struct (slot 1, rc=1)
+            CpsInstr::SetField(0, 1, 0, 0),    // retain: rc 1→2
+            CpsInstr::SetField(0, 1, 0, 0),    // self-assign: release-retain should cancel
         ];
         let cps = CpsModule {
             functions: vec![CpsFunction {
                 name: "main".into(),
-                blocks: vec![CpsBlock { id: 0, params: vec![], instrs, term: CpsTerminator::Return(1) }],
-                entry: 0, reg_count: 2,
+                blocks: vec![CpsBlock {
+                    id: 0,
+                    params: vec![],
+                    instrs,
+                    term: CpsTerminator::Return(1),
+                }],
+                entry: 0,
+                reg_count: 2,
             }],
             constants: vec![Constant::String("hi".into())],
             structs,
@@ -2159,16 +2447,18 @@ mod tests {
         // Field still points to the string
         if let HeapObj::Struct(_, fields) = vm.heap_get(result).unwrap() {
             assert_eq!(fields[0], 0);
-        } else { panic!("expected struct"); }
+        } else {
+            panic!("expected struct");
+        }
     }
 
     #[test]
     fn box_unbox_roundtrip() {
         let m = simple_mod(
             vec![
-                CpsInstr::LoadConst(0, 0),    // r0 = 42
-                CpsInstr::Box(1, 0),          // r1 = Box(r0)
-                CpsInstr::Unbox(2, 1),        // r2 = Unbox(r1)
+                CpsInstr::LoadConst(0, 0), // r0 = 42
+                CpsInstr::Box(1, 0),       // r1 = Box(r0)
+                CpsInstr::Unbox(2, 1),     // r2 = Unbox(r1)
             ],
             CpsTerminator::Return(2),
             vec![Constant::Int(42)],

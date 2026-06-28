@@ -1,5 +1,6 @@
 //! CPS (Continuation-Passing Style) contract types.
 //!
+#![allow(clippy::type_complexity)]
 //! This crate owns the data contract shared by lowering, optimization, and VM
 //! execution. It does not lower, optimize, encode, or execute programs.
 
@@ -62,6 +63,10 @@ pub enum CpsInstr {
     ListLen(usize, usize),
     IndexGet(usize, usize, usize),
     IndexSet(usize, usize, usize, usize),
+    NewTuple(usize, Vec<usize>),
+    TupleIndex(usize, usize, u16),
+    NewInt64Array(usize, Vec<usize>),
+    NewFloat64Array(usize, Vec<usize>),
     Box(usize, usize),
     Unbox(usize, usize),
     Print(usize),
@@ -244,5 +249,14 @@ mod tests {
             func_name: ref f,
             ..
         } if m == "./math.kb" && f == "add"));
+    }
+
+    #[test]
+    fn new_tuple_and_tuple_index_constructible() {
+        let t = CpsInstr::NewTuple(0, vec![1, 2, 3]);
+        assert!(matches!(t, CpsInstr::NewTuple(0, ref regs) if regs == &vec![1, 2, 3]));
+
+        let idx = CpsInstr::TupleIndex(5, 0, 1);
+        assert!(matches!(idx, CpsInstr::TupleIndex(5, 0, 1)));
     }
 }

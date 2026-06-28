@@ -10,7 +10,7 @@
 use crate::export_table::{ExportEntry, ExportTable, GlobalRef};
 use crate::protocol::BuildError;
 use kaubo_ir::cps::{
-    CpsBlock, CpsFunction, CpsInstr, CpsModule, CpsTerminator, Constant, EnumDef, StructDef,
+    Constant, CpsBlock, CpsFunction, CpsInstr, CpsModule, CpsTerminator, EnumDef, StructDef,
     VtableDef,
 };
 use std::collections::HashMap;
@@ -219,9 +219,9 @@ impl LinkStage {
             let export = &built[path];
             for entry in &export.entries {
                 let global_ref = match entry {
-                    ExportEntry::Function { func_idx, .. } => {
-                        func_remap.get(&(path.clone(), *func_idx)).map(|&g| GlobalRef::Func(g))
-                    }
+                    ExportEntry::Function { func_idx, .. } => func_remap
+                        .get(&(path.clone(), *func_idx))
+                        .map(|&g| GlobalRef::Func(g)),
                     ExportEntry::Struct { struct_id, .. } => struct_remap
                         .borrow()
                         .get(&(path.clone(), *struct_id))
@@ -233,8 +233,7 @@ impl LinkStage {
                     _ => None,
                 };
                 if let Some(GlobalRef::Func(global_idx)) = global_ref {
-                    symbol_map
-                        .insert((path.clone(), entry.export_name().to_string()), global_idx);
+                    symbol_map.insert((path.clone(), entry.export_name().to_string()), global_idx);
                 }
             }
         }
@@ -307,9 +306,8 @@ impl LinkStage {
     ) {
         for instr in &mut block.instrs {
             if let CpsInstr::NewStruct(_, sid, _) = instr {
-                if let Some(&global_id) = struct_remap
-                    .borrow()
-                    .get(&(module_path.to_string(), *sid))
+                if let Some(&global_id) =
+                    struct_remap.borrow().get(&(module_path.to_string(), *sid))
                 {
                     *sid = global_id;
                 }
@@ -325,9 +323,8 @@ impl LinkStage {
     ) {
         for instr in &mut block.instrs {
             if let CpsInstr::LoadConst(_, idx) = instr {
-                if let Some(&global_idx) = const_remap
-                    .borrow()
-                    .get(&(module_path.to_string(), *idx))
+                if let Some(&global_idx) =
+                    const_remap.borrow().get(&(module_path.to_string(), *idx))
                 {
                     *idx = global_idx;
                 }

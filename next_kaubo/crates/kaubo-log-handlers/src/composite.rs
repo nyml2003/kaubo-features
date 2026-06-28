@@ -106,9 +106,7 @@ mod tests {
                 id: "B",
             }));
 
-        let event = ToolchainEvent::Pass(kaubo_log::PassEvent::Started {
-            name: "TestPass",
-        });
+        let event = ToolchainEvent::Pass(kaubo_log::PassEvent::Started { name: "TestPass" });
         composite.handle(&event);
 
         let entries = seen.borrow();
@@ -120,9 +118,7 @@ mod tests {
     #[test]
     fn empty_composite_does_nothing() {
         let composite = CompositeHandler::new();
-        let event = ToolchainEvent::Pass(kaubo_log::PassEvent::Started {
-            name: "TestPass",
-        });
+        let event = ToolchainEvent::Pass(kaubo_log::PassEvent::Started { name: "TestPass" });
         // Should not panic
         composite.handle(&event);
     }

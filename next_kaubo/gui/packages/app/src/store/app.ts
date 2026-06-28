@@ -1,9 +1,9 @@
-import { createSignal, batch, onCleanup } from "solid-js";
 import type { AppStatus } from "@kaubo/types";
-import { useKaubo } from "../hooks/useKaubo";
+import { batch, createSignal, onCleanup } from "solid-js";
 import { setKauboDiagnostics, type KauboError } from "../editor/kauboLang";
-import type { ThemeName } from "../themes";
 import type { KauboExample } from "../examples";
+import { useKaubo } from "../hooks/useKaubo";
+import type { ThemeName } from "../themes";
 
 const DEFAULT_CODE = `// Kaubo Playground
 var add = |a, b| {
@@ -18,7 +18,13 @@ const WASM_NOT_LOADED_MESSAGE = "WASM not loaded yet";
 function getStoredTheme(): ThemeName {
   try {
     const stored = localStorage.getItem("kaubo-theme");
-    if (stored === "material-dark" || stored === "nord" || stored === "gruvbox-dark" || stored === "min-light" || stored === "high-contrast") {
+    if (
+      stored === "material-dark" ||
+      stored === "nord" ||
+      stored === "gruvbox-dark" ||
+      stored === "min-light" ||
+      stored === "high-contrast"
+    ) {
       return stored;
     }
   } catch {
@@ -61,7 +67,8 @@ export function createKauboStore() {
   const [activeExample, setActiveExample] = createSignal<string | null>(null);
   const [examplesExpanded, setExamplesExpanded] = createSignal(true);
   const [tabSize, setTabSizeSignal] = createSignal<number>(getStoredTabSize());
-  const [fontSize, setFontSizeSignal] = createSignal<number>(getStoredFontSize());
+  const [fontSize, setFontSizeSignal] =
+    createSignal<number>(getStoredFontSize());
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const { doCompile, doRun, doDiagnose, loading } = useKaubo();
 
@@ -69,19 +76,31 @@ export function createKauboStore() {
 
   const setTheme = (name: ThemeName) => {
     setThemeSignal(name);
-    try { localStorage.setItem("kaubo-theme", name); } catch { /* noop */ }
+    try {
+      localStorage.setItem("kaubo-theme", name);
+    } catch {
+      /* noop */
+    }
   };
 
   const toggleExamples = () => setExamplesExpanded((prev) => !prev);
 
   const setTabSize = (size: number) => {
     setTabSizeSignal(size);
-    try { localStorage.setItem("kaubo-tabsize", String(size)); } catch { /* noop */ }
+    try {
+      localStorage.setItem("kaubo-tabsize", String(size));
+    } catch {
+      /* noop */
+    }
   };
 
   const setFontSize = (size: number) => {
     setFontSizeSignal(size);
-    try { localStorage.setItem("kaubo-fontsize", String(size)); } catch { /* noop */ }
+    try {
+      localStorage.setItem("kaubo-fontsize", String(size));
+    } catch {
+      /* noop */
+    }
   };
 
   const toggleSettings = () => setSettingsOpen((prev) => !prev);
@@ -94,7 +113,9 @@ export function createKauboStore() {
       localStorage.setItem("kaubo-theme", "material-dark");
       localStorage.setItem("kaubo-tabsize", "4");
       localStorage.setItem("kaubo-fontsize", "14");
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
   };
 
   const loadExample = (ex: KauboExample) => {
@@ -119,7 +140,9 @@ export function createKauboStore() {
 
   function scheduleDiagnose(source: string) {
     if (diagnoseTimer) clearTimeout(diagnoseTimer);
-    diagnoseTimer = setTimeout(() => { runDiagnose(source); }, DIAGNOSE_DEBOUNCE_MS);
+    diagnoseTimer = setTimeout(() => {
+      runDiagnose(source);
+    }, DIAGNOSE_DEBOUNCE_MS);
   }
 
   onCleanup(() => {
@@ -194,12 +217,28 @@ export function createKauboStore() {
   const clearOutput = () => setOutput("");
 
   return {
-    code, setCode: updateCode, output, status, error,
-    theme, setTheme,
-    tabSize, setTabSize,
-    fontSize, setFontSize,
-    settingsOpen, toggleSettings, resetSettings,
-    activeExample, examplesExpanded, toggleExamples, loadExample,
-    compile, run, clearError, clearOutput, loading,
+    code,
+    setCode: updateCode,
+    output,
+    status,
+    error,
+    theme,
+    setTheme,
+    tabSize,
+    setTabSize,
+    fontSize,
+    setFontSize,
+    settingsOpen,
+    toggleSettings,
+    resetSettings,
+    activeExample,
+    examplesExpanded,
+    toggleExamples,
+    loadExample,
+    compile,
+    run,
+    clearError,
+    clearOutput,
+    loading,
   };
 }

@@ -100,9 +100,8 @@ fn run_args(args: &[String]) -> Result<(), String> {
     match sub {
         "compile" => {
             let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-            let cps =
-                kaubo_driver::compile_source_with_config(&source, &config)
-                    .map_err(|e| e.to_string())?;
+            let cps = kaubo_driver::compile_source_with_config(&source, &config)
+                .map_err(|e| e.to_string())?;
             let out = file.replace(".kaubo", ".kauboc");
             let bytes = kaubo_driver::encode_module(&cps);
             let len = bytes.len();
@@ -116,9 +115,8 @@ fn run_args(args: &[String]) -> Result<(), String> {
 
             // Compile once
             let t0 = Instant::now();
-            let cps =
-                kaubo_driver::compile_source_with_config(&source, &config)
-                    .map_err(|e| e.to_string())?;
+            let cps = kaubo_driver::compile_source_with_config(&source, &config)
+                .map_err(|e| e.to_string())?;
             let compile_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
             let last_func = cps.functions.len() - 1;
@@ -186,24 +184,20 @@ fn run_args(args: &[String]) -> Result<(), String> {
             if file.ends_with(".kauboc") {
                 let bytes = fs::read(file).map_err(|e| format!("read {file}: {e}"))?;
                 let cps = kaubo_driver::decode_module(&bytes).map_err(|e| e.to_string())?;
-                let outcome =
-                    kaubo_driver::run_module_with_config(&cps, &config)
-                        .map_err(|e| e.to_string())?;
+                let outcome = kaubo_driver::run_module_with_config(&cps, &config)
+                    .map_err(|e| e.to_string())?;
                 render_run(&outcome);
             } else {
-                let source =
-                    fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-                let outcome =
-                    kaubo_driver::run_source_with_config(&source, &config)
-                        .map_err(|e| e.to_string())?;
+                let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
+                let outcome = kaubo_driver::run_source_with_config(&source, &config)
+                    .map_err(|e| e.to_string())?;
                 render_run(&outcome);
             }
         }
         _ => {
             let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-            let outcome =
-                kaubo_driver::run_source_with_config(&source, &config)
-                    .map_err(|e| e.to_string())?;
+            let outcome = kaubo_driver::run_source_with_config(&source, &config)
+                .map_err(|e| e.to_string())?;
             render_run(&outcome);
         }
     }
@@ -382,8 +376,7 @@ mod tests {
         let missing = temp_stem("missing").with_extension("kaubo");
         let _ = fs::remove_file(&missing);
 
-        let err =
-            run_args(&args(&["kaubo2", "run", missing.to_str().unwrap()])).unwrap_err();
+        let err = run_args(&args(&["kaubo2", "run", missing.to_str().unwrap()])).unwrap_err();
         assert!(err.contains("read"));
         assert!(err.contains(missing.to_str().unwrap()));
     }

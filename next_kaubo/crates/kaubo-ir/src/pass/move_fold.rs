@@ -29,18 +29,9 @@ fn fold_moves(func: &mut CpsFunction) {
         while i + 1 < block.instrs.len() {
             // Pattern: BinOp(tmp, op, a, b) followed by Move(final, tmp)
             let (tmp_reg, final_reg) = match (&block.instrs[i], &block.instrs[i + 1]) {
-                (
-                    CpsInstr::BinOp(dst, _, _, _),
-                    CpsInstr::Move(move_dst, _),
-                ) => (*dst, *move_dst),
-                (
-                    CpsInstr::UnOp(dst, _, _),
-                    CpsInstr::Move(move_dst, _),
-                ) => (*dst, *move_dst),
-                (
-                    CpsInstr::LoadConst(dst, _),
-                    CpsInstr::Move(move_dst, _),
-                ) => (*dst, *move_dst),
+                (CpsInstr::BinOp(dst, _, _, _), CpsInstr::Move(move_dst, _)) => (*dst, *move_dst),
+                (CpsInstr::UnOp(dst, _, _), CpsInstr::Move(move_dst, _)) => (*dst, *move_dst),
+                (CpsInstr::LoadConst(dst, _), CpsInstr::Move(move_dst, _)) => (*dst, *move_dst),
                 _ => {
                     i += 1;
                     continue;
@@ -73,7 +64,7 @@ fn fold_moves(func: &mut CpsFunction) {
             // Rewrite: redirect the first instruction's output to final_reg, remove the Move
             rewrite_dst(&mut block.instrs[i], final_reg);
             block.instrs.remove(i + 1); // remove Move
-            // Don't increment i — next iteration re-checks at same position
+                                        // Don't increment i — next iteration re-checks at same position
         }
     }
 }
@@ -143,7 +134,10 @@ mod tests {
         fold_moves(&mut func);
         let b = &func.blocks[0];
         assert_eq!(b.instrs.len(), 1, "Move should be eliminated");
-        assert!(matches!(b.instrs[0], CpsInstr::BinOp(4, CpsBinOp::AddInt, 2, 3)));
+        assert!(matches!(
+            b.instrs[0],
+            CpsInstr::BinOp(4, CpsBinOp::AddInt, 2, 3)
+        ));
     }
 
     #[test]
@@ -153,10 +147,7 @@ mod tests {
             blocks: vec![CpsBlock {
                 id: 0,
                 params: vec![],
-                instrs: vec![
-                    CpsInstr::LoadConst(1, 0),
-                    CpsInstr::Move(2, 1),
-                ],
+                instrs: vec![CpsInstr::LoadConst(1, 0), CpsInstr::Move(2, 1)],
                 term: CpsTerminator::Return(2),
             }],
             entry: 0,
@@ -164,7 +155,10 @@ mod tests {
         };
         fold_moves(&mut func);
         assert_eq!(func.blocks[0].instrs.len(), 1);
-        assert!(matches!(func.blocks[0].instrs[0], CpsInstr::LoadConst(2, 0)));
+        assert!(matches!(
+            func.blocks[0].instrs[0],
+            CpsInstr::LoadConst(2, 0)
+        ));
     }
 
     #[test]
@@ -185,6 +179,10 @@ mod tests {
             reg_count: 7,
         };
         fold_moves(&mut func);
-        assert_eq!(func.blocks[0].instrs.len(), 3, "should NOT fold, r1 is reused");
+        assert_eq!(
+            func.blocks[0].instrs.len(),
+            3,
+            "should NOT fold, r1 is reused"
+        );
     }
 }

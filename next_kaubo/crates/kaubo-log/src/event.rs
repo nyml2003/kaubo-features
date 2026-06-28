@@ -54,10 +54,7 @@ pub enum CpsEvent {
         exit: usize,
     },
     /// A new CPS block was created.
-    BlockCreated {
-        id: usize,
-        param_count: usize,
-    },
+    BlockCreated { id: usize, param_count: usize },
 }
 
 // ── Pass optimization events ──

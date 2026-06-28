@@ -1,29 +1,81 @@
-import { type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import {
+  type Completion,
+  type CompletionContext,
+  type CompletionResult,
+} from "@codemirror/autocomplete";
 import { complete as wasmComplete } from "@kaubo/wasm";
 
 const KEYWORDS = [
-  "var", "if", "else", "elif", "while", "for", "return",
-  "in", "yield", "break", "continue", "pass",
-  "struct", "impl", "import", "as", "from",
-  "pub", "json", "module",
-  "interface", "operator",
-  "and", "or", "not",
+  "var",
+  "if",
+  "else",
+  "elif",
+  "while",
+  "for",
+  "return",
+  "in",
+  "yield",
+  "break",
+  "continue",
+  "pass",
+  "struct",
+  "impl",
+  "import",
+  "as",
+  "from",
+  "pub",
+  "json",
+  "module",
+  "interface",
+  "operator",
+  "and",
+  "or",
+  "not",
 ];
 
 const ATOMS = ["true", "false", "null"];
 
 const BUILTINS = [
-  "print", "assert", "type", "to_string",
-  "sqrt", "sin", "cos", "floor", "ceil",
-  "len", "push", "is_empty", "range", "clone",
-  "read_file", "write_file", "exists", "is_file", "is_dir",
-  "substring", "contains", "starts_with", "ends_with",
-  "length", "trim", "split", "join", "replace",
-  "to_lower", "to_upper",
-  "now_timestamp", "format_time",
-  "sha256", "base64_encode", "base64_decode",
-  "random", "random_int",
-  "create_coroutine", "resume", "coroutine_status",
+  "print",
+  "assert",
+  "type",
+  "to_string",
+  "sqrt",
+  "sin",
+  "cos",
+  "floor",
+  "ceil",
+  "len",
+  "push",
+  "is_empty",
+  "range",
+  "clone",
+  "read_file",
+  "write_file",
+  "exists",
+  "is_file",
+  "is_dir",
+  "substring",
+  "contains",
+  "starts_with",
+  "ends_with",
+  "length",
+  "trim",
+  "split",
+  "join",
+  "replace",
+  "to_lower",
+  "to_upper",
+  "now_timestamp",
+  "format_time",
+  "sha256",
+  "base64_encode",
+  "base64_decode",
+  "random",
+  "random_int",
+  "create_coroutine",
+  "resume",
+  "coroutine_status",
 ];
 
 const CONSTANTS = [
@@ -31,12 +83,14 @@ const CONSTANTS = [
   { label: "E", detail: "≈ 2.71828" },
 ];
 
-export function kauboCompletions(context: CompletionContext): CompletionResult | null {
+export function kauboCompletions(
+  context: CompletionContext,
+): CompletionResult | null {
   const dot = context.matchBefore(/[\w]+\.\w*/);
   if (dot) {
     const items = completionsFromLanguageService(
       context.state.doc.toString(),
-      context.pos
+      context.pos,
     );
     if (items.length > 0) {
       const prefixStart = dot.text.lastIndexOf(".") + 1;
@@ -104,9 +158,14 @@ interface ServiceCompletion {
   detail?: string | null;
 }
 
-function completionsFromLanguageService(source: string, offset: number): Completion[] {
+function completionsFromLanguageService(
+  source: string,
+  offset: number,
+): Completion[] {
   try {
-    const parsed = JSON.parse(wasmComplete(source, offset)) as ServiceCompletion[];
+    const parsed = JSON.parse(
+      wasmComplete(source, offset),
+    ) as ServiceCompletion[];
     return parsed.map((item) => {
       const completion: Completion = {
         label: item.label,

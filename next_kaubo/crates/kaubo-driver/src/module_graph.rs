@@ -78,8 +78,7 @@ impl ModuleGraph {
 
         // 存储
         self.sources.insert(path.to_string(), source);
-        self.imports
-            .insert(path.to_string(), raw_imports.clone());
+        self.imports.insert(path.to_string(), raw_imports.clone());
 
         // 对每个 import，解析路径，记录依赖，递归 DFS
         for imp in &raw_imports {
@@ -207,9 +206,18 @@ mod tests {
     #[test]
     fn diamond_dependency() {
         let mut loader = MemLoader::new();
-        loader.insert("main.kb", "import { a } from \"./A.kb\"; import { b } from \"./B.kb\";");
-        loader.insert("A.kb", "import { c } from \"./base.kb\"; export const a = c;");
-        loader.insert("B.kb", "import { c } from \"./base.kb\"; export const b = c;");
+        loader.insert(
+            "main.kb",
+            "import { a } from \"./A.kb\"; import { b } from \"./B.kb\";",
+        );
+        loader.insert(
+            "A.kb",
+            "import { c } from \"./base.kb\"; export const a = c;",
+        );
+        loader.insert(
+            "B.kb",
+            "import { c } from \"./base.kb\"; export const b = c;",
+        );
         loader.insert("base.kb", "export const c = 42;");
 
         let graph = ModuleGraph::build("main.kb", &loader).unwrap();

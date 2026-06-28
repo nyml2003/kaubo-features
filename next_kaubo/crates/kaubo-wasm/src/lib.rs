@@ -67,10 +67,9 @@ pub fn set_log_level(level: u8) {
 
 /// Build a RunConfig from the current global LOG_LEVEL setting.
 fn make_config() -> kaubo_driver::RunConfig {
-    let events: Option<Box<dyn kaubo_log::EventHandler>> = LOG_LEVEL
-        .lock()
-        .unwrap()
-        .map(|level| Box::new(kaubo_log_handlers::make_handler(level)) as Box<dyn kaubo_log::EventHandler>);
+    let events: Option<Box<dyn kaubo_log::EventHandler>> = LOG_LEVEL.lock().unwrap().map(|level| {
+        Box::new(kaubo_log_handlers::make_handler(level)) as Box<dyn kaubo_log::EventHandler>
+    });
     kaubo_driver::RunConfig {
         events,
         max_loop_iterations: u64::MAX,

@@ -28,7 +28,9 @@ export const Settings: Component<{
       >
         <div class={styles.header}>
           <h3 class={styles.heading}>Settings</h3>
-          <button class={styles.closeBtn} onClick={props.onClose}>&times;</button>
+          <button class={styles.closeBtn} onClick={props.onClose}>
+            &times;
+          </button>
         </div>
 
         <div class={styles.body}>
@@ -37,7 +39,9 @@ export const Settings: Component<{
             <select
               class={styles.select}
               value={props.theme}
-              onChange={(e) => { props.onThemeChange(e.currentTarget.value as ThemeName); }}
+              onChange={(e) => {
+                props.onThemeChange(e.currentTarget.value as ThemeName);
+              }}
             >
               {THEME_NAMES.map((name) => (
                 <option value={name}>{presets[name].label}</option>
@@ -50,15 +54,23 @@ export const Settings: Component<{
             <div class={styles.toggleRow}>
               <button
                 class={styles.toggleBtn}
-                classList={{ [String(styles.toggleActive)]: props.tabSize === 2 }}
-                onClick={() => { props.onTabSizeChange(2); }}
+                classList={{
+                  [String(styles.toggleActive)]: props.tabSize === 2,
+                }}
+                onClick={() => {
+                  props.onTabSizeChange(2);
+                }}
               >
                 2
               </button>
               <button
                 class={styles.toggleBtn}
-                classList={{ [String(styles.toggleActive)]: props.tabSize === 4 }}
-                onClick={() => { props.onTabSizeChange(4); }}
+                classList={{
+                  [String(styles.toggleActive)]: props.tabSize === 4,
+                }}
+                onClick={() => {
+                  props.onTabSizeChange(4);
+                }}
               >
                 4
               </button>
@@ -71,8 +83,12 @@ export const Settings: Component<{
               {FONT_SIZES.map((size) => (
                 <button
                   class={styles.toggleBtn}
-                  classList={{ [String(styles.toggleActive)]: props.fontSize === size }}
-                  onClick={() => { props.onFontSizeChange(size); }}
+                  classList={{
+                    [String(styles.toggleActive)]: props.fontSize === size,
+                  }}
+                  onClick={() => {
+                    props.onFontSizeChange(size);
+                  }}
                 >
                   {size}px
                 </button>

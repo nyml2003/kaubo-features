@@ -1,6 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
-import { CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import {
+  CompletionContext,
+  type CompletionResult,
+} from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
+import { describe, expect, it, vi } from "vitest";
 import { kauboCompletions } from "./kauboAutocomplete";
 
 vi.mock("@kaubo/wasm", () => ({
@@ -21,7 +24,7 @@ function makeContext(word: string, explicit?: boolean): CompletionContext {
   return new CompletionContext(
     EditorState.create({ doc }),
     pos,
-    explicit ?? false
+    explicit ?? false,
   );
 }
 
@@ -29,7 +32,7 @@ function makeRawContext(doc: string, explicit?: boolean): CompletionContext {
   return new CompletionContext(
     EditorState.create({ doc }),
     doc.length,
-    explicit ?? false
+    explicit ?? false,
   );
 }
 

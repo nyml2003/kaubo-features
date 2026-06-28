@@ -87,7 +87,9 @@ pub struct MemoryCache {
 
 impl MemoryCache {
     pub fn new() -> Self {
-        Self { store: HashMap::new() }
+        Self {
+            store: HashMap::new(),
+        }
     }
 }
 
@@ -116,11 +118,19 @@ pub enum BuildError {
     Runtime(String),
     Bug(String),
     /// 循环模块依赖。
-    CircularImport { cycle: Vec<String> },
+    CircularImport {
+        cycle: Vec<String>,
+    },
     /// 导入的模块不存在。
-    ImportNotFound { path: String, name: String },
+    ImportNotFound {
+        path: String,
+        name: String,
+    },
     /// 导入的符号在被导入模块中未导出。
-    ExportNotFound { name: String, path: String },
+    ExportNotFound {
+        name: String,
+        path: String,
+    },
     /// 同名符号冲突（同一模块重复导入同名符号）。
     SymbolConflict {
         name: String,
@@ -147,12 +157,11 @@ impl fmt::Display for BuildError {
             BuildError::ExportNotFound { name, path } => {
                 write!(f, "export '{name}' not found in module {path}")
             }
-            BuildError::SymbolConflict {
-                name,
-                path1,
-                path2,
-            } => {
-                write!(f, "symbol conflict: '{name}' imported from both {path1} and {path2}")
+            BuildError::SymbolConflict { name, path1, path2 } => {
+                write!(
+                    f,
+                    "symbol conflict: '{name}' imported from both {path1} and {path2}"
+                )
             }
         }
     }

@@ -398,6 +398,24 @@ fn encode_instr(w: &mut Vec<u8>, i: &CpsInstr) {
             w_u8(w, 0x07);
             w_u16(w, *d as u16);
         }
+        CpsInstr::NewTuple(d, _) => {
+            w_u8(w, 0x1C);
+            w_u16(w, *d as u16);
+        }
+        CpsInstr::NewInt64Array(d, _) => {
+            w_u8(w, 0x1E);
+            w_u16(w, *d as u16);
+        }
+        CpsInstr::NewFloat64Array(d, _) => {
+            w_u8(w, 0x1F);
+            w_u16(w, *d as u16);
+        }
+        CpsInstr::TupleIndex(d, t, idx) => {
+            w_u8(w, 0x1D);
+            w_u16(w, *d as u16);
+            w_u16(w, *t as u16);
+            w_u16(w, *idx);
+        }
         CpsInstr::ListLen(d, obj) => {
             w_u8(w, 0x1A);
             w_u16(w, *d as u16);
@@ -495,6 +513,10 @@ fn decode_instr(r: &mut Cursor<&[u8]>) -> Result<CpsInstr, String> {
         0x05 => CpsInstr::GetField(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)?),
         0x06 => CpsInstr::SetField(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)?, 0),
         0x07 => CpsInstr::NewList(r_u16(r)? as usize, vec![]),
+        0x1C => CpsInstr::NewTuple(r_u16(r)? as usize, vec![]),
+        0x1E => CpsInstr::NewInt64Array(r_u16(r)? as usize, vec![]),
+        0x1F => CpsInstr::NewFloat64Array(r_u16(r)? as usize, vec![]),
+        0x1D => CpsInstr::TupleIndex(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)?),
         0x1A => CpsInstr::ListLen(r_u16(r)? as usize, r_u16(r)? as usize),
         0x08 => CpsInstr::IndexGet(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)? as usize),
         0x09 => CpsInstr::IndexSet(
@@ -505,35 +527,16 @@ fn decode_instr(r: &mut Cursor<&[u8]>) -> Result<CpsInstr, String> {
         ),
         0x0A => CpsInstr::Box(r_u16(r)? as usize, r_u16(r)? as usize),
         0x0B => CpsInstr::Unbox(r_u16(r)? as usize, r_u16(r)? as usize),
-        0x0E => CpsInstr::NewVariant(
-            r_u16(r)? as usize,
-            r_u32(r)? as usize,
-            r_u16(r)?,
-            vec![],
-        ),
-        0x0F => CpsInstr::GetVariantTag(
-            r_u16(r)? as usize,
-            r_u16(r)? as usize,
-        ),
-        0x11 => CpsInstr::SetVariantField(
-            r_u16(r)? as usize,
-            r_u16(r)? as usize,
-            r_u16(r)?,
-            0,
-        ),
-        0x10 => CpsInstr::GetVariantField(
-            r_u16(r)? as usize,
-            r_u16(r)? as usize,
-            r_u16(r)?,
-        ),
+        0x0E => CpsInstr::NewVariant(r_u16(r)? as usize, r_u32(r)? as usize, r_u16(r)?, vec![]),
+        0x0F => CpsInstr::GetVariantTag(r_u16(r)? as usize, r_u16(r)? as usize),
+        0x11 => CpsInstr::SetVariantField(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)?, 0),
+        0x10 => CpsInstr::GetVariantField(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)?),
         0x0C => CpsInstr::Print(r_u16(r)? as usize),
         0x0D => CpsInstr::Nop,
         0x12 => CpsInstr::LoadVtable(r_u16(r)? as usize, r_u32(r)? as usize),
-        0x13 => CpsInstr::NewInterfaceObj(
-            r_u16(r)? as usize,
-            r_u16(r)? as usize,
-            r_u16(r)? as usize,
-        ),
+        0x13 => {
+            CpsInstr::NewInterfaceObj(r_u16(r)? as usize, r_u16(r)? as usize, r_u16(r)? as usize)
+        }
         0x1B => CpsInstr::LoadExternalConst(r_u16(r)? as usize, r_u16(r)? as usize),
         _ => return Err(format!("bad instr tag {tag:02x}")),
     })
@@ -1063,10 +1066,10 @@ mod tests {
             decoded.functions[0].blocks[0].instrs[0],
             CpsInstr::BinOp(_, CpsBinOp::AddInt, _, _)
         ));
-        assert!(decoded.functions[0].blocks[0].instrs.iter().any(|instr| matches!(
-            instr,
-            CpsInstr::BinOp(_, CpsBinOp::SToI, _, _)
-        )));
+        assert!(decoded.functions[0].blocks[0]
+            .instrs
+            .iter()
+            .any(|instr| matches!(instr, CpsInstr::BinOp(_, CpsBinOp::SToI, _, _))));
         assert!(matches!(
             decoded.functions[0].blocks[1].term,
             CpsTerminator::Branch(_, 2, _, 3, _)

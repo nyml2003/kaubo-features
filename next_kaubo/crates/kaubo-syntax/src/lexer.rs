@@ -257,7 +257,12 @@ impl<'a> Lexer<'a> {
                 s.push(c);
             }
         }
-        Token::new(TokenKind::Error, "unterminated template string".into(), line, col)
+        Token::new(
+            TokenKind::Error,
+            "unterminated template string".into(),
+            line,
+            col,
+        )
     }
 
     fn scan_question(&mut self, line: usize, col: usize) -> Token {
@@ -929,8 +934,6 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn test_identifier_camelCase() {
-        #[allow(non_snake_case)]
-        fn inner() {}
         assert_eq!(kinds("myFunction"), vec![TokenKind::Identifier]);
     }
 
@@ -1103,11 +1106,7 @@ mod tests {
         for ch in unknown {
             let src = ch.to_string();
             let toks = tokens(&src);
-            assert_eq!(
-                toks[0].kind,
-                TokenKind::Error,
-                "expected Error for '{ch}'"
-            );
+            assert_eq!(toks[0].kind, TokenKind::Error, "expected Error for '{ch}'");
         }
     }
 

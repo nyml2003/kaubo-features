@@ -1,5 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
-
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@kaubo/wasm", () => ({
   lex: vi.fn(() => "[]"),
@@ -8,11 +7,11 @@ vi.mock("@kaubo/wasm", () => ({
 
 import {
   CLASS_BY_KIND,
+  errorsToDiagnostics,
+  mergeRanges,
+  rangesOverlap,
   tokenToRange,
   tokensToRanges,
-  errorsToDiagnostics,
-  rangesOverlap,
-  mergeRanges,
   type DecorationRange,
   type KauboError,
 } from "./kauboLang";
@@ -217,19 +216,27 @@ describe("errorsToDiagnostics", () => {
 
 describe("rangesOverlap", () => {
   it("detects overlap when ranges intersect", () => {
-    expect(rangesOverlap({ from: 0, to: 5, cls: "" }, { from: 3, to: 8, cls: "" })).toBe(true);
+    expect(
+      rangesOverlap({ from: 0, to: 5, cls: "" }, { from: 3, to: 8, cls: "" }),
+    ).toBe(true);
   });
 
   it("detects overlap when one contains the other", () => {
-    expect(rangesOverlap({ from: 0, to: 10, cls: "" }, { from: 2, to: 5, cls: "" })).toBe(true);
+    expect(
+      rangesOverlap({ from: 0, to: 10, cls: "" }, { from: 2, to: 5, cls: "" }),
+    ).toBe(true);
   });
 
   it("returns false for adjacent non-overlapping", () => {
-    expect(rangesOverlap({ from: 0, to: 3, cls: "" }, { from: 3, to: 6, cls: "" })).toBe(false);
+    expect(
+      rangesOverlap({ from: 0, to: 3, cls: "" }, { from: 3, to: 6, cls: "" }),
+    ).toBe(false);
   });
 
   it("returns false for disconnected ranges", () => {
-    expect(rangesOverlap({ from: 0, to: 2, cls: "" }, { from: 5, to: 7, cls: "" })).toBe(false);
+    expect(
+      rangesOverlap({ from: 0, to: 2, cls: "" }, { from: 5, to: 7, cls: "" }),
+    ).toBe(false);
   });
 });
 
@@ -272,7 +279,10 @@ describe("mergeRanges", () => {
   });
 
   it("filters existing by dirty starts", () => {
-    const result = mergeRanges([a, b, c], [{ from: 4, to: 8, cls: "cm-keyword" }]);
+    const result = mergeRanges(
+      [a, b, c],
+      [{ from: 4, to: 8, cls: "cm-keyword" }],
+    );
     expect(result).toHaveLength(2);
     expect(result).toContainEqual(a);
     expect(getAt(result, 1).from).toBe(4);

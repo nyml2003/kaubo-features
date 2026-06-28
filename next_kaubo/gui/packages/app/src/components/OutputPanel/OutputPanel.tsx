@@ -1,5 +1,4 @@
-import { For, type Component, createEffect } from "solid-js";
-import { createMemo } from "solid-js";
+import { createEffect, createMemo, For, type Component } from "solid-js";
 import styles from "./OutputPanel.module.css";
 
 export const OutputPanel: Component<{
@@ -29,7 +28,7 @@ export const OutputPanel: Component<{
         </button>
       </div>
       <pre ref={outputEl} class={styles.output}>
-        <For each={lines()}>{ (line) => <div>{line}</div> }</For>
+        <For each={lines()}>{(line) => <div>{line}</div>}</For>
       </pre>
     </div>
   );

@@ -1,7 +1,13 @@
-import { EditorView, Decoration, type DecorationSet, hoverTooltip, type Tooltip } from "@codemirror/view";
-import { StateField, type EditorState } from "@codemirror/state";
-import { linter, type Diagnostic } from "@codemirror/lint";
 import { autocompletion } from "@codemirror/autocomplete";
+import { linter, type Diagnostic } from "@codemirror/lint";
+import { StateField, type EditorState } from "@codemirror/state";
+import {
+  Decoration,
+  EditorView,
+  hoverTooltip,
+  type DecorationSet,
+  type Tooltip,
+} from "@codemirror/view";
 import { semantic_tokens, hover as wasmHover } from "@kaubo/wasm";
 import { log } from "../lib/logger";
 import { kauboCompletions } from "./kauboAutocomplete";
@@ -85,12 +91,12 @@ export function rangesOverlap(a: DecorationRange, b: DecorationRange): boolean {
  */
 export function mergeRanges(
   existing: DecorationRange[],
-  updated: DecorationRange[]
+  updated: DecorationRange[],
 ): DecorationRange[] {
   const dirtyStarts = new Set(updated.map((r) => r.from));
   const result = existing.filter(
     (r) =>
-      !updated.some((u) => rangesOverlap(r, u)) && !dirtyStarts.has(r.from)
+      !updated.some((u) => rangesOverlap(r, u)) && !dirtyStarts.has(r.from),
   );
   result.push(...updated);
   return result;
@@ -103,12 +109,15 @@ interface HighlightCache {
   decorations: DecorationSet;
 }
 
-const highlightCache: HighlightCache = { source: "", decorations: Decoration.none };
+const highlightCache: HighlightCache = {
+  source: "",
+  decorations: Decoration.none,
+};
 
 function buildDecorationSet(ranges: DecorationRange[]): DecorationSet {
   if (ranges.length === 0) return Decoration.none;
   const marks = ranges.map((r) =>
-    Decoration.mark({ class: r.cls }).range(r.from, r.to)
+    Decoration.mark({ class: r.cls }).range(r.from, r.to),
   );
   return Decoration.set(marks, true);
 }
@@ -142,14 +151,16 @@ export function buildDecorations(source: string): DecorationSet {
 
 let lastDiagnostics: Diagnostic[] = [];
 
-function isKauboErrorArray(items: Diagnostic[] | KauboError[]): items is KauboError[] {
+function isKauboErrorArray(
+  items: Diagnostic[] | KauboError[],
+): items is KauboError[] {
   const first = items[0];
   if (first === undefined) return false;
   return "message" in first && !("severity" in first);
 }
 
 export function setKauboDiagnostics(
-  diagnostics: Diagnostic[] | KauboError[] | null
+  diagnostics: Diagnostic[] | KauboError[] | null,
 ) {
   if (diagnostics === null || diagnostics.length === 0) {
     lastDiagnostics = [];

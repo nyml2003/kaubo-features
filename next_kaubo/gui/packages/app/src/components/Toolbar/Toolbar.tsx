@@ -1,5 +1,5 @@
-import { Show, type Component } from "solid-js";
 import type { AppStatus } from "@kaubo/types";
+import { Show, type Component } from "solid-js";
 import styles from "./Toolbar.module.css";
 
 const STATUS_LABEL: Record<AppStatus, string> = {
@@ -17,7 +17,8 @@ export const Toolbar: Component<{
   onToggleExamples: () => void;
   onOpenSettings: () => void;
 }> = (props) => {
-  const busy = () => props.status() === "compiling" || props.status() === "running";
+  const busy = () =>
+    props.status() === "compiling" || props.status() === "running";
 
   return (
     <header class={styles.toolbar}>
@@ -30,25 +31,20 @@ export const Toolbar: Component<{
       </button>
       <span class={styles.brand}>Kaubo</span>
       <nav class={styles.actions}>
-        <button
-          class={styles.btn}
-          disabled={busy()}
-          onClick={props.onCompile}
-        >
+        <button class={styles.btn} disabled={busy()} onClick={props.onCompile}>
           Compile
         </button>
-        <button
-          class={styles.btn}
-          disabled={busy()}
-          onClick={props.onRun}
-        >
+        <button class={styles.btn} disabled={busy()} onClick={props.onRun}>
           Run
         </button>
       </nav>
       <span class={styles.status}>
-        <Show when={busy()} fallback={
-          <span class={styles.ready}>{STATUS_LABEL[props.status()]}</span>
-        }>
+        <Show
+          when={busy()}
+          fallback={
+            <span class={styles.ready}>{STATUS_LABEL[props.status()]}</span>
+          }
+        >
           <span class={styles.spin} />
           {STATUS_LABEL[props.status()]}
         </Show>

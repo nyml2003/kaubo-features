@@ -69,7 +69,9 @@ impl<'a> ModuleCompiler<'a> {
                         parser.register_struct_name(&ri.local_name);
                     }
                 }
-                parser.parse().map_err(|e| BuildError::Parse(format!("{path}: {e}")))?
+                parser
+                    .parse()
+                    .map_err(|e| BuildError::Parse(format!("{path}: {e}")))?
             };
 
             // 3. 转换为 infer 能消费的导入格式
@@ -80,18 +82,17 @@ impl<'a> ModuleCompiler<'a> {
                     import_table
                         .entries
                         .iter()
-                        .map(|ri| export_entry_to_import_spec(&ri.entry, &ri.local_name, &ri.source_path))
+                        .map(|ri| {
+                            export_entry_to_import_spec(&ri.entry, &ri.local_name, &ri.source_path)
+                        })
                         .collect(),
                 )
             };
 
             // 4. 语义分析（带导入）
             let (type_env, struct_fields, exports) =
-                kaubo_infer::infer_module_with_imports(
-                    &module,
-                    import_specs.as_deref(),
-                )
-                .map_err(|e| BuildError::Infer(format!("{path}: {}", e.msg)))?;
+                kaubo_infer::infer_module_with_imports(&module, import_specs.as_deref())
+                    .map_err(|e| BuildError::Infer(format!("{path}: {}", e.msg)))?;
 
             // 5. CPS 构建（带导入表 + 导出集 + 导入结构体）
             let import_map: Option<HashMap<String, usize>> = if import_table.is_empty() {
@@ -115,9 +116,7 @@ impl<'a> ModuleCompiler<'a> {
                         {
                             let field_strs: Vec<(String, String)> = fields
                                 .iter()
-                                .map(|(fn_name, fn_ty)| {
-                                    (fn_name.clone(), type_to_string(fn_ty))
-                                })
+                                .map(|(fn_name, fn_ty)| (fn_name.clone(), type_to_string(fn_ty)))
                                 .collect();
                             s.insert(
                                 name.clone(),
@@ -125,17 +124,33 @@ impl<'a> ModuleCompiler<'a> {
                             );
                         }
                     }
-                    if s.is_empty() { None } else { Some(s) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s)
+                    }
                 };
 
             let (cps, export_funcs, export_consts) = build_module_with_imports(
-                &module, None, import_map.as_ref(), &exports, import_structs.as_ref(),
+                &module,
+                None,
+                import_map.as_ref(),
+                &exports,
+                import_structs.as_ref(),
             )
             .map_err(|e| BuildError::Build(format!("{path}: {e}")))?;
 
             // 6. 构建导出表
-            let export_table =
-                build_export_table(path, &cps, type_env, struct_fields, &exports, &export_funcs, &export_consts, import_table);
+            let export_table = build_export_table(
+                path,
+                &cps,
+                type_env,
+                struct_fields,
+                &exports,
+                &export_funcs,
+                &export_consts,
+                import_table,
+            );
 
             // 7. 计算哈希并缓存
             let content_hash = sha256_hex(source.as_bytes());
@@ -162,11 +177,7 @@ impl<'a> ModuleCompiler<'a> {
     }
 
     /// 解析当前模块的导入，生成 ImportTable。
-    fn resolve_imports(
-        &self,
-        path: &str,
-        raw: &[RawImport],
-    ) -> Result<ImportTable, BuildError> {
+    fn resolve_imports(&self, path: &str, raw: &[RawImport]) -> Result<ImportTable, BuildError> {
         let mut entries = Vec::new();
         let mut by_name = HashMap::new();
 
@@ -176,22 +187,21 @@ impl<'a> ModuleCompiler<'a> {
                 .resolve(path, &raw_imp.source_path)
                 .map_err(|e| BuildError::Build(format!("resolve failed for {path}: {e}")))?;
 
-            let dep = self.built.get(&dep_path).ok_or_else(|| {
-                BuildError::ImportNotFound {
+            let dep = self
+                .built
+                .get(&dep_path)
+                .ok_or_else(|| BuildError::ImportNotFound {
                     path: dep_path.clone(),
                     name: raw_imp.names.first().cloned().unwrap_or_default(),
-                }
-            })?;
+                })?;
 
             for name in &raw_imp.names {
-                let entry = dep
-                    .export_table
-                    .find_export(name)
-                    .cloned()
-                    .ok_or_else(|| BuildError::ExportNotFound {
+                let entry = dep.export_table.find_export(name).cloned().ok_or_else(|| {
+                    BuildError::ExportNotFound {
                         name: name.clone(),
                         path: dep_path.clone(),
-                    })?;
+                    }
+                })?;
 
                 // 冲突检测
                 if by_name.contains_key(name) {
@@ -247,11 +257,7 @@ impl<'a> ModuleCompiler<'a> {
     }
 
     /// 收集所有直接依赖的 content_hash 快照。
-    fn snapshot_dep_hashes(
-        &self,
-        path: &str,
-        raw: &[RawImport],
-    ) -> HashMap<String, String> {
+    fn snapshot_dep_hashes(&self, path: &str, raw: &[RawImport]) -> HashMap<String, String> {
         let mut hashes = HashMap::new();
         for imp in raw {
             if let Ok((dep, _)) = self.loader.resolve(path, &imp.source_path) {
@@ -335,16 +341,13 @@ fn build_export_table(
         let entry = match &ty {
             Type::Arrow(_, _) => {
                 // 使用 export_funcs 映射获取准确的 local func_idx
-                let func_idx = export_funcs
-                    .get(name)
-                    .copied()
-                    .unwrap_or_else(|| {
-                        // fallback: 按名称匹配
-                        cps.functions
-                            .iter()
-                            .position(|f| f.name == *name)
-                            .unwrap_or(0)
-                    });
+                let func_idx = export_funcs.get(name).copied().unwrap_or_else(|| {
+                    // fallback: 按名称匹配
+                    cps.functions
+                        .iter()
+                        .position(|f| f.name == *name)
+                        .unwrap_or(0)
+                });
                 ExportEntry::Function {
                     name: name.clone(),
                     ty,
@@ -358,10 +361,7 @@ fn build_export_table(
             },
             _ => {
                 // 常量——从 export_consts 获取正确的 local const_idx
-                let const_idx = export_consts
-                    .get(name)
-                    .copied()
-                    .unwrap_or(0);
+                let const_idx = export_consts.get(name).copied().unwrap_or(0);
                 ExportEntry::Const {
                     name: name.clone(),
                     ty,
@@ -415,6 +415,7 @@ fn type_to_string(ty: &kaubo_infer::Type) -> String {
         kaubo_infer::Type::Var(_) => "Unknown".into(),
         kaubo_infer::Type::Variant(_, _, _) => "Variant".into(),
         kaubo_infer::Type::Interface(_) => "Interface".into(),
+        kaubo_infer::Type::Tuple(_) => "Tuple".into(),
     }
 }
 

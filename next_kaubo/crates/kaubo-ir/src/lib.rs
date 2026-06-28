@@ -2,6 +2,8 @@
 //!
 //! CPS blocks, types, AST→CPS build, flattening, optimization passes
 
+#![allow(clippy::type_complexity, clippy::len_zero, dead_code)]
+
 pub mod cps;
 pub mod cps_build;
 pub mod cps_emit;
@@ -166,7 +168,7 @@ mod test_fixtures {
     fn call_stmt(name: &str, args: Vec<Expr>) -> Stmt {
         Stmt::ExprStmt(Expr::Call {
             func: Box::new(Expr::VarRef(name.to_string())),
-            args,
+            arg: Expr::call_arg(args),
         })
     }
 }

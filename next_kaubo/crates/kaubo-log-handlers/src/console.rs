@@ -29,9 +29,7 @@ impl EventHandler for ConsoleHandler {
             // Other VM events (LoopIteration, LoopNearLimit) are debug-level
             ToolchainEvent::Vm(_) => self.min_level <= Severity::Debug,
             // CPS and Pass events are debug-level
-            ToolchainEvent::Cps(_) | ToolchainEvent::Pass(_) => {
-                self.min_level <= Severity::Debug
-            }
+            ToolchainEvent::Cps(_) | ToolchainEvent::Pass(_) => self.min_level <= Severity::Debug,
             // Diagnostic events use their own severity
             ToolchainEvent::Diagnostic { level, .. } => *level >= self.min_level,
         }
@@ -92,9 +90,7 @@ fn format_vm(event: &kaubo_log::VmEvent) -> String {
             count,
             limit,
         } => {
-            format!(
-                "[VM] loop near limit: fn={func_idx} block={block_id} count={count}/{limit}"
-            )
+            format!("[VM] loop near limit: fn={func_idx} block={block_id} count={count}/{limit}")
         }
     }
 }

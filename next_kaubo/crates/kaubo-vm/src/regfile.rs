@@ -10,9 +10,7 @@ pub struct RegFile {
 
 impl RegFile {
     pub fn new(cap: usize) -> Self {
-        RegFile {
-            regs: vec![0; cap],
-        }
+        RegFile { regs: vec![0; cap] }
     }
 
     pub fn ensure_capacity(&mut self, n: usize) {

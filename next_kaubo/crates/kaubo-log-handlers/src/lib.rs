@@ -16,10 +16,10 @@
 //! `kaubo-driver` depends only on `kaubo-log` (the abstraction), NOT on this crate.
 //! CLI / WASM / tests construct handlers from this crate and inject them into the driver.
 
-pub mod console;
 pub mod composite;
+pub mod console;
 pub mod env;
 
-pub use console::ConsoleHandler;
 pub use composite::CompositeHandler;
+pub use console::ConsoleHandler;
 pub use env::{init_from_env, make_handler, parse_severity};

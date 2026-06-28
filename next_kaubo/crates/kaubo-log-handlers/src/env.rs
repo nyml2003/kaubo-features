@@ -15,8 +15,8 @@
 //! binding exposed by `kaubo-wasm`.  `init_from_env()` is only usable
 //! on native targets.
 
-use crate::console::ConsoleHandler;
 use crate::composite::CompositeHandler;
+use crate::console::ConsoleHandler;
 use kaubo_log::Severity;
 
 /// Parse a single severity level string.

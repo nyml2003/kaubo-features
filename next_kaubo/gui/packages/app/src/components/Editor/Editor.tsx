@@ -1,11 +1,27 @@
-import { onMount, createEffect, type Component } from "solid-js";
-import { EditorView, placeholder, keymap, highlightActiveLine, drawSelection, lineNumbers } from "@codemirror/view";
-import { EditorState, Compartment } from "@codemirror/state";
-import { bracketMatching, foldGutter, indentOnInput, foldKeymap } from "@codemirror/language";
-import { closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
+import {
+  closeBrackets,
+  closeBracketsKeymap,
+  completionKeymap,
+} from "@codemirror/autocomplete";
+import {
+  bracketMatching,
+  foldGutter,
+  foldKeymap,
+  indentOnInput,
+} from "@codemirror/language";
 import { lintGutter, lintKeymap } from "@codemirror/lint";
+import { Compartment, EditorState } from "@codemirror/state";
+import {
+  drawSelection,
+  EditorView,
+  highlightActiveLine,
+  keymap,
+  lineNumbers,
+  placeholder,
+} from "@codemirror/view";
+import { complete, lex, semantic_tokens } from "@kaubo/wasm";
+import { createEffect, onMount, type Component } from "solid-js";
 import { kauboLanguage } from "../../editor/kauboLang";
-import { lex, semantic_tokens, complete } from "@kaubo/wasm";
 import styles from "./Editor.module.css";
 
 declare global {
@@ -57,7 +73,10 @@ export const Editor: Component<{
             ...lintKeymap,
             {
               key: "Ctrl-Enter",
-              run: () => { props.onRun(); return true; },
+              run: () => {
+                props.onRun();
+                return true;
+              },
             },
           ]),
           EditorView.updateListener.of((update) => {
@@ -81,7 +100,7 @@ export const Editor: Component<{
     createEffect(() => {
       view.dispatch({
         effects: tabSizeComp.reconfigure(
-          EditorState.tabSize.of(props.tabSize())
+          EditorState.tabSize.of(props.tabSize()),
         ),
       });
     });

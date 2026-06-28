@@ -79,13 +79,12 @@ impl Stage<CpsModule, RunOutcome> for VmExecStage {
         "vm-exec"
     }
 
-    fn execute(
-        &self,
-        cps: CpsModule,
-        ctx: &BuildContext,
-    ) -> Result<RunOutcome, BuildError> {
+    fn execute(&self, cps: CpsModule, ctx: &BuildContext) -> Result<RunOutcome, BuildError> {
         if cps.functions.is_empty() {
-            return Ok(RunOutcome { result: 0, output: vec![] });
+            return Ok(RunOutcome {
+                result: 0,
+                output: vec![],
+            });
         }
 
         let mut vm = kaubo_vm::VM::new();

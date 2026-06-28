@@ -4,7 +4,7 @@
 //! 内置两个实现：`FileLoader`（文件系统）和 `MemLoader`（内存，用于测试/WASM）。
 
 use crate::protocol::BuildError;
-use kaubo_vfs::{VirtualFileSystem, VfsError};
+use kaubo_vfs::{VfsError, VirtualFileSystem};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -86,9 +86,10 @@ impl Default for MemLoader {
 
 impl ModuleLoader for MemLoader {
     fn read(&self, path: &str) -> Result<String, BuildError> {
-        self.files.get(path).cloned().ok_or_else(|| {
-            BuildError::Build(format!("module not found in memory: {path}"))
-        })
+        self.files
+            .get(path)
+            .cloned()
+            .ok_or_else(|| BuildError::Build(format!("module not found in memory: {path}")))
     }
 
     fn resolve(&self, _from: &str, import_path: &str) -> Result<(String, String), BuildError> {
@@ -108,9 +109,7 @@ pub fn normalize_path(base: &str, import_path: &str) -> String {
         return String::new();
     }
 
-    let parent = Path::new(base)
-        .parent()
-        .unwrap_or_else(|| Path::new(""));
+    let parent = Path::new(base).parent().unwrap_or_else(|| Path::new(""));
 
     let joined = parent.join(import_path);
 
@@ -177,9 +176,7 @@ mod tests {
     #[test]
     fn mem_loader_resolve() {
         let loader = MemLoader::new();
-        let (resolved, canonical) = loader
-            .resolve("main.kb", "./math.kb")
-            .unwrap();
+        let (resolved, canonical) = loader.resolve("main.kb", "./math.kb").unwrap();
         assert_eq!(resolved, "math.kb");
         assert_eq!(canonical, "math.kb");
     }

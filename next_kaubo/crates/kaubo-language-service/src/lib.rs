@@ -10,19 +10,77 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 const BUILTIN_TYPES: &[&str] = &[
-    "Int64", "Float64", "String", "Bool", "Null", "List",
+    "Int64",
+    "Float64",
+    "String",
+    "Bool",
+    "Null",
+    "List",
     // Builtin interfaces
-    "Add", "Subtract", "Multiply", "Divide", "Modulo",
-    "Compare", "Display", "IntoFloat", "IntoInt",
+    "Add",
+    "Subtract",
+    "Multiply",
+    "Divide",
+    "Modulo",
+    "Compare",
+    "Display",
+    "IntoFloat",
+    "IntoInt",
     // Self type
     "Self",
 ];
 
 /// Builtin methods for builtin types (used for dot-completions).
 const BUILTIN_METHODS: &[(&str, &[&str])] = &[
-    ("Int64", &["add", "subtract", "multiply", "divide", "modulo", "less", "less_equal", "greater", "greater_equal", "equal", "not_equal", "to_string", "to_float"]),
-    ("Float64", &["add", "subtract", "multiply", "divide", "less", "less_equal", "greater", "greater_equal", "equal", "not_equal", "to_string", "to_int"]),
-    ("String", &["add", "less", "less_equal", "greater", "greater_equal", "equal", "not_equal", "to_string", "to_int"]),
+    (
+        "Int64",
+        &[
+            "add",
+            "subtract",
+            "multiply",
+            "divide",
+            "modulo",
+            "less",
+            "less_equal",
+            "greater",
+            "greater_equal",
+            "equal",
+            "not_equal",
+            "to_string",
+            "to_float",
+        ],
+    ),
+    (
+        "Float64",
+        &[
+            "add",
+            "subtract",
+            "multiply",
+            "divide",
+            "less",
+            "less_equal",
+            "greater",
+            "greater_equal",
+            "equal",
+            "not_equal",
+            "to_string",
+            "to_int",
+        ],
+    ),
+    (
+        "String",
+        &[
+            "add",
+            "less",
+            "less_equal",
+            "greater",
+            "greater_equal",
+            "equal",
+            "not_equal",
+            "to_string",
+            "to_int",
+        ],
+    ),
     ("Bool", &["equal", "not_equal", "to_string"]),
 ];
 
@@ -346,15 +404,15 @@ fn collect_impls(tokens: &[Token], model: &mut SemanticModel) {
         if tokens[idx].kind == TokenKind::Impl && tokens[idx + 1].kind == TokenKind::Identifier {
             let first_name = tokens[idx + 1].lexeme.clone();
             // Check for `impl Interface for Struct { ... }` vs `impl Struct { ... }`
-            let (struct_name, skip_extra) =
-                if tokens[idx + 2].kind == TokenKind::For && tokens[idx + 3].kind == TokenKind::Identifier
-                {
-                    // `impl Interface for Struct`
-                    (tokens[idx + 3].lexeme.clone(), 4)
-                } else {
-                    // `impl Struct`
-                    (first_name, 2)
-                };
+            let (struct_name, skip_extra) = if tokens[idx + 2].kind == TokenKind::For
+                && tokens[idx + 3].kind == TokenKind::Identifier
+            {
+                // `impl Interface for Struct`
+                (tokens[idx + 3].lexeme.clone(), 4)
+            } else {
+                // `impl Struct`
+                (first_name, 2)
+            };
             let info = model
                 .structs
                 .entry(struct_name)

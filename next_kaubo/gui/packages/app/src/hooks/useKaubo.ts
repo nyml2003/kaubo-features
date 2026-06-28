@@ -1,5 +1,5 @@
+import init, { compile, diagnose, run } from "@kaubo/wasm";
 import { createResource } from "solid-js";
-import init, { compile, run, diagnose } from "@kaubo/wasm";
 
 export function useKaubo() {
   const [wasm] = createResource(async () => {

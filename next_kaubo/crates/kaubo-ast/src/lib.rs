@@ -63,7 +63,7 @@ pub enum Expr {
     },
     Call {
         func: Box<Expr>,
-        args: Vec<Expr>,
+        arg: Box<Expr>,
     },
     Binary {
         left: Box<Expr>,
@@ -194,6 +194,7 @@ pub struct MethodSig {
 pub enum TypeExpr {
     Named(String),
     List(Box<TypeExpr>),
+    Tuple(Vec<TypeExpr>),
     Arrow {
         params: Vec<TypeExpr>,
         ret: Box<TypeExpr>,
@@ -205,6 +206,15 @@ impl std::fmt::Display for TypeExpr {
         match self {
             Self::Named(n) => write!(f, "{n}"),
             Self::List(t) => write!(f, "List<{t}>"),
+            Self::Tuple(elements) => write!(
+                f,
+                "({})",
+                elements
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             Self::Arrow { params, ret } => write!(
                 f,
                 "|{}| -> {ret}",
@@ -221,6 +231,25 @@ impl std::fmt::Display for TypeExpr {
 impl TypeExpr {
     pub fn named(name: &str) -> Self {
         Self::Named(name.to_string())
+    }
+}
+
+impl Expr {
+    /// 将表达式列表转为 Call 的单 arg：0 → Tuple([]), 1 → 直接取, 2+ → Tuple
+    pub fn call_arg(args: Vec<Expr>) -> Box<Expr> {
+        Box::new(match args.len() {
+            0 => Expr::Tuple(vec![]),
+            1 => args.into_iter().next().unwrap(),
+            _ => Expr::Tuple(args),
+        })
+    }
+
+    /// 从 Call 的 arg 中提取参数列表（模式匹配后使用）
+    pub fn as_args(&self) -> Vec<&Expr> {
+        match self {
+            Expr::Tuple(elements) => elements.iter().collect(),
+            other => vec![other],
+        }
     }
 }
 
@@ -302,9 +331,9 @@ mod tests {
     #[test]
     fn type_expr_deep_nesting_to_string() {
         let ty = TypeExpr::Arrow {
-            params: vec![
-                TypeExpr::List(Box::new(TypeExpr::List(Box::new(TypeExpr::named("Int64"))))),
-            ],
+            params: vec![TypeExpr::List(Box::new(TypeExpr::List(Box::new(
+                TypeExpr::named("Int64"),
+            ))))],
             ret: Box::new(TypeExpr::Arrow {
                 params: vec![TypeExpr::named("String")],
                 ret: Box::new(TypeExpr::named("Bool")),
