@@ -17,6 +17,7 @@ pub struct CpsModule {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VtableDef {
     pub interface_name: String,
+    pub struct_name: String,
     pub methods: Vec<(String, usize)>,
 }
 

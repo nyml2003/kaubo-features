@@ -1104,4 +1104,24 @@ mod tests {
             outcome.output
         );
     }
+
+    // ── Interface type annotation tests (dyn Trait) ──
+
+    #[test]
+    fn interface_as_param_type_dispatch() {
+        let source = r#"
+            interface Speakable { speak: |self: Self|; };
+            struct Cat {};
+            struct Dog {};
+            impl Speakable for Cat { speak: |self: Cat| { print("meow"); }; };
+            impl Speakable for Dog { speak: |self: Dog| { print("woof"); }; };
+            const speak = |animal: Speakable| { animal.speak(); };
+            speak(Cat {});
+            speak(Dog {});
+        "#;
+        let outcome = run_source(source).unwrap();
+        assert_eq!(outcome.output.len(), 2);
+        assert_eq!(outcome.output[0], "meow");
+        assert_eq!(outcome.output[1], "woof");
+    }
 }

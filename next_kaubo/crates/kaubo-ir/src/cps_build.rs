@@ -219,6 +219,7 @@ enum ValueHint {
     Bool,
     Null,
     Struct(String),
+    Interface(String),
     List,
     Unknown,
 }
@@ -248,6 +249,8 @@ pub struct CpsBuilder<'a> {
     interface_vtables: HashMap<String, VtableDef>,
     /// struct_name → [interface_names] that this struct implements
     struct_impl_for: HashMap<String, Vec<String>>,
+    /// func_idx → param hints (for generating Struct→Interface wrapping at call sites)
+    fn_param_hints: HashMap<usize, Vec<ValueHint>>,
     /// Optional event handler for structured logging.
     /// Passed through from the driver; stages only emit events, never touch output.
     events: Option<&'a dyn kaubo_log::EventHandler>,
@@ -278,6 +281,7 @@ impl<'a> CpsBuilder<'a> {
             variant_field_map: HashMap::new(),
             interface_vtables: HashMap::new(),
             struct_impl_for: HashMap::new(),
+            fn_param_hints: HashMap::new(),
             events,
         }
     }
@@ -292,6 +296,7 @@ impl<'a> CpsBuilder<'a> {
             self.interface_vtables.entry(iface_name.to_string()).or_insert_with(|| {
                 VtableDef {
                     interface_name: iface_name.to_string(),
+                    struct_name: String::new(),
                     methods: vec![],
                 }
             });
@@ -372,6 +377,7 @@ impl<'a> CpsBuilder<'a> {
                     self.interface_vtables.entry(name.clone()).or_insert_with(|| {
                         VtableDef {
                             interface_name: name.clone(),
+                            struct_name: String::new(),
                             methods: vec![],
                         }
                     });
@@ -391,6 +397,7 @@ impl<'a> CpsBuilder<'a> {
                 "Null" => ValueHint::Null,
                 "List" => ValueHint::List,
                 _ if self.struct_names.contains(name) => ValueHint::Struct(name.clone()),
+                _ if self.interface_vtables.contains_key(name) => ValueHint::Interface(name.clone()),
                 _ => ValueHint::Unknown,
             },
             TypeExpr::List(_) => ValueHint::List,
@@ -562,7 +569,7 @@ impl<'a> CpsBuilder<'a> {
 
     fn is_heap_type(&self, ty: &TypeExpr) -> bool {
         match self.type_expr_hint(ty) {
-            ValueHint::String | ValueHint::Struct(_) | ValueHint::List => true,
+            ValueHint::String | ValueHint::Struct(_) | ValueHint::List | ValueHint::Interface(_) => true,
             ValueHint::Int | ValueHint::Float | ValueHint::Bool | ValueHint::Null => false,
             ValueHint::Unknown => false,
         }
@@ -705,6 +712,7 @@ impl<'a> CpsBuilder<'a> {
                 if let Some(ref iface_name) = interface_name {
                     let vdef = VtableDef {
                         interface_name: iface_name.clone(),
+                        struct_name: struct_name.clone(),
                         methods: method_funcs,
                     };
                     let _vtable_idx = self.vtables.len();
@@ -941,6 +949,17 @@ impl<'a> CpsBuilder<'a> {
 
             let func = callee.finalize(entry);
             let func_idx = self.functions.len();
+            // Record parameter hints for Struct→Interface wrapping at call sites
+            let hints: Vec<ValueHint> = params
+                .iter()
+                .map(|p| {
+                    p.ty_ann
+                        .as_ref()
+                        .map(|t| self.type_expr_hint(t))
+                        .unwrap_or(ValueHint::Unknown)
+                })
+                .collect();
+            self.fn_param_hints.insert(func_idx, hints);
             dump_blocks(&format!("lambda_{func_idx}"), &callee);
             self.functions.push(func);
             Ok(func_idx)
@@ -1269,6 +1288,48 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
             }
             // Interface method dispatch: try each vtable for matching method
             {
+                // Quick path: object already has Interface type → direct CallIndirect
+                let obj_hint = self.value_hint(object);
+                if let ValueHint::Interface(iface_name) = &obj_hint {
+                    let (obj_entry, obj_continu, obj_reg) = self.build_expr(object)?;
+                    let vtables = self.vtables.clone();
+                    for (vi, vdef) in vtables.iter().enumerate() {
+                        if vdef.interface_name == *iface_name {
+                            if let Some((slot, _)) = vdef.methods.iter().enumerate()
+                                .find(|(_, (mname, _))| mname == field)
+                            {
+                                let mut arg_regs = vec![obj_reg];
+                                let mut prev_c = Some(obj_continu);
+                                for arg in args {
+                                    let (e, c, r) = self.build_expr(arg)?;
+                                    if let Some(t) = prev_c { self.ctx.chain(t, e)?; }
+                                    prev_c = Some(c);
+                                    arg_regs.push(r);
+                                }
+                                let result_reg = self.ctx.alloc();
+                                let cont_block = self.ctx.new_block();
+                                let mb = self.ctx.new_block();
+                                self.ctx.set_block(cont_block, CpsBlock {
+                                    id: cont_block, params: vec![], instrs: vec![],
+                                    term: CpsTerminator::Jump(mb, vec![]),
+                                });
+                                self.ctx.set_block(mb, CpsBlock {
+                                    id: mb, params: vec![],
+                                    instrs: vec![CpsInstr::Move(result_reg, 0)],
+                                    term: cps_emit::emit_return(result_reg),
+                                });
+                                let call_block = self.ctx.new_block();
+                                self.ctx.set_block(call_block, CpsBlock {
+                                    id: call_block, params: vec![], instrs: vec![],
+                                    term: cps_emit::emit_call_indirect(slot, arg_regs, cont_block),
+                                });
+                                if let Some(t) = prev_c { self.ctx.chain(t, call_block)?; }
+                                return Ok((obj_entry, mb, result_reg));
+                            }
+                        }
+                    }
+                    return Err(format!("method '{field}' not found on interface {iface_name}"));
+                }
                 let vtables = self.vtables.clone();
                 for (vi, vdef) in vtables.iter().enumerate() {
                     if let Some((slot, _)) = vdef
@@ -1426,19 +1487,54 @@ fn builtin_method_to_binop(&self, method: &str, _arg_count: usize) -> Option<Bin
         func_idx: usize,
         args: &[Expr],
     ) -> Result<(usize, usize, usize), String> {
+        let param_hints = self.fn_param_hints.get(&func_idx).cloned();
         let mut entry = 0;
         let mut prev_c: Option<usize> = None;
         let mut arg_regs = Vec::new();
-        for arg in args {
+        for (i, arg) in args.iter().enumerate() {
             let (e, c, r) = self.build_expr(arg)?;
             if entry == 0 {
                 entry = e;
             }
+            let mut arg_r = r;
+            let mut arg_continu = c;
+            // Struct→Interface wrapping: if param expects Interface but arg is Struct
+            if let Some(ref hints) = param_hints {
+                if i < hints.len() {
+                    if let ValueHint::Interface(ref iface_name) = hints[i] {
+                        let arg_hint = self.reg_hint(r);
+                        if let ValueHint::Struct(ref struct_name) = arg_hint {
+                            if let Some(vi) = self.vtables.iter().position(|v| {
+                                v.interface_name == *iface_name && v.struct_name == *struct_name
+                            }) {
+                                let vt_r = self.ctx.alloc();
+                                let vt_id = self.ctx.new_block();
+                                self.ctx.set_block(vt_id, CpsBlock {
+                                    id: vt_id, params: vec![],
+                                    instrs: (cps_emit::emit_load_vtable(vt_r, vi)).0,
+                                    term: cps_emit::emit_return(vt_r),
+                                });
+                                self.ctx.chain(arg_continu, vt_id)?;
+                                let iface_r = self.ctx.alloc();
+                                let iface_id = self.ctx.new_block();
+                                self.ctx.set_block(iface_id, CpsBlock {
+                                    id: iface_id, params: vec![],
+                                    instrs: (cps_emit::emit_new_interface_obj(iface_r, vt_r, r)).0,
+                                    term: cps_emit::emit_return(iface_r),
+                                });
+                                self.ctx.chain(vt_id, iface_id)?;
+                                arg_r = iface_r;
+                                arg_continu = iface_id;
+                            }
+                        }
+                    }
+                }
+            }
             if let Some(t) = prev_c {
                 self.ctx.chain(t, e)?;
             }
-            prev_c = Some(c);
-            arg_regs.push(r);
+            prev_c = Some(arg_continu);
+            arg_regs.push(arg_r);
         }
         let result_reg = self.ctx.alloc();
         let cont_block = self.ctx.new_block();

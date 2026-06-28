@@ -238,6 +238,8 @@ fn decode_struct_def(r: &mut Cursor<&[u8]>) -> Result<StructDef, String> {
 fn encode_vtable_def(w: &mut Vec<u8>, v: &VtableDef) {
     w_u16(w, v.interface_name.len() as u16);
     w.extend_from_slice(v.interface_name.as_bytes());
+    w_u16(w, v.struct_name.len() as u16);
+    w.extend_from_slice(v.struct_name.as_bytes());
     w_u16(w, v.methods.len() as u16);
     for (mname, func_idx) in &v.methods {
         w_u16(w, mname.len() as u16);
@@ -251,6 +253,10 @@ fn decode_vtable_def(r: &mut Cursor<&[u8]>) -> Result<VtableDef, String> {
     let mut nb = vec![0u8; nlen];
     r.read_exact(&mut nb).map_err(|e| format!("vname: {e}"))?;
     let interface_name = String::from_utf8(nb).map_err(|e| format!("vname utf8: {e}"))?;
+    let snlen = r_u16(r)? as usize;
+    let mut snb = vec![0u8; snlen];
+    r.read_exact(&mut snb).map_err(|e| format!("sname: {e}"))?;
+    let struct_name = String::from_utf8(snb).map_err(|e| format!("sname utf8: {e}"))?;
     let mcount = r_u16(r)? as usize;
     let mut methods = Vec::with_capacity(mcount);
     for _ in 0..mcount {
@@ -263,6 +269,7 @@ fn decode_vtable_def(r: &mut Cursor<&[u8]>) -> Result<VtableDef, String> {
     }
     Ok(VtableDef {
         interface_name,
+        struct_name,
         methods,
     })
 }

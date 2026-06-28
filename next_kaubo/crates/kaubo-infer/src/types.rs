@@ -23,6 +23,7 @@ pub enum Type {
     Record(usize, Vec<(String, Type)>), // struct_id, fields
     Variant(usize, String, Vec<(String, Type)>), // enum_id, variant_name, field_types
     List(Box<Type>),
+    Interface(String), // interface name (for type annotations like `x: Add`)
 }
 
 /// 多态类型方案 — ∀ bound. body
@@ -59,6 +60,7 @@ impl fmt::Display for Type {
             }
             Type::Variant(id, name, _) => write!(f, "{name}#{id}"),
             Type::List(t) => write!(f, "List<{t}>"),
+            Type::Interface(name) => write!(f, "interface {name}"),
         }
     }
 }
