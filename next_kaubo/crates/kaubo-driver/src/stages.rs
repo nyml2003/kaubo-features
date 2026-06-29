@@ -5,7 +5,6 @@
 //! `kaubo-ir`, and `kaubo-vm`.
 
 use crate::protocol::{BuildContext, BuildError, Stage};
-use crate::RunOutcome;
 use kaubo_ast::Module;
 use kaubo_ir::cps::CpsModule;
 use kaubo_syntax::parser::Parser;
@@ -52,60 +51,7 @@ impl Stage<Module, SemanticArtifact> for SemanticStage {
     }
 }
 
-// ── CPS Build: AST → CpsModule ──
-
-pub struct CpsBuildStage<'a> {
-    pub events: Option<&'a dyn kaubo_log::EventHandler>,
-}
-
-impl Stage<&Module, CpsModule> for CpsBuildStage<'_> {
-    fn name(&self) -> &str {
-        "cps-build"
-    }
-
-    fn execute(&self, module: &Module, _ctx: &BuildContext) -> Result<CpsModule, BuildError> {
-        kaubo_ir::cps_build::build_module(module, self.events).map_err(BuildError::Build)
-    }
-}
-
-// ── VM Exec: CpsModule → RunOutcome ──
-
-pub struct VmExecStage {
-    pub max_loop_iterations: u64,
-}
-
-impl Stage<CpsModule, RunOutcome> for VmExecStage {
-    fn name(&self) -> &str {
-        "vm-exec"
-    }
-
-    fn execute(&self, cps: CpsModule, ctx: &BuildContext) -> Result<RunOutcome, BuildError> {
-        if cps.functions.is_empty() {
-            return Ok(RunOutcome {
-                result: 0,
-                output: vec![],
-            });
-        }
-
-        let mut vm = kaubo_vm::VM::new();
-        vm.max_loop_iterations = self.max_loop_iterations;
-        vm.load(&cps).map_err(BuildError::Load)?;
-
-        let func_idx = cps.functions.len() - 1;
-        let reg_count = cps.functions[func_idx].reg_count;
-
-        let result = vm
-            .execute(func_idx, reg_count, ctx.events)
-            .map_err(|e| BuildError::Runtime(format!("{e:?}")))?;
-
-        Ok(RunOutcome {
-            result,
-            output: vm.output,
-        })
-    }
-}
-
-// ── Pass wrappers ──
+// ── Pass wrapper (used by DagCoordinator, DAG fetchers) ──
 
 /// Adapt a `kaubo_ir::pass::Pass` to the protocol `Pass` trait.
 struct IrPassAdapter<T: kaubo_ir::pass::Pass> {
@@ -113,10 +59,7 @@ struct IrPassAdapter<T: kaubo_ir::pass::Pass> {
 }
 
 impl<T: kaubo_ir::pass::Pass + Send + Sync> crate::protocol::Pass for IrPassAdapter<T> {
-    fn name(&self) -> &str {
-        self.inner.name()
-    }
-
+    fn name(&self) -> &str { self.inner.name() }
     fn run(&self, module: &mut CpsModule, _events: Option<&dyn kaubo_log::EventHandler>) {
         self.inner.run(module);
     }

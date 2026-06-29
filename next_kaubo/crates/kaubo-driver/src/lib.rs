@@ -3,19 +3,17 @@
 #![allow(clippy::type_complexity)]
 //! # Architecture
 //!
-//! The driver has two layers:
-//!
-//! - **Protocol** (`protocol.rs`): `Stage`, `Pass`, `Pipeline`, `Cache` contracts.
-//! - **Coordinator** (`coordinator.rs`): wires stages into a build pipeline with
-//!   caching and event routing.
-//!
-//! Legacy functions (`compile_source`, `run_source`) are retained as convenience
-//! aliases that delegate to a fresh `Coordinator` internally.
+//! - **DagCoordinator**: delegates to the `kaubo-dag` async DAG scheduler for
+//!   compilation (single-file and multi-file), with automatic caching, streaming
+//!   support, and WASM compatibility.
+//! - **Protocol** (`protocol.rs`): `Stage`, `Pass`, `Pipeline` contracts
+//!   (retained for backward compat, used by LSP).
+//! - **Fetchers** (`fetchers/`): DAG-based compilation stages (Ast, Cps, Semantic,
+//!   ModuleGraph, LinkedCps).
+//! - **Builders** (`builders/`): terminal DAG consumers (ExecuteBuilder).
 
 pub mod builders;
-pub mod coordinator;
 pub mod dag_coordinator;
-pub mod event;
 pub mod export_table;
 pub mod fetchers;
 pub mod link_stage;
@@ -25,9 +23,7 @@ pub mod module_loader;
 pub mod protocol;
 pub mod stages;
 
-pub use coordinator::Coordinator;
 pub use dag_coordinator::DagCoordinator;
-pub use event::{EventRouter, EventSink, NullSink};
 pub use kaubo_ir::cps::CpsModule;
 pub use protocol::{BuildError, Pipeline};
 pub use stages::{adapt_pass, SemanticArtifact};
@@ -111,24 +107,9 @@ impl From<kaubo_dag::DagError<String>> for DriverError {
 
 // ── Public API (delegates to DagCoordinator) ──
 
-pub fn compile_source(source: &str) -> Result<CpsModule, DriverError> {
-    compile_source_with_config(source, u64::MAX)
-}
-
-pub fn run_source(source: &str) -> Result<RunOutcome, DriverError> {
-    run_source_with_config(source, u64::MAX)
-}
-
+/// Execute a CPS module directly in the VM (platform-agnostic).
 pub fn run_module(cps: &CpsModule) -> Result<RunOutcome, DriverError> {
     run_module_with_config(cps, u64::MAX)
-}
-
-pub fn compile_source_with_config(
-    source: &str,
-    max_loop_iterations: u64,
-) -> Result<CpsModule, DriverError> {
-    let coord = DagCoordinator::new();
-    coord.compile_source_with_config(source, max_loop_iterations).map_err(Into::into)
 }
 
 pub fn run_module_with_config(
@@ -148,25 +129,68 @@ pub fn run_module_with_config(
     Ok(RunOutcome { result, output: vm.output })
 }
 
+/// Async: compile source (all platforms).
+pub async fn compile_source_async(source: &str) -> Result<CpsModule, DriverError> {
+    let coord = DagCoordinator::new();
+    coord.compile_source_async(source, u64::MAX).await.map_err(Into::into)
+}
+
+/// Async: compile + execute (all platforms).
+pub async fn run_source_async(source: &str) -> Result<RunOutcome, DriverError> {
+    let coord = DagCoordinator::new();
+    coord.run_source_async(source, u64::MAX).await.map_err(Into::into)
+}
+
+/// Async: multi-file compile (all platforms).
+pub async fn compile_file_async(
+    entry: &str,
+    loader: Arc<dyn crate::module_loader::ModuleLoader>,
+) -> Result<CpsModule, DriverError> {
+    let coord = DagCoordinator::new_multifile(entry, loader.clone(), None);
+    coord.compile_file_async(entry, loader).await.map_err(Into::into)
+}
+
+/// Async: multi-file compile + execute (all platforms).
+pub async fn run_file_async(
+    entry: &str,
+    loader: Arc<dyn crate::module_loader::ModuleLoader>,
+) -> Result<RunOutcome, DriverError> {
+    let coord = DagCoordinator::new_multifile(entry, loader.clone(), None);
+    coord.run_file_async(entry, loader).await.map_err(Into::into)
+}
+
+// ── Sync wrappers (native only) ──
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compile_source(source: &str) -> Result<CpsModule, DriverError> {
+    compile_source_with_config(source, u64::MAX)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_source(source: &str) -> Result<RunOutcome, DriverError> {
+    run_source_with_config(source, u64::MAX)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compile_source_with_config(source: &str, max_loop_iterations: u64) -> Result<CpsModule, DriverError> {
+    let coord = DagCoordinator::new();
+    coord.compile_source_with_config(source, max_loop_iterations).map_err(Into::into)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run_source_with_config(source: &str, max_loop_iterations: u64) -> Result<RunOutcome, DriverError> {
     let coord = DagCoordinator::new();
     coord.run_source_with_config(source, max_loop_iterations).map_err(Into::into)
 }
 
-/// Compile a multi-file program using the DAG scheduler.
-pub fn compile_file(
-    entry: &str,
-    loader: Arc<dyn crate::module_loader::ModuleLoader>,
-) -> Result<CpsModule, DriverError> {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compile_file(entry: &str, loader: Arc<dyn crate::module_loader::ModuleLoader>) -> Result<CpsModule, DriverError> {
     let coord = DagCoordinator::new_multifile(entry, loader.clone(), None);
     coord.compile_file(entry, loader).map_err(Into::into)
 }
 
-/// Compile and execute a multi-file program using the DAG scheduler.
-pub fn run_file(
-    entry: &str,
-    loader: Arc<dyn crate::module_loader::ModuleLoader>,
-) -> Result<RunOutcome, DriverError> {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_file(entry: &str, loader: Arc<dyn crate::module_loader::ModuleLoader>) -> Result<RunOutcome, DriverError> {
     let coord = DagCoordinator::new_multifile(entry, loader.clone(), None);
     coord.run_file(entry, loader).map_err(Into::into)
 }
@@ -1216,8 +1240,7 @@ mod tests {
             "export const add = |a: Int64, b: Int64| -> Int64 { return a + b; };",
         );
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 5);
     }
 
@@ -1231,8 +1254,7 @@ mod tests {
             "export const mul = |a: Int64, b: Int64| -> Int64 { return a * b; };",
         );
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 42);
     }
 
@@ -1249,8 +1271,7 @@ mod tests {
             "import { a } from \"./a.kb\"; export const b = |x| -> Int64 { return a(x); };",
         );
 
-        let mut coord = Coordinator::new();
-        let err = coord.run_file("a.kb", &loader).unwrap_err();
+        let err = run_file("a.kb", Arc::new(loader)).unwrap_err();
         assert!(err.to_string().contains("circular"));
     }
 
@@ -1260,8 +1281,7 @@ mod tests {
         let mut loader = MemLoader::new();
         loader.insert("main.kb", "import { x } from \"./missing.kb\"; x;");
 
-        let mut coord = Coordinator::new();
-        let err = coord.run_file("main.kb", &loader).unwrap_err();
+        let err = run_file("main.kb", Arc::new(loader)).unwrap_err();
         assert!(err.to_string().contains("not found"));
     }
 
@@ -1272,8 +1292,7 @@ mod tests {
         loader.insert("main.kb", "import { f } from \"./lib.kb\"; f();");
         loader.insert("lib.kb", "const f = || { 42; };"); // 未 export
 
-        let mut coord = Coordinator::new();
-        let err = coord.run_file("main.kb", &loader).unwrap_err();
+        let err = run_file("main.kb", Arc::new(loader)).unwrap_err();
         assert!(err.to_string().contains("export"));
     }
 
@@ -1298,16 +1317,14 @@ mod tests {
             "export const add10 = |a: Int64, b: Int64| -> Int64 { return a + b; };",
         );
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 23); // (1+10) + (2+10) = 11 + 12 = 23
     }
 
     /// 单文件向后兼容
     #[test]
     fn single_file_backward_compatible() {
-        let mut coord = Coordinator::new();
-        let outcome = coord.run("const x = 42;").unwrap();
+        let outcome = run_source("const x = 42;").unwrap();
         assert_eq!(outcome.result, 42);
     }
 
@@ -1325,8 +1342,7 @@ mod tests {
              export const mul = |a: Int64, b: Int64| -> Int64 { return a * b; };",
         );
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 25); // 5 + 20 = 25
     }
 
@@ -1347,8 +1363,7 @@ mod tests {
             "export const add = |x: Int64, y: Int64| -> Int64 { return x + y; };",
         );
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 42); // add(30, 12) = 42
     }
 
@@ -1366,8 +1381,7 @@ mod tests {
             "export const double = |x: Int64| -> Int64 { return x * 2; };",
         );
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 42); // 之前 Bug 1 导致返回 4
     }
 
@@ -1380,8 +1394,7 @@ mod tests {
             "export const inc = |x: Int64| -> Int64 { return x + 1; };",
         );
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 42);
     }
 
@@ -1393,8 +1406,7 @@ mod tests {
         loader.insert("main.kb", "import { PI } from \"./math.kb\"; PI + 1;");
         loader.insert("math.kb", "export const PI = 3;");
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 4);
     }
 
@@ -1409,8 +1421,7 @@ mod tests {
         );
         loader.insert("point.kb", "export struct Point { x: Int64, y: Int64 };");
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 3);
     }
 
@@ -1427,8 +1438,7 @@ mod tests {
             "export struct Point { x: Int64, y: Int64 };\nexport const sum = |p: Point, _dummy: Int64| -> Int64 { return p.x + p.y; };",
         );
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 7); // 3 + 4 = 7
     }
 
@@ -1443,8 +1453,7 @@ mod tests {
         );
         loader.insert("point.kb", "export struct Point { x: Int64, y: Int64 };");
 
-        let mut coord = Coordinator::new();
-        let outcome = coord.run_file("main.kb", &loader).unwrap();
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
         assert_eq!(outcome.result, 42);
     }
 

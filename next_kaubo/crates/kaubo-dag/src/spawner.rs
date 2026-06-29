@@ -125,6 +125,47 @@ impl BlockingSpawner for NativeSpawner {
     }
 }
 
+// ── WASM Spawner ────────────────────────────────────────────────────
+
+/// A [`Spawner`] implementation for WASM (browser) environments.
+///
+/// Uses `wasm_bindgen_futures::spawn_local` to run futures on the
+/// browser's microtask queue. `yield_now` bounces through the event
+/// loop by spawning a microtask that resolves immediately.
+///
+/// WASM is single-threaded — all futures run on the main thread.
+/// `Send` is effectively a no-op in this context.
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Clone, Default)]
+pub struct WasmSpawner;
+
+#[cfg(target_arch = "wasm32")]
+impl Spawner for WasmSpawner {
+    fn spawn(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        // Pin<Box<dyn Future + Send>> is also Future + 'static, so it
+        // can be passed to spawn_local directly. In WASM, Send is a
+        // no-op since everything runs on the main thread.
+        wasm_bindgen_futures::spawn_local(future);
+    }
+
+    fn yield_now(&self) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        // Create a oneshot channel and resolve it via spawn_local.
+        // This bounces through the microtask queue, allowing the
+        // browser's event loop to process UI events and other tasks.
+        let (tx, rx) = futures::channel::oneshot::channel::<()>();
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = tx.send(());
+        });
+        Box::pin(async move {
+            let _ = rx.await;
+        })
+    }
+
+    fn cancellation_token(&self) -> CancellationToken {
+        CancellationToken::new()
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 #[cfg(test)]

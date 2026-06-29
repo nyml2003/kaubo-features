@@ -69,53 +69,28 @@ pub fn set_log_level(level: u8) {
     *LOG_LEVEL.lock().unwrap() = severity;
 }
 
-/// Build a RunConfig from the current global LOG_LEVEL setting.
-fn make_config() -> kaubo_driver::RunConfig {
-    let events: Option<Box<dyn kaubo_log::EventHandler>> = LOG_LEVEL.lock().unwrap().map(|level| {
-        Box::new(kaubo_log_handlers::make_handler(level)) as Box<dyn kaubo_log::EventHandler>
-    });
-    kaubo_driver::RunConfig {
-        events,
-        max_loop_iterations: u64::MAX,
-    }
-}
-
 /// Compile source to bytecode, return instruction count.
-/// Throws JsValue on parse/infer/build failure.
 #[wasm_bindgen]
 pub fn compile(source: &str) -> Result<usize, JsValue> {
-    let config = make_config();
-    let cps = kaubo_driver::compile_source_with_config(source, &config)
+    let cps = kaubo_driver::compile_source(source)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
     if cps.functions.is_empty() {
         return Err(JsValue::from_str("no functions in compiled module"));
     }
-
     let count = kaubo_driver::instruction_count(&cps);
-
     *COMPILED.lock().unwrap() = Some(cps);
     Ok(count)
 }
 
 /// Run previously compiled bytecode, return print() output.
-/// Throws JsValue on execution failure or if nothing was compiled.
 #[wasm_bindgen]
 pub fn run(_bytes: &[u8]) -> Result<String, JsValue> {
-    let cps = COMPILED
-        .lock()
-        .unwrap()
-        .take()
+    let cps = COMPILED.lock().unwrap().take()
         .ok_or_else(|| JsValue::from_str("no compiled module"))?;
-
-    let config = make_config();
-    let outcome = kaubo_driver::run_module_with_config(&cps, &config)
+    let outcome = kaubo_driver::run_module(&cps)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     let out = outcome.output.join("\n");
-
-    // Re-store for potential re-use
     COMPILED.lock().unwrap().replace(cps);
-
     Ok(out)
 }
 

@@ -4,9 +4,11 @@
 //! - Token-based semantic tokens and completions (legacy)
 //! - LspCoordinator: semantic-aware editor features via compiler frontend
 
+pub mod dag_lsp;
 pub mod lsp_coordinator;
 
-pub use lsp_coordinator::{HoverInfo, InlayHint, LspCoordinator, SymbolDef, SymbolKind};
+pub use dag_lsp::DagLspCoordinator;
+pub use lsp_coordinator::{HoverInfo, InlayHint, LspCoordinator, Reference, SymbolDef, SymbolKind};
 
 use kaubo_syntax::lexer::Lexer;
 use kaubo_syntax::token::{Token, TokenKind};

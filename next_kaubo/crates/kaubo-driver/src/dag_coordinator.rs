@@ -9,10 +9,25 @@ use crate::module_loader::ModuleLoader;
 use crate::protocol::Pipeline;
 use crate::stages::adapt_pass;
 use crate::RunOutcome;
-use kaubo_dag::{Artifact, ArtifactKey, BlockingSpawner, BuilderEvent, DagError, DagScheduler, FetcherRegistry, Kind, NativeSpawner};
+use kaubo_dag::{Artifact, ArtifactKey, BuilderEvent, DagError, DagScheduler, FetcherRegistry, Kind};
 use kaubo_ir::cps::CpsModule;
 use kaubo_ir::pass::{empty_block::EmptyBlockElim, fold::ConstantFold, move_fold::MoveFold};
 use std::sync::Arc;
+
+#[cfg(not(target_arch = "wasm32"))]
+use kaubo_dag::{BlockingSpawner, NativeSpawner};
+#[cfg(target_arch = "wasm32")]
+use kaubo_dag::WasmSpawner;
+
+/// Platform-appropriate spawner.
+#[cfg(not(target_arch = "wasm32"))]
+fn default_spawner() -> Arc<dyn kaubo_dag::Spawner> {
+    Arc::new(NativeSpawner)
+}
+#[cfg(target_arch = "wasm32")]
+fn default_spawner() -> Arc<dyn kaubo_dag::Spawner> {
+    Arc::new(WasmSpawner)
+}
 
 /// A coordinator that uses the DAG scheduler for compilation.
 ///
@@ -48,7 +63,7 @@ impl DagCoordinator {
     /// specific optimisation pipeline.
     pub fn with_pipeline(pipeline: Pipeline) -> Self {
         let registry = FetcherRegistry::<String>::new();
-        let spawner = Arc::new(NativeSpawner);
+        let spawner = default_spawner();
 
         let pipeline_for_cps = pipeline;
         registry.register(
@@ -90,7 +105,7 @@ impl DagCoordinator {
         pipeline: Option<Pipeline>,
     ) -> Self {
         let registry = FetcherRegistry::<String>::new();
-        let spawner = Arc::new(NativeSpawner);
+        let spawner = default_spawner();
 
         let entry_str: String = entry.into();
         let loader_for_graph = Arc::clone(&loader);
@@ -124,119 +139,84 @@ impl DagCoordinator {
         DagCoordinator { scheduler }
     }
 
-    /// Compile source text using the single-file DAG pipeline.
+    // ── Async helpers ──────────────────────────────────────────────
+
+    async fn collect_build<Out: Clone + Send + 'static>(
+        stream: kaubo_dag::BuildStream<String, Out>,
+    ) -> Result<Out, DagError<String>> {
+        futures::pin_mut!(stream);
+        match futures::StreamExt::next(&mut stream).await {
+            Some(BuilderEvent::Done(out)) => Ok(out),
+            Some(BuilderEvent::Error(e)) => Err((*e).clone()),
+            None => Err(DagError::Internal("stream ended without result".into())),
+        }
+    }
+
+    /// Async: compile source to CpsModule.
+    pub async fn compile_source_async(&self, source: &str, max_loop_iterations: u64) -> Result<CpsModule, DagError<String>> {
+        let module_id = "mod".to_string();
+        let module = kaubo_syntax::parser::Parser::new(source).parse().map_err(|e| {
+            DagError::fetcher_error(ArtifactKey::new(module_id.clone(), Kind::new(Kind::AST)), format!("parse: {e}"))
+        })?;
+        self.scheduler.seed_artifact(Artifact::new(module_id.clone(), Kind::new(Kind::AST), module));
+        Self::collect_build(self.scheduler.build(Box::new(CpsBuilder { module_id, max_loop_iterations }))).await
+    }
+
+    /// Async: compile and execute.
+    pub async fn run_source_async(&self, source: &str, max_loop_iterations: u64) -> Result<RunOutcome, DagError<String>> {
+        let cps = self.compile_source_async(source, max_loop_iterations).await?;
+        self.scheduler.seed_artifact(Artifact::new("mod".to_string(), Kind::new(Kind::CPS), cps));
+        Self::collect_build(self.scheduler.build(Box::new(ExecuteBuilder::new("mod").with_max_loop_iterations(max_loop_iterations)))).await
+    }
+
+    /// Async: multi-file compile.
+    pub async fn compile_file_async(&self, entry: &str, loader: Arc<dyn ModuleLoader>) -> Result<CpsModule, DagError<String>> {
+        let builder = Box::new(LinkedCpsBuilder { entry: entry.to_string(), loader: Arc::clone(&loader) });
+        Self::collect_build(self.scheduler.build(builder)).await
+    }
+
+    /// Async: multi-file compile + execute.
+    pub async fn run_file_async(&self, entry: &str, loader: Arc<dyn ModuleLoader>) -> Result<RunOutcome, DagError<String>> {
+        let cps = self.compile_file_async(entry, loader).await?;
+        self.scheduler.seed_artifact(Artifact::new("__linked__".to_string(), Kind::new(Kind::CPS), cps));
+        Self::collect_build(self.scheduler.build(Box::new(ExecuteBuilder::new("__linked__")))).await
+    }
+
+    // ── Sync wrappers (native only) ─────────────────────────────────
+
+    /// Compile source text (native only — blocks current thread).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn compile_source(&self, source: &str) -> Result<CpsModule, DagError<String>> {
         self.compile_source_with_config(source, u64::MAX)
     }
 
-    /// Compile source text with a max loop iteration limit.
-    pub fn compile_source_with_config(
-        &self,
-        source: &str,
-        max_loop_iterations: u64,
-    ) -> Result<CpsModule, DagError<String>> {
-        let module_id = "mod".to_string();
-
-        let module = kaubo_syntax::parser::Parser::new(source)
-            .parse()
-            .map_err(|e| {
-                DagError::fetcher_error(
-                    ArtifactKey::new(module_id.clone(), Kind::new(Kind::AST)),
-                    format!("parse: {e}"),
-                )
-            })?;
-
-        let ast_artifact = Artifact::new(module_id.clone(), Kind::new(Kind::AST), module);
-        self.scheduler.seed_artifact(ast_artifact);
-
-        let builder = Box::new(CpsBuilder { module_id, max_loop_iterations });
-        let stream = self.scheduler.build(builder);
-        let spawner = NativeSpawner;
-        spawner.block_on(async {
-            futures::pin_mut!(stream);
-            match futures::StreamExt::next(&mut stream).await {
-                Some(BuilderEvent::Done(cps)) => Ok(cps),
-                Some(BuilderEvent::Error(e)) => Err((*e).clone()),
-                None => Err(DagError::Internal("compile stream ended without result".into())),
-            }
-        })
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn compile_source_with_config(&self, source: &str, max_loop_iterations: u64) -> Result<CpsModule, DagError<String>> {
+        let s = NativeSpawner;
+        s.block_on(self.compile_source_async(source, max_loop_iterations))
     }
 
-    /// Compile and execute source text (single-file).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn run_source(&self, source: &str) -> Result<RunOutcome, DagError<String>> {
         self.run_source_with_config(source, u64::MAX)
     }
 
-    /// Compile and execute source text with a max loop iteration limit.
-    pub fn run_source_with_config(
-        &self,
-        source: &str,
-        max_loop_iterations: u64,
-    ) -> Result<RunOutcome, DagError<String>> {
-        let cps = self.compile_source_with_config(source, max_loop_iterations)?;
-        let cps_artifact = Artifact::new("mod".to_string(), Kind::new(Kind::CPS), cps);
-        self.scheduler.seed_artifact(cps_artifact);
-
-        let builder = Box::new(ExecuteBuilder::new("mod").with_max_loop_iterations(max_loop_iterations));
-        let stream = self.scheduler.build(builder);
-        let spawner = NativeSpawner;
-        spawner.block_on(async {
-            futures::pin_mut!(stream);
-            match futures::StreamExt::next(&mut stream).await {
-                Some(BuilderEvent::Done(outcome)) => Ok(outcome),
-                Some(BuilderEvent::Error(e)) => Err((*e).clone()),
-                None => Err(DagError::Internal("run stream ended without result".into())),
-            }
-        })
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn run_source_with_config(&self, source: &str, max_loop_iterations: u64) -> Result<RunOutcome, DagError<String>> {
+        let s = NativeSpawner;
+        s.block_on(self.run_source_async(source, max_loop_iterations))
     }
 
-    /// Compile an entry module and its transitive dependencies using the
-    /// DAG scheduler. Modules are compiled concurrently.
-    pub fn compile_file(
-        &self,
-        entry: &str,
-        loader: Arc<dyn ModuleLoader>,
-    ) -> Result<CpsModule, DagError<String>> {
-        let entry_owned = entry.to_string();
-        let builder = Box::new(LinkedCpsBuilder {
-            entry: entry_owned,
-            loader: Arc::clone(&loader),
-        });
-
-        let stream = self.scheduler.build(builder);
-        let spawner = NativeSpawner;
-        spawner.block_on(async {
-            futures::pin_mut!(stream);
-            match futures::StreamExt::next(&mut stream).await {
-                Some(BuilderEvent::Done(cps)) => Ok(cps),
-                Some(BuilderEvent::Error(e)) => Err((*e).clone()),
-                None => Err(DagError::Internal("compile file stream ended without result".into())),
-            }
-        })
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn compile_file(&self, entry: &str, loader: Arc<dyn ModuleLoader>) -> Result<CpsModule, DagError<String>> {
+        let s = NativeSpawner;
+        s.block_on(self.compile_file_async(entry, loader))
     }
 
-    /// Compile and execute a multi-file program.
-    pub fn run_file(
-        &self,
-        entry: &str,
-        loader: Arc<dyn ModuleLoader>,
-    ) -> Result<RunOutcome, DagError<String>> {
-        let cps = self.compile_file(entry, loader)?;
-        // Seed as Kind::CPS so ExecuteBuilder (which depends on Cps/{module_id}) finds it
-        let cps_artifact = Artifact::new("__linked__".to_string(), Kind::new(Kind::CPS), cps);
-        self.scheduler.seed_artifact(cps_artifact);
-
-        let builder = Box::new(ExecuteBuilder::new("__linked__"));
-        let stream = self.scheduler.build(builder);
-        let spawner = NativeSpawner;
-        spawner.block_on(async {
-            futures::pin_mut!(stream);
-            match futures::StreamExt::next(&mut stream).await {
-                Some(BuilderEvent::Done(outcome)) => Ok(outcome),
-                Some(BuilderEvent::Error(e)) => Err((*e).clone()),
-                None => Err(DagError::Internal("run file stream ended without result".into())),
-            }
-        })
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn run_file(&self, entry: &str, loader: Arc<dyn ModuleLoader>) -> Result<RunOutcome, DagError<String>> {
+        let s = NativeSpawner;
+        s.block_on(self.run_file_async(entry, loader))
     }
 
     /// Access the underlying scheduler (for advanced use).

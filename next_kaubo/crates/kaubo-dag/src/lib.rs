@@ -55,3 +55,5 @@ pub use types::{Artifact, ArtifactKey, ContentHash, Kind};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use spawner::{BlockingSpawner, NativeSpawner};
+#[cfg(target_arch = "wasm32")]
+pub use spawner::WasmSpawner;

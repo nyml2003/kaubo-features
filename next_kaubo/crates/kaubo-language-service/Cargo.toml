@@ -10,6 +10,8 @@ description = "Kaubo tooling language service"
 kaubo-syntax = { workspace = true }
 kaubo-web-api = { workspace = true }
 kaubo-driver = { workspace = true }
+kaubo-dag = { workspace = true }
 kaubo-ast = { workspace = true }
 kaubo-infer = { workspace = true }
 serde = { workspace = true }
+futures = { workspace = true }
