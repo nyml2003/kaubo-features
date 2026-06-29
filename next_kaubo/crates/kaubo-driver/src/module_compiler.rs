@@ -309,11 +309,12 @@ fn export_entry_to_import_spec(
 }
 
 /// 从语义分析和 CPS 结果构建导出表。
+#[allow(clippy::too_many_arguments)]
 fn build_export_table(
     path: &str,
     cps: &CpsModule,
     type_env: kaubo_infer::TypeEnv,
-    struct_fields: HashMap<usize, Vec<(String, Type)>>,
+    _struct_fields: HashMap<usize, Vec<(String, Type)>>,
     exports: &HashSet<String>,
     export_funcs: &HashMap<String, usize>,
     export_consts: &HashMap<String, usize>,

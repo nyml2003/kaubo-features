@@ -110,13 +110,9 @@ impl DagCoordinator {
     /// Create a DagCoordinator for multi-file compilation.
     ///
     /// Registers:
-    /// - ModuleGraphFetcher (discovers dependency graph + seeds Source artifacts)
-    /// - LinkedCpsFetcher (delegates to ModuleCompiler for correct per-module
-    ///   compilation with import resolution + linking)
-    ///
-    /// Per-module compilation is currently serial (ModuleCompiler's design).
-    /// Phase 2 will add concurrent per-module Fetchers when inference supports
-    /// import-free compilation.
+    /// - ModuleGraphFetcher (discovers graph + seeds Sources)
+    /// - PerModuleCpsFetcher (concurrent per-module compilation via dynamic deps)
+    /// - LinkedCpsFetcher (collects all Cps + links)
     pub fn new_multifile(
         entry: impl Into<String>,
         loader: Arc<dyn ModuleLoader>,
@@ -126,32 +122,27 @@ impl DagCoordinator {
         let spawner = default_spawner();
 
         let entry_str: String = entry.into();
-        let loader_for_graph = Arc::clone(&loader);
-        let loader_for_link = Arc::clone(&loader);
+        let l1 = Arc::clone(&loader);
+        let l2 = Arc::clone(&loader);
+        let p = pipeline.clone();
 
-        // ModuleGraphFetcher — entry point: discovers graph + seeds Sources
-        registry.register(
-            Kind::new(Kind::MODULE_GRAPH),
-            Box::new(move |_key| {
-                Box::new(fetchers::module_graph::ModuleGraphFetcher::new(
-                    entry_str.clone(),
-                    Arc::clone(&loader_for_graph),
-                ))
-            }),
-        );
-
-        // LinkedCpsFetcher — delegates to ModuleCompiler for correct
-        // per-module compilation + linking
-        registry.register(
-            Kind::new(Kind::LINKED_CPS),
-            Box::new(move |_key| {
-                Box::new(fetchers::linked_cps::LinkedCpsFetcher::new(
-                    Arc::clone(&loader_for_link),
-                ))
-            }),
-        );
-
-        let _pipeline = pipeline; // Phase 2: pass to per-module fetchers
+        registry.register(Kind::new(Kind::MODULE_GRAPH), Box::new(move |_key| {
+            Box::new(fetchers::module_graph::ModuleGraphFetcher::new(entry_str.clone(), Arc::clone(&l1)))
+        }));
+        // Placeholder for ExportTable — PerModuleCpsFetcher seeds these
+        // before downstream modules request them, so this factory is a
+        // safety net that panics if an ExportTable is requested without
+        // first being seeded.
+        registry.register(Kind::new("ExportTable"), Box::new(|key| {
+            panic!("ExportTable/{module_id} was requested but not seeded by PerModuleCpsFetcher", module_id = key.module_id)
+        }));
+        // Concurrent per-module compilation with full import resolution
+        registry.register(Kind::new(Kind::CPS), Box::new(move |key| {
+            Box::new(fetchers::per_module_cps::PerModuleCpsFetcher::new(key.module_id.clone(), p.clone(), Arc::clone(&l2)))
+        }));
+        registry.register(Kind::new(Kind::LINKED_CPS), Box::new(|_key| {
+            Box::new(fetchers::linked_cps::LinkedCpsFetcher::new())
+        }));
 
         let scheduler = DagScheduler::new(registry, spawner);
         DagCoordinator { scheduler }
@@ -188,8 +179,8 @@ impl DagCoordinator {
     }
 
     /// Async: multi-file compile.
-    pub async fn compile_file_async(&self, entry: &str, loader: Arc<dyn ModuleLoader>) -> Result<CpsModule, DagError<String>> {
-        let builder = Box::new(LinkedCpsBuilder { entry: entry.to_string(), loader: Arc::clone(&loader) });
+    pub async fn compile_file_async(&self, entry: &str, _loader: Arc<dyn ModuleLoader>) -> Result<CpsModule, DagError<String>> {
+        let builder = Box::new(LinkedCpsBuilder { entry: entry.to_string() });
         Self::collect_build(self.scheduler.build(builder)).await
     }
 
@@ -276,12 +267,7 @@ impl kaubo_dag::Builder<String, CpsModule> for CpsBuilder {
 }
 
 /// Builder for multi-file: requests LinkedCps and returns it.
-struct LinkedCpsBuilder {
-    #[allow(dead_code)]
-    entry: String,
-    #[allow(dead_code)]
-    loader: Arc<dyn ModuleLoader>,
-}
+struct LinkedCpsBuilder { #[allow(dead_code)] entry: String }
 
 impl kaubo_dag::Builder<String, CpsModule> for LinkedCpsBuilder {
     fn name(&self) -> &str { "LinkedCpsBuild" }

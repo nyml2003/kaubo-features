@@ -105,7 +105,7 @@ pub fn lsp_on_change(source: &str) {
 #[wasm_bindgen]
 pub fn hover(source: &str, offset: usize) -> String {
     // Try LSP coordinator first
-    if let Ok(mut lsp) = LSP.lock() {
+    if let Ok(lsp) = LSP.lock() {
         if lsp.is_ready() {
             if let Some(info) = lsp.hover(offset) {
                 return serde_json::json!({
@@ -210,7 +210,7 @@ pub fn inlay_hints(source: &str) -> String {
 pub fn format(source: &str) -> String {
     match kaubo_fmt::format(source, &kaubo_fmt::FmtOptions::default()) {
         Ok(formatted) => formatted,
-        Err(e) => format!("// format error: {}", e),
+        Err(e) => format!("// format error: {e}"),
     }
 }
 

@@ -1,77 +1,68 @@
-//! LinkedCpsFetcher — cross-module compilation + linking.
+//! LinkedCpsFetcher — collects per-module Cps and ExportTables, then links.
 //!
-//! This is the convergence point of the multi-file DAG. After receiving
-//! the ModuleGraph, it delegates to `ModuleCompiler::compile_all()` for
-//! per-module compilation (with import resolution) and linking.
-//!
-//! Per-module compilation is serial (ModuleCompiler's current design),
-//! but the DAG still provides value: ModuleGraph discovery and Source
-//! loading are concurrent and cacheable. Per-module concurrency will be
-//! added in Phase 2 when inference supports import-free compilation.
+//! PerModuleCpsFetcher compiles each module concurrently via the DAG and
+//! seeds ExportTable/{path}. This fetcher requests Cps and ExportTable
+//! for each module, then calls LinkStage::link().
 
-use crate::module_compiler::ModuleCompiler;
+use crate::export_table::ExportTable;
 use crate::module_graph::ModuleGraph;
-use crate::module_loader::ModuleLoader;
 use kaubo_dag::{Artifact, ArtifactKey, DagError, FetchContext, Fetcher, Kind};
+use kaubo_ir::cps::CpsModule;
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 
-/// Compiles all modules and links them into a global CpsModule.
-///
-/// Internally reuses `ModuleCompiler` for guaranteed correctness of
-/// import resolution, type inference with imports, and export table
-/// construction. The DAG handles ModuleGraph discovery concurrently.
-pub struct LinkedCpsFetcher {
-    pub loader: Arc<dyn ModuleLoader>,
+pub struct LinkedCpsFetcher;
+
+impl Default for LinkedCpsFetcher {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LinkedCpsFetcher {
-    pub fn new(loader: Arc<dyn ModuleLoader>) -> Self {
-        LinkedCpsFetcher { loader }
-    }
+    pub fn new() -> Self { LinkedCpsFetcher }
 }
 
 impl Fetcher<String> for LinkedCpsFetcher {
     fn key(&self) -> ArtifactKey<String> {
         ArtifactKey::new("__linked__".to_string(), Kind::new(Kind::LINKED_CPS))
     }
-
     fn dependencies(&self) -> Vec<ArtifactKey<String>> {
-        vec![ArtifactKey::new(
-            "__graph__".to_string(),
-            Kind::new(Kind::MODULE_GRAPH),
-        )]
+        vec![ArtifactKey::new("__graph__".to_string(), Kind::new(Kind::MODULE_GRAPH))]
     }
-
     fn fetch<'a>(
         &'a self,
         inputs: Vec<Artifact<String>>,
-        _ctx: &'a mut FetchContext<String>,
+        ctx: &'a mut FetchContext<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Artifact<String>, DagError<String>>> + Send + 'a>> {
         let graph_artifact = inputs.into_iter().next().unwrap();
-        let loader = Arc::clone(&self.loader);
-
         Box::pin(async move {
             let Some(graph) = graph_artifact.try_downcast_ref::<ModuleGraph>() else {
-                return Err(DagError::Internal("LinkedCpsFetcher: expected ModuleGraph artifact".into()));
+                return Err(DagError::Internal("LinkedCps: expected ModuleGraph".into()));
             };
+            let order = &graph.order;
+            if order.is_empty() {
+                return Ok(Artifact::new("__linked__".to_string(), Kind::new(Kind::LINKED_CPS),
+                    CpsModule { functions: vec![], constants: vec![], structs: vec![], enums: vec![], vtables: vec![], symbol_map: HashMap::new(), func_owners: vec![] }));
+            }
 
-            // Delegate to ModuleCompiler for correct per-module compilation
-            // (parse + infer with imports + CPS build + export table + link).
-            let mut compiler = ModuleCompiler::new(loader.as_ref());
-            let linked = compiler.compile_all(&graph).map_err(|e| {
-                DagError::fetcher_error(
-                    ArtifactKey::new("__linked__".to_string(), Kind::new(Kind::LINKED_CPS)),
-                    format!("compile: {e}"),
-                )
+            let mut built: HashMap<String, ExportTable> = HashMap::new();
+            for path in order {
+                // Request Cps first — triggers PerModuleCpsFetcher which
+                // compiles the module and seeds ExportTable/{path}
+                let cps_key = ArtifactKey::new(path.clone(), Kind::new(Kind::CPS));
+                let _ = ctx.request_dependency(cps_key).await?;
+                // Now ExportTable is ready in cache
+                let et_key = ArtifactKey::new(path.clone(), Kind::new("ExportTable"));
+                let et = ctx.request_dependency(et_key).await?.downcast_clone::<ExportTable>();
+                built.insert(path.clone(), et);
+            }
+
+            let linked = crate::link_stage::LinkStage::link(&built, order).map_err(|e| {
+                DagError::fetcher_error(ArtifactKey::new("__linked__".to_string(), Kind::new(Kind::LINKED_CPS)), format!("link: {e}"))
             })?;
-
-            Ok(Artifact::new(
-                "__linked__".to_string(),
-                Kind::new(Kind::LINKED_CPS),
-                linked,
-            ))
+            Ok(Artifact::new("__linked__".to_string(), Kind::new(Kind::LINKED_CPS), linked))
         })
     }
 }

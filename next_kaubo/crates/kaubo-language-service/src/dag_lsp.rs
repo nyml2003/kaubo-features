@@ -84,10 +84,7 @@ impl DagLspCoordinator {
         let ast_artifact = Artifact::new(module_id.clone(), Kind::new(Kind::AST), module.clone());
         self.scheduler.seed_artifact(ast_artifact);
 
-        // 4. Request Semantic via DAG — this triggers SemanticFetcher
-        let semantic_key = ArtifactKey::new(module_id.clone(), Kind::new(Kind::SEMANTIC));
-        // We need to go through the scheduler's build mechanism.
-        // Use a simple builder that returns the SemanticArtifact.
+        // 4. Request Semantic via DAG — triggers SemanticFetcher
         let builder = Box::new(SemanticBuilder { module_id: module_id.clone() });
         let stream = self.scheduler.build::<SemanticArtifact>(builder);
         futures::pin_mut!(stream);
@@ -143,7 +140,7 @@ impl DagLspCoordinator {
                 let (kind_str, desc) = if let Some(sym) = self.symbols.get(&name) {
                     (sym.kind.as_str().to_string(), format!("{} {}", sym.kind.as_str(), name))
                 } else {
-                    ("variable".to_string(), format!("variable {}", name))
+                    ("variable".to_string(), format!("variable {name}"))
                 };
                 return Some(HoverInfo { kind: kind_str, ty: Some(format!("{}", scheme.body)), description: desc });
             }
@@ -156,18 +153,17 @@ impl DagLspCoordinator {
         if !token_items.is_empty() { return token_items; }
         let prefix = prefix_at(&self.source, offset).unwrap_or_default();
         let mut items = Vec::new();
-        for (_, sym) in &self.symbols {
+        for sym in self.symbols.values() {
             if prefix.is_empty() || sym.name.starts_with(&prefix) {
                 items.push(CompletionItem { label: sym.name.clone(), kind: sym.kind.as_str().to_string(), detail: sym.ty.clone() });
             }
         }
         if let Some(ref semantic) = self.semantic {
             for (name, scheme) in &semantic.type_env {
-                if !self.symbols.contains_key(name) {
-                    if prefix.is_empty() || name.starts_with(&prefix) {
+                if !self.symbols.contains_key(name)
+                    && (prefix.is_empty() || name.starts_with(&prefix)) {
                         items.push(CompletionItem { label: name.clone(), kind: "variable".to_string(), detail: Some(format!("{}", scheme.body)) });
                     }
-                }
             }
         }
         items
@@ -389,7 +385,7 @@ fn push_hint(name: &str, span: &Span, type_env: &HashMap<String, Scheme>, source
         let type_str = format!("{}", scheme.body);
         if type_str.starts_with('t') && type_str.len() <= 3 { return; }
         if let Some(pos) = end_of_name_in_source(source, span, name) {
-            hints.push(InlayHint { position: pos, label: format!(": {}", type_str) });
+            hints.push(InlayHint { position: pos, label: format!(": {type_str}") });
         }
     }
 }
@@ -399,7 +395,7 @@ fn push_hint_qualified(lookup_name: &str, display_name: &str, span: &Span, type_
         let type_str = format!("{}", scheme.body);
         if type_str.starts_with('t') && type_str.len() <= 3 { return; }
         if let Some(pos) = end_of_name_in_source(source, span, display_name) {
-            hints.push(InlayHint { position: pos, label: format!(": {}", type_str) });
+            hints.push(InlayHint { position: pos, label: format!(": {type_str}") });
         }
     }
 }
@@ -414,7 +410,7 @@ fn push_hint_with_value(name: &str, span: &Span, value: Option<&Expr>, type_env:
     if let Some(type_str) = type_str {
         if type_str.starts_with('t') && type_str.len() <= 3 { return; }
         if let Some(pos) = end_of_name_in_source(source, span, name) {
-            hints.push(InlayHint { position: pos, label: format!(": {}", type_str) });
+            hints.push(InlayHint { position: pos, label: format!(": {type_str}") });
         }
     }
 }

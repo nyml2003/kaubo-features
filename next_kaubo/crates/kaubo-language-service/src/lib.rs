@@ -204,7 +204,7 @@ fn semantic_kind(tokens: &[Token], idx: usize, model: &SemanticModel) -> String 
 
     let previous = idx.checked_sub(1).and_then(|i| tokens.get(i));
     let next = tokens.get(idx + 1);
-    let after_next = tokens.get(idx + 2);
+    let _after_next = tokens.get(idx + 2);
 
     if previous.is_some_and(|t| {
         t.kind == TokenKind::Struct || t.kind == TokenKind::Impl || t.kind == TokenKind::Interface

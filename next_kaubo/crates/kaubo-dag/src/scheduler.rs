@@ -20,7 +20,6 @@ use std::collections::HashSet;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
@@ -54,11 +53,6 @@ where
 
     /// Platform spawner for background work.
     spawner: Arc<dyn Spawner>,
-
-    /// Global epoch for cache invalidation (Phase 2).
-    /// Incremented on each `invalidate()` call.
-    #[allow(dead_code)]
-    epoch: Arc<AtomicU64>,
 }
 
 impl<M> DagScheduler<M>
@@ -74,7 +68,6 @@ where
             store: ArtifactStore::new(),
             registry: Arc::new(registry),
             spawner,
-            epoch: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -150,6 +143,7 @@ where
     /// `parent_call_stack` and `parent_call_stack_set` carry the call stack
     /// from the caller's [`FetchContext`] so that sub-fetchers inherit it
     /// for cross-fetcher cycle detection.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn request_dependency(
         self: &Arc<Self>,
         key: ArtifactKey<M>,

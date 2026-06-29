@@ -1520,7 +1520,7 @@ impl<'a> CpsBuilder<'a> {
                 if let ValueHint::Interface(iface_name) = &obj_hint {
                     let (obj_entry, obj_continu, obj_reg) = self.build_expr(object)?;
                     let vtables = self.vtables.clone();
-                    for (_, vdef) in vtables.iter().enumerate() {
+                    for vdef in vtables.iter() {
                         if vdef.interface_name == *iface_name {
                             if let Some((slot, _)) = vdef
                                 .methods

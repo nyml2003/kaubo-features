@@ -48,7 +48,9 @@ fn build_config(args: &[String]) -> CliConfig {
                     i += 1;
                 }
             }
-            _ => { i += 1; }
+            _ => {
+                i += 1;
+            }
         }
     }
 
@@ -60,7 +62,10 @@ fn build_config(args: &[String]) -> CliConfig {
         None
     };
 
-    CliConfig { max_loop_iterations, events }
+    CliConfig {
+        max_loop_iterations,
+        events,
+    }
 }
 
 /// Collect positional (non-flag) arguments, skipping known flags and their values.
@@ -111,14 +116,16 @@ fn run_args(args: &[String]) -> Result<(), String> {
 
             if fmt_check {
                 if source != formatted {
-                    return Err(format!("{file} is not formatted. Run `kaubo2-cli fmt --write {file}` to fix."));
+                    return Err(format!(
+                        "{file} is not formatted. Run `kaubo2-cli fmt --write {file}` to fix."
+                    ));
                 }
                 println!("{file} is formatted.");
             } else if fmt_write {
                 fs::write(file, &formatted).map_err(|e| format!("write {file}: {e}"))?;
                 println!("Formatted {file}");
             } else {
-                print!("{}", formatted);
+                print!("{formatted}");
             }
         }
         "compile" => {
@@ -169,7 +176,7 @@ fn run_args(args: &[String]) -> Result<(), String> {
                 vm.max_loop_iterations = config.max_loop_iterations;
                 vm.load(&cps).map_err(|e| format!("load: {e}"))?;
                 let t0 = Instant::now();
-                let result = vm
+                let _ = vm
                     .execute(last_func, reg_count, events)
                     .map_err(|e| format!("{e:?}"))?;
                 let run_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -178,7 +185,7 @@ fn run_args(args: &[String]) -> Result<(), String> {
 
             let avg_us = times.iter().sum::<f64>() / times.len() as f64 * 1000.0;
             // Single-line output: avg_us instr_count compile_ms
-            println!("{} {} {}", avg_us, instr_count, compile_ms);
+            println!("{avg_us} {instr_count} {compile_ms}");
         }
         "mod" => {
             // 多文件模块模式：以 file 所在目录为 root，file 为入口
@@ -196,21 +203,22 @@ fn run_args(args: &[String]) -> Result<(), String> {
             let loader = kaubo_driver::module_loader::FileLoader::new(Box::new(vfs));
 
             let loader = std::sync::Arc::new(loader);
-            let outcome = kaubo_driver::run_file(entry_name, loader)
-                .map_err(|e| e.to_string())?;
+            let outcome = kaubo_driver::run_file(entry_name, loader).map_err(|e| e.to_string())?;
             render_run(&outcome);
         }
         "run" => {
             if file.ends_with(".kauboc") {
                 let bytes = fs::read(file).map_err(|e| format!("read {file}: {e}"))?;
                 let cps = kaubo_driver::decode_module(&bytes).map_err(|e| e.to_string())?;
-                let outcome = kaubo_driver::run_module_with_config(&cps, config.max_loop_iterations)
-                    .map_err(|e| e.to_string())?;
+                let outcome =
+                    kaubo_driver::run_module_with_config(&cps, config.max_loop_iterations)
+                        .map_err(|e| e.to_string())?;
                 render_run(&outcome);
             } else {
                 let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-                let outcome = kaubo_driver::run_source_with_config(&source, config.max_loop_iterations)
-                    .map_err(|e| e.to_string())?;
+                let outcome =
+                    kaubo_driver::run_source_with_config(&source, config.max_loop_iterations)
+                        .map_err(|e| e.to_string())?;
                 render_run(&outcome);
             }
         }

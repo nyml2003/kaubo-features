@@ -240,6 +240,21 @@ where
         true
     }
 
+    /// Store a completed artifact and wake all waiters registered for it.
+    /// Combines `put_ready` + `complete` for artifacts that were previously
+    /// registered via `mark_in_flight`.
+    pub fn store_and_wake(&self, artifact: Artifact<M>) {
+        let key = artifact.key.clone();
+        self.ready.insert(key.clone(), artifact);
+        let mut inflight = self.in_flight.lock().unwrap();
+        if let Some(entry) = inflight.remove(&key) {
+            let a = self.ready.get(&key).unwrap().clone();
+            for tx in entry.waiters {
+                let _ = tx.send(Ok(a.clone()));
+            }
+        }
+    }
+
     /// Finalize a streaming artifact — update its data, mark is_final=true,
     /// and wake all waiters.
     pub fn finalize_streaming(

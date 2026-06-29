@@ -61,7 +61,6 @@ impl Fetcher<String> for ModuleGraphFetcher {
                 ctx.seed_artifact(artifact);
             }
 
-            let graph_key = ArtifactKey::new("__graph__".to_string(), Kind::new(Kind::MODULE_GRAPH));
             Ok(Artifact::new("__graph__".to_string(), Kind::new(Kind::MODULE_GRAPH), graph))
         })
     }

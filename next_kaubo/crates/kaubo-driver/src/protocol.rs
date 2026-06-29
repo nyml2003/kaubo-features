@@ -39,6 +39,7 @@ pub struct Pipeline {
 
 impl Pipeline {
     pub fn new() -> Self { Self { passes: vec![] } }
+    #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, pass: impl Pass + 'static) -> Self {
         self.passes.push(std::sync::Arc::new(pass));
         self

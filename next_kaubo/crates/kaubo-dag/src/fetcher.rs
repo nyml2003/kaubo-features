@@ -108,6 +108,7 @@ where
     ///
     /// `ctx` provides access to the scheduler for requesting additional
     /// dependencies at runtime and for emitting progress/result events.
+    #[allow(clippy::type_complexity)]
     fn fetch<'a>(
         &'a self,
         inputs: Vec<Artifact<M>>,
@@ -237,6 +238,20 @@ where
         let _ = self.progress_tx.unbounded_send(event);
     }
 
+    /// Seed an artifact and wake any waiters registered for this key.
+    /// Use this when a fetcher produces a secondary artifact (e.g. ExportTable)
+    /// that other fetchers may be waiting on via `request_dependency`.
+    pub fn seed_artifact_and_wake(&self, artifact: Artifact<M>) {
+        self.scheduler.store.store_and_wake(artifact);
+    }
+
+    /// Mark a key as in-flight so that downstream fetchers calling
+    /// `request_dependency` will wait for it. Call `seed_artifact_and_wake`
+    /// when the artifact is ready.
+    pub fn mark_in_flight(&self, key: ArtifactKey<M>) {
+        self.scheduler.store.mark_in_flight(key, self.cancel.child());
+    }
+
     /// Seed a pre-computed artifact into the scheduler's ready cache.
     ///
     /// Downstream fetchers that declare a dependency on this artifact's
@@ -337,7 +352,7 @@ mod tests {
         let event = ProgressEvent::<M>::Started {
             key: ArtifactKey::new("mod".to_string(), crate::types::Kind::new("Ast")),
         };
-        let s = format!("{:?}", event);
+        let s = format!("{event:?}");
         assert!(s.contains("Started"));
         assert!(s.contains("mod"));
     }
@@ -349,7 +364,7 @@ mod tests {
             key: artifact.key.clone(),
             artifact,
         };
-        let s = format!("{:?}", event);
+        let s = format!("{event:?}");
         assert!(s.contains("Done"));
         assert!(s.contains("mod"));
     }

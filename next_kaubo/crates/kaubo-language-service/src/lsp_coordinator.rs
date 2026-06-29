@@ -163,7 +163,7 @@ impl LspCoordinator {
                 let (kind_str, desc) = if let Some(sym) = self.symbols.get(&name) {
                     (sym.kind.as_str().to_string(), format!("{} {}", sym.kind.as_str(), name))
                 } else {
-                    ("variable".to_string(), format!("variable {}", name))
+                    ("variable".to_string(), format!("variable {name}"))
                 };
                 return Some(HoverInfo {
                     kind: kind_str,
@@ -189,7 +189,7 @@ impl LspCoordinator {
         let prefix = prefix_at(&self.source, offset).unwrap_or_default();
         let mut items = Vec::new();
 
-        for (_, sym) in &self.symbols {
+        for sym in self.symbols.values() {
             if prefix.is_empty() || sym.name.starts_with(&prefix) {
                 items.push(crate::CompletionItem {
                     label: sym.name.clone(),
@@ -201,15 +201,14 @@ impl LspCoordinator {
 
         if let Some(ref semantic) = self.semantic {
             for (name, scheme) in &semantic.type_env {
-                if !self.symbols.contains_key(name) {
-                    if prefix.is_empty() || name.starts_with(&prefix) {
+                if !self.symbols.contains_key(name)
+                    && (prefix.is_empty() || name.starts_with(&prefix)) {
                         items.push(crate::CompletionItem {
                             label: name.clone(),
                             kind: "variable".to_string(),
                             detail: Some(format!("{}", scheme.body)),
                         });
                     }
-                }
             }
         }
 
@@ -252,11 +251,6 @@ impl Default for LspCoordinator {
 
 // ── Helpers ──
 
-/// Find the object name before a dot at the given offset (e.g. "foo" in "foo.b").
-/// Delegates to the token-based implementation in lib.rs.
-fn object_before_dot(source: &str, offset: usize) -> Option<String> {
-    crate::object_before_dot(source, offset)
-}
 
 /// Extract the identifier prefix at `offset` — the word being typed.
 fn prefix_at(source: &str, offset: usize) -> Option<String> {
@@ -690,11 +684,8 @@ fn collect_hints_expr(
             collect_hints_expr(target, type_env, source, hints);
             collect_hints_expr(value, type_env, source, hints);
         }
-        Expr::Return(val) => {
-            if let Some(v) = val {
-                collect_hints_expr(v, type_env, source, hints);
-            }
-        }
+        Expr::Return(Some(v)) => collect_hints_expr(v, type_env, source, hints),
+        Expr::Return(None) => {}
         Expr::Member { object, .. } => {
             collect_hints_expr(object, type_env, source, hints);
         }
@@ -730,11 +721,7 @@ fn push_hint_qualified(
     source: &str,
     hints: &mut Vec<InlayHint>,
 ) {
-    let type_str = if let Some(scheme) = type_env.get(lookup_name) {
-        Some(format!("{}", scheme.body))
-    } else {
-        None
-    };
+    let type_str = type_env.get(lookup_name).map(|scheme| format!("{}", scheme.body));
 
     if let Some(type_str) = type_str {
         if type_str.starts_with('t') && type_str.len() <= 3 {
@@ -743,7 +730,7 @@ fn push_hint_qualified(
         if let Some(pos) = end_of_name_in_source(source, span, display_name) {
             hints.push(InlayHint {
                 position: pos,
-                label: format!(": {}", type_str),
+                label: format!(": {type_str}"),
             });
         }
     }
@@ -756,12 +743,7 @@ fn push_hint(
     source: &str,
     hints: &mut Vec<InlayHint>,
 ) {
-    let type_str = if let Some(scheme) = type_env.get(name) {
-        Some(format!("{}", scheme.body))
-    } else {
-        // Fallback: try to infer type from the value expression
-        None
-    };
+    let type_str = type_env.get(name).map(|scheme| format!("{}", scheme.body));
 
     if let Some(type_str) = type_str {
         // Skip uninformative types (type variables like "t0")
@@ -771,7 +753,7 @@ fn push_hint(
         if let Some(pos) = end_of_name_in_source(source, span, name) {
             hints.push(InlayHint {
                 position: pos,
-                label: format!(": {}", type_str),
+                label: format!(": {type_str}"),
             });
         }
     }
@@ -802,7 +784,7 @@ fn push_hint_with_value(
         if let Some(pos) = end_of_name_in_source(source, span, name) {
             hints.push(InlayHint {
                 position: pos,
-                label: format!(": {}", type_str),
+                label: format!(": {type_str}"),
             });
         }
     }

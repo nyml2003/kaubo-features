@@ -93,13 +93,13 @@ mod tests {
     #[test]
     fn builder_event_done_format() {
         let event = BuilderEvent::<M, i64>::Done(42);
-        assert!(format!("{:?}", event).contains("Done"));
+        assert!(format!("{event:?}").contains("Done"));
     }
 
     #[test]
     fn builder_event_error_format() {
         let err = Arc::new(DagError::<M>::Cancelled);
         let event = BuilderEvent::<M, i64>::Error(err);
-        assert!(format!("{:?}", event).contains("Error"));
+        assert!(format!("{event:?}").contains("Error"));
     }
 }

@@ -10,7 +10,6 @@
 
 use kaubo_ast::{BinOp, Expr, Module, Stmt, TypeExpr, UnOp};
 use kaubo_syntax::parser::Parser;
-use std::fmt::Write as FmtWrite;
 
 // ── Options ──
 
@@ -257,14 +256,14 @@ impl Formatter {
                 self.write_indent();
                 self.write("import ");
                 if names.is_empty() {
-                    self.write(&format!("\"{}\"", path));
+                    self.write(&format!("\"{path}\""));
                 } else {
                     self.write("{ ");
                     self.write(&names.join(", "));
-                    self.write(&format!(" }} from \"{}\"", path));
+                    self.write(&format!(" }} from \"{path}\""));
                 }
                 if let Some(a) = alias {
-                    self.write(&format!(" as {}", a));
+                    self.write(&format!(" as {a}"));
                 }
                 self.end_stmt();
             }

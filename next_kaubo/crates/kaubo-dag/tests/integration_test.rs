@@ -430,7 +430,7 @@ fn circular_dependency_is_detected() {
     let result = futures::executor::block_on(collect_stream(stream));
     match result {
         Err(DagError::CircularDependency { .. }) => {} // expected
-        other => panic!("expected CircularDependency, got {:?}", other),
+        other => panic!("expected CircularDependency, got {other:?}"),
     }
 }
 
@@ -459,7 +459,7 @@ fn error_propagates_to_builder() {
         Err(DagError::FetcherError { ref message, .. }) => {
             assert!(message.contains("something broke"));
         }
-        other => panic!("expected FetcherError, got {:?}", other),
+        other => panic!("expected FetcherError, got {other:?}"),
     }
 }
 
@@ -479,7 +479,7 @@ fn unregistered_kind_errors() {
         Err(DagError::NoFetcherForKind(kind)) => {
             assert_eq!(kind, "Nonexistent");
         }
-        other => panic!("expected NoFetcherForKind, got {:?}", other),
+        other => panic!("expected NoFetcherForKind, got {other:?}"),
     }
 }
 
@@ -520,8 +520,12 @@ struct StreamingSourceFetcher {
 }
 
 impl Fetcher<M> for StreamingSourceFetcher {
-    fn key(&self) -> ArtifactKey<M> { self.key.clone() }
-    fn dependencies(&self) -> Vec<ArtifactKey<M>> { vec![] }
+    fn key(&self) -> ArtifactKey<M> {
+        self.key.clone()
+    }
+    fn dependencies(&self) -> Vec<ArtifactKey<M>> {
+        vec![]
+    }
     fn fetch<'a>(
         &'a self,
         _inputs: Vec<Artifact<M>>,
@@ -529,8 +533,10 @@ impl Fetcher<M> for StreamingSourceFetcher {
     ) -> Pin<Box<dyn Future<Output = Result<Artifact<M>, DagError<M>>> + Send + 'a>> {
         let key = self.key.clone();
         let value = self.value;
-        let (artifact, handle) = ctx.spawn_streaming(key.clone(), 0i64);
-        let jh = std::thread::spawn(move || { handle.complete(value); });
+        let (_, handle) = ctx.spawn_streaming(key.clone(), 0i64);
+        let jh = std::thread::spawn(move || {
+            handle.complete(value);
+        });
         Box::pin(async move {
             jh.join().unwrap();
             Ok(Artifact::new(key.module_id, key.kind, value))
@@ -546,9 +552,11 @@ fn streaming_artifact_basic_flow() {
         Box::new(|key| Box::new(StreamingSourceFetcher { key, value: 77 })),
     );
     let scheduler = DagScheduler::new(registry, Arc::new(NativeSpawner));
-    let r = futures::executor::block_on(collect_stream(
-        scheduler.build(Box::new(SingleDepBuilder { dep_key: mkkey("mod", "S") })),
-    ));
+    let r = futures::executor::block_on(collect_stream(scheduler.build(Box::new(
+        SingleDepBuilder {
+            dep_key: mkkey("mod", "S"),
+        },
+    ))));
     assert_eq!(r.unwrap(), 77);
 }
 
@@ -559,18 +567,21 @@ fn streaming_artifact_cached_after_finalize() {
     let c = counter.clone();
     registry.register(
         Kind::new("SC"),
-        Box::new(move |key| { *c.lock().unwrap() += 1; Box::new(StreamingSourceFetcher { key, value: 42 }) }),
+        Box::new(move |key| {
+            *c.lock().unwrap() += 1;
+            Box::new(StreamingSourceFetcher { key, value: 42 })
+        }),
     );
     let s = DagScheduler::new(registry, Arc::new(NativeSpawner));
-    let r1 = futures::executor::block_on(collect_stream(
-        s.build(Box::new(SingleDepBuilder { dep_key: mkkey("mod", "SC") })),
-    ));
+    let r1 = futures::executor::block_on(collect_stream(s.build(Box::new(SingleDepBuilder {
+        dep_key: mkkey("mod", "SC"),
+    }))));
     assert_eq!(r1.unwrap(), 42);
     assert_eq!(*counter.lock().unwrap(), 1);
     // cache hit
-    let r2 = futures::executor::block_on(collect_stream(
-        s.build(Box::new(SingleDepBuilder { dep_key: mkkey("mod", "SC") })),
-    ));
+    let r2 = futures::executor::block_on(collect_stream(s.build(Box::new(SingleDepBuilder {
+        dep_key: mkkey("mod", "SC"),
+    }))));
     assert_eq!(r2.unwrap(), 42);
     assert_eq!(*counter.lock().unwrap(), 1);
 }

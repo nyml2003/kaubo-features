@@ -1156,7 +1156,7 @@ mod tests {
         let outcome = run_source(source).unwrap();
         // 42 as f64 → 42.0, returned as f64 bits → interpreted as i64 = 0... actually result is f64 bits
         // Just check it compiles and runs
-        assert!(outcome.result != 0 || outcome.result == 0);
+        let _ = outcome.result; // compiled and ran
     }
 
     #[test]

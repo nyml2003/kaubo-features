@@ -271,7 +271,7 @@ impl LinkStage {
         std::cell::RefCell<HashMap<(String, usize), usize>>,
     ) {
         let mut func_remap = HashMap::new();
-        let mut struct_remap = HashMap::new();
+        let struct_remap = HashMap::new();
         let mut const_remap = HashMap::new();
         let mut func_offset = 0;
         let mut const_offset = 0;
@@ -351,6 +351,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn make_entry(name: &str) -> ExportTable {
         ExportTable {
             source_path: name.to_string(),

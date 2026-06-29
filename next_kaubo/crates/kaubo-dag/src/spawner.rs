@@ -10,7 +10,6 @@
 use crate::cancel::CancellationToken;
 use std::future::Future;
 use std::pin::Pin;
-use std::task::Context;
 
 /// Platform abstraction for spawning asynchronous tasks.
 ///

@@ -116,7 +116,6 @@ fn parse_for_imports(source: &str) -> Result<Module, BuildError> {
 /// 这是一个轻量辅助函数，不做完整解析。
 fn scan_struct_defs(source: &str) -> Vec<String> {
     let mut names = Vec::new();
-    let mut chars = source.chars().peekable();
     let s: Vec<char> = source.chars().collect();
 
     // 简单状态机：查找 "struct" 关键字后的标识符
@@ -187,7 +186,7 @@ mod tests {
         let graph = ModuleGraph::build("main.kb", &loader).unwrap();
         assert_eq!(graph.order, vec!["main.kb"]);
         assert!(graph.imports["main.kb"].is_empty());
-        assert!(graph.deps.get("main.kb").map_or(true, |d| d.is_empty()));
+        assert!(graph.deps.get("main.kb").is_none_or(|d| d.is_empty()));
     }
 
     #[test]
