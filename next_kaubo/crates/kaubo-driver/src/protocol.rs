@@ -28,13 +28,13 @@ pub struct BuildContext<'a> {
 }
 
 /// A pass transforms a CpsModule in-place.
-pub trait Pass {
+pub trait Pass: Send + Sync {
     fn name(&self) -> &str;
     fn run(&self, module: &mut CpsModule, events: Option<&dyn EventHandler>);
 }
 
-/// Blanket impl so `Box<dyn Pass>` can be used as a Pass.
-impl Pass for Box<dyn Pass> {
+/// Blanket impl so `Arc<dyn Pass>` can be used as a Pass.
+impl Pass for std::sync::Arc<dyn Pass> {
     fn name(&self) -> &str {
         (**self).name()
     }
@@ -43,10 +43,11 @@ impl Pass for Box<dyn Pass> {
     }
 }
 
-/// An ordered pipeline of passes.
-#[derive(Default)]
+/// Ordered pipeline of passes.  Uses `Arc` so the pipeline is cheap to
+/// clone (atomic reference count bump) and thread-safe.
+#[derive(Default, Clone)]
 pub struct Pipeline {
-    passes: Vec<Box<dyn Pass>>,
+    passes: Vec<std::sync::Arc<dyn Pass>>,
 }
 
 impl Pipeline {
@@ -55,7 +56,7 @@ impl Pipeline {
     }
 
     pub fn add(mut self, pass: impl Pass + 'static) -> Self {
-        self.passes.push(Box::new(pass));
+        self.passes.push(std::sync::Arc::new(pass));
         self
     }
 

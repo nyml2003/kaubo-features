@@ -112,7 +112,7 @@ struct IrPassAdapter<T: kaubo_ir::pass::Pass> {
     inner: T,
 }
 
-impl<T: kaubo_ir::pass::Pass> crate::protocol::Pass for IrPassAdapter<T> {
+impl<T: kaubo_ir::pass::Pass + Send + Sync> crate::protocol::Pass for IrPassAdapter<T> {
     fn name(&self) -> &str {
         self.inner.name()
     }
@@ -123,6 +123,6 @@ impl<T: kaubo_ir::pass::Pass> crate::protocol::Pass for IrPassAdapter<T> {
 }
 
 /// Create a protocol Pass from an existing kaubo_ir pass.
-pub fn adapt_pass(pass: impl kaubo_ir::pass::Pass + 'static) -> Box<dyn crate::protocol::Pass> {
-    Box::new(IrPassAdapter { inner: pass })
+pub fn adapt_pass(pass: impl kaubo_ir::pass::Pass + Send + Sync + 'static) -> std::sync::Arc<dyn crate::protocol::Pass> {
+    std::sync::Arc::new(IrPassAdapter { inner: pass })
 }

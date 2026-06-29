@@ -1,0 +1,13 @@
+[package]
+name = "kaubo-dag"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Runtime-agnostic DAG scheduler for Kaubo compilation"
+
+[dependencies]
+futures = { workspace = true }
+dashmap = { workspace = true }
+thiserror = { workspace = true }

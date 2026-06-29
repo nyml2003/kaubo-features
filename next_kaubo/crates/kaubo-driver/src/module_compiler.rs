@@ -8,7 +8,6 @@ use crate::link_stage::LinkStage;
 use crate::module_graph::ModuleGraph;
 use crate::module_loader::ModuleLoader;
 use crate::protocol::BuildError;
-use crate::stages::FrontendStage;
 use kaubo_infer::types::{ImportKind, ImportSpec};
 use kaubo_infer::Type;
 use kaubo_ir::cps::CpsModule;

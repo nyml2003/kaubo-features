@@ -9,20 +9,23 @@ fn render_run(outcome: &kaubo_driver::RunOutcome) {
     }
 }
 
-/// Parse CLI arguments and build a RunConfig.
+/// Parsed CLI configuration.
+struct CliConfig {
+    max_loop_iterations: u64,
+    events: Option<Box<dyn kaubo_log::EventHandler>>,
+}
+
+/// Parse CLI arguments.
 ///
 /// Recognized flags (position-independent, before or after subcommand):
 ///   --log-level <LEVEL>        trace|debug|info|warn|error
-///   --max-loop-iterations <N>  override the default 1_000_000 loop limit
+///   --max-loop-iterations <N>  override the default loop limit
 ///
 /// Priority: CLI --log-level > KAUBO_LOG env var > default (no logging).
-fn build_config(args: &[String]) -> kaubo_driver::RunConfig {
-    let mut config = kaubo_driver::RunConfig::default();
-
-    // Read KAUBO_LOG env var first (lower priority than CLI flag)
+fn build_config(args: &[String]) -> CliConfig {
     let env_handler = kaubo_log_handlers::init_from_env();
-
     let mut cli_level: Option<kaubo_log::Severity> = None;
+    let mut max_loop_iterations = u64::MAX;
 
     let mut i = 1;
     while i < args.len() {
@@ -38,27 +41,26 @@ fn build_config(args: &[String]) -> kaubo_driver::RunConfig {
             "--max-loop-iterations" => {
                 if let Some(val) = args.get(i + 1) {
                     if let Ok(n) = val.parse::<u64>() {
-                        config.max_loop_iterations = n;
+                        max_loop_iterations = n;
                     }
                     i += 2;
                 } else {
                     i += 1;
                 }
             }
-            _ => {
-                i += 1;
-            }
+            _ => { i += 1; }
         }
     }
 
-    // CLI --log-level overrides env var
-    if let Some(level) = cli_level {
-        config.events = Some(Box::new(kaubo_log_handlers::make_handler(level)));
+    let events: Option<Box<dyn kaubo_log::EventHandler>> = if let Some(level) = cli_level {
+        Some(Box::new(kaubo_log_handlers::make_handler(level)))
     } else if let Some(handler) = env_handler {
-        config.events = Some(Box::new(handler));
-    }
+        Some(Box::new(handler))
+    } else {
+        None
+    };
 
-    config
+    CliConfig { max_loop_iterations, events }
 }
 
 /// Collect positional (non-flag) arguments, skipping known flags and their values.
@@ -121,7 +123,7 @@ fn run_args(args: &[String]) -> Result<(), String> {
         }
         "compile" => {
             let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-            let cps = kaubo_driver::compile_source_with_config(&source, &config)
+            let cps = kaubo_driver::compile_source_with_config(&source, config.max_loop_iterations)
                 .map_err(|e| e.to_string())?;
             let out = file.replace(".kaubo", ".kauboc");
             let bytes = kaubo_driver::encode_module(&cps);
@@ -136,7 +138,7 @@ fn run_args(args: &[String]) -> Result<(), String> {
 
             // Compile once
             let t0 = Instant::now();
-            let cps = kaubo_driver::compile_source_with_config(&source, &config)
+            let cps = kaubo_driver::compile_source_with_config(&source, config.max_loop_iterations)
                 .map_err(|e| e.to_string())?;
             let compile_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
@@ -193,11 +195,8 @@ fn run_args(args: &[String]) -> Result<(), String> {
             let vfs = kaubo_vfs::FsVfs::new(root);
             let loader = kaubo_driver::module_loader::FileLoader::new(Box::new(vfs));
 
-            let mut coord = kaubo_driver::Coordinator::new()
-                .with_max_loop_iterations(config.max_loop_iterations);
-
-            let outcome = coord
-                .run_file(entry_name, &loader)
+            let loader = std::sync::Arc::new(loader);
+            let outcome = kaubo_driver::run_file(entry_name, loader)
                 .map_err(|e| e.to_string())?;
             render_run(&outcome);
         }
@@ -205,19 +204,19 @@ fn run_args(args: &[String]) -> Result<(), String> {
             if file.ends_with(".kauboc") {
                 let bytes = fs::read(file).map_err(|e| format!("read {file}: {e}"))?;
                 let cps = kaubo_driver::decode_module(&bytes).map_err(|e| e.to_string())?;
-                let outcome = kaubo_driver::run_module_with_config(&cps, &config)
+                let outcome = kaubo_driver::run_module_with_config(&cps, config.max_loop_iterations)
                     .map_err(|e| e.to_string())?;
                 render_run(&outcome);
             } else {
                 let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-                let outcome = kaubo_driver::run_source_with_config(&source, &config)
+                let outcome = kaubo_driver::run_source_with_config(&source, config.max_loop_iterations)
                     .map_err(|e| e.to_string())?;
                 render_run(&outcome);
             }
         }
         _ => {
             let source = fs::read_to_string(file).map_err(|e| format!("read {file}: {e}"))?;
-            let outcome = kaubo_driver::run_source_with_config(&source, &config)
+            let outcome = kaubo_driver::run_source_with_config(&source, config.max_loop_iterations)
                 .map_err(|e| e.to_string())?;
             render_run(&outcome);
         }

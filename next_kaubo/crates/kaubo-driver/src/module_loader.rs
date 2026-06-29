@@ -11,7 +11,7 @@ use std::path::Path;
 /// 模块加载器——解析路径并读取源文件。
 ///
 /// Phase 3b 的 `ModuleGraph` 通过此 trait 发现和加载依赖。
-pub trait ModuleLoader {
+pub trait ModuleLoader: Send + Sync {
     /// 读取 `path` 处的源文件内容。
     fn read(&self, path: &str) -> Result<String, BuildError>;
 

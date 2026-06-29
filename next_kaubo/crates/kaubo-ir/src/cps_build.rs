@@ -1520,7 +1520,7 @@ impl<'a> CpsBuilder<'a> {
                 if let ValueHint::Interface(iface_name) = &obj_hint {
                     let (obj_entry, obj_continu, obj_reg) = self.build_expr(object)?;
                     let vtables = self.vtables.clone();
-                    for (vi, vdef) in vtables.iter().enumerate() {
+                    for (_, vdef) in vtables.iter().enumerate() {
                         if vdef.interface_name == *iface_name {
                             if let Some((slot, _)) = vdef
                                 .methods
@@ -3059,7 +3059,13 @@ mod tests {
                 }
                 "var x = 10; const y = x;" => vec![
                     var_decl("x", Expr::LitInt(10)),
-                    const_decl("y", Expr::VarRef { name: "x".to_string(), span: S }),
+                    const_decl(
+                        "y",
+                        Expr::VarRef {
+                            name: "x".to_string(),
+                            span: S,
+                        },
+                    ),
                 ],
                 "var x = 10; var y = 32; const z = x + y;" => vec![
                     var_decl("x", Expr::LitInt(10)),
@@ -3067,9 +3073,15 @@ mod tests {
                     const_decl(
                         "z",
                         Expr::Binary {
-                            left: Box::new(Expr::VarRef { name: "x".to_string(), span: S }),
+                            left: Box::new(Expr::VarRef {
+                                name: "x".to_string(),
+                                span: S,
+                            }),
                             op: BinOp::Add,
-                            right: Box::new(Expr::VarRef { name: "y".to_string(), span: S }),
+                            right: Box::new(Expr::VarRef {
+                                name: "y".to_string(),
+                                span: S,
+                            }),
                         },
                     ),
                 ],
@@ -3184,7 +3196,13 @@ mod tests {
                             Expr::Block(vec![
                                 call_stmt(
                                     "print",
-                                    vec![call_member(Expr::VarRef { name: "x".to_string(), span: S }, "to_string")],
+                                    vec![call_member(
+                                        Expr::VarRef {
+                                            name: "x".to_string(),
+                                            span: S,
+                                        },
+                                        "to_string",
+                                    )],
                                 ),
                                 Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef {
                                     name: "x".to_string(),
@@ -3206,7 +3224,10 @@ mod tests {
                                     Stmt::ExprStmt(while_assign(
                                         "i",
                                         BinOp::Lt,
-                                        Expr::VarRef { name: "n".to_string(), span: S },
+                                        Expr::VarRef {
+                                            name: "n".to_string(),
+                                            span: S,
+                                        },
                                         BinOp::Add,
                                     )),
                                     Stmt::ExprStmt(Expr::Return(Some(Box::new(Expr::VarRef {
@@ -3225,7 +3246,10 @@ mod tests {
                 "const x = sqrt(4.0);" => vec![const_decl(
                     "x",
                     Expr::Call {
-                        func: Box::new(Expr::VarRef { name: "sqrt".to_string(), span: S }),
+                        func: Box::new(Expr::VarRef {
+                            name: "sqrt".to_string(),
+                            span: S,
+                        }),
                         arg: Box::new(Expr::LitFloat(4.0)),
                     },
                 )],
@@ -3266,7 +3290,10 @@ mod tests {
 
     fn binary_var_int(name: &str, op: BinOp, value: i64) -> Expr {
         Expr::Binary {
-            left: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
+            left: Box::new(Expr::VarRef {
+                name: name.to_string(),
+                span: S,
+            }),
             op,
             right: Box::new(Expr::LitInt(value)),
         }
@@ -3275,12 +3302,18 @@ mod tests {
     fn while_assign(name: &str, cmp: BinOp, rhs: Expr, update: BinOp) -> Expr {
         Expr::While {
             cond: Box::new(Expr::Binary {
-                left: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
+                left: Box::new(Expr::VarRef {
+                    name: name.to_string(),
+                    span: S,
+                }),
                 op: cmp,
                 right: Box::new(rhs),
             }),
             body: Box::new(Expr::Block(vec![Stmt::ExprStmt(Expr::Assign {
-                target: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
+                target: Box::new(Expr::VarRef {
+                    name: name.to_string(),
+                    span: S,
+                }),
                 value: Box::new(binary_var_int(name, update, 1)),
             })])),
         }
@@ -3302,7 +3335,10 @@ mod tests {
 
     fn call_stmt(name: &str, args: Vec<Expr>) -> Stmt {
         Stmt::ExprStmt(Expr::Call {
-            func: Box::new(Expr::VarRef { name: name.to_string(), span: S }),
+            func: Box::new(Expr::VarRef {
+                name: name.to_string(),
+                span: S,
+            }),
             arg: Expr::call_arg(args),
         })
     }

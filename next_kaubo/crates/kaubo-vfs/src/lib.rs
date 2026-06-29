@@ -30,7 +30,7 @@ impl std::fmt::Display for VfsError {
 /// 虚拟文件系统。
 ///
 /// 读取源码文件，不涉及写操作、目录遍历、缓存。
-pub trait VirtualFileSystem {
+pub trait VirtualFileSystem: Send + Sync {
     /// 读取文件内容。
     ///
     /// `path` 是调用方提供的路径（可能包含相对路径）。

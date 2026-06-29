@@ -12,9 +12,12 @@
 //! Legacy functions (`compile_source`, `run_source`) are retained as convenience
 //! aliases that delegate to a fresh `Coordinator` internally.
 
+pub mod builders;
 pub mod coordinator;
+pub mod dag_coordinator;
 pub mod event;
 pub mod export_table;
+pub mod fetchers;
 pub mod link_stage;
 pub mod module_compiler;
 pub mod module_graph;
@@ -23,6 +26,7 @@ pub mod protocol;
 pub mod stages;
 
 pub use coordinator::Coordinator;
+pub use dag_coordinator::DagCoordinator;
 pub use event::{EventRouter, EventSink, NullSink};
 pub use kaubo_ir::cps::CpsModule;
 pub use protocol::{BuildError, Pipeline};
@@ -35,15 +39,9 @@ pub struct RunOutcome {
     pub output: Vec<String>,
 }
 
-use kaubo_ir::cps_build::build_module;
-use kaubo_ir::flatten::flatten_module;
 use kaubo_ir::pass::binary;
-use kaubo_ir::pass::{
-    empty_block::EmptyBlockElim, fold::ConstantFold, move_fold::MoveFold, run_passes,
-};
-use kaubo_log::EventHandler;
-use kaubo_syntax::parser::Parser;
 use std::fmt;
+use std::sync::Arc;
 
 // ── Type aliases for backward compatibility ──
 
@@ -90,112 +88,87 @@ impl From<BuildError> for DriverError {
     }
 }
 
-/// Wraps a `Box<dyn EventHandler>` as an `EventSink`.
-struct EventHandlerSink {
-    inner: Box<dyn EventHandler>,
-}
+impl From<kaubo_dag::DagError<String>> for DriverError {
+    fn from(e: kaubo_dag::DagError<String>) -> Self {
+        let msg = e.to_string();
+        let lower = msg.to_lowercase();
 
-impl EventSink for EventHandlerSink {
-    fn name(&self) -> &str {
-        "handler"
-    }
-    fn handle(&self, event: &kaubo_log::ToolchainEvent) {
-        if self.inner.filter(event) {
-            self.inner.handle(event);
+        if lower.contains("runtime") || lower.contains("loopexceeded") {
+            return DriverError::Runtime(msg);
         }
-    }
-}
-
-impl From<Box<dyn EventHandler>> for Box<dyn EventSink> {
-    fn from(h: Box<dyn EventHandler>) -> Self {
-        Box::new(EventHandlerSink { inner: h })
-    }
-}
-
-/// Legacy configuration for backward-compatible APIs.
-pub struct RunConfig {
-    pub events: Option<Box<dyn kaubo_log::EventHandler>>,
-    pub max_loop_iterations: u64,
-}
-
-impl Default for RunConfig {
-    fn default() -> Self {
-        Self {
-            events: None,
-            max_loop_iterations: u64::MAX,
+        if lower.contains("parse") {
+            return DriverError::Parse(msg);
         }
+        if lower.contains("infer") || lower.contains("missing") {
+            return DriverError::Infer(msg);
+        }
+        if lower.contains("load") {
+            return DriverError::Load(msg);
+        }
+        DriverError::Build(msg)
     }
 }
 
-impl RunConfig {
-    fn events_ref(&self) -> Option<&dyn kaubo_log::EventHandler> {
-        self.events.as_ref().map(|h| h.as_ref())
-    }
-}
-
-// ── Legacy API (uses default RunConfig) ──
+// ── Public API (delegates to DagCoordinator) ──
 
 pub fn compile_source(source: &str) -> Result<CpsModule, DriverError> {
-    compile_source_with_config(source, &RunConfig::default())
-}
-
-pub fn run_module(cps: &CpsModule) -> Result<RunOutcome, DriverError> {
-    run_module_with_config(cps, &RunConfig::default())
+    compile_source_with_config(source, u64::MAX)
 }
 
 pub fn run_source(source: &str) -> Result<RunOutcome, DriverError> {
-    run_source_with_config(source, &RunConfig::default())
+    run_source_with_config(source, u64::MAX)
 }
 
-// ── Config-aware API (delegates to Coordinator) ──
+pub fn run_module(cps: &CpsModule) -> Result<RunOutcome, DriverError> {
+    run_module_with_config(cps, u64::MAX)
+}
 
 pub fn compile_source_with_config(
     source: &str,
-    config: &RunConfig,
+    max_loop_iterations: u64,
 ) -> Result<CpsModule, DriverError> {
-    let pipeline = Pipeline::new()
-        .add(adapt_pass(EmptyBlockElim))
-        .add(adapt_pass(MoveFold))
-        .add(adapt_pass(ConstantFold));
-
-    let mut coord = Coordinator::new()
-        .with_pipeline(pipeline)
-        .with_max_loop_iterations(config.max_loop_iterations);
-
-    coord.compile(source).map_err(Into::into)
+    let coord = DagCoordinator::new();
+    coord.compile_source_with_config(source, max_loop_iterations).map_err(Into::into)
 }
 
 pub fn run_module_with_config(
     cps: &CpsModule,
-    config: &RunConfig,
+    max_loop_iterations: u64,
 ) -> Result<RunOutcome, DriverError> {
     if cps.functions.is_empty() {
-        return Ok(RunOutcome {
-            result: 0,
-            output: Vec::new(),
-        });
+        return Ok(RunOutcome { result: 0, output: Vec::new() });
     }
-
     let mut vm = kaubo_vm::VM::new();
-    vm.max_loop_iterations = config.max_loop_iterations;
+    vm.max_loop_iterations = max_loop_iterations;
     vm.load(cps).map_err(DriverError::Load)?;
-
     let func_idx = cps.functions.len() - 1;
     let reg_count = cps.functions[func_idx].reg_count;
-    let events = config.events_ref();
-    let result = vm
-        .execute(func_idx, reg_count, events)
+    let result = vm.execute(func_idx, reg_count, None)
         .map_err(|e| DriverError::Runtime(format!("{e:?}")))?;
-
-    Ok(RunOutcome {
-        result,
-        output: vm.output,
-    })
+    Ok(RunOutcome { result, output: vm.output })
 }
 
-pub fn run_source_with_config(source: &str, config: &RunConfig) -> Result<RunOutcome, DriverError> {
-    let cps = compile_source_with_config(source, config)?;
-    run_module_with_config(&cps, config)
+pub fn run_source_with_config(source: &str, max_loop_iterations: u64) -> Result<RunOutcome, DriverError> {
+    let coord = DagCoordinator::new();
+    coord.run_source_with_config(source, max_loop_iterations).map_err(Into::into)
+}
+
+/// Compile a multi-file program using the DAG scheduler.
+pub fn compile_file(
+    entry: &str,
+    loader: Arc<dyn crate::module_loader::ModuleLoader>,
+) -> Result<CpsModule, DriverError> {
+    let coord = DagCoordinator::new_multifile(entry, loader.clone(), None);
+    coord.compile_file(entry, loader).map_err(Into::into)
+}
+
+/// Compile and execute a multi-file program using the DAG scheduler.
+pub fn run_file(
+    entry: &str,
+    loader: Arc<dyn crate::module_loader::ModuleLoader>,
+) -> Result<RunOutcome, DriverError> {
+    let coord = DagCoordinator::new_multifile(entry, loader.clone(), None);
+    coord.run_file(entry, loader).map_err(Into::into)
 }
 
 pub fn instruction_count(module: &CpsModule) -> usize {
@@ -218,6 +191,10 @@ pub fn decode_module(bytes: &[u8]) -> Result<CpsModule, DriverError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kaubo_ir::cps_build::build_module;
+    use kaubo_ir::flatten::flatten_module;
+    use kaubo_ir::pass::{empty_block::EmptyBlockElim, fold::ConstantFold, run_passes};
+    use kaubo_syntax::parser::Parser;
 
     #[test]
     fn compile_source_builds_module() {
@@ -972,11 +949,7 @@ mod tests {
     #[test]
     fn infinite_loop_is_detected() {
         let source = "var x = 0; while (x < 10) { x = x; };";
-        let config = RunConfig {
-            max_loop_iterations: 100,
-            ..RunConfig::default()
-        };
-        let err = run_source_with_config(source, &config).unwrap_err();
+        let err = run_source_with_config(source, 100).unwrap_err();
         assert!(matches!(err, DriverError::Runtime(_)));
         assert!(err.to_string().contains("LoopExceeded"));
     }
@@ -1525,5 +1498,132 @@ mod tests {
         )
         .unwrap();
         assert_eq!(outcome.result, 42);
+    }
+
+    // ── Multi-file tests (DAG path) ──────────────────────────────
+
+    /// Single file backward compat via multi-file path
+    #[test]
+    fn dag_multi_single_file() {
+        let mut loader = MemLoader::new();
+        loader.insert("main.kb", "const x = 42;");
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    /// Simple import: main imports `add` from math
+    #[test]
+    fn dag_multi_import_function() {
+        let mut loader = MemLoader::new();
+        loader.insert("main.kb", "import { add } from \"./math.kb\"; add(2, 3);");
+        loader.insert(
+            "math.kb",
+            "export const add = |a: Int64, b: Int64| -> Int64 { return a + b; };",
+        );
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
+        assert_eq!(outcome.result, 5);
+    }
+
+    /// Diamond dependency: main → A, B; A → math; B → math
+    #[test]
+    fn dag_multi_diamond_dependency() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { add_a } from \"./A.kb\"; import { add_b } from \"./B.kb\"; add_a(1, 10) + add_b(2, 10);",
+        );
+        loader.insert(
+            "A.kb",
+            "import { add10 } from \"./math.kb\"; export const add_a = |x: Int64, y: Int64| -> Int64 { return add10(x, y); };",
+        );
+        loader.insert(
+            "B.kb",
+            "import { add10 } from \"./math.kb\"; export const add_b = |x: Int64, y: Int64| -> Int64 { return add10(x, y); };",
+        );
+        loader.insert(
+            "math.kb",
+            "export const add10 = |a: Int64, b: Int64| -> Int64 { return a + b; };",
+        );
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
+        assert_eq!(outcome.result, 23); // (1+10)+(2+10) = 23
+    }
+
+    /// Transitive import: main → middle → leaf
+    #[test]
+    fn dag_multi_transitive_import() {
+        let mut loader = MemLoader::new();
+        loader.insert("main.kb", "import { calc } from \"./middle.kb\"; calc(30, 12);");
+        loader.insert(
+            "middle.kb",
+            "import { add } from \"./leaf.kb\"; export const calc = |a: Int64, b: Int64| -> Int64 { return add(a, b); };",
+        );
+        loader.insert(
+            "leaf.kb",
+            "export const add = |x: Int64, y: Int64| -> Int64 { return x + y; };",
+        );
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
+        assert_eq!(outcome.result, 42);
+    }
+
+    /// Multiple imports from one module
+    #[test]
+    fn dag_multi_import_multiple_functions() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "main.kb",
+            "import { add, mul } from \"./math.kb\"; add(2, 3) + mul(4, 5);",
+        );
+        loader.insert(
+            "math.kb",
+            "export const add = |a: Int64, b: Int64| -> Int64 { return a + b; };
+             export const mul = |a: Int64, b: Int64| -> Int64 { return a * b; };",
+        );
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
+        assert_eq!(outcome.result, 25); // 5 + 20 = 25
+    }
+
+    /// Import constant value
+    #[test]
+    fn dag_multi_import_const_value() {
+        let mut loader = MemLoader::new();
+        loader.insert("main.kb", "import { PI } from \"./math.kb\"; PI + 1;");
+        loader.insert("math.kb", "export const PI = 3;");
+        let outcome = run_file("main.kb", Arc::new(loader)).unwrap();
+        assert_eq!(outcome.result, 4);
+    }
+
+    /// Circular dependency detection
+    #[test]
+    fn dag_multi_circular_dependency_detected() {
+        let mut loader = MemLoader::new();
+        loader.insert(
+            "a.kb",
+            "import { b } from \"./b.kb\"; export const a = |x| -> Int64 { return b(x); };",
+        );
+        loader.insert(
+            "b.kb",
+            "import { a } from \"./a.kb\"; export const b = |x| -> Int64 { return a(x); };",
+        );
+        let err = run_file("a.kb", Arc::new(loader)).unwrap_err();
+        assert!(err.to_string().contains("circular"));
+    }
+
+    /// Import not found
+    #[test]
+    fn dag_multi_import_nonexistent() {
+        let mut loader = MemLoader::new();
+        loader.insert("main.kb", "import { x } from \"./missing.kb\"; x;");
+        let err = run_file("main.kb", Arc::new(loader)).unwrap_err();
+        assert!(err.to_string().contains("not found"));
+    }
+
+    /// Import not exported
+    #[test]
+    fn dag_multi_import_not_exported() {
+        let mut loader = MemLoader::new();
+        loader.insert("main.kb", "import { f } from \"./lib.kb\"; f();");
+        loader.insert("lib.kb", "const f = || { 42; };"); // not exported
+        let err = run_file("main.kb", Arc::new(loader)).unwrap_err();
+        assert!(err.to_string().contains("export"));
     }
 }

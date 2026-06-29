@@ -2,11 +2,11 @@
 //! routing.  This is the "business logic" layer that knows the specific order
 //! of stages, which ones to cache, and how to fan out events.
 
-use crate::event::{EventRouter, EventSink, NullSink};
+use crate::event::{EventRouter, EventSink};
 use crate::module_compiler::ModuleCompiler;
 use crate::module_graph::ModuleGraph;
 use crate::module_loader::ModuleLoader;
-use crate::protocol::{ArtifactCache, BuildContext, BuildError, MemoryCache, Pipeline, Stage};
+use crate::protocol::{ArtifactCache, BuildError, MemoryCache, Pipeline, Stage};
 use crate::stages::{CpsBuildStage, FrontendStage, SemanticArtifact, SemanticStage, VmExecStage};
 use crate::RunOutcome;
 use kaubo_ast::Module;

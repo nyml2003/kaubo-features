@@ -14,3 +14,5 @@ kaubo-ir = { workspace = true }
 kaubo-vm = { workspace = true }
 kaubo-log = { workspace = true }
 kaubo-vfs = { workspace = true }
+kaubo-dag = { workspace = true }
+futures = { workspace = true }
