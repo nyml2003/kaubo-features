@@ -45,7 +45,9 @@ impl Builder<String, RunOutcome> for ExecuteBuilder {
         let max_loops = self.max_loop_iterations;
         let cps_artifact = inputs.into_iter().next().unwrap();
         Box::pin(async move {
-            let cps = cps_artifact.downcast_ref::<CpsModule>();
+            let Some(cps) = cps_artifact.try_downcast_ref::<CpsModule>() else {
+                return Err(DagError::Internal("ExecuteBuilder: expected CpsModule artifact".into()));
+            };
 
             if cps.functions.is_empty() {
                 return Ok(RunOutcome {

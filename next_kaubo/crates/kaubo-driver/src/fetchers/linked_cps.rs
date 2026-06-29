@@ -53,7 +53,9 @@ impl Fetcher<String> for LinkedCpsFetcher {
         let loader = Arc::clone(&self.loader);
 
         Box::pin(async move {
-            let graph = graph_artifact.downcast_ref::<ModuleGraph>();
+            let Some(graph) = graph_artifact.try_downcast_ref::<ModuleGraph>() else {
+                return Err(DagError::Internal("LinkedCpsFetcher: expected ModuleGraph artifact".into()));
+            };
 
             // Delegate to ModuleCompiler for correct per-module compilation
             // (parse + infer with imports + CPS build + export table + link).

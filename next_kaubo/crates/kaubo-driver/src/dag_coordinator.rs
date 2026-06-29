@@ -11,6 +11,7 @@ use crate::stages::adapt_pass;
 use crate::RunOutcome;
 use kaubo_dag::{Artifact, ArtifactKey, BuilderEvent, DagError, DagScheduler, FetcherRegistry, Kind};
 use kaubo_ir::cps::CpsModule;
+use kaubo_dag::Spawner;
 use kaubo_ir::pass::{empty_block::EmptyBlockElim, fold::ConstantFold, move_fold::MoveFold};
 use std::sync::Arc;
 
@@ -87,6 +88,23 @@ impl DagCoordinator {
 
         let scheduler = DagScheduler::new(registry, spawner);
         DagCoordinator { scheduler }
+    }
+
+    /// Create with a custom spawner (e.g. SyncSpawner for WASM sync API).
+    pub fn new_with_spawner(spawner: Arc<dyn Spawner>) -> Self {
+        let pipeline = Pipeline::new()
+            .add(adapt_pass(EmptyBlockElim))
+            .add(adapt_pass(MoveFold))
+            .add(adapt_pass(ConstantFold));
+        let registry = FetcherRegistry::<String>::new();
+        let pipeline_for_cps = pipeline;
+        registry.register(Kind::new(Kind::CPS), Box::new(move |key| {
+            Box::new(fetchers::cps::CpsFetcher::new(key.module_id.clone(), Some(pipeline_for_cps.clone())))
+        }));
+        registry.register(Kind::new(Kind::SEMANTIC), Box::new(|key| {
+            Box::new(fetchers::semantic::SemanticFetcher::new(key.module_id.clone()))
+        }));
+        DagCoordinator { scheduler: DagScheduler::new(registry, spawner) }
     }
 
     /// Create a DagCoordinator for multi-file compilation.
@@ -250,8 +268,10 @@ impl kaubo_dag::Builder<String, CpsModule> for CpsBuilder {
         inputs: Vec<Artifact<String>>,
         _ctx: &'a mut kaubo_dag::FetchContext<String>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<CpsModule, DagError<String>>> + Send + 'a>> {
-        let cps = inputs.into_iter().next().unwrap().downcast_clone::<CpsModule>();
-        Box::pin(async move { Ok(cps) })
+        let cps = inputs.into_iter().next()
+            .and_then(|a| a.try_downcast_clone::<CpsModule>())
+            .ok_or_else(|| DagError::<String>::Internal("CpsBuilder: expected CpsModule".into()));
+        Box::pin(async move { cps })
     }
 }
 
@@ -273,7 +293,9 @@ impl kaubo_dag::Builder<String, CpsModule> for LinkedCpsBuilder {
         inputs: Vec<Artifact<String>>,
         _ctx: &'a mut kaubo_dag::FetchContext<String>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<CpsModule, DagError<String>>> + Send + 'a>> {
-        let cps = inputs.into_iter().next().unwrap().downcast_clone::<CpsModule>();
-        Box::pin(async move { Ok(cps) })
+        let cps = inputs.into_iter().next()
+            .and_then(|a| a.try_downcast_clone::<CpsModule>())
+            .ok_or_else(|| DagError::<String>::Internal("LinkedCpsBuilder: expected CpsModule".into()));
+        Box::pin(async move { cps })
     }
 }

@@ -41,7 +41,9 @@ impl Fetcher<String> for SemanticFetcher {
         let module_id = self.module_id.clone();
         let ast_artifact = inputs.into_iter().next().unwrap();
         Box::pin(async move {
-            let module = ast_artifact.downcast_ref::<kaubo_ast::Module>();
+            let Some(module) = ast_artifact.try_downcast_ref::<kaubo_ast::Module>() else {
+                return Err(DagError::Internal("SemanticFetcher: expected Module artifact".into()));
+            };
 
             let (type_env, struct_fields) =
                 kaubo_infer::infer_module(module).map_err(|e| {

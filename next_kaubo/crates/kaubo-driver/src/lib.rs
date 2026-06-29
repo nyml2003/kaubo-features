@@ -166,9 +166,21 @@ pub fn compile_source(source: &str) -> Result<CpsModule, DriverError> {
     compile_source_with_config(source, u64::MAX)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn compile_source(source: &str) -> Result<CpsModule, DriverError> {
+    let coord = DagCoordinator::new_with_spawner(Arc::new(kaubo_dag::SyncSpawner));
+    futures::executor::block_on(coord.compile_source_async(source, u64::MAX)).map_err(Into::into)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_source(source: &str) -> Result<RunOutcome, DriverError> {
     run_source_with_config(source, u64::MAX)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn run_source(source: &str) -> Result<RunOutcome, DriverError> {
+    let coord = DagCoordinator::new_with_spawner(Arc::new(kaubo_dag::SyncSpawner));
+    futures::executor::block_on(coord.run_source_async(source, u64::MAX)).map_err(Into::into)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

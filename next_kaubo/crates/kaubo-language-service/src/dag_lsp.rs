@@ -211,8 +211,10 @@ impl kaubo_dag::Builder<String, SemanticArtifact> for SemanticBuilder {
         inputs: Vec<Artifact<String>>,
         _ctx: &'a mut kaubo_dag::FetchContext<String>,
     ) -> Pin<Box<dyn Future<Output = Result<SemanticArtifact, kaubo_dag::DagError<String>>> + Send + 'a>> {
-        let sem = inputs.into_iter().next().unwrap().downcast_clone::<SemanticArtifact>();
-        Box::pin(async move { Ok(sem) })
+        let sem = inputs.into_iter().next()
+            .and_then(|a| a.try_downcast_clone::<SemanticArtifact>())
+            .ok_or_else(|| kaubo_dag::DagError::Internal("SemanticBuilder: expected SemanticArtifact".into()));
+        Box::pin(async move { sem })
     }
 }
 

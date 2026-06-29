@@ -10,6 +10,7 @@
 use crate::cancel::CancellationToken;
 use std::future::Future;
 use std::pin::Pin;
+use std::task::Context;
 
 /// Platform abstraction for spawning asynchronous tasks.
 ///
@@ -161,6 +162,39 @@ impl Spawner for WasmSpawner {
         })
     }
 
+    fn cancellation_token(&self) -> CancellationToken {
+        CancellationToken::new()
+    }
+}
+
+// ── Sync Spawner (WASM sync API) ────────────────────────────────────
+
+/// A spawner that runs futures inline on the current thread.
+///
+/// Unlike `NativeSpawner`, this does NOT create threads. Uses direct
+/// polling (busy-wait) which is safe in single-threaded WASM where
+/// the async chain is purely CPU-bound. Avoids `futures::executor::block_on`
+/// which panics with `EnterError` when nested.
+#[derive(Debug, Clone, Default)]
+pub struct SyncSpawner;
+
+impl Spawner for SyncSpawner {
+    fn spawn(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        // Direct poll loop — safe in single-threaded context
+        // where the future chain has no I/O suspends.
+        let waker = futures::task::noop_waker();
+        let mut cx = std::task::Context::from_waker(&waker);
+        let mut pinned = future;
+        loop {
+            match pinned.as_mut().poll(&mut cx) {
+                std::task::Poll::Ready(()) => return,
+                std::task::Poll::Pending => continue,
+            }
+        }
+    }
+    fn yield_now(&self) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        Box::pin(async {})
+    }
     fn cancellation_token(&self) -> CancellationToken {
         CancellationToken::new()
     }

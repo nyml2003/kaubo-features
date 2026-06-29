@@ -3,7 +3,6 @@
 
 /**
  * Compile source to bytecode, return instruction count.
- * Throws JsValue on parse/infer/build failure.
  */
 export function compile(source: string): number;
 
@@ -48,7 +47,6 @@ export function lsp_on_change(source: string): void;
 
 /**
  * Run previously compiled bytecode, return print() output.
- * Throws JsValue on execution failure or if nothing was compiled.
  */
 export function run(_bytes: Uint8Array): string;
 

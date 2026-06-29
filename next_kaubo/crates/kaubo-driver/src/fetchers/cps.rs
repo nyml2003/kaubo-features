@@ -51,7 +51,9 @@ impl Fetcher<String> for CpsFetcher {
         let ast_artifact = inputs.into_iter().next().unwrap();
         let pipeline = self.pipeline.clone();
         Box::pin(async move {
-            let module = ast_artifact.downcast_ref::<kaubo_ast::Module>();
+            let Some(module) = ast_artifact.try_downcast_ref::<kaubo_ast::Module>() else {
+                return Err(DagError::Internal("CpsFetcher: expected Module artifact".into()));
+            };
 
             let mut cps =
                 kaubo_ir::cps_build::build_module(module, None).map_err(|e| {

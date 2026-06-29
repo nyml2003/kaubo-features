@@ -211,18 +211,29 @@ impl<M> Artifact<M> {
 
     /// Downcast to a shared reference of the concrete type.
     ///
-    /// # Panics
+    /// Returns `None` if `T` doesn't match — callers should handle the
+    /// mismatch gracefully (e.g. return a `DagError::Internal`).
+    pub fn try_downcast_ref<T: 'static>(&self) -> Option<&T> {
+        self.data.downcast_ref::<T>()
+    }
+
+    /// Downcast to a shared reference. Panics on type mismatch.
     ///
-    /// Panics if `T` does not match the stored type. This is a programmer
-    /// error, not a recoverable runtime condition — Fetchers must agree
-    /// on the concrete type for each `Kind`.
+    /// Prefer [`try_downcast_ref`] for production code.
     pub fn downcast_ref<T: 'static>(&self) -> &T {
         self.data
             .downcast_ref::<T>()
-            .expect("Artifact::downcast_ref: type mismatch — did the fetcher store a different type than the consumer expects?")
+            .expect("downcast_ref: type mismatch")
     }
 
-    /// Clone the inner data (requires `T: Clone`).
+    /// Clone the inner data. Returns `None` on type mismatch.
+    pub fn try_downcast_clone<T: Clone + 'static>(&self) -> Option<T> {
+        self.try_downcast_ref::<T>().cloned()
+    }
+
+    /// Clone the inner data. Panics on type mismatch.
+    ///
+    /// Prefer [`try_downcast_clone`] for production code.
     pub fn downcast_clone<T: Clone + 'static>(&self) -> T {
         self.downcast_ref::<T>().clone()
     }

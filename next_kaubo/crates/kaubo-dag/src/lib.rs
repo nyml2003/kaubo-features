@@ -49,7 +49,7 @@ pub use error::DagError;
 pub use fetcher::{FetchContext, Fetcher, ProgressEvent, ResultEvent, StreamingHandle};
 pub use registry::FetcherRegistry;
 pub use scheduler::{BuildStream, DagScheduler};
-pub use spawner::Spawner;
+pub use spawner::{Spawner, SyncSpawner};
 pub use store::ArtifactStore;
 pub use types::{Artifact, ArtifactKey, ContentHash, Kind};
 
